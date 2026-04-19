@@ -1,0 +1,40 @@
+name: Deploy to Pi (Arbiter)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'arbiter/**'
+      - 'src/rules.js' # Rules shared with the arbiter
+      - 'package.json'
+
+jobs:
+  deploy-to-pi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v4
+
+      - name: Connect to Tailscale 🪜
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy to Pi via SSH 🚀
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PI_TAILSCALE_IP }}
+          username: pizero
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            mkdir -p ~/untitled-micro-mmo/arbiter
+            # This is a simplified rsync-style deploy via SSH commands
+            # In a real setup, you might use 'git pull' on the Pi instead
+            cd ~/untitled-micro-mmo
+            git pull || (git clone https://github.com/${{ github.repository }}.git . && git checkout main)
+            npm install --production
+            # Restart the arbiter service (assuming pm2 or systemd)
+            # pm2 restart arbiter || pm2 start arbiter/index.js --name arbiter
