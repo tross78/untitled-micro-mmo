@@ -1,7 +1,11 @@
 import { joinRoom, selfId } from 'trystero';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
+import pkg from 'tweetnacl-util';
 import { world, validateMove } from './rules';
+import { verifyMessage } from './crypto';
+import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME } from './constants';
 
+const { decodeBase64 } = pkg;
 const output = document.getElementById('output');
 const input = document.getElementById('input');
 
@@ -10,15 +14,13 @@ const log = (msg) => {
     output.scrollTop = output.scrollHeight;
 };
 
+// --- ARBITER VERIFICATION ---
+const arbiterPublicKey = decodeBase64(MASTER_PUBLIC_KEY);
+
 // --- YJS STATE INITIALIZATION ---
 const ydoc = new Doc();
 const yplayers = ydoc.getMap('players');
 const yworld = ydoc.getMap('world');
-
-// Initialize world state if empty
-if (yworld.size === 0) {
-    yworld.set('lastEvent', 'The air is still.');
-}
 
 // Player state
 let localPlayer = {
@@ -51,11 +53,12 @@ const saveLocalState = () => {
 loadLocalState();
 
 // --- NETWORKING: TRYSTERO ---
-const config = { appId: 'untitled-micro-mmo-v1' };
-const room = joinRoom(config, 'lobby');
+const config = { appId: APP_ID };
+const room = joinRoom(config, ROOM_NAME);
 
 const [sendSync, getSync] = room.makeAction('sync');
 const [sendMove, getMove] = room.makeAction('move');
+const [sendOfficialEvent, getOfficialEvent] = room.makeAction('official_event');
 
 // Sync Yjs state via Trystero
 ydoc.on('update', (update, origin) => {
@@ -66,7 +69,16 @@ ydoc.on('update', (update, origin) => {
 
 getSync((update, peerId) => {
     applyUpdate(ydoc, update, 'remote');
-    log(`[System] State updated from ${peerId}`);
+});
+
+// Verify Official Events (from Arbiter)
+getOfficialEvent((data, peerId) => {
+    const { event, signature } = data;
+    if (verifyMessage(event, signature, arbiterPublicKey)) {
+        log(`\n[OFFICIAL] ${event}`);
+    } else {
+        log(`\n[System] Warning: Blocked an unsigned world event from peer ${peerId}.`);
+    }
 });
 
 log(`Welcome to the Micro-MMO.`);
@@ -76,7 +88,6 @@ log(world[localPlayer.location].description);
 
 room.onPeerJoin(peerId => {
     log(`[System] Peer ${peerId} has connected.`);
-    // Send full state to joining peer
     sendSync(encodeStateAsUpdate(ydoc), peerId);
 });
 
@@ -88,10 +99,10 @@ getMove((data, peerId) => {
     log(`[System] ${peerId} moved to ${data.location}`);
 });
 
-// Observe world changes (Ticker)
+// Observe world changes (Ticker fallback/legacy)
 yworld.observe(event => {
     if (yworld.has('lastEvent')) {
-        log(`\n[EVENT] ${yworld.get('lastEvent')}`);
+        // Only log if it's new. Official events are now handled via signed broadcast.
     }
 });
 

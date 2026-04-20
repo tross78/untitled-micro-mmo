@@ -4,35 +4,29 @@
 A serverless, P2P micro-MMO with near-zero infrastructure costs (<$5/mo), scaling to 1M concurrent users via Trystero and WebRTC.
 
 ## Core Mandates
-- **Bundle Size:** Keep the bootstrap JS bundle (`dist/main.js`) under 150KB (revised to accommodate Yjs). Current: **125.9KB**.
+- **Bundle Size:** Keep the bootstrap JS bundle (`dist/main.js`) under 150KB. Current: **125.9KB**.
 - **Networking:** Exclusively use Trystero for P2P signaling to avoid server costs.
 - **State Management:** Use Yjs CRDTs for eventual consistency across the mesh.
 - **Security:** Every player action must eventually be cryptographically signed. The Arbiter Node (Raspberry Pi) is the final authority.
 - **Aesthetic:** Minimalist, text-driven "Blaseball" feel. No native chat.
 
-## Current Iteration (v0.2.0 - Persistence & CRDT)
-- [x] **Zero-Cost Signaling:** Trystero integrated using the BitTorrent DHT strategy.
-- [x] **Yjs Integration:** Lightweight CRDT added for world and player state.
-- [x] **Persistence:** `localStorage` integration for player location and name.
-- [x] **State Syncing:** Automatic Yjs update broadcasting via Trystero.
-- [x] **Event Ticker:** Basic world-event observation (Blaseball style).
-- [x] **No Chat:** Removed built-in chat to focus on simulation/narrative (Blaseball style).
+## Current Iteration (v0.3.0 - The Trusted Arbiter)
+- [x] **Master Keypair:** Ed25519 keys generated for the Arbiter.
+- [x] **Arbiter Client:** Node.js headless client in `arbiter/` using `werift` WebRTC polyfill.
+- [x] **Signed Events:** The Arbiter broadcasts signed world events every 60s.
+- [x] **Cryptographic Verification:** Web clients verify Arbiter signatures using the public key in `src/constants.js`.
+- [x] **Auto-Deploy:** GitHub Actions configured to push code to the Pi via Tailscale.
 
 ## Roadmap & Future Iterations
 
-### Iteration 3: The Trusted Arbiter (Pi Zero W)
-- [ ] **Arbiter Protocol:** Create `arbiter/` Node.js script to "lurk" in rooms as a headless client.
-- [ ] **Master Key Signing:** The Arbiter signs official "truth" messages to prevent state hijacking.
-- [ ] **Conflict Resolution:** If peers disagree on state, they defer to the Arbiter's signed hash.
-
 ### Iteration 4: Narrative Engine (Micro-LLM)
 - [ ] **`llama.zero` Build:** Compile ARMv6-optimized LLM runner on the Raspberry Pi Zero W.
-- [ ] **Global Ticker:** Implement the "Blaseball Ticker" UI in the client.
-- [ ] **Narrative Events:** The Arbiter broadcasts signed stories (e.g., "A thick fog rolls into the Hallway") generated at 0.5 tok/sec.
+- [ ] **Global Ticker:** Implement a dedicated ticker UI element in `index.html`.
+- [ ] **LLM Orchestration:** The Arbiter uses the LLM to generate unique narrative strings at 0.5 tok/sec.
 
 ### Iteration 5: Security & Anti-Cheat
-- [ ] **Nacl Signatures:** Implement Ed25519 signing for all player movements.
-- [ ] **Deterministic Ruleset:** Move room-exit logic to a shared module (`src/rules.js`) for cross-validation by all peers.
+- [ ] **Action Signatures:** Implement Ed25519 signing for all player-driven movements.
+- [ ] **Deterministic Ruleset:** Enforce validation of all incoming peer movements using `src/rules.js`.
 - [ ] **Blacklisting:** The Arbiter broadcasts signed bans for peers sending invalid cryptographic actions.
 
 ### Iteration 6: Visual Layer (Phase 2 Bootstrap)
