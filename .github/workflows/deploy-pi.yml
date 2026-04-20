@@ -30,11 +30,29 @@ jobs:
           username: pizero
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            mkdir -p ~/untitled-micro-mmo/arbiter
-            # This is a simplified rsync-style deploy via SSH commands
-            # In a real setup, you might use 'git pull' on the Pi instead
+            # Create directory if it doesn't exist
+            mkdir -p ~/untitled-micro-mmo
             cd ~/untitled-micro-mmo
-            git pull || (git clone https://github.com/${{ github.repository }}.git . && git checkout main)
+
+            # Handle git initialization/cloning
+            if [ ! -d ".git" ]; then
+              echo "Cleaning existing non-git directory and cloning fresh..."
+              rm -rf * .[^.]*
+              git clone https://github.com/tross78/untitled-micro-mmo.git .
+            else
+              echo "Pulling latest changes..."
+              git fetch --all
+              git reset --hard origin/main
+            fi
+
+            # Ensure Node/NPM are in PATH (common for Pi setups)
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
+            # If using NVM, try to load it
+            [ -s "$HOME/.nvm/nvm.sh" ] && \. "$HOME/.nvm/nvm.sh"
+
+            # Install dependencies
             npm install --production
-            # Restart the arbiter service (assuming pm2 or systemd)
+
+            # Restart the arbiter (if using PM2)
             # pm2 restart arbiter || pm2 start arbiter/index.js --name arbiter
+
