@@ -1,0 +1,21 @@
+{
+  "name": "arbiter",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "trystero": "^0.23.0",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
+    "werift": "^0.22.9",
+    "yjs": "^13.6.30"
+  }
+}
