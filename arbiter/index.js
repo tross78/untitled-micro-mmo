@@ -18,7 +18,7 @@ if (!MASTER_SECRET_KEY) {
 const secretKey = MASTER_SECRET_KEY; 
 
 // --- YJS STATE ---
-const ydoc = new Y.Doc();
+const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
 
@@ -31,18 +31,19 @@ if (yworld.size === 0) {
 }
 
 // --- NETWORKING ---
-const config = {
+const baseConfig = {
     appId: APP_ID,
-    rtcPolyfill: { RTCPeerConnection },
-    trackerUrls: [
-        'wss://tracker.openwebtorrent.com',
-        'wss://tracker.files.fm:7072/announce'
-    ]
+    rtcPolyfill: { RTCPeerConnection }
 };
 
-// Join both networks for maximum visibility
-const room = joinNostr(config, ROOM_NAME);
-const torrentRoom = joinTorrent(config, ROOM_NAME);
+// Join via Nostr (Primary)
+const room = joinNostr(baseConfig, ROOM_NAME);
+
+// Join via Torrent (Fallback)
+const torrentRoom = joinTorrent({
+    ...baseConfig,
+    trackerUrls: ['wss://tracker.openwebtorrent.com']
+}, ROOM_NAME);
 
 const setupArbiterActions = (r) => {
     const [sendSync, getSync] = r.makeAction('sync');
