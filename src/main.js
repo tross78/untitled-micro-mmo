@@ -1,4 +1,4 @@
-import { joinRoom as joinNostr } from '@trystero-p2p/nostr';
+import { joinRoom as joinNostr, selfId } from '@trystero-p2p/nostr';
 import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
 import { world, validateMove, hashStr, seededRNG, nextMood } from './rules';
@@ -62,7 +62,6 @@ const updateSimulation = () => {
     const newSeed = yworld.get('world_seed');
     const newDay = yworld.get('day') || 1;
     
-    // If the seed or day changed, refresh the dashboard
     if (newSeed !== worldState.seed || newDay !== worldState.day) {
         worldState.seed = newSeed;
         worldState.day = newDay;
@@ -171,7 +170,6 @@ const start = async () => {
         log(`Your Peer ID: ${selfId}`);
         log(`Waiting for World Seed from the Arbiter...`, '#aaa');
         
-        // Initial look
         setTimeout(() => {
             log(`\n${world[localPlayer.location].name}`);
             log(world[localPlayer.location].description);
