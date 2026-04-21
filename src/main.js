@@ -16,7 +16,7 @@ const log = (msg, color = '#0f0') => {
     output.scrollTop = output.scrollHeight;
 };
 
-// --- IDENTITY & CRYPTO ---
+// --- IDENTITY ---
 let playerKeys = null;
 let arbiterPublicKey = null;
 
@@ -46,7 +46,7 @@ const initIdentity = async () => {
     }
 };
 
-// --- YJS STATE INITIALIZATION ---
+// --- STATE ---
 const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
@@ -58,7 +58,7 @@ const printStatus = () => {
     log(`Day: ${worldState.day}`, '#ffa500');
     log(`Town Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
     log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
-    log(`Active Events Today: ${yevents.length}`, '#ffa500');
+    log(`Total Historical Events: ${yevents.length}`, '#ffa500');
     log(`--------------------\n`, '#ffa500');
 };
 
@@ -68,13 +68,20 @@ const updateSimulation = () => {
     const newDay = yworld.get('day') || 1;
     
     if (newSeed !== worldState.seed || newDay !== worldState.day) {
+        const isNewDay = newDay !== worldState.day && worldState.seed !== '';
         worldState.seed = newSeed;
         worldState.day = newDay;
         const dailySeed = hashStr(worldState.seed + worldState.day);
         const rng = seededRNG(dailySeed);
         const baseMood = yworld.get('town_mood') || 'weary';
         worldState.mood = nextMood(baseMood, rng);
-        log(`\n[System] World state updated.`, '#aaa');
+
+        if (isNewDay) {
+            log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
+            handleCommand('news');
+        } else {
+            log(`\n[System] World synchronized.`, '#aaa');
+        }
         printStatus();
     }
 };
@@ -82,10 +89,7 @@ const updateSimulation = () => {
 yworld.observe(() => updateSimulation());
 
 // Player local state
-let localPlayer = {
-    name: `Peer-${selfId.slice(0, 4)}`,
-    location: 'cellar'
-};
+let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar' };
 
 // --- PERSISTENCE ---
 const STORAGE_KEY = 'hearthwick_state_v2';
@@ -107,28 +111,21 @@ const saveLocalState = () => {
     }));
 };
 
-// --- NETWORKING: DEDUPLICATED ---
+// --- NETWORKING ---
 let knownPeers = new Set();
+let room;
 
 const initNetworking = () => {
     const nostrRoom = joinNostr({ appId: APP_ID }, ROOM_NAME);
-    const torrentRoom = joinTorrent({ 
-        appId: APP_ID, 
-        trackerUrls: ['wss://tracker.openwebtorrent.com'] 
-    }, ROOM_NAME);
+    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: ['wss://tracker.openwebtorrent.com'] }, ROOM_NAME);
 
     const setupActions = (r) => {
         const [sendSync, getSync] = r.makeAction('sync');
         const [sendMove, getMove] = r.makeAction('move');
         const [sendOfficialEvent, getOfficialEvent] = r.makeAction('official_event');
 
-        ydoc.on('update', (update, origin) => {
-            if (origin !== 'remote') sendSync(update);
-        });
-
-        getSync((update, peerId) => {
-            applyUpdate(ydoc, update, 'remote');
-        });
+        ydoc.on('update', (update, origin) => { if (origin !== 'remote') sendSync(update); });
+        getSync((update, peerId) => { applyUpdate(ydoc, update, 'remote'); });
 
         getOfficialEvent(async (data, peerId) => {
             const { event, signature } = data;
@@ -138,17 +135,13 @@ const initNetworking = () => {
         });
 
         r.onPeerJoin(peerId => {
-            // Deduplication: Only log/sync the first time we see this peer ID
             if (!knownPeers.has(peerId)) {
                 knownPeers.add(peerId);
                 log(`[System] Peer ${peerId.slice(0, 8)} joined.`, '#aaa');
                 sendSync(encodeStateAsUpdate(ydoc), peerId);
             }
         });
-
-        r.onPeerLeave(peerId => {
-            knownPeers.delete(peerId);
-        });
+        r.onPeerLeave(peerId => { knownPeers.delete(peerId); });
 
         getMove((data, peerId) => {
             log(`[System] ${peerId.slice(0, 4)} moved to ${data.location}`, '#aaa');
@@ -159,11 +152,11 @@ const initNetworking = () => {
 
     const actions = setupActions(nostrRoom);
     setupActions(torrentRoom);
-
     window.gameActions = actions;
+    room = nostrRoom;
 };
 
-// --- MAIN INITIALIZATION ---
+// --- MAIN ---
 const start = async () => {
     try {
         await initIdentity();
@@ -189,9 +182,7 @@ const start = async () => {
                 }
             }
         });
-    } catch (err) {
-        log(`[FATAL] Engine crash: ${err.message}`, '#f00');
-    }
+    } catch (err) { log(`[FATAL] Engine crash: ${err.message}`, '#f00'); }
 };
 
 function handleCommand(cmd) {
@@ -214,14 +205,28 @@ function handleCommand(cmd) {
             printStatus();
             break;
         case 'news':
-            log(`\n--- RECENT EVENTS ---`, '#0ff');
-            const logs = yevents.toArray().slice(-5).reverse();
-            if (logs.length === 0) log('The archives are empty.');
-            logs.forEach(e => {
-                if (e.type === 'narrative') log(`[${new Date(e.time).toLocaleTimeString()}] ${e.event}`, '#0ff');
-                else if (e.type === 'move') log(`[Move] ${e.peer.slice(0,4)}... went to ${e.to}`, '#aaa');
+            log(`\n--- THE HEARTHWICK CHRONICLE ---`, '#0ff');
+            const allEvents = yevents.toArray();
+            
+            // Group events by day
+            const history = {};
+            allEvents.forEach(e => {
+                const day = e.day || 0;
+                if (!history[day]) history[day] = [];
+                history[day].push(e);
             });
-            log(`---------------------\n`, '#0ff');
+
+            const days = Object.keys(history).sort((a, b) => b - a).slice(0, 3);
+            if (days.length === 0) log('The archives are empty.');
+
+            days.forEach(d => {
+                log(`Day ${d}:`, '#ffa500');
+                history[d].slice(-5).forEach(e => {
+                    if (e.type === 'narrative') log(`  - [OFFICIAL] ${e.event}`, '#0ff');
+                    else if (e.type === 'move') log(`  - Peer ${e.peer.slice(0,4)} moved to ${e.to}`, '#aaa');
+                });
+            });
+            log(`--------------------------------\n`, '#0ff');
             break;
         case 'rename':
             const newName = args.slice(1).join(' ');
@@ -240,7 +245,7 @@ function handleCommand(cmd) {
                 log(`You move ${dir}.`);
                 handleCommand('look');
                 yevents.push([{
-                    type: 'move', peer: selfId,
+                    type: 'move', peer: selfId, day: worldState.day,
                     from: localPlayer.location, to: nextLoc, time: Date.now()
                 }]);
             } else log(`You can't go that way.`);

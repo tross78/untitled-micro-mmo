@@ -22,7 +22,7 @@ const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
 
-// Initialization of World (If the Arbiter is the first one in)
+// Initialization of World
 if (yworld.size === 0) {
     console.log('[Arbiter] Initializing new world seed...');
     yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
@@ -31,45 +31,23 @@ if (yworld.size === 0) {
 }
 
 // --- NETWORKING ---
-const baseConfig = {
-    appId: APP_ID,
-    rtcPolyfill: { RTCPeerConnection }
-};
-
-// Join via Nostr (Primary)
+const baseConfig = { appId: APP_ID, rtcPolyfill: { RTCPeerConnection } };
 const room = joinNostr(baseConfig, ROOM_NAME);
-
-// Join via Torrent (Fallback)
-const torrentRoom = joinTorrent({
-    ...baseConfig,
-    trackerUrls: ['wss://tracker.openwebtorrent.com']
-}, ROOM_NAME);
+const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: ['wss://tracker.openwebtorrent.com'] }, ROOM_NAME);
 
 const setupArbiterActions = (r) => {
     const [sendSync, getSync] = r.makeAction('sync');
     const [sendOfficialEvent] = r.makeAction('official_event');
-
-    ydoc.on('update', update => {
-        sendSync(update);
-    });
-
+    ydoc.on('update', update => sendSync(update));
     getSync((update, peerId) => {
         Y.applyUpdate(ydoc, update, 'remote');
-        console.log(`[Arbiter] Synced state from peer ${peerId}`);
     });
-
-    r.onPeerJoin(peerId => {
-        console.log(`[Arbiter] Peer joined: ${peerId}`);
-        sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
-    });
-
+    r.onPeerJoin(peerId => sendSync(Y.encodeStateAsUpdate(ydoc), peerId));
     return { sendOfficialEvent };
 };
 
 const actions = setupArbiterActions(room);
 const torrentActions = setupArbiterActions(torrentRoom);
-
-console.log(`[Arbiter] Started as peer ${room.selfId}`);
 
 // --- DAILY NEWS LOOP ---
 const NARRATIVE_EVENTS = [
@@ -81,21 +59,33 @@ const NARRATIVE_EVENTS = [
 ];
 
 async function broadcastNews() {
+    const day = yworld.get('day') || 1;
     const event = NARRATIVE_EVENTS[Math.floor(Math.random() * NARRATIVE_EVENTS.length)];
     const signature = await signMessage(event, secretKey);
 
-    console.log(`[Arbiter] Broadcasting official news: ${event}`);
+    console.log(`[Arbiter] Day ${day} News: ${event}`);
     
-    // Broadcast on both meshes
     actions.sendOfficialEvent({ event, signature });
     torrentActions.sendOfficialEvent({ event, signature });
     
+    // Save to permanent log with Day metadata
     yevents.push([{
         type: 'narrative',
+        day: day,
         event: event,
         time: Date.now()
     }]);
 }
+
+// --- DEBUG: AUTO-ADVANCE DAY ---
+// In production, this would be a midnight cron job.
+// For now, let's increment the day every 30 minutes for testing.
+setInterval(() => {
+    const currentDay = yworld.get('day') || 1;
+    yworld.set('day', currentDay + 1);
+    console.log(`[Arbiter] A new day begins: Day ${currentDay + 1}`);
+    broadcastNews();
+}, 1800000);
 
 setInterval(broadcastNews, 300000);
 setTimeout(broadcastNews, 10000);
