@@ -23,22 +23,21 @@ if (yworld.size === 0) {
     yworld.set('town_mood', 'weary');
 }
 
-// --- LOG TRIMMING (Anti-Bloat) ---
-const MAX_LOG_SIZE = 500; // Keep doc lean for Pi Zero memory and peer bandwidth
-
+// --- LOG TRIMMING ---
+const MAX_LOG_SIZE = 500;
 function trimEventLog() {
-    const currentLength = yevents.length;
-    if (currentLength > MAX_LOG_SIZE) {
-        const toRemove = currentLength - MAX_LOG_SIZE;
-        console.log(`[Arbiter] Trimming log: Removing ${toRemove} old events.`);
-        yevents.delete(0, toRemove);
+    if (yevents.length > MAX_LOG_SIZE) {
+        yevents.delete(0, yevents.length - MAX_LOG_SIZE);
     }
 }
 
 // --- NETWORKING ---
 const baseConfig = { appId: APP_ID, rtcPolyfill: { RTCPeerConnection } };
+// ONLY one reliable tracker to silence errors
+const trackers = ['wss://tracker.openwebtorrent.com'];
+
 const room = joinNostr(baseConfig, ROOM_NAME);
-const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: ['wss://tracker.openwebtorrent.com'] }, ROOM_NAME);
+const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: trackers }, ROOM_NAME);
 
 const setupArbiterActions = (r) => {
     const [sendSync, getSync] = r.makeAction('sync');
@@ -58,7 +57,8 @@ const NARRATIVE_EVENTS = [
     "The tavern was unusually quiet last night.",
     "A rogue merchant was spotted near the ruins.",
     "The crops seem to be growing well this season.",
-    "Faint music was heard coming from the cellar."
+    "Faint music was heard coming from the cellar.",
+    "A strange owl was seen watching the hallway."
 ];
 
 async function broadcastNews() {
@@ -75,15 +75,17 @@ async function broadcastNews() {
         event: event, time: Date.now()
     }]);
 
-    trimEventLog(); // Ensure log doesn't grow too large
+    trimEventLog();
 }
 
-// Tick day every 30 mins
+// --- SPEED UP DAY FOR TESTING ---
+// Advance day every 1 minute
 setInterval(() => {
     const currentDay = yworld.get('day') || 1;
     yworld.set('day', currentDay + 1);
+    console.log(`[Arbiter] A new day begins: Day ${currentDay + 1}`);
     broadcastNews();
-}, 1800000);
+}, 60000);
 
 setInterval(broadcastNews, 300000);
 setTimeout(broadcastNews, 10000);
