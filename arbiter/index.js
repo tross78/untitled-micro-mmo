@@ -1,11 +1,15 @@
 import { webcrypto } from 'node:crypto';
+import WebSocket from 'ws';
 
-// Polyfill global crypto BEFORE any other imports
+// Polyfills for Node.js 18
 if (!globalThis.crypto) {
     globalThis.crypto = webcrypto;
 }
+if (!globalThis.WebSocket) {
+    globalThis.WebSocket = WebSocket;
+}
 
-// Now we can use dynamic imports to ensure the polyfill is active
+// Now we can use dynamic imports to ensure polyfills are active
 async function startArbiter() {
     const { joinRoom: joinNostr } = await import('@trystero-p2p/nostr');
     const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
