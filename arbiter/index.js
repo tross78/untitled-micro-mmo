@@ -60,17 +60,7 @@ async function startArbiter() {
         });
     }
 
-    const ALL_NOSTR_RELAYS = [
-        'wss://relay.damus.io',
-        'wss://nos.lol',
-        'wss://relay.snort.social',
-        'wss://relay.nostr.band',
-        'wss://nostr.wine',
-    ];
-    const ALL_TORRENT_TRACKERS = [
-        'wss://tracker.openwebtorrent.com',
-        'wss://tracker.btorrent.xyz',
-    ];
+    const { NOSTR_RELAYS: ALL_NOSTR_RELAYS, TORRENT_TRACKERS: ALL_TORRENT_TRACKERS } = await import('../src/constants.js');
 
     const [reachableRelays, reachableTrackers] = await Promise.all([
         filterReachable(ALL_NOSTR_RELAYS),
