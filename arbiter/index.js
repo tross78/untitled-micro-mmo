@@ -10,7 +10,7 @@ if (!globalThis.WebSocket) {
 }
 
 async function startArbiter() {
-    const { joinRoom: joinNostr } = await import('@trystero-p2p/nostr');
+    const { joinRoom: joinNostr, selfId } = await import('@trystero-p2p/nostr');
     const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
     const { RTCPeerConnection } = await import('werift');
     const Y = await import('yjs');
@@ -48,32 +48,54 @@ async function startArbiter() {
     }
 
     // --- NETWORKING ---
-    // Fix: rtcPolyfill expects the constructor itself, not an object containing it
     const baseConfig = { 
         appId: APP_ID, 
         rtcPolyfill: RTCPeerConnection 
     };
-    const trackers = ['wss://tracker.openwebtorrent.com'];
 
-    const room = joinNostr(baseConfig, ROOM_NAME);
-    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: trackers }, ROOM_NAME);
+    // Explicitly provide stable relays to avoid 0.0.0.0 fallbacks
+    const nostrConfig = {
+        ...baseConfig,
+        relayUrls: [
+            'wss://relay.damus.io',
+            'wss://nos.lol',
+            'wss://relay.snort.social'
+        ]
+    };
 
-    const setupArbiterActions = (r) => {
+    const torrentConfig = {
+        ...baseConfig,
+        trackerUrls: ['wss://tracker.openwebtorrent.com']
+    };
+
+    console.log(`[Arbiter] Attempting to join mesh as ${selfId}...`);
+
+    const room = joinNostr(nostrConfig, ROOM_NAME);
+    const torrentRoom = joinTorrent(torrentConfig, ROOM_NAME);
+
+    const setupArbiterActions = (r, name) => {
         const [sendSync, getSync] = r.makeAction('sync');
         const [sendOfficialEvent] = r.makeAction('official_event');
+        
         ydoc.on('update', update => sendSync(update));
-        getSync((update, peerId) => { Y.applyUpdate(ydoc, update, 'remote'); });
+        
+        getSync((update, peerId) => {
+            Y.applyUpdate(ydoc, update, 'remote');
+            console.log(`[Arbiter][${name}] Synced state from peer ${peerId}`);
+        });
+
         r.onPeerJoin(peerId => {
-            console.log(`[Arbiter] Peer joined: ${peerId}`);
+            console.log(`[Arbiter][${name}] Peer joined: ${peerId}`);
             sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
         });
+
         return { sendOfficialEvent };
     };
 
-    const actions = setupArbiterActions(room);
-    const torrentActions = setupArbiterActions(torrentRoom);
+    const actions = setupArbiterActions(room, 'Nostr');
+    const torrentActions = setupArbiterActions(torrentRoom, 'Torrent');
 
-    console.log(`[Arbiter] Started as peer ${room.selfId}`);
+    console.log(`[Arbiter] Started.`);
 
     // --- NEWS LOOP ---
     const NARRATIVE_EVENTS = [
@@ -91,8 +113,14 @@ async function startArbiter() {
         const signature = await signMessage(event, secretKey);
 
         console.log(`[Arbiter] Day ${day} News: ${event}`);
-        actions.sendOfficialEvent({ event, signature });
-        torrentActions.sendOfficialEvent({ event, signature });
+        
+        // Broadcast on both meshes
+        try {
+            actions.sendOfficialEvent({ event, signature });
+            torrentActions.sendOfficialEvent({ event, signature });
+        } catch (e) {
+            console.warn('[Arbiter] Broadcast partially failed:', e.message);
+        }
         
         yevents.push([{
             type: 'narrative', day: day,
@@ -113,6 +141,17 @@ async function startArbiter() {
     setInterval(broadcastNews, 300000);
     setTimeout(broadcastNews, 10000);
 }
+
+// Global error handler to prevent Node from crashing on P2P socket issues
+process.on('uncaughtException', (err) => {
+    console.error('[Arbiter] Uncaught Exception:', err.message);
+    if (err.code === 'ECONNREFUSED') {
+        console.log('[Arbiter] Networking error (Relay down), continuing...');
+    } else {
+        // For other errors, it's safer to exit and let PM2 restart us
+        process.exit(1);
+    }
+});
 
 startArbiter().catch(err => {
     console.error('[Arbiter] Failed to start:', err);
