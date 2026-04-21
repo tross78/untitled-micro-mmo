@@ -58,9 +58,10 @@ jobs:
               fi
             fi
 
-            # Install dependencies
+            # Install arbiter dependencies
             if command -v npm &> /dev/null; then
-              npm install --production
+              cd arbiter
+              npm install --production --no-package-lock
             else
               echo "ERROR: npm still not found. Please run 'which npm' on your Pi and tell me the path."
               exit 1
