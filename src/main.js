@@ -1,6 +1,6 @@
 import { joinRoom, selfId } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
-import { world, validateMove, hashStr, seededRNG } from './rules';
+import { world, validateMove, hashStr, seededRNG, nextMood } from './rules';
 import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
 import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME } from './constants';
 
@@ -17,10 +17,7 @@ let playerKeys = null;
 let arbiterPublicKey = null;
 
 const initIdentity = async () => {
-    // Import Arbiter Public Key
     arbiterPublicKey = await importKey(MASTER_PUBLIC_KEY, 'public');
-
-    // Load or Generate Player Keys
     const savedKeys = localStorage.getItem('hearthwick_keys');
     if (savedKeys) {
         const { publicKey, privateKey } = JSON.parse(savedKeys);
@@ -47,18 +44,32 @@ const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
 
-// Deterministic Simulation Setup
-let rng = seededRNG(0);
-let worldSeed = '';
+// Deterministic Simulation State
+let worldState = {
+    seed: '',
+    day: 1,
+    mood: 'weary'
+};
+
+const updateSimulation = () => {
+    if (!yworld.has('world_seed')) return;
+
+    worldState.seed = yworld.get('world_seed');
+    worldState.day = yworld.get('day') || 1;
+    
+    // Seed RNG for the day
+    const dailySeed = hashStr(worldState.seed + worldState.day);
+    const rng = seededRNG(dailySeed);
+    
+    // Compute Daily Mood Deterministically
+    const baseMood = yworld.get('town_mood') || 'weary';
+    worldState.mood = nextMood(baseMood, rng);
+
+    console.log(`[Simulation] Day ${worldState.day} | Seed: ${worldState.seed.slice(0,8)} | Mood: ${worldState.mood}`);
+};
 
 yworld.observe(() => {
-    if (yworld.has('world_seed')) {
-        worldSeed = yworld.get('world_seed');
-        const day = yworld.get('day') || 1;
-        const dailySeed = hashStr(worldSeed + day);
-        rng = seededRNG(dailySeed);
-        console.log(`[Deterministic] Seeded for day ${day}`);
-    }
+    updateSimulation();
 });
 
 // Player local state
@@ -77,9 +88,7 @@ const loadLocalState = () => {
             localPlayer.location = data.location || 'cellar';
             localPlayer.name = data.name || localPlayer.name;
             log(`[System] Welcome back, ${localPlayer.name}.`);
-        } catch (e) {
-            console.error('Failed to load local state', e);
-        }
+        } catch (e) { console.error(e); }
     }
 };
 
@@ -98,18 +107,14 @@ const [sendSync, getSync] = room.makeAction('sync');
 const [sendMove, getMove] = room.makeAction('move');
 const [sendOfficialEvent, getOfficialEvent] = room.makeAction('official_event');
 
-// Sync Yjs state
 ydoc.on('update', (update, origin) => {
-    if (origin !== 'remote') {
-        sendSync(update);
-    }
+    if (origin !== 'remote') sendSync(update);
 });
 
 getSync((update, peerId) => {
     applyUpdate(ydoc, update, 'remote');
 });
 
-// Verify Official Events (from Arbiter)
 getOfficialEvent(async (data, peerId) => {
     const { event, signature } = data;
     if (await verifyMessage(event, signature, arbiterPublicKey)) {
@@ -135,19 +140,25 @@ const start = async () => {
 
     log(`\nWelcome to Hearthwick.`);
     log(`Your Peer ID: ${selfId}`);
-    log(`\n${world[localPlayer.location].name}`);
-    log(world[localPlayer.location].description);
+    
+    // Status Bar Style info
+    setTimeout(() => {
+        log(`\n--- WORLD STATUS ---`);
+        log(`Day: ${worldState.day}`);
+        log(`Mood: ${worldState.mood.toUpperCase()}`);
+        log(`Seed: ${worldState.seed || 'Waiting for DHT...'}`);
+        log(`--------------------\n`);
+        
+        log(`${world[localPlayer.location].name}`);
+        log(world[localPlayer.location].description);
+    }, 2000);
 
-    // Input Handling
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             const val = input.value.trim();
             if (val) {
-                if (val.startsWith('/')) {
-                    handleCommand(val.slice(1));
-                } else {
-                    log(`[System] Unknown input. Type /help for commands.`);
-                }
+                if (val.startsWith('/')) handleCommand(val.slice(1));
+                else log(`[System] Unknown input. Type /help for commands.`);
                 input.value = '';
             }
         }
@@ -188,17 +199,11 @@ function handleCommand(cmd) {
                 sendMove({ location: localPlayer.location });
                 log(`You move ${dir}.`);
                 handleCommand('look');
-                
                 yevents.push([{
-                    type: 'move',
-                    peer: selfId,
-                    from: localPlayer.location,
-                    to: nextLoc,
-                    time: Date.now()
+                    type: 'move', peer: selfId,
+                    from: localPlayer.location, to: nextLoc, time: Date.now()
                 }]);
-            } else {
-                log(`You can't go that way.`);
-            }
+            } else log(`You can't go that way.`);
             break;
         case 'clear':
             output.textContent = 'Screen cleared.';
