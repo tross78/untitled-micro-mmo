@@ -14,7 +14,6 @@
   "dependencies": {
     "@trystero-p2p/nostr": "^0.23.1",
     "@trystero-p2p/torrent": "^0.23.1",
-    "y-protocols": "^1.0.7",
     "yjs": "^13.6.30"
   },
   "devDependencies": {
