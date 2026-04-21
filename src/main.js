@@ -30,9 +30,7 @@ const initIdentity = async () => {
                 publicKey: await importKey(publicKey, 'public'),
                 privateKey: await importKey(privateKey, 'private')
             };
-            log(`[System] Identity verified.`);
         } else {
-            log(`[System] Generating new identity...`);
             const keys = await generateKeyPair();
             const exported = {
                 publicKey: await exportKey(keys.publicKey),
@@ -40,10 +38,9 @@ const initIdentity = async () => {
             };
             localStorage.setItem('hearthwick_keys_v2', JSON.stringify(exported));
             playerKeys = keys;
-            log(`[System] New identity created and saved.`);
+            log(`[System] New identity generated.`);
         }
     } catch (e) {
-        log(`[CRITICAL ERROR] Cryptography initialization failed.`, '#f00');
         localStorage.removeItem('hearthwick_keys_v2');
         throw e;
     }
@@ -67,29 +64,22 @@ const printStatus = () => {
 
 const updateSimulation = () => {
     if (!yworld.has('world_seed')) return;
-
     const newSeed = yworld.get('world_seed');
     const newDay = yworld.get('day') || 1;
     
     if (newSeed !== worldState.seed || newDay !== worldState.day) {
         worldState.seed = newSeed;
         worldState.day = newDay;
-        
         const dailySeed = hashStr(worldState.seed + worldState.day);
         const rng = seededRNG(dailySeed);
         const baseMood = yworld.get('town_mood') || 'weary';
         worldState.mood = nextMood(baseMood, rng);
-
-        log(`\n[System] World state updated from peer.`, '#aaa');
+        log(`\n[System] World state updated.`, '#aaa');
         printStatus();
     }
 };
 
 yworld.observe(() => updateSimulation());
-yevents.observe(() => {
-    // Optional: Log when a new event arrives? 
-    // console.log('New event in log');
-});
 
 // Player local state
 let localPlayer = {
@@ -117,12 +107,13 @@ const saveLocalState = () => {
     }));
 };
 
-// --- NETWORKING: MULTI-STRATEGY ---
-let room;
+// --- NETWORKING: DEDUPLICATED ---
+let knownPeers = new Set();
+
 const initNetworking = () => {
-    room = joinNostr({ appId: APP_ID }, ROOM_NAME);
+    const nostrRoom = joinNostr({ appId: APP_ID }, ROOM_NAME);
     const torrentRoom = joinTorrent({ 
-        appId: APP_ID,
+        appId: APP_ID, 
         trackerUrls: ['wss://tracker.openwebtorrent.com'] 
     }, ROOM_NAME);
 
@@ -147,18 +138,26 @@ const initNetworking = () => {
         });
 
         r.onPeerJoin(peerId => {
-            log(`[System] Peer ${peerId} joined the mesh.`, '#aaa');
-            sendSync(encodeStateAsUpdate(ydoc), peerId);
+            // Deduplication: Only log/sync the first time we see this peer ID
+            if (!knownPeers.has(peerId)) {
+                knownPeers.add(peerId);
+                log(`[System] Peer ${peerId.slice(0, 8)} joined.`, '#aaa');
+                sendSync(encodeStateAsUpdate(ydoc), peerId);
+            }
+        });
+
+        r.onPeerLeave(peerId => {
+            knownPeers.delete(peerId);
         });
 
         getMove((data, peerId) => {
-            log(`[System] ${peerId} moved to ${data.location}`, '#aaa');
+            log(`[System] ${peerId.slice(0, 4)} moved to ${data.location}`, '#aaa');
         });
 
         return { sendMove, sendSync };
     };
 
-    const actions = setupActions(room);
+    const actions = setupActions(nostrRoom);
     setupActions(torrentRoom);
 
     window.gameActions = actions;
@@ -173,8 +172,6 @@ const start = async () => {
 
         log(`\nWelcome to Hearthwick.`);
         log(`Your Peer ID: ${selfId}`);
-        
-        // Always print initial status (will be placeholders until sync)
         printStatus();
 
         setTimeout(() => {
@@ -206,8 +203,7 @@ function handleCommand(cmd) {
             log('Commands: /help, /who, /look, /move <dir>, /rename <name>, /news, /status, /clear');
             break;
         case 'who':
-            const peers = Object.keys(room.getPeers());
-            log(`Current Peers (${peers.length + 1}): You, ${peers.join(', ') || 'None'}`);
+            log(`Current Peers (${knownPeers.size + 1}): You, ${Array.from(knownPeers).join(', ') || 'None'}`);
             break;
         case 'look':
             const loc = world[localPlayer.location];
