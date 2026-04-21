@@ -1,4 +1,5 @@
-import { joinRoom, selfId } from '@trystero-p2p/torrent';
+import { joinRoom as joinNostr } from '@trystero-p2p/nostr';
+import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
 import { world, validateMove, hashStr, seededRNG, nextMood } from './rules';
 import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
@@ -21,11 +22,8 @@ let arbiterPublicKey = null;
 
 const initIdentity = async () => {
     try {
-        // Import Arbiter Public Key
         arbiterPublicKey = await importKey(MASTER_PUBLIC_KEY, 'public');
-
-        // Load or Generate Player Keys
-        const savedKeys = localStorage.getItem('hearthwick_keys_v2'); // New key name to avoid legacy collisions
+        const savedKeys = localStorage.getItem('hearthwick_keys_v2');
         if (savedKeys) {
             const { publicKey, privateKey } = JSON.parse(savedKeys);
             playerKeys = {
@@ -45,10 +43,7 @@ const initIdentity = async () => {
             log(`[System] New identity created and saved.`);
         }
     } catch (e) {
-        console.error('Crypto Init Failed', e);
-        log(`[CRITICAL ERROR] Cryptography initialization failed: ${e.message}`, '#f00');
-        log(`[System] Attempting to reset identity...`, '#ffa500');
-        localStorage.removeItem('hearthwick_keys');
+        log(`[CRITICAL ERROR] Cryptography initialization failed.`, '#f00');
         localStorage.removeItem('hearthwick_keys_v2');
         throw e;
     }
@@ -59,26 +54,16 @@ const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
 
-// Deterministic Simulation State
-let worldState = {
-    seed: '',
-    day: 1,
-    mood: 'weary'
-};
+let worldState = { seed: '', day: 1, mood: 'weary' };
 
 const updateSimulation = () => {
     if (!yworld.has('world_seed')) return;
-
     worldState.seed = yworld.get('world_seed');
     worldState.day = yworld.get('day') || 1;
-    
     const dailySeed = hashStr(worldState.seed + worldState.day);
     const rng = seededRNG(dailySeed);
-    
     const baseMood = yworld.get('town_mood') || 'weary';
     worldState.mood = nextMood(baseMood, rng);
-
-    console.log(`[Simulation] Updated: Day ${worldState.day} | Mood: ${worldState.mood}`);
 };
 
 yworld.observe(() => updateSimulation());
@@ -89,7 +74,7 @@ let localPlayer = {
     location: 'cellar'
 };
 
-// --- PERSISTENCE: LOCALSTORAGE ---
+// --- PERSISTENCE ---
 const STORAGE_KEY = 'hearthwick_state_v2';
 const loadLocalState = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -102,7 +87,6 @@ const loadLocalState = () => {
         } catch (e) { console.error(e); }
     }
 };
-
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
         location: localPlayer.location,
@@ -110,41 +94,61 @@ const saveLocalState = () => {
     }));
 };
 
-// --- NETWORKING: TRYSTERO ---
+// --- NETWORKING: MULTI-STRATEGY ---
 let room;
 const initNetworking = () => {
-    const config = { appId: APP_ID };
-    room = joinRoom(config, ROOM_NAME);
+    const config = { 
+        appId: APP_ID,
+        // Only use the most reliable trackers to reduce console noise
+        trackerUrls: [
+            'wss://tracker.openwebtorrent.com',
+            'wss://tracker.files.fm:7072/announce'
+        ]
+    };
 
-    const [sendSync, getSync] = room.makeAction('sync');
-    const [sendMove, getMove] = room.makeAction('move');
-    const [sendOfficialEvent, getOfficialEvent] = room.makeAction('official_event');
+    // Join via Nostr as primary, Torrent as fallback
+    // Note: Trystero strategies return identical API objects
+    room = joinNostr(config, ROOM_NAME);
+    const torrentRoom = joinTorrent(config, ROOM_NAME);
 
-    ydoc.on('update', (update, origin) => {
-        if (origin !== 'remote') sendSync(update);
-    });
+    const setupActions = (r) => {
+        const [sendSync, getSync] = r.makeAction('sync');
+        const [sendMove, getMove] = r.makeAction('move');
+        const [sendOfficialEvent, getOfficialEvent] = r.makeAction('official_event');
 
-    getSync((update, peerId) => {
-        applyUpdate(ydoc, update, 'remote');
-    });
+        ydoc.on('update', (update, origin) => {
+            if (origin !== 'remote') sendSync(update);
+        });
 
-    getOfficialEvent(async (data, peerId) => {
-        const { event, signature } = data;
-        if (await verifyMessage(event, signature, arbiterPublicKey)) {
-            log(`\n[OFFICIAL] ${event}`, '#0ff');
-        } else {
-            log(`\n[System] Warning: Blocked an unsigned world event from peer ${peerId}.`, '#ffa500');
-        }
-    });
+        getSync((update, peerId) => {
+            applyUpdate(ydoc, update, 'remote');
+        });
 
-    room.onPeerJoin(peerId => {
-        log(`[System] Peer ${peerId} has connected.`, '#aaa');
-        sendSync(encodeStateAsUpdate(ydoc), peerId);
-    });
+        getOfficialEvent(async (data, peerId) => {
+            const { event, signature } = data;
+            if (await verifyMessage(event, signature, arbiterPublicKey)) {
+                log(`\n[OFFICIAL] ${event}`, '#0ff');
+            }
+        });
 
-    getMove((data, peerId) => {
-        log(`[System] ${peerId} moved to ${data.location}`, '#aaa');
-    });
+        r.onPeerJoin(peerId => {
+            log(`[System] Peer ${peerId} joined the mesh.`, '#aaa');
+            sendSync(encodeStateAsUpdate(ydoc), peerId);
+        });
+
+        getMove((data, peerId) => {
+            log(`[System] ${peerId} moved to ${data.location}`, '#aaa');
+        });
+
+        return { sendMove, sendSync };
+    };
+
+    const actions = setupActions(room);
+    setupActions(torrentRoom); // Also listen on torrent fallback
+
+    // Override the global room and actions for UI usage
+    // (Simplification: uses Nostr room for getting peers)
+    window.gameActions = actions;
 };
 
 // --- MAIN INITIALIZATION ---
@@ -179,7 +183,7 @@ const start = async () => {
             }
         });
     } catch (err) {
-        log(`[FATAL] The engine failed to start: ${err.message}`, '#f00');
+        log(`[FATAL] Engine crash: ${err.message}`, '#f00');
     }
 };
 
