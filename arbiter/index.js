@@ -1,4 +1,5 @@
-import { joinRoom } from '@trystero-p2p/torrent';
+import { joinRoom as joinNostr } from '@trystero-p2p/nostr';
+import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
 import { RTCPeerConnection } from 'werift';
 import * as Y from 'yjs';
 import { signMessage } from '../src/crypto.js';
@@ -14,7 +15,6 @@ if (!MASTER_SECRET_KEY) {
     process.exit(1);
 }
 
-// Node.js specific: MASTER_SECRET_KEY is passed directly to the universal crypto module
 const secretKey = MASTER_SECRET_KEY; 
 
 // --- YJS STATE ---
@@ -33,29 +33,42 @@ if (yworld.size === 0) {
 // --- NETWORKING ---
 const config = {
     appId: APP_ID,
-    rtcPolyfill: { RTCPeerConnection }
+    rtcPolyfill: { RTCPeerConnection },
+    trackerUrls: [
+        'wss://tracker.openwebtorrent.com',
+        'wss://tracker.files.fm:7072/announce'
+    ]
 };
 
-const room = joinRoom(config, ROOM_NAME);
-const [sendSync, getSync] = room.makeAction('sync');
-const [sendOfficialEvent, getOfficialEvent] = room.makeAction('official_event');
+// Join both networks for maximum visibility
+const room = joinNostr(config, ROOM_NAME);
+const torrentRoom = joinTorrent(config, ROOM_NAME);
+
+const setupArbiterActions = (r) => {
+    const [sendSync, getSync] = r.makeAction('sync');
+    const [sendOfficialEvent] = r.makeAction('official_event');
+
+    ydoc.on('update', update => {
+        sendSync(update);
+    });
+
+    getSync((update, peerId) => {
+        Y.applyUpdate(ydoc, update, 'remote');
+        console.log(`[Arbiter] Synced state from peer ${peerId}`);
+    });
+
+    r.onPeerJoin(peerId => {
+        console.log(`[Arbiter] Peer joined: ${peerId}`);
+        sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
+    });
+
+    return { sendOfficialEvent };
+};
+
+const actions = setupArbiterActions(room);
+const torrentActions = setupArbiterActions(torrentRoom);
 
 console.log(`[Arbiter] Started as peer ${room.selfId}`);
-
-// Sync Yjs state
-ydoc.on('update', update => {
-    sendSync(update);
-});
-
-getSync((update, peerId) => {
-    Y.applyUpdate(ydoc, update, 'remote');
-    console.log(`[Arbiter] Synced state from peer ${peerId}`);
-});
-
-room.onPeerJoin(peerId => {
-    console.log(`[Arbiter] Peer joined: ${peerId}`);
-    sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
-});
 
 // --- DAILY NEWS LOOP ---
 const NARRATIVE_EVENTS = [
@@ -68,14 +81,14 @@ const NARRATIVE_EVENTS = [
 
 async function broadcastNews() {
     const event = NARRATIVE_EVENTS[Math.floor(Math.random() * NARRATIVE_EVENTS.length)];
-    
-    // Use the universal crypto module to sign
     const signature = await signMessage(event, secretKey);
 
     console.log(`[Arbiter] Broadcasting official news: ${event}`);
-    sendOfficialEvent({ event, signature });
     
-    // Log it in the event source
+    // Broadcast on both meshes
+    actions.sendOfficialEvent({ event, signature });
+    torrentActions.sendOfficialEvent({ event, signature });
+    
     yevents.push([{
         type: 'narrative',
         event: event,
@@ -83,8 +96,5 @@ async function broadcastNews() {
     }]);
 }
 
-// Broadcast an event every 5 minutes (Slowed down for realism)
 setInterval(broadcastNews, 300000);
-
-// Initial event
 setTimeout(broadcastNews, 10000);

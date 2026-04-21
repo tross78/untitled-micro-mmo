@@ -58,12 +58,26 @@ let worldState = { seed: '', day: 1, mood: 'weary' };
 
 const updateSimulation = () => {
     if (!yworld.has('world_seed')) return;
-    worldState.seed = yworld.get('world_seed');
-    worldState.day = yworld.get('day') || 1;
-    const dailySeed = hashStr(worldState.seed + worldState.day);
-    const rng = seededRNG(dailySeed);
-    const baseMood = yworld.get('town_mood') || 'weary';
-    worldState.mood = nextMood(baseMood, rng);
+
+    const newSeed = yworld.get('world_seed');
+    const newDay = yworld.get('day') || 1;
+    
+    // If the seed or day changed, refresh the dashboard
+    if (newSeed !== worldState.seed || newDay !== worldState.day) {
+        worldState.seed = newSeed;
+        worldState.day = newDay;
+        
+        const dailySeed = hashStr(worldState.seed + worldState.day);
+        const rng = seededRNG(dailySeed);
+        const baseMood = yworld.get('town_mood') || 'weary';
+        worldState.mood = nextMood(baseMood, rng);
+
+        log(`\n--- WORLD STATUS UPDATED ---`, '#ffa500');
+        log(`Day: ${worldState.day}`, '#ffa500');
+        log(`Town Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
+        log(`World Seed: ${worldState.seed.slice(0, 12)}...`, '#ffa500');
+        log(`----------------------------\n`, '#ffa500');
+    }
 };
 
 yworld.observe(() => updateSimulation());
@@ -99,15 +113,12 @@ let room;
 const initNetworking = () => {
     const config = { 
         appId: APP_ID,
-        // Only use the most reliable trackers to reduce console noise
         trackerUrls: [
             'wss://tracker.openwebtorrent.com',
             'wss://tracker.files.fm:7072/announce'
         ]
     };
 
-    // Join via Nostr as primary, Torrent as fallback
-    // Note: Trystero strategies return identical API objects
     room = joinNostr(config, ROOM_NAME);
     const torrentRoom = joinTorrent(config, ROOM_NAME);
 
@@ -144,10 +155,8 @@ const initNetworking = () => {
     };
 
     const actions = setupActions(room);
-    setupActions(torrentRoom); // Also listen on torrent fallback
+    setupActions(torrentRoom);
 
-    // Override the global room and actions for UI usage
-    // (Simplification: uses Nostr room for getting peers)
     window.gameActions = actions;
 };
 
@@ -160,17 +169,13 @@ const start = async () => {
 
         log(`\nWelcome to Hearthwick.`);
         log(`Your Peer ID: ${selfId}`);
+        log(`Waiting for World Seed from the Arbiter...`, '#aaa');
         
+        // Initial look
         setTimeout(() => {
-            log(`\n--- WORLD STATUS ---`, '#ffa500');
-            log(`Day: ${worldState.day}`, '#ffa500');
-            log(`Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
-            log(`Seed: ${worldState.seed ? worldState.seed.slice(0, 8) : 'Finding peers...'}`, '#ffa500');
-            log(`--------------------\n`, '#ffa500');
-            
-            log(`${world[localPlayer.location].name}`);
+            log(`\n${world[localPlayer.location].name}`);
             log(world[localPlayer.location].description);
-        }, 1500);
+        }, 1000);
 
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
