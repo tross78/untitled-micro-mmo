@@ -1,7 +1,7 @@
 import { joinRoom, selfId } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
 import pkg from 'tweetnacl-util';
-import { world, validateMove } from './rules';
+import { world, validateMove, hashStr, seededRNG } from './rules';
 import { verifyMessage } from './crypto';
 import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME } from './constants';
 
@@ -19,17 +19,38 @@ const arbiterPublicKey = decodeBase64(MASTER_PUBLIC_KEY);
 
 // --- YJS STATE INITIALIZATION ---
 const ydoc = new Doc();
-const yplayers = ydoc.getMap('players');
 const yworld = ydoc.getMap('world');
+const yevents = ydoc.getArray('event_log');
 
-// Player state
+// Initialization of World Seed (Only once at creation)
+if (yworld.size === 0) {
+    // This will only be run by the first person to create the doc (usually the Arbiter)
+    yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
+    yworld.set('day', 1);
+}
+
+// Deterministic Simulation Setup
+let rng = seededRNG(0);
+let worldSeed = '';
+
+yworld.observe(() => {
+    if (yworld.has('world_seed')) {
+        worldSeed = yworld.get('world_seed');
+        const day = yworld.get('day') || 1;
+        const dailySeed = hashStr(worldSeed + day);
+        rng = seededRNG(dailySeed);
+        console.log(`[Deterministic] Seeded for day ${day} with daily seed ${dailySeed}`);
+    }
+});
+
+// Player local state
 let localPlayer = {
     name: `Peer-${selfId.slice(0, 4)}`,
     location: 'cellar'
 };
 
 // --- PERSISTENCE: LOCALSTORAGE ---
-const STORAGE_KEY = 'micro_mmo_state';
+const STORAGE_KEY = 'hearthwick_state';
 const loadLocalState = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -81,7 +102,7 @@ getOfficialEvent((data, peerId) => {
     }
 });
 
-log(`Welcome to the Micro-MMO.`);
+log(`Welcome to Hearthwick.`);
 log(`Your Peer ID: ${selfId}`);
 log(`\n${world[localPlayer.location].name}`);
 log(world[localPlayer.location].description);
@@ -96,14 +117,8 @@ room.onPeerLeave(peerId => {
 });
 
 getMove((data, peerId) => {
+    // Deterministic validation will go here in Iteration 5
     log(`[System] ${peerId} moved to ${data.location}`);
-});
-
-// Observe world changes (Ticker fallback/legacy)
-yworld.observe(event => {
-    if (yworld.has('lastEvent')) {
-        // Only log if it's new. Official events are now handled via signed broadcast.
-    }
 });
 
 // --- INPUT HANDLING ---
@@ -130,7 +145,8 @@ function handleCommand(cmd) {
             log('Commands: /help, /who, /look, /move <dir>, /rename <name>, /clear');
             break;
         case 'who':
-            log(`Current Peers: ${Object.keys(room.getPeers()).join(', ') || 'None'}`);
+            const peers = Object.keys(room.getPeers());
+            log(`Current Peers (${peers.length + 1}): You, ${peers.join(', ') || 'None'}`);
             break;
         case 'look':
             const loc = world[localPlayer.location];
@@ -154,6 +170,15 @@ function handleCommand(cmd) {
                 sendMove({ location: localPlayer.location });
                 log(`You move ${dir}.`);
                 handleCommand('look');
+                
+                // Log event locally (Deterministic validation later)
+                yevents.push([{
+                    type: 'move',
+                    peer: selfId,
+                    from: localPlayer.location,
+                    to: nextLoc,
+                    time: Date.now()
+                }]);
             } else {
                 log(`You can't go that way.`);
             }

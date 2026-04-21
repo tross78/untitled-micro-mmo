@@ -1,34 +1,50 @@
-# Gemini CLI Project Mandates - Micro-MMO
+# Gemini CLI Project Mandates - Hearthwick (Micro-MMO)
 
 ## Project Vision
-A serverless, P2P micro-MMO with near-zero infrastructure costs (<$5/mo), scaling to 1M concurrent users via Trystero and WebRTC.
+A **micro cosy metaverse** — a living, persistent fantasy world (Stardew Valley meets L.O.R.D.) with Blaseball-style community storytelling. $0/month infrastructure goal.
 
 ## Core Mandates
-- **Bundle Size:** Keep the bootstrap JS bundle (`dist/main.js`) under 150KB. Current: **125.9KB**.
-- **Networking:** Exclusively use Trystero for P2P signaling to avoid server costs.
-- **State Management:** Use Yjs CRDTs for eventual consistency across the mesh.
-- **Security:** Every player action must eventually be cryptographically signed. The Arbiter Node (Raspberry Pi) is the final authority.
-- **Aesthetic:** Minimalist, text-driven "Blaseball" feel. No native chat.
+- **Bundle Size:** Keep bootstrap JS < 100KB (Phase 1) / < 175KB (Full Yjs). Current: **154.1KB**.
+- **Determinism:** All game logic MUST be deterministic. Reconstructable from `world_seed` + `event_log`. 
+- **Math:** **Integer math only.** No floats to avoid platform drift.
+- **Randomness:** Use `seededRNG` (mulberry32) derived from `daily_seed`. Never use `Math.random()`.
+- **Memory:** Pi Zero W constraint (512MB). Arbiter and LLM (RWKV7) must run in sequence via cron, never simultaneously.
+- **Security:** Ed25519 action signatures (WebCrypto) + Peer validation + Pi Arbiter rollback.
 
-## Current Iteration (v0.3.0 - The Trusted Arbiter)
-- [x] **Master Keypair:** Ed25519 keys generated for the Arbiter.
-- [x] **Arbiter Client:** Node.js headless client in `arbiter/` using `werift` WebRTC polyfill.
-- [x] **Signed Events:** The Arbiter broadcasts signed world events every 60s.
-- [x] **Cryptographic Verification:** Web clients verify Arbiter signatures using the public key in `src/constants.js`.
-- [x] **Auto-Deploy:** GitHub Actions configured to push code to the Pi via Tailscale.
+## Current Iteration (v0.4.0 - Hearthwick Pivot)
+- [x] Initial Text-MUD foundations with Trystero (@trystero-p2p/torrent).
+- [x] Yjs CRDT state syncing.
+- [x] Raspberry Pi Node.js v18 environment setup.
+- [x] Arbiter signing foundation (tweetnacl).
+- [x] Auto-deploy pipeline (Tailscale + SSH).
 
-## Roadmap & Future Iterations
+## Roadmap & Iterations
+
+### Iteration 1.5: Seed & Determinism (CURRENT)
+- [ ] Implement `seededRNG` (mulberry32) and `world_seed` generation.
+- [ ] Refactor `rules.js` for integer math and event-log sourcing.
+- [ ] Implement `event_log` (Y.Array) append logic.
+
+### Iteration 2: Persistence & Local State
+- [ ] WebCrypto Ed25519 key generation on first visit.
+- [ ] Signed player snapshots stored in `localStorage`.
+- [ ] GitHub Pages `state.json` cold recovery fetch.
+
+### Iteration 3: Narrative Simulation
+- [ ] Transition tables for Arcs (Plain JS).
+- [ ] Markov mood chains for the town.
+- [ ] Season clock logic.
 
 ### Iteration 4: Narrative Engine (Micro-LLM)
-- [ ] **`llama.zero` Build:** Compile ARMv6-optimized LLM runner on the Raspberry Pi Zero W.
-- [ ] **Global Ticker:** Implement a dedicated ticker UI element in `index.html`.
-- [ ] **LLM Orchestration:** The Arbiter uses the LLM to generate unique narrative strings at 0.5 tok/sec.
+- [ ] RWKV7-0.4B setup on Pi.
+- [ ] Cron logic: stop Node -> run llama.cpp -> apply delta -> start Node.
+- [ ] "The Ticker" UI element in the client.
 
 ### Iteration 5: Security & Anti-Cheat
-- [ ] **Action Signatures:** Implement Ed25519 signing for all player-driven movements.
-- [ ] **Deterministic Ruleset:** Enforce validation of all incoming peer movements using `src/rules.js`.
-- [ ] **Blacklisting:** The Arbiter broadcasts signed bans for peers sending invalid cryptographic actions.
+- [ ] deterministic validation of peer moves in `src/main.js`.
+- [ ] Arbiter rollback and blacklist broadcast.
+- [ ] PWA Manifest for standalone installation.
 
-### Iteration 6: Visual Layer (Phase 2 Bootstrap)
-- [ ] **Kontra.js Integration:** Render the text-state into a minimalist 2D grid/tile representation.
-- [ ] **Asset Pipelining:** WebTorrent distribution of tiny (<20KB) asset bundles.
+### Iteration 6: Visuals
+- [ ] Kontra.js integration.
+- [ ] 2D Zelda-style tile rendering from Yjs state.

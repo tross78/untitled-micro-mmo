@@ -1,53 +1,56 @@
-# Claude Context & Implementation Notes - Micro-MMO
+# Claude Context & Implementation Notes - Hearthwick
 
-## Architecture Summary
-A "botnet-style" P2P MMO using Trystero for zero-cost signaling and a Raspberry Pi Zero W as a trusted arbiter. Text-based (MUD) first, graphics later.
+## Architecture: "Hearthwick" Micro Cosy Metaverse
+A serverless P2P MMO using Yjs for state, Trystero for signaling, and a Pi Zero W for narrative generation (RWKV7).
 
-## Critical Design Decisions
-- **No Native Chat:** Following the Blaseball model. Communication happens via actions/events and external community tools.
-- **Trackerless Signaling:** Trystero abstracts WebRTC matchmaking via public BitTorrent trackers and Nostr relays.
-- **Micro-LLM on Pi Zero W:** Using `llama.zero` (ARMv6) to generate "Commissioner-style" global narrative events at 0.5 tokens/sec.
-- **Security:** Each client runs the same deterministic ruleset. Peers validate each other's actions locally before state merging.
+## Key Implementation Details
 
-## Dependency Management
-- **Yjs:** Providing the CRDT layer for world/player state.
-- **Trystero:** Primary networking layer. Use BitTorrent strategy for $0 cost.
-- **werift:** WebRTC polyfill for the headless Node.js Arbiter.
-- **tweetnacl:** For Ed25519 signing (security/anti-cheat).
-- **Esbuild:** Bundle size is currently **125.9KB**. Target is <150KB.
+### Seed-Based Determinism
+- Simulation state is `world_seed` + `event_log` (append-only Y.Array).
+- All randomness uses `mulberry32` seeded with `hash(world_seed + day_number)`.
+- **CRITICAL:** Integer math only. NO FLOATS. This prevents desync between x86 and ARM.
 
-## Current Environment
-- **Node v18+**
-- **Esbuild** for bundling
-- **Bootstrap Bundle:** 125.9KB (Target: <150KB)
-- **Repo Root:** `/Users/tysonross/Documents/GitHub/untitled-micro-mmo`
+### Memory Optimization (Pi Zero W)
+- **Problem:** 512MB RAM cannot run Node.js (Trystero/Yjs) and RWKV7 (llama.cpp) at the same time.
+- **Solution:** Cron-based sequential window.
+  - 1. `pm2 stop arbiter`
+  - 2. Run inference (30 mins)
+  - 3. `pm2 start arbiter`
+  - 4. Broadcast delta to peers.
 
----
+### Security Model
+- Player actions signed with Ed25519 (WebCrypto).
+- Peers validate logic locally before merging CRDT ops.
+- Arbiter (Pi) performs "Official" signing of world snapshots and player progress.
 
-## Roadmap & Implementation Phases
+### Networking
+- Primary: `@trystero-p2p/torrent` (BitTorrent trackerless).
+- Sharding: World sharded into rooms (max 20 peers per mesh).
 
-### Phase 1: Text-MUD Foundations (DONE)
-- [x] Basic Trystero room matchmaking using BitTorrent DHT.
-- [x] Command-line interface (`/move`, `/look`, `/who`).
-- [x] Bundle cleanup (removed chat, removed unused WebTorrent imports).
+## Implementation Phases (Revised)
 
-### Phase 2: Persistence & Local State (DONE)
-- [x] Implement `Yjs` for synchronizing the inventory and global world flags (e.g., "Door is unlocked").
-- [x] Add `localStorage` hooks to save/load player name and location automatically.
-- [x] Implement a "State Discovery" protocol where new joiners receive the full `Yjs` doc from existing peers.
+### Phase 1: Text-MUD Core (In Progress)
+- [x] Trystero + Yjs foundations.
+- [x] Basic movement logic.
+- [ ] **NEXT:** Implement `seededRNG` and `world_seed`.
+- [ ] **NEXT:** Refactor logic for integer-only math.
+- [ ] **NEXT:** WebCrypto Ed25519 integration (replacing tweetnacl in client).
 
-### Phase 3: The "Commissioner" (Arbiter Node) (DONE)
-- [x] Create `arbiter/index.js` which joins the Trystero network as a headless peer using `werift`.
-- [x] Master Key Generation: Ed25519 keypair used to sign official broadcasts.
-- [x] Signed Event Loop: The Arbiter periodically broadcasts signed narrative events.
-- [x] Client Verification: Clients use the Master Public Key in `src/constants.js` to verify events before display.
+### Phase 2: Persistence & Narrative Sim
+- [ ] Transition tables for narrative arcs (Escalation, Mystery, Rivalry, etc.).
+- [ ] Markov chain for town mood (daily drift).
+- [ ] signed player snapshots in `localStorage`.
 
-### Phase 4: Narrative Engine (Micro-LLM)
-- [ ] Setup the `llama.zero` binary on the Pi (ARMv6 optimization).
-- [ ] Connect the LLM output to the Arbiter's signed broadcast loop.
-- [ ] Add the "Ticker" UI element to `index.html`.
+### Phase 3: The "Commissioner" (LLM)
+- [ ] Setup `llama.cpp` and RWKV7-0.4B on Pi.
+- [ ] Create the "Nightly Cron" bash script.
+- [ ] JSON output grammar for LLM (Headline, News, Rumour).
 
-### Phase 5: Security & Anti-Cheat
-- [ ] Extract all game logic (room definitions, valid moves, combat math) into `src/rules.js`.
-- [ ] Implement Ed25519 signatures for all player-driven actions.
-- [ ] Peers validate each other's movements against `src/rules.js` and public keys.
+### Phase 4: Anti-Cheat & PWA
+- [ ] Enforce peer validation (Rules.js check on receive).
+- [ ] PWA manifest and offline caching.
+- [ ] GitHub Pages `state.json` fallback.
+
+### Phase 5: Graphical Client (Visuals)
+- [ ] Kontra.js renderer.
+- [ ] Simple tile system reading from Yjs world doc.
