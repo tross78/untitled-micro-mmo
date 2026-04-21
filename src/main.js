@@ -1,4 +1,4 @@
-import { joinRoom, selfId } from 'trystero';
+import { joinRoom, selfId } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
 import pkg from 'tweetnacl-util';
 import { world, validateMove } from './rules';
