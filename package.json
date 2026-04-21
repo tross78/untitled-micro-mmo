@@ -5,7 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "esbuild src/main.js --bundle --minify --loader:.wasm=dataurl --outfile=dist/main.js && cp src/index.html dist/index.html",
+    "build": "esbuild src/main.js --bundle --minify --loader:.wasm=dataurl --external:crypto --outfile=dist/main.js && cp src/index.html dist/index.html && cp src/manifest.json dist/manifest.json",
     "test": "jest"
   },
   "keywords": [],
@@ -13,8 +13,6 @@
   "license": "ISC",
   "dependencies": {
     "@trystero-p2p/torrent": "^0.23.1",
-    "tweetnacl": "^1.0.3",
-    "tweetnacl-util": "^0.15.1",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.30"
   },

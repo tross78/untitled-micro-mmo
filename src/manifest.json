@@ -1,0 +1,21 @@
+{
+  "name": "Hearthwick",
+  "short_name": "Hearthwick",
+  "description": "A micro cosy metaverse.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#00ff00",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192/000000/00ff00?text=H",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512/000000/00ff00?text=Hearthwick",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

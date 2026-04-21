@@ -1,11 +1,9 @@
 import { joinRoom, selfId } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
-import pkg from 'tweetnacl-util';
 import { world, validateMove, hashStr, seededRNG } from './rules';
-import { verifyMessage } from './crypto';
+import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
 import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME } from './constants';
 
-const { decodeBase64 } = pkg;
 const output = document.getElementById('output');
 const input = document.getElementById('input');
 
@@ -14,20 +12,40 @@ const log = (msg) => {
     output.scrollTop = output.scrollHeight;
 };
 
-// --- ARBITER VERIFICATION ---
-const arbiterPublicKey = decodeBase64(MASTER_PUBLIC_KEY);
+// --- IDENTITY & CRYPTO ---
+let playerKeys = null;
+let arbiterPublicKey = null;
+
+const initIdentity = async () => {
+    // Import Arbiter Public Key
+    arbiterPublicKey = await importKey(MASTER_PUBLIC_KEY, 'public');
+
+    // Load or Generate Player Keys
+    const savedKeys = localStorage.getItem('hearthwick_keys');
+    if (savedKeys) {
+        const { publicKey, privateKey } = JSON.parse(savedKeys);
+        playerKeys = {
+            publicKey: await importKey(publicKey, 'public'),
+            privateKey: await importKey(privateKey, 'private')
+        };
+        log(`[System] Identity verified.`);
+    } else {
+        log(`[System] Generating new identity...`);
+        const keys = await generateKeyPair();
+        const exported = {
+            publicKey: await exportKey(keys.publicKey),
+            privateKey: await exportKey(keys.privateKey)
+        };
+        localStorage.setItem('hearthwick_keys', JSON.stringify(exported));
+        playerKeys = keys;
+        log(`[System] New identity created and saved.`);
+    }
+};
 
 // --- YJS STATE INITIALIZATION ---
 const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
-
-// Initialization of World Seed (Only once at creation)
-if (yworld.size === 0) {
-    // This will only be run by the first person to create the doc (usually the Arbiter)
-    yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
-    yworld.set('day', 1);
-}
 
 // Deterministic Simulation Setup
 let rng = seededRNG(0);
@@ -39,7 +57,7 @@ yworld.observe(() => {
         const day = yworld.get('day') || 1;
         const dailySeed = hashStr(worldSeed + day);
         rng = seededRNG(dailySeed);
-        console.log(`[Deterministic] Seeded for day ${day} with daily seed ${dailySeed}`);
+        console.log(`[Deterministic] Seeded for day ${day}`);
     }
 });
 
@@ -64,14 +82,13 @@ const loadLocalState = () => {
         }
     }
 };
+
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
         location: localPlayer.location,
         name: localPlayer.name
     }));
 };
-
-loadLocalState();
 
 // --- NETWORKING: TRYSTERO ---
 const config = { appId: APP_ID };
@@ -81,7 +98,7 @@ const [sendSync, getSync] = room.makeAction('sync');
 const [sendMove, getMove] = room.makeAction('move');
 const [sendOfficialEvent, getOfficialEvent] = room.makeAction('official_event');
 
-// Sync Yjs state via Trystero
+// Sync Yjs state
 ydoc.on('update', (update, origin) => {
     if (origin !== 'remote') {
         sendSync(update);
@@ -93,48 +110,49 @@ getSync((update, peerId) => {
 });
 
 // Verify Official Events (from Arbiter)
-getOfficialEvent((data, peerId) => {
+getOfficialEvent(async (data, peerId) => {
     const { event, signature } = data;
-    if (verifyMessage(event, signature, arbiterPublicKey)) {
+    if (await verifyMessage(event, signature, arbiterPublicKey)) {
         log(`\n[OFFICIAL] ${event}`);
     } else {
         log(`\n[System] Warning: Blocked an unsigned world event from peer ${peerId}.`);
     }
 });
 
-log(`Welcome to Hearthwick.`);
-log(`Your Peer ID: ${selfId}`);
-log(`\n${world[localPlayer.location].name}`);
-log(world[localPlayer.location].description);
-
 room.onPeerJoin(peerId => {
     log(`[System] Peer ${peerId} has connected.`);
     sendSync(encodeStateAsUpdate(ydoc), peerId);
 });
 
-room.onPeerLeave(peerId => {
-    log(`[System] Peer ${peerId} has disconnected.`);
-});
-
 getMove((data, peerId) => {
-    // Deterministic validation will go here in Iteration 5
     log(`[System] ${peerId} moved to ${data.location}`);
 });
 
-// --- INPUT HANDLING ---
-input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        const val = input.value.trim();
-        if (val) {
-            if (val.startsWith('/')) {
-                handleCommand(val.slice(1));
-            } else {
-                log(`[System] Unknown input. Type /help for commands.`);
+// --- MAIN INITIALIZATION ---
+const start = async () => {
+    await initIdentity();
+    loadLocalState();
+
+    log(`\nWelcome to Hearthwick.`);
+    log(`Your Peer ID: ${selfId}`);
+    log(`\n${world[localPlayer.location].name}`);
+    log(world[localPlayer.location].description);
+
+    // Input Handling
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const val = input.value.trim();
+            if (val) {
+                if (val.startsWith('/')) {
+                    handleCommand(val.slice(1));
+                } else {
+                    log(`[System] Unknown input. Type /help for commands.`);
+                }
+                input.value = '';
             }
-            input.value = '';
         }
-    }
-});
+    });
+};
 
 function handleCommand(cmd) {
     const args = cmd.split(' ');
@@ -171,7 +189,6 @@ function handleCommand(cmd) {
                 log(`You move ${dir}.`);
                 handleCommand('look');
                 
-                // Log event locally (Deterministic validation later)
                 yevents.push([{
                     type: 'move',
                     peer: selfId,
@@ -190,3 +207,5 @@ function handleCommand(cmd) {
             log(`Unknown command: ${command}`);
     }
 }
+
+start();
