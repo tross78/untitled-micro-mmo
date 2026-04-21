@@ -7,7 +7,7 @@ import {
     resolveAttack, rollLoot, xpToLevel, levelBonus,
 } from './rules';
 import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
-import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME } from './constants';
+import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, NOSTR_RELAYS, TORRENT_TRACKERS } from './constants';
 
 const output = document.getElementById('output');
 const input = document.getElementById('input');
@@ -124,8 +124,8 @@ let knownPeers = new Set();
 let gameActions = {};
 
 const initNetworking = () => {
-    const nostrRoom = joinNostr({ appId: APP_ID }, ROOM_NAME);
-    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: ['wss://tracker.openwebtorrent.com'] }, ROOM_NAME);
+    const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS }, ROOM_NAME);
+    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS }, ROOM_NAME);
 
     const setupRoom = (r) => {
         const [sendSync, getSync] = r.makeAction('sync');
