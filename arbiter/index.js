@@ -9,7 +9,6 @@ if (!globalThis.WebSocket) {
     globalThis.WebSocket = WebSocket;
 }
 
-// Now we can use dynamic imports to ensure polyfills are active
 async function startArbiter() {
     const { joinRoom: joinNostr } = await import('@trystero-p2p/nostr');
     const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
@@ -49,7 +48,11 @@ async function startArbiter() {
     }
 
     // --- NETWORKING ---
-    const baseConfig = { appId: APP_ID, rtcPolyfill: { RTCPeerConnection } };
+    // Fix: rtcPolyfill expects the constructor itself, not an object containing it
+    const baseConfig = { 
+        appId: APP_ID, 
+        rtcPolyfill: RTCPeerConnection 
+    };
     const trackers = ['wss://tracker.openwebtorrent.com'];
 
     const room = joinNostr(baseConfig, ROOM_NAME);
