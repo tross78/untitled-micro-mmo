@@ -7,27 +7,32 @@ import { APP_ID, ROOM_NAME } from '../src/constants.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
 const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
-
-if (!MASTER_SECRET_KEY) {
-    console.error('ERROR: MASTER_SECRET_KEY not found in environment.');
-    process.exit(1);
-}
+if (!MASTER_SECRET_KEY) { process.exit(1); }
 
 const secretKey = MASTER_SECRET_KEY; 
 
-// --- YJS STATE ---
-const ydoc = new Doc();
+// --- STATE ---
+const ydoc = new Y.Doc();
 const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
 
-// Initialization of World
 if (yworld.size === 0) {
-    console.log('[Arbiter] Initializing new world seed...');
     yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
     yworld.set('day', 1);
     yworld.set('town_mood', 'weary');
+}
+
+// --- LOG TRIMMING (Anti-Bloat) ---
+const MAX_LOG_SIZE = 500; // Keep doc lean for Pi Zero memory and peer bandwidth
+
+function trimEventLog() {
+    const currentLength = yevents.length;
+    if (currentLength > MAX_LOG_SIZE) {
+        const toRemove = currentLength - MAX_LOG_SIZE;
+        console.log(`[Arbiter] Trimming log: Removing ${toRemove} old events.`);
+        yevents.delete(0, toRemove);
+    }
 }
 
 // --- NETWORKING ---
@@ -39,9 +44,7 @@ const setupArbiterActions = (r) => {
     const [sendSync, getSync] = r.makeAction('sync');
     const [sendOfficialEvent] = r.makeAction('official_event');
     ydoc.on('update', update => sendSync(update));
-    getSync((update, peerId) => {
-        Y.applyUpdate(ydoc, update, 'remote');
-    });
+    getSync((update, peerId) => { Y.applyUpdate(ydoc, update, 'remote'); });
     r.onPeerJoin(peerId => sendSync(Y.encodeStateAsUpdate(ydoc), peerId));
     return { sendOfficialEvent };
 };
@@ -49,7 +52,7 @@ const setupArbiterActions = (r) => {
 const actions = setupArbiterActions(room);
 const torrentActions = setupArbiterActions(torrentRoom);
 
-// --- DAILY NEWS LOOP ---
+// --- NEWS LOOP ---
 const NARRATIVE_EVENTS = [
     "A thick fog rolls into the town square.",
     "The tavern was unusually quiet last night.",
@@ -64,26 +67,21 @@ async function broadcastNews() {
     const signature = await signMessage(event, secretKey);
 
     console.log(`[Arbiter] Day ${day} News: ${event}`);
-    
     actions.sendOfficialEvent({ event, signature });
     torrentActions.sendOfficialEvent({ event, signature });
     
-    // Save to permanent log with Day metadata
     yevents.push([{
-        type: 'narrative',
-        day: day,
-        event: event,
-        time: Date.now()
+        type: 'narrative', day: day,
+        event: event, time: Date.now()
     }]);
+
+    trimEventLog(); // Ensure log doesn't grow too large
 }
 
-// --- DEBUG: AUTO-ADVANCE DAY ---
-// In production, this would be a midnight cron job.
-// For now, let's increment the day every 30 minutes for testing.
+// Tick day every 30 mins
 setInterval(() => {
     const currentDay = yworld.get('day') || 1;
     yworld.set('day', currentDay + 1);
-    console.log(`[Arbiter] A new day begins: Day ${currentDay + 1}`);
     broadcastNews();
 }, 1800000);
 

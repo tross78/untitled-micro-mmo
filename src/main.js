@@ -16,7 +16,7 @@ const log = (msg, color = '#0f0') => {
     output.scrollTop = output.scrollHeight;
 };
 
-// --- IDENTITY ---
+// --- IDENTITY & CRYPTO ---
 let playerKeys = null;
 let arbiterPublicKey = null;
 
@@ -46,21 +46,13 @@ const initIdentity = async () => {
     }
 };
 
-// --- STATE ---
+// --- YJS STATE ---
 const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
+const yplayers = ydoc.getMap('players');
 const yevents = ydoc.getArray('event_log');
 
 let worldState = { seed: '', day: 1, mood: 'weary' };
-
-const printStatus = () => {
-    log(`\n--- WORLD STATUS ---`, '#ffa500');
-    log(`Day: ${worldState.day}`, '#ffa500');
-    log(`Town Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
-    log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
-    log(`Total Historical Events: ${yevents.length}`, '#ffa500');
-    log(`--------------------\n`, '#ffa500');
-};
 
 const updateSimulation = () => {
     if (!yworld.has('world_seed')) return;
@@ -79,14 +71,15 @@ const updateSimulation = () => {
         if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
             handleCommand('news');
-        } else {
-            log(`\n[System] World synchronized.`, '#aaa');
         }
         printStatus();
     }
 };
 
 yworld.observe(() => updateSimulation());
+
+// Helper to get a player's name from the mesh or fallback to ID
+const getPlayerName = (id) => yplayers.get(id) || `Peer-${id.slice(0, 4)}`;
 
 // Player local state
 let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar' };
@@ -103,12 +96,16 @@ const loadLocalState = () => {
             log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error(e); }
     }
+    // Update global name map so others can see us
+    yplayers.set(selfId, localPlayer.name);
 };
+
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
         location: localPlayer.location,
         name: localPlayer.name
     }));
+    yplayers.set(selfId, localPlayer.name);
 };
 
 // --- NETWORKING ---
@@ -137,14 +134,18 @@ const initNetworking = () => {
         r.onPeerJoin(peerId => {
             if (!knownPeers.has(peerId)) {
                 knownPeers.add(peerId);
-                log(`[System] Peer ${peerId.slice(0, 8)} joined.`, '#aaa');
+                // Use timer to let yplayers sync before logging name
+                setTimeout(() => {
+                    log(`[System] ${getPlayerName(peerId)} joined.`, '#aaa');
+                }, 1000);
                 sendSync(encodeStateAsUpdate(ydoc), peerId);
             }
         });
+
         r.onPeerLeave(peerId => { knownPeers.delete(peerId); });
 
         getMove((data, peerId) => {
-            log(`[System] ${peerId.slice(0, 4)} moved to ${data.location}`, '#aaa');
+            log(`[System] ${getPlayerName(peerId)} moved to ${data.location}`, '#aaa');
         });
 
         return { sendMove, sendSync };
@@ -154,6 +155,16 @@ const initNetworking = () => {
     setupActions(torrentRoom);
     window.gameActions = actions;
     room = nostrRoom;
+};
+
+// --- UI DASHBOARD ---
+const printStatus = () => {
+    log(`\n--- WORLD STATUS ---`, '#ffa500');
+    log(`Day: ${worldState.day}`, '#ffa500');
+    log(`Town Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
+    log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
+    log(`Total Historical Events: ${yevents.length}`, '#ffa500');
+    log(`--------------------\n`, '#ffa500');
 };
 
 // --- MAIN ---
@@ -194,7 +205,8 @@ function handleCommand(cmd) {
             log('Commands: /help, /who, /look, /move <dir>, /rename <name>, /news, /status, /clear');
             break;
         case 'who':
-            log(`Current Peers (${knownPeers.size + 1}): You, ${Array.from(knownPeers).join(', ') || 'None'}`);
+            const names = Array.from(knownPeers).map(id => getPlayerName(id));
+            log(`Current Peers (${knownPeers.size + 1}): You (${localPlayer.name}), ${names.join(', ') || 'None'}`);
             break;
         case 'look':
             const loc = world[localPlayer.location];
@@ -207,23 +219,19 @@ function handleCommand(cmd) {
         case 'news':
             log(`\n--- THE HEARTHWICK CHRONICLE ---`, '#0ff');
             const allEvents = yevents.toArray();
-            
-            // Group events by day
             const history = {};
             allEvents.forEach(e => {
                 const day = e.day || 0;
                 if (!history[day]) history[day] = [];
                 history[day].push(e);
             });
-
             const days = Object.keys(history).sort((a, b) => b - a).slice(0, 3);
             if (days.length === 0) log('The archives are empty.');
-
             days.forEach(d => {
                 log(`Day ${d}:`, '#ffa500');
                 history[d].slice(-5).forEach(e => {
                     if (e.type === 'narrative') log(`  - [OFFICIAL] ${e.event}`, '#0ff');
-                    else if (e.type === 'move') log(`  - Peer ${e.peer.slice(0,4)} moved to ${e.to}`, '#aaa');
+                    else if (e.type === 'move') log(`  - ${getPlayerName(e.peer)} moved to ${e.to}`, '#aaa');
                 });
             });
             log(`--------------------------------\n`, '#0ff');
