@@ -1,8 +1,8 @@
 /**
- * Lightweight seeded PRNG (mulberry32)
- * @param {number} seed 
- * @returns {function} A function that returns a random number between 0 and 1.
+ * Hearthwick Simulation Rules
+ * Deterministic, integer-only logic.
  */
+
 export function seededRNG(seed) {
     return function() {
         seed |= 0; seed = seed + 0x6D2B79F5 | 0;
@@ -12,20 +12,63 @@ export function seededRNG(seed) {
     }
 }
 
-/**
- * Simple string hash for seeding
- * @param {string} str 
- * @returns {number}
- */
 export function hashStr(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
         const char = str.charCodeAt(i);
         hash = ((hash << 5) - hash) + char;
-        hash |= 0; // Convert to 32bit integer
+        hash |= 0;
     }
     return hash;
 }
+
+// --- NARRATIVE ARC MACHINES ---
+
+export const arcTransitions = {
+    escalation: {
+        seed:        { ESCALATE: 'growth' },
+        growth:      { ESCALATE: 'crisis', RESOLVE: 'resolution' },
+        crisis:      { PLAYER_ACTS: 'resolution', IGNORE: 'catastrophe' },
+        resolution:  { NEW_THREAT: 'seed' },
+        catastrophe: { REBUILD: 'seed' }
+    },
+    mystery: {
+        clue_1:      { DISCOVER: 'clue_2' },
+        clue_2:      { DISCOVER: 'reveal' },
+        reveal:      { ACT: 'consequence' },
+        consequence: { RESOLVE: 'clue_1' }
+    }
+};
+
+export const moodMarkov = {
+    'fearful': { fearful: 70, weary: 20, joyful: 10 }, // Expressed as percentages for integer math
+    'weary':   { fearful: 20, weary: 60, joyful: 20 },
+    'joyful':  { fearful: 10, weary: 20, joyful: 70 }
+};
+
+/**
+ * Steps the mood forward using the daily RNG and integer math.
+ */
+export function nextMood(currentMood, rng) {
+    const roll = Math.floor(rng() * 100);
+    const transitions = moodMarkov[currentMood];
+    let cumulative = 0;
+    for (const mood in transitions) {
+        cumulative += transitions[mood];
+        if (roll < cumulative) return mood;
+    }
+    return currentMood;
+}
+
+/**
+ * Transitions a narrative arc to its next beat.
+ */
+export function transitionArc(arc, event) {
+    const nextBeat = arcTransitions[arc.type]?.[arc.beat]?.[event];
+    return nextBeat ? { ...arc, beat: nextBeat } : arc;
+}
+
+// --- WORLD DATA ---
 
 export const world = {
     'cellar': {
@@ -42,17 +85,7 @@ export const world = {
     }
 };
 
-/**
- * Validates if a move is legal and returns the new location.
- * @param {string} currentLocation 
- * @param {string} direction 
- * @returns {string|null} The new location or null if invalid.
- */
 export function validateMove(currentLocation, direction) {
     const currentRoom = world[currentLocation];
-    if (currentRoom && currentRoom.exits[direction]) {
-        return currentRoom.exits[direction];
-    }
-    return null;
+    return currentRoom?.exits[direction] || null;
 }
-
