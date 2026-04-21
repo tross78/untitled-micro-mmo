@@ -39,8 +39,15 @@ jobs:
             # Handle git initialization/cloning
             if [ ! -d ".git" ]; then
               echo "Cleaning existing non-git directory and cloning fresh..."
+              # Preserve .env if it exists somewhere in the tree
+              [ -f ".env" ] && cp .env ../.env_backup
+              [ -f "arbiter/.env" ] && cp arbiter/.env ../.env_backup
+              
               rm -rf * .[^.]*
               git clone https://github.com/tross78/untitled-micro-mmo.git .
+              
+              # Restore .env
+              [ -f "../.env_backup" ] && mv ../.env_backup arbiter/.env
             else
               echo "Pulling latest changes..."
               git fetch --all
