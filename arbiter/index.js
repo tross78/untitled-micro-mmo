@@ -1,8 +1,8 @@
-import { joinRoom } from 'trystero';
+import { joinRoom } from '@trystero-p2p/torrent';
 import { RTCPeerConnection } from 'werift';
 import * as Y from 'yjs';
 import pkg from 'tweetnacl-util';
-import { signMessage } from '../src/crypto.js';
+import { signMessage, importKey } from '../src/crypto.js';
 import { APP_ID, ROOM_NAME } from '../src/constants.js';
 import dotenv from 'dotenv';
 
@@ -16,11 +16,21 @@ if (!MASTER_SECRET_KEY) {
     process.exit(1);
 }
 
-const secretKey = decodeBase64(MASTER_SECRET_KEY);
+// Node.js specific: The secret key for signing is handled via Buffer or raw bytes
+const secretKey = MASTER_SECRET_KEY; // crypto.js will handle the decoding
 
 // --- YJS STATE ---
 const ydoc = new Y.Doc();
 const yworld = ydoc.getMap('world');
+const yevents = ydoc.getArray('event_log');
+
+// Initialization of World (If the Arbiter is the first one in)
+if (yworld.size === 0) {
+    console.log('[Arbiter] Initializing new world seed...');
+    yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
+    yworld.set('day', 1);
+    yworld.set('town_mood', 'weary');
+}
 
 // --- NETWORKING ---
 const config = {
@@ -49,28 +59,34 @@ room.onPeerJoin(peerId => {
     sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
 });
 
-// --- BLASEBALL-STYLE EVENT LOOP ---
+// --- DAILY NEWS LOOP ---
 const NARRATIVE_EVENTS = [
-    "A thick fog rolls into the cellar.",
-    "The wooden door creaks, but no one is there.",
-    "A rogue umpire appeared and vanished.",
-    "The ground trembles slightly.",
-    "A faint smell of peanuts wafts through the hallway."
+    "A thick fog rolls into the town square.",
+    "The tavern was unusually quiet last night.",
+    "A rogue merchant was spotted near the ruins.",
+    "The crops seem to be growing well this season.",
+    "Faint music was heard coming from the cellar."
 ];
 
-function broadcastEvent() {
+async function broadcastNews() {
     const event = NARRATIVE_EVENTS[Math.floor(Math.random() * NARRATIVE_EVENTS.length)];
-    const signature = signMessage(event, secretKey);
+    
+    // Use the universal crypto module to sign (Arbiter uses Private Key)
+    const signature = await signMessage(event, secretKey);
 
-    console.log(`[Arbiter] Broadcasting official event: ${event}`);
+    console.log(`[Arbiter] Broadcasting official news: ${event}`);
     sendOfficialEvent({ event, signature });
     
-    // Update the world state CRDT as well
-    yworld.set('lastEvent', event);
+    // Log it in the event source
+    yevents.push([{
+        type: 'narrative',
+        event: event,
+        time: Date.now()
+    }]);
 }
 
-// Broadcast an event every 60 seconds
-setInterval(broadcastEvent, 60000);
+// Broadcast an event every 5 minutes (Slowed down for realism)
+setInterval(broadcastNews, 300000);
 
 // Initial event
-setTimeout(broadcastEvent, 5000);
+setTimeout(broadcastNews, 10000);

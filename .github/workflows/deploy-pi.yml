@@ -6,7 +6,9 @@ on:
       - main
     paths:
       - 'arbiter/**'
-      - 'src/rules.js' # Rules shared with the arbiter
+      - 'src/rules.js'
+      - 'src/crypto.js'
+      - 'src/constants.js'
       - 'package.json'
 
 jobs:
