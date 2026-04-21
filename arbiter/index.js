@@ -1,3 +1,8 @@
+import { webcrypto } from 'node:crypto';
+if (!globalThis.crypto) {
+    globalThis.crypto = webcrypto;
+}
+
 import { joinRoom as joinNostr } from '@trystero-p2p/nostr';
 import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
 import { RTCPeerConnection } from 'werift';
@@ -8,7 +13,10 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
-if (!MASTER_SECRET_KEY) { process.exit(1); }
+if (!MASTER_SECRET_KEY) { 
+    console.error('ERROR: MASTER_SECRET_KEY not found in .env');
+    process.exit(1); 
+}
 
 const secretKey = MASTER_SECRET_KEY; 
 
@@ -18,6 +26,7 @@ const yworld = ydoc.getMap('world');
 const yevents = ydoc.getArray('event_log');
 
 if (yworld.size === 0) {
+    console.log('[Arbiter] Initializing new world seed...');
     yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
     yworld.set('day', 1);
     yworld.set('town_mood', 'weary');
@@ -33,7 +42,6 @@ function trimEventLog() {
 
 // --- NETWORKING ---
 const baseConfig = { appId: APP_ID, rtcPolyfill: { RTCPeerConnection } };
-// ONLY one reliable tracker to silence errors
 const trackers = ['wss://tracker.openwebtorrent.com'];
 
 const room = joinNostr(baseConfig, ROOM_NAME);
@@ -44,12 +52,17 @@ const setupArbiterActions = (r) => {
     const [sendOfficialEvent] = r.makeAction('official_event');
     ydoc.on('update', update => sendSync(update));
     getSync((update, peerId) => { Y.applyUpdate(ydoc, update, 'remote'); });
-    r.onPeerJoin(peerId => sendSync(Y.encodeStateAsUpdate(ydoc), peerId));
+    r.onPeerJoin(peerId => {
+        console.log(`[Arbiter] Peer joined: ${peerId}`);
+        sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
+    });
     return { sendOfficialEvent };
 };
 
 const actions = setupArbiterActions(room);
 const torrentActions = setupArbiterActions(torrentRoom);
+
+console.log(`[Arbiter] Started as peer ${room.selfId}`);
 
 // --- NEWS LOOP ---
 const NARRATIVE_EVENTS = [
@@ -78,8 +91,7 @@ async function broadcastNews() {
     trimEventLog();
 }
 
-// --- SPEED UP DAY FOR TESTING ---
-// Advance day every 1 minute
+// Tick day every 60s for testing
 setInterval(() => {
     const currentDay = yworld.get('day') || 1;
     yworld.set('day', currentDay + 1);
