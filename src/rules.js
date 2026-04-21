@@ -1,14 +1,19 @@
 /**
  * Hearthwick Simulation Rules
- * Deterministic, integer-only logic.
+ * Pure deterministic, integer-only logic.
  */
 
+/**
+ * Seeded PRNG returning a 32-bit unsigned integer.
+ */
 export function seededRNG(seed) {
-    return function() {
-        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-        var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    let state = seed | 0;
+    return function(max = 4294967296) {
+        state = state + 0x6D2B79F5 | 0;
+        var t = Math.imul(state ^ state >>> 15, 1 | state);
         t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        const res = (t ^ t >>> 14) >>> 0;
+        return max === 4294967296 ? res : res % max;
     }
 }
 
@@ -19,7 +24,7 @@ export function hashStr(str) {
         hash = ((hash << 5) - hash) + char;
         hash |= 0;
     }
-    return hash;
+    return Math.abs(hash);
 }
 
 // --- NARRATIVE ARC MACHINES ---
@@ -41,16 +46,16 @@ export const arcTransitions = {
 };
 
 export const moodMarkov = {
-    'fearful': { fearful: 70, weary: 20, joyful: 10 }, // Expressed as percentages for integer math
+    'fearful': { fearful: 70, weary: 20, joyful: 10 },
     'weary':   { fearful: 20, weary: 60, joyful: 20 },
     'joyful':  { fearful: 10, weary: 20, joyful: 70 }
 };
 
 /**
- * Steps the mood forward using the daily RNG and integer math.
+ * Steps the mood forward using the daily integer RNG.
  */
 export function nextMood(currentMood, rng) {
-    const roll = Math.floor(rng() * 100);
+    const roll = rng(100); // 0-99
     const transitions = moodMarkov[currentMood];
     let cumulative = 0;
     for (const mood in transitions) {

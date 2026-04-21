@@ -1,12 +1,10 @@
 import { joinRoom } from '@trystero-p2p/torrent';
 import { RTCPeerConnection } from 'werift';
 import * as Y from 'yjs';
-import pkg from 'tweetnacl-util';
-import { signMessage, importKey } from '../src/crypto.js';
+import { signMessage } from '../src/crypto.js';
 import { APP_ID, ROOM_NAME } from '../src/constants.js';
 import dotenv from 'dotenv';
 
-const { decodeBase64 } = pkg;
 dotenv.config();
 
 const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
@@ -16,8 +14,8 @@ if (!MASTER_SECRET_KEY) {
     process.exit(1);
 }
 
-// Node.js specific: The secret key for signing is handled via Buffer or raw bytes
-const secretKey = MASTER_SECRET_KEY; // crypto.js will handle the decoding
+// Node.js specific: MASTER_SECRET_KEY is passed directly to the universal crypto module
+const secretKey = MASTER_SECRET_KEY; 
 
 // --- YJS STATE ---
 const ydoc = new Y.Doc();
@@ -71,7 +69,7 @@ const NARRATIVE_EVENTS = [
 async function broadcastNews() {
     const event = NARRATIVE_EVENTS[Math.floor(Math.random() * NARRATIVE_EVENTS.length)];
     
-    // Use the universal crypto module to sign (Arbiter uses Private Key)
+    // Use the universal crypto module to sign
     const signature = await signMessage(event, secretKey);
 
     console.log(`[Arbiter] Broadcasting official news: ${event}`);
