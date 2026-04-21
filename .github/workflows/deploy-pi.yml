@@ -45,13 +45,26 @@ jobs:
               git reset --hard origin/main
             fi
 
-            # Ensure Node/NPM are in PATH (common for Pi setups)
-            export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
-            # If using NVM, try to load it
-            [ -s "$HOME/.nvm/nvm.sh" ] && \. "$HOME/.nvm/nvm.sh"
+            # Force the PATH to include common Node installation spots on Pi
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/home/pizero/.nvm/versions/node/*/bin:/home/pizero/node/bin
+            
+            # Diagnostic: If npm is still missing, try to find it
+            if ! command -v npm &> /dev/null; then
+              echo "Searching for npm..."
+              NPM_PATH=$(find /home/pizero -name npm -type f -executable -print -quit 2>/dev/null)
+              if [ -n "$NPM_PATH" ]; then
+                export PATH=$PATH:$(dirname "$NPM_PATH")
+                echo "Found npm at: $NPM_PATH"
+              fi
+            fi
 
             # Install dependencies
-            npm install --production
+            if command -v npm &> /dev/null; then
+              npm install --production
+            else
+              echo "ERROR: npm still not found. Please run 'which npm' on your Pi and tell me the path."
+              exit 1
+            fi
 
             # Restart the arbiter (if using PM2)
             # pm2 restart arbiter || pm2 start arbiter/index.js --name arbiter
