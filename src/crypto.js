@@ -79,10 +79,15 @@ export async function signMessage(message, privateKey) {
         );
         return btoa(String.fromCharCode(...new Uint8Array(signature)));
     } else {
-        const { sign } = await import('crypto');
-        // Node: If privateKey is a Base64 string, decode it
-        const keyBuffer = typeof privateKey === 'string' ? Buffer.from(privateKey, 'base64') : privateKey;
-        const signature = sign(null, data, keyBuffer);
+        const { sign, createPrivateKey } = await import('crypto');
+        const raw = typeof privateKey === 'string' ? Buffer.from(privateKey, 'base64') : privateKey;
+        // OpenSSL 3 (Node 18+) requires a KeyObject, not a raw Buffer.
+        // Wrap the 32-byte Ed25519 seed in a PKCS8 DER envelope.
+        // If stored as seed||pubkey (64 bytes, tweetnacl convention), use only the first 32.
+        const seed = raw.length === 64 ? raw.subarray(0, 32) : raw;
+        const pkcs8Header = Buffer.from('302e020100300506032b657004220420', 'hex');
+        const keyObj = createPrivateKey({ key: Buffer.concat([pkcs8Header, seed]), format: 'der', type: 'pkcs8' });
+        const signature = sign(null, data, keyObj);
         return signature.toString('base64');
     }
 }
@@ -108,9 +113,12 @@ export async function verifyMessage(message, signatureBase64, publicKey) {
             return false;
         }
     } else {
-        const { verify } = await import('crypto');
+        const { verify, createPublicKey } = await import('crypto');
         const signature = Buffer.from(signatureBase64, 'base64');
-        const keyBuffer = typeof publicKey === 'string' ? Buffer.from(publicKey, 'base64') : publicKey;
-        return verify(null, data, keyBuffer, signature);
+        const raw = typeof publicKey === 'string' ? Buffer.from(publicKey, 'base64') : publicKey;
+        // OpenSSL 3 requires a KeyObject. Wrap raw 32-byte Ed25519 public key in SubjectPublicKeyInfo DER.
+        const spkiHeader = Buffer.from('302a300506032b6570032100', 'hex');
+        const keyObj = createPublicKey({ key: Buffer.concat([spkiHeader, raw]), format: 'der', type: 'spki' });
+        return verify(null, data, keyObj, signature);
     }
 }

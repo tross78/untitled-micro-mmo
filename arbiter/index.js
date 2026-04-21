@@ -18,7 +18,7 @@ async function startArbiter() {
     const { APP_ID, ROOM_NAME } = await import('../src/constants.js');
     const dotenv = await import('dotenv');
 
-    dotenv.config();
+    dotenv.config({ path: new URL('.env', import.meta.url).pathname });
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
     if (!MASTER_SECRET_KEY) { 
         console.error('ERROR: MASTER_SECRET_KEY not found in .env');
@@ -48,24 +48,51 @@ async function startArbiter() {
     }
 
     // --- NETWORKING ---
-    const baseConfig = { 
-        appId: APP_ID, 
-        rtcPolyfill: RTCPeerConnection 
+    const { lookup } = await import('dns/promises');
+
+    async function filterReachable(urls) {
+        const results = await Promise.allSettled(
+            urls.map(url => lookup(new URL(url).hostname))
+        );
+        return urls.filter((_, i) => {
+            const r = results[i];
+            return r.status === 'fulfilled' && r.value.address !== '0.0.0.0';
+        });
+    }
+
+    const ALL_NOSTR_RELAYS = [
+        'wss://relay.damus.io',
+        'wss://nos.lol',
+        'wss://relay.snort.social',
+        'wss://relay.nostr.band',
+        'wss://nostr.wine',
+    ];
+    const ALL_TORRENT_TRACKERS = [
+        'wss://tracker.openwebtorrent.com',
+        'wss://tracker.btorrent.xyz',
+    ];
+
+    const [reachableRelays, reachableTrackers] = await Promise.all([
+        filterReachable(ALL_NOSTR_RELAYS),
+        filterReachable(ALL_TORRENT_TRACKERS),
+    ]);
+
+    console.log(`[Arbiter] Reachable Nostr relays: ${reachableRelays.length}/${ALL_NOSTR_RELAYS.length}`);
+    console.log(`[Arbiter] Reachable trackers: ${reachableTrackers.length}/${ALL_TORRENT_TRACKERS.length}`);
+
+    const baseConfig = {
+        appId: APP_ID,
+        rtcPolyfill: RTCPeerConnection
     };
 
-    // Explicitly provide stable relays to avoid 0.0.0.0 fallbacks
     const nostrConfig = {
         ...baseConfig,
-        relayUrls: [
-            'wss://relay.damus.io',
-            'wss://nos.lol',
-            'wss://relay.snort.social'
-        ]
+        relayUrls: reachableRelays.length ? reachableRelays : ALL_NOSTR_RELAYS,
     };
 
     const torrentConfig = {
         ...baseConfig,
-        trackerUrls: ['wss://tracker.openwebtorrent.com']
+        trackerUrls: reachableTrackers.length ? reachableTrackers : ALL_TORRENT_TRACKERS,
     };
 
     console.log(`[Arbiter] Attempting to join mesh as ${selfId}...`);
@@ -73,12 +100,10 @@ async function startArbiter() {
     const room = joinNostr(nostrConfig, ROOM_NAME);
     const torrentRoom = joinTorrent(torrentConfig, ROOM_NAME);
 
-    const setupArbiterActions = (r, name) => {
+    const setupArbiterRoom = (r, name) => {
         const [sendSync, getSync] = r.makeAction('sync');
         const [sendOfficialEvent] = r.makeAction('official_event');
-        
-        ydoc.on('update', update => sendSync(update));
-        
+
         getSync((update, peerId) => {
             Y.applyUpdate(ydoc, update, 'remote');
             console.log(`[Arbiter][${name}] Synced state from peer ${peerId}`);
@@ -89,11 +114,19 @@ async function startArbiter() {
             sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
         });
 
-        return { sendOfficialEvent };
+        return { sendSync, sendOfficialEvent };
     };
 
-    const actions = setupArbiterActions(room, 'Nostr');
-    const torrentActions = setupArbiterActions(torrentRoom, 'Torrent');
+    const nostr = setupArbiterRoom(room, 'Nostr');
+    const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
+
+    // Single listener — broadcasts each local Yjs update over both meshes
+    ydoc.on('update', (update, origin) => {
+        if (origin !== 'remote') {
+            nostr.sendSync(update);
+            torrent.sendSync(update);
+        }
+    });
 
     console.log(`[Arbiter] Started.`);
 
@@ -109,15 +142,18 @@ async function startArbiter() {
 
     async function broadcastNews() {
         const day = yworld.get('day') || 1;
-        const event = NARRATIVE_EVENTS[Math.floor(Math.random() * NARRATIVE_EVENTS.length)];
+        const worldSeed = yworld.get('world_seed') || 'default';
+        // Seeded selection — deterministic per day, not Math.random()
+        const { hashStr, seededRNG } = await import('../src/rules.js');
+        const rng = seededRNG(hashStr(worldSeed + day + 'news'));
+        const event = NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length)];
         const signature = await signMessage(event, secretKey);
 
         console.log(`[Arbiter] Day ${day} News: ${event}`);
-        
-        // Broadcast on both meshes
+
         try {
-            actions.sendOfficialEvent({ event, signature });
-            torrentActions.sendOfficialEvent({ event, signature });
+            nostr.sendOfficialEvent({ event, signature });
+            torrent.sendOfficialEvent({ event, signature });
         } catch (e) {
             console.warn('[Arbiter] Broadcast partially failed:', e.message);
         }
@@ -142,13 +178,17 @@ async function startArbiter() {
     setTimeout(broadcastNews, 10000);
 }
 
+const SURVIVABLE_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND']);
+const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate'];
+
 // Global error handler to prevent Node from crashing on P2P socket issues
 process.on('uncaughtException', (err) => {
     console.error('[Arbiter] Uncaught Exception:', err.message);
-    if (err.code === 'ECONNREFUSED') {
-        console.log('[Arbiter] Networking error (Relay down), continuing...');
+    const isNetworkError = SURVIVABLE_ERRORS.has(err.code) ||
+        SURVIVABLE_MESSAGES.some(m => err.message.includes(m));
+    if (isNetworkError) {
+        console.log('[Arbiter] Networking error (relay/TLS), continuing...');
     } else {
-        // For other errors, it's safer to exit and let PM2 restart us
         process.exit(1);
     }
 });
