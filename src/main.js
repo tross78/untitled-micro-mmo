@@ -110,16 +110,15 @@ const saveLocalState = () => {
 // --- NETWORKING: MULTI-STRATEGY ---
 let room;
 const initNetworking = () => {
-    const config = { 
-        appId: APP_ID,
-        trackerUrls: [
-            'wss://tracker.openwebtorrent.com',
-            'wss://tracker.files.fm:7072/announce'
-        ]
-    };
+    // 1. Join via Nostr (Fast, reliable, silent)
+    room = joinNostr({ appId: APP_ID }, ROOM_NAME);
 
-    room = joinNostr(config, ROOM_NAME);
-    const torrentRoom = joinTorrent(config, ROOM_NAME);
+    // 2. Join via Torrent (Fallback, but with strict tracker list to silence errors)
+    // We only use trackers that are currently known to be UP.
+    const torrentRoom = joinTorrent({ 
+        appId: APP_ID,
+        trackerUrls: ['wss://tracker.openwebtorrent.com'] 
+    }, ROOM_NAME);
 
     const setupActions = (r) => {
         const [sendSync, getSync] = r.makeAction('sync');
