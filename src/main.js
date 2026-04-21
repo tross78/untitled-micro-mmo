@@ -16,14 +16,14 @@ const log = (msg, color = '#0f0') => {
     output.scrollTop = output.scrollHeight;
 };
 
-// --- IDENTITY & CRYPTO ---
+// --- IDENTITY ---
 let playerKeys = null;
 let arbiterPublicKey = null;
 
 const initIdentity = async () => {
     try {
         arbiterPublicKey = await importKey(MASTER_PUBLIC_KEY, 'public');
-        const savedKeys = localStorage.getItem('hearthwick_keys_v2');
+        const savedKeys = localStorage.getItem('hearthwick_keys_v3'); // Force fresh keys to ensure compatibility
         if (savedKeys) {
             const { publicKey, privateKey } = JSON.parse(savedKeys);
             playerKeys = {
@@ -36,23 +36,33 @@ const initIdentity = async () => {
                 publicKey: await exportKey(keys.publicKey),
                 privateKey: await exportKey(keys.privateKey)
             };
-            localStorage.setItem('hearthwick_keys_v2', JSON.stringify(exported));
+            localStorage.setItem('hearthwick_keys_v3', JSON.stringify(exported));
             playerKeys = keys;
             log(`[System] New identity generated.`);
         }
     } catch (e) {
-        localStorage.removeItem('hearthwick_keys_v2');
+        console.error('Identity Init Failed', e);
+        localStorage.removeItem('hearthwick_keys_v3');
         throw e;
     }
 };
 
-// --- YJS STATE ---
+// --- STATE ---
 const ydoc = new Doc();
 const yworld = ydoc.getMap('world');
 const yplayers = ydoc.getMap('players');
 const yevents = ydoc.getArray('event_log');
 
-let worldState = { seed: '', day: 1, mood: 'weary' };
+let worldState = { seed: '', day: 0, mood: '' };
+
+const printStatus = () => {
+    log(`\n--- WORLD STATUS ---`, '#ffa500');
+    log(`Day: ${worldState.day}`, '#ffa500');
+    log(`Town Mood: ${worldState.mood ? worldState.mood.toUpperCase() : 'UNKNOWN'}`, '#ffa500');
+    log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
+    log(`Total Events: ${yevents.length}`, '#ffa500');
+    log(`--------------------\n`, '#ffa500');
+};
 
 const updateSimulation = () => {
     if (!yworld.has('world_seed')) return;
@@ -60,9 +70,11 @@ const updateSimulation = () => {
     const newDay = yworld.get('day') || 1;
     
     if (newSeed !== worldState.seed || newDay !== worldState.day) {
-        const isNewDay = newDay !== worldState.day && worldState.seed !== '';
+        const isNewDay = newDay > worldState.day && worldState.day !== 0;
         worldState.seed = newSeed;
         worldState.day = newDay;
+        
+        // Seeded Determinism
         const dailySeed = hashStr(worldState.seed + worldState.day);
         const rng = seededRNG(dailySeed);
         const baseMood = yworld.get('town_mood') || 'weary';
@@ -71,6 +83,8 @@ const updateSimulation = () => {
         if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
             handleCommand('news');
+        } else {
+            log(`\n[System] World state synced.`, '#aaa');
         }
         printStatus();
     }
@@ -78,14 +92,11 @@ const updateSimulation = () => {
 
 yworld.observe(() => updateSimulation());
 
-// Helper to get a player's name from the mesh or fallback to ID
 const getPlayerName = (id) => yplayers.get(id) || `Peer-${id.slice(0, 4)}`;
-
-// Player local state
 let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar' };
 
 // --- PERSISTENCE ---
-const STORAGE_KEY = 'hearthwick_state_v2';
+const STORAGE_KEY = 'hearthwick_state_v3'; // Versioned key
 const loadLocalState = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -96,10 +107,8 @@ const loadLocalState = () => {
             log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error(e); }
     }
-    // Update global name map so others can see us
     yplayers.set(selfId, localPlayer.name);
 };
-
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
         location: localPlayer.location,
@@ -113,8 +122,11 @@ let knownPeers = new Set();
 let room;
 
 const initNetworking = () => {
-    const nostrRoom = joinNostr({ appId: APP_ID }, ROOM_NAME);
-    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: ['wss://tracker.openwebtorrent.com'] }, ROOM_NAME);
+    // Only use the MOST reliable tracker to avoid console noise
+    const trackers = ['wss://tracker.openwebtorrent.com'];
+    
+    room = joinNostr({ appId: APP_ID }, ROOM_NAME);
+    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: trackers }, ROOM_NAME);
 
     const setupActions = (r) => {
         const [sendSync, getSync] = r.makeAction('sync');
@@ -134,14 +146,10 @@ const initNetworking = () => {
         r.onPeerJoin(peerId => {
             if (!knownPeers.has(peerId)) {
                 knownPeers.add(peerId);
-                // Use timer to let yplayers sync before logging name
-                setTimeout(() => {
-                    log(`[System] ${getPlayerName(peerId)} joined.`, '#aaa');
-                }, 1000);
+                setTimeout(() => log(`[System] ${getPlayerName(peerId)} joined.`, '#aaa'), 1000);
                 sendSync(encodeStateAsUpdate(ydoc), peerId);
             }
         });
-
         r.onPeerLeave(peerId => { knownPeers.delete(peerId); });
 
         getMove((data, peerId) => {
@@ -151,20 +159,9 @@ const initNetworking = () => {
         return { sendMove, sendSync };
     };
 
-    const actions = setupActions(nostrRoom);
+    const actions = setupActions(room);
     setupActions(torrentRoom);
     window.gameActions = actions;
-    room = nostrRoom;
-};
-
-// --- UI DASHBOARD ---
-const printStatus = () => {
-    log(`\n--- WORLD STATUS ---`, '#ffa500');
-    log(`Day: ${worldState.day}`, '#ffa500');
-    log(`Town Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
-    log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
-    log(`Total Historical Events: ${yevents.length}`, '#ffa500');
-    log(`--------------------\n`, '#ffa500');
 };
 
 // --- MAIN ---
