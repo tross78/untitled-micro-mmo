@@ -56,6 +56,15 @@ const yevents = ydoc.getArray('event_log');
 
 let worldState = { seed: '', day: 1, mood: 'weary' };
 
+const printStatus = () => {
+    log(`\n--- WORLD STATUS ---`, '#ffa500');
+    log(`Day: ${worldState.day}`, '#ffa500');
+    log(`Town Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
+    log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
+    log(`Active Events Today: ${yevents.length}`, '#ffa500');
+    log(`--------------------\n`, '#ffa500');
+};
+
 const updateSimulation = () => {
     if (!yworld.has('world_seed')) return;
 
@@ -71,15 +80,16 @@ const updateSimulation = () => {
         const baseMood = yworld.get('town_mood') || 'weary';
         worldState.mood = nextMood(baseMood, rng);
 
-        log(`\n--- WORLD STATUS UPDATED ---`, '#ffa500');
-        log(`Day: ${worldState.day}`, '#ffa500');
-        log(`Town Mood: ${worldState.mood.toUpperCase()}`, '#ffa500');
-        log(`World Seed: ${worldState.seed.slice(0, 12)}...`, '#ffa500');
-        log(`----------------------------\n`, '#ffa500');
+        log(`\n[System] World state updated from peer.`, '#aaa');
+        printStatus();
     }
 };
 
 yworld.observe(() => updateSimulation());
+yevents.observe(() => {
+    // Optional: Log when a new event arrives? 
+    // console.log('New event in log');
+});
 
 // Player local state
 let localPlayer = {
@@ -110,11 +120,7 @@ const saveLocalState = () => {
 // --- NETWORKING: MULTI-STRATEGY ---
 let room;
 const initNetworking = () => {
-    // 1. Join via Nostr (Fast, reliable, silent)
     room = joinNostr({ appId: APP_ID }, ROOM_NAME);
-
-    // 2. Join via Torrent (Fallback, but with strict tracker list to silence errors)
-    // We only use trackers that are currently known to be UP.
     const torrentRoom = joinTorrent({ 
         appId: APP_ID,
         trackerUrls: ['wss://tracker.openwebtorrent.com'] 
@@ -167,10 +173,12 @@ const start = async () => {
 
         log(`\nWelcome to Hearthwick.`);
         log(`Your Peer ID: ${selfId}`);
-        log(`Waiting for World Seed from the Arbiter...`, '#aaa');
         
+        // Always print initial status (will be placeholders until sync)
+        printStatus();
+
         setTimeout(() => {
-            log(`\n${world[localPlayer.location].name}`);
+            log(`${world[localPlayer.location].name}`);
             log(world[localPlayer.location].description);
         }, 1000);
 
@@ -195,7 +203,7 @@ function handleCommand(cmd) {
 
     switch (command) {
         case 'help':
-            log('Commands: /help, /who, /look, /move <dir>, /rename <name>, /clear');
+            log('Commands: /help, /who, /look, /move <dir>, /rename <name>, /news, /status, /clear');
             break;
         case 'who':
             const peers = Object.keys(room.getPeers());
@@ -205,6 +213,19 @@ function handleCommand(cmd) {
             const loc = world[localPlayer.location];
             log(`\n${loc.name}`);
             log(loc.description);
+            break;
+        case 'status':
+            printStatus();
+            break;
+        case 'news':
+            log(`\n--- RECENT EVENTS ---`, '#0ff');
+            const logs = yevents.toArray().slice(-5).reverse();
+            if (logs.length === 0) log('The archives are empty.');
+            logs.forEach(e => {
+                if (e.type === 'narrative') log(`[${new Date(e.time).toLocaleTimeString()}] ${e.event}`, '#0ff');
+                else if (e.type === 'move') log(`[Move] ${e.peer.slice(0,4)}... went to ${e.to}`, '#aaa');
+            });
+            log(`---------------------\n`, '#0ff');
             break;
         case 'rename':
             const newName = args.slice(1).join(' ');
@@ -229,7 +250,8 @@ function handleCommand(cmd) {
             } else log(`You can't go that way.`);
             break;
         case 'clear':
-            output.innerHTML = 'Screen cleared.';
+            output.innerHTML = '';
+            log('Screen cleared.');
             break;
         default:
             log(`Unknown command: ${command}`);
