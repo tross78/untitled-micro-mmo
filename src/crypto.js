@@ -4,10 +4,6 @@
  */
 
 const isNode = typeof window === 'undefined';
-let nodeCrypto;
-if (isNode) {
-    import('crypto').then(m => nodeCrypto = m);
-}
 
 /**
  * Generates a new Ed25519 keypair.
@@ -19,21 +15,18 @@ export async function generateKeyPair() {
             true,
             ['sign', 'verify']
         );
-    } else {
-        // Node implementation if needed for Arbiter key generation
-        return null; 
     }
+    return null;
 }
 
 /**
  * Exports a key to Base64 format.
+ * Browser uses 'raw' for public keys for maximum compatibility.
  */
 export async function exportKey(key) {
     if (!isNode) {
-        const exported = await window.crypto.subtle.exportKey(
-            key.type === 'private' ? 'pkcs8' : 'spki',
-            key
-        );
+        const format = key.type === 'private' ? 'pkcs8' : 'raw';
+        const exported = await window.crypto.subtle.exportKey(format, key);
         return btoa(String.fromCharCode(...new Uint8Array(exported)));
     }
     return null;
@@ -41,6 +34,7 @@ export async function exportKey(key) {
 
 /**
  * Imports a key from Base64 format.
+ * Supports 'raw' for public keys and 'pkcs8' for private keys.
  */
 export async function importKey(base64, type) {
     if (!isNode) {
@@ -49,15 +43,24 @@ export async function importKey(base64, type) {
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         
         return await window.crypto.subtle.importKey(
-            type === 'private' ? 'pkcs8' : 'spki',
+            type === 'private' ? 'pkcs8' : 'raw',
             bytes,
             { name: 'Ed25519' },
             true,
             type === 'private' ? ['sign'] : ['verify']
         );
     } else {
-        // Node implementation for Arbiter (Public Key is raw bytes or Base64)
-        return Buffer.from(base64, 'base64');
+        // Node implementation (Arbiter)
+        const { createPublicKey, createPrivateKey } = await import('crypto');
+        const buffer = Buffer.from(base64, 'base64');
+        
+        if (type === 'public') {
+            // Node expects Ed25519 raw public keys as-is
+            return buffer;
+        } else {
+            // Node expects private keys in a specific format or raw
+            return buffer;
+        }
     }
 }
 
@@ -76,9 +79,10 @@ export async function signMessage(message, privateKey) {
         );
         return btoa(String.fromCharCode(...new Uint8Array(signature)));
     } else {
-        // Node implementation using 'crypto'
         const { sign } = await import('crypto');
-        const signature = sign(null, data, privateKey);
+        // Node: If privateKey is a Base64 string, decode it
+        const keyBuffer = typeof privateKey === 'string' ? Buffer.from(privateKey, 'base64') : privateKey;
+        const signature = sign(null, data, keyBuffer);
         return signature.toString('base64');
     }
 }
@@ -91,16 +95,22 @@ export async function verifyMessage(message, signatureBase64, publicKey) {
     const data = encoder.encode(message);
 
     if (!isNode) {
-        const signature = new Uint8Array(atob(signatureBase64).split('').map(c => c.charCodeAt(0)));
-        return await window.crypto.subtle.verify(
-            { name: 'Ed25519' },
-            publicKey,
-            signature,
-            data
-        );
+        try {
+            const signature = new Uint8Array(atob(signatureBase64).split('').map(c => c.charCodeAt(0)));
+            return await window.crypto.subtle.verify(
+                { name: 'Ed25519' },
+                publicKey,
+                signature,
+                data
+            );
+        } catch (e) {
+            console.error('Crypto verification error', e);
+            return false;
+        }
     } else {
         const { verify } = await import('crypto');
         const signature = Buffer.from(signatureBase64, 'base64');
-        return verify(null, data, publicKey, signature);
+        const keyBuffer = typeof publicKey === 'string' ? Buffer.from(publicKey, 'base64') : publicKey;
+        return verify(null, data, keyBuffer, signature);
     }
 }
