@@ -1,5 +1,4 @@
-import { joinRoom as joinNostr, selfId } from '@trystero-p2p/nostr';
-import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
+import { joinRoom, selfId } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
 import {
     world, validateMove, hashStr, seededRNG, nextMood,
@@ -7,7 +6,7 @@ import {
     resolveAttack, rollLoot, xpToLevel, levelBonus,
 } from './rules';
 import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
-import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, NOSTR_RELAYS, TORRENT_TRACKERS } from './constants';
+import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, TORRENT_TRACKERS } from './constants';
 
 const output = document.getElementById('output');
 const input = document.getElementById('input');
@@ -86,13 +85,12 @@ const updateSimulation = () => {
 
         if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
-            // Enemy in current room resets on a new day
             localPlayer.currentEnemy = null;
             handleCommand('news');
+            printStatus();
         } else {
-            log(`\n[System] World state synced.`, '#aaa');
+            log(`\n[System] World synced — Day ${worldState.day}, mood: ${worldState.mood.toUpperCase()}.`, '#aaa');
         }
-        printStatus();
     }
 };
 
@@ -124,8 +122,7 @@ let knownPeers = new Set();
 let gameActions = {};
 
 const initNetworking = () => {
-    const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS }, ROOM_NAME);
-    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS }, ROOM_NAME);
+    const torrentRoom = joinRoom({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS }, ROOM_NAME);
 
     const setupRoom = (r) => {
         const [sendSync, getSync] = r.makeAction('sync');
@@ -157,23 +154,13 @@ const initNetworking = () => {
         return { sendSync, sendMove };
     };
 
-    const nostr = setupRoom(nostrRoom);
-    const torrent = setupRoom(torrentRoom);
+    const transport = setupRoom(torrentRoom);
 
-    // Single listener — broadcasts each local update over both meshes
     ydoc.on('update', (update, origin) => {
-        if (origin !== 'remote') {
-            nostr.sendSync(update);
-            torrent.sendSync(update);
-        }
+        if (origin !== 'remote') transport.sendSync(update);
     });
 
-    gameActions = {
-        sendMove: (data, peerId) => {
-            nostr.sendMove(data, peerId);
-            torrent.sendMove(data, peerId);
-        },
-    };
+    gameActions = { sendMove: transport.sendMove };
 };
 
 // --- MAIN ---
@@ -185,7 +172,7 @@ const start = async () => {
 
         log(`\nWelcome to Hearthwick.`);
         log(`Your Peer ID: ${selfId}`);
-        printStatus();
+        log(`[System] Connecting to the world...`, '#aaa');
 
         setTimeout(() => {
             log(`${world[localPlayer.location].name}`);
