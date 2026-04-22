@@ -1,17 +1,18 @@
 import { webcrypto } from 'node:crypto';
 import WebSocket from 'ws';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
 
-// Polyfills for Node.js 18
-if (!globalThis.crypto) {
-    globalThis.crypto = webcrypto;
-}
-if (!globalThis.WebSocket) {
-    globalThis.WebSocket = WebSocket;
-}
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
+if (!globalThis.WebSocket) globalThis.WebSocket = WebSocket;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const STATE_FILE = join(__dirname, 'world_state.bin');
 
 async function startArbiter() {
-    const { joinRoom: joinNostr, selfId } = await import('@trystero-p2p/nostr');
-    const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
+    const { joinRoom: joinNostr, selfId: nostrSelfId } = await import('@trystero-p2p/nostr');
+    const { joinRoom: joinTorrent, selfId: torrentSelfId } = await import('@trystero-p2p/torrent');
     const { RTCPeerConnection } = await import('werift');
     const Y = await import('yjs');
     const { signMessage } = await import('../src/crypto.js');
@@ -20,12 +21,10 @@ async function startArbiter() {
 
     dotenv.config({ path: new URL('.env', import.meta.url).pathname });
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
-    if (!MASTER_SECRET_KEY) { 
+    if (!MASTER_SECRET_KEY) {
         console.error('ERROR: MASTER_SECRET_KEY not found in .env');
-        process.exit(1); 
+        process.exit(1);
     }
-
-    const secretKey = MASTER_SECRET_KEY; 
 
     // --- STATE ---
     const ydoc = new Y.Doc();
@@ -33,25 +32,59 @@ async function startArbiter() {
     const yplayers = ydoc.getMap('players');
     const yevents = ydoc.getArray('event_log');
 
-    if (yworld.size === 0) {
-        console.log('[Arbiter] Initializing new world seed...');
-        yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
-        yworld.set('day', 1);
-        yworld.set('town_mood', 'weary');
+    // Load persisted state if available
+    if (existsSync(STATE_FILE)) {
+        try {
+            const bin = readFileSync(STATE_FILE);
+            Y.applyUpdate(ydoc, bin, 'persist');
+            console.log('[Arbiter] Loaded persisted world state.');
+        } catch (e) {
+            console.warn('[Arbiter] Failed to load state file, starting fresh:', e.message);
+        }
     }
 
-    // Register arbiter in yplayers so browser clients can identify it by name
-    yplayers.set(selfId, 'Arbiter');
+    if (!yworld.has('world_seed')) {
+        console.log('[Arbiter] Initializing new world seed...');
+        ydoc.transact(() => {
+            yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
+            yworld.set('day', 1);
+            yworld.set('town_mood', 'weary');
+            yworld.set('season', 'spring');
+            yworld.set('season_number', 1);
+            yworld.set('threat_level', 0);
+            yworld.set('market_scarcity', []);
+        }, 'init');
+    }
+
+    // Register both transport selfIds as Arbiter
+    yplayers.set(nostrSelfId, 'Arbiter');
+    yplayers.set(torrentSelfId, 'Arbiter');
+
+    // Persist state to disk, debounced
+    let persistTimer = null;
+    const schedulePersist = () => {
+        clearTimeout(persistTimer);
+        persistTimer = setTimeout(() => {
+            try {
+                writeFileSync(STATE_FILE, Y.encodeStateAsUpdate(ydoc));
+            } catch (e) {
+                console.warn('[Arbiter] Failed to persist state:', e.message);
+            }
+        }, 2000);
+    };
 
     // --- LOG TRIMMING ---
     const MAX_LOG_SIZE = 500;
-    function trimEventLog() {
+    yevents.observe(() => {
         if (yevents.length > MAX_LOG_SIZE) {
             yevents.delete(0, yevents.length - MAX_LOG_SIZE);
         }
-    }
-    // Trim on every push, not just from broadcastNews
-    yevents.observe(() => trimEventLog());
+    });
+
+    // Persist on any local change
+    ydoc.on('update', (_, origin) => {
+        if (origin !== 'remote') schedulePersist();
+    });
 
     // --- NETWORKING ---
     const { lookup } = await import('dns/promises');
@@ -76,22 +109,18 @@ async function startArbiter() {
     console.log(`[Arbiter] Reachable Nostr relays: ${reachableRelays.length}/${ALL_NOSTR_RELAYS.length}`);
     console.log(`[Arbiter] Reachable trackers: ${reachableTrackers.length}/${ALL_TORRENT_TRACKERS.length}`);
 
-    const baseConfig = {
-        appId: APP_ID,
-        rtcPolyfill: RTCPeerConnection
-    };
+    const baseConfig = { appId: APP_ID, rtcPolyfill: RTCPeerConnection };
 
     const nostrConfig = {
         ...baseConfig,
         relayUrls: reachableRelays.length ? reachableRelays : ALL_NOSTR_RELAYS,
     };
-
     const torrentConfig = {
         ...baseConfig,
         trackerUrls: reachableTrackers.length ? reachableTrackers : ALL_TORRENT_TRACKERS,
     };
 
-    console.log(`[Arbiter] Attempting to join mesh as ${selfId}...`);
+    console.log(`[Arbiter] Joining mesh (nostr: ${nostrSelfId}, torrent: ${torrentSelfId})...`);
 
     const room = joinNostr(nostrConfig, ROOM_NAME);
     const torrentRoom = joinTorrent(torrentConfig, ROOM_NAME);
@@ -116,7 +145,6 @@ async function startArbiter() {
     const nostr = setupArbiterRoom(room, 'Nostr');
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
 
-    // Single listener — broadcasts each local Yjs update over both meshes
     ydoc.on('update', (update, origin) => {
         if (origin !== 'remote') {
             nostr.sendSync(update);
@@ -124,7 +152,38 @@ async function startArbiter() {
         }
     });
 
-    console.log(`[Arbiter] Started.`);
+    console.log('[Arbiter] Started.');
+
+    // --- DAY TICK: Pi owns all world state ---
+    const { hashStr, seededRNG, nextMood, getSeason, getSeasonNumber, rollScarcity } = await import('../src/rules.js');
+
+    function advanceDay() {
+        const currentDay = yworld.get('day') || 1;
+        const nextDay = currentDay + 1;
+        const worldSeed = yworld.get('world_seed') || 'default';
+        const rng = seededRNG(hashStr(worldSeed + nextDay + 'daytick'));
+
+        const currentMood = yworld.get('town_mood') || 'weary';
+        const newMood = nextMood(currentMood, rng);
+        const newSeason = getSeason(nextDay);
+        const newSeasonNum = getSeasonNumber(nextDay);
+        const scarcity = rollScarcity(rng, newSeason);
+        // Threat level drifts: +1 every 7 days, capped at 5
+        const currentThreat = yworld.get('threat_level') || 0;
+        const newThreat = nextDay % 7 === 0 ? Math.min(5, currentThreat + 1) : currentThreat;
+
+        ydoc.transact(() => {
+            yworld.set('day', nextDay);
+            yworld.set('town_mood', newMood);
+            yworld.set('season', newSeason);
+            yworld.set('season_number', newSeasonNum);
+            yworld.set('threat_level', newThreat);
+            yworld.set('market_scarcity', scarcity);
+        }, 'daytick');
+
+        console.log(`[Arbiter] Day ${nextDay} — ${newSeason}, mood: ${newMood}, threat: ${newThreat}, scarce: ${scarcity.join(',') || 'none'}`);
+        broadcastNews(nextDay);
+    }
 
     // --- NEWS LOOP ---
     const NARRATIVE_EVENTS = [
@@ -136,18 +195,17 @@ async function startArbiter() {
         "A strange owl was seen watching the hallway."
     ];
 
-    let lastBroadcastDay = 0;
+    async function broadcastNews(day) {
+        day = day || yworld.get('day') || 1;
 
-    async function broadcastNews() {
-        const day = yworld.get('day') || 1;
-        if (day === lastBroadcastDay) return; // deduplicate if day tick and interval collide
-        lastBroadcastDay = day;
+        // Deduplicate: check if we already have a narrative event for this day
+        const alreadyBroadcast = yevents.toArray().some(e => e.type === 'narrative' && e.day === day);
+        if (alreadyBroadcast) return;
 
         const worldSeed = yworld.get('world_seed') || 'default';
-        const { hashStr, seededRNG } = await import('../src/rules.js');
         const rng = seededRNG(hashStr(worldSeed + day + 'news'));
         const event = NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length)];
-        const signature = await signMessage(event, secretKey);
+        const signature = await signMessage(event, MASTER_SECRET_KEY);
 
         console.log(`[Arbiter] Day ${day} News: ${event}`);
 
@@ -162,15 +220,10 @@ async function startArbiter() {
     }
 
     // Tick day every 60s for testing (change to 86400000 for production)
-    setInterval(() => {
-        const currentDay = yworld.get('day') || 1;
-        yworld.set('day', currentDay + 1);
-        console.log(`[Arbiter] A new day begins: Day ${currentDay + 1}`);
-        broadcastNews();
-    }, 60000);
+    setInterval(advanceDay, 60000);
 
-    // Initial news on startup
-    setTimeout(broadcastNews, 10000);
+    // Initial news on startup (don't advance day, just announce current day)
+    setTimeout(() => broadcastNews(), 10000);
 }
 
 const SURVIVABLE_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND']);

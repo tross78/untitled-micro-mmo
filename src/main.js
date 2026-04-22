@@ -9,7 +9,7 @@ import { joinRoom as joinNostr, selfId } from '@trystero-p2p/nostr';
 import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
 import {
-    world, validateMove, hashStr, seededRNG, nextMood,
+    world, validateMove, hashStr, seededRNG,
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
 } from './rules';
@@ -51,6 +51,9 @@ const initIdentity = async () => {
             playerKeys = keys;
             log(`[System] New identity generated.`);
         }
+        // Link player identity to Ed25519 public key
+        const exported = JSON.parse(localStorage.getItem('hearthwick_keys_v3'));
+        localPlayer.playerId = exported.publicKey;
     } catch (e) {
         console.error('Identity Init Failed', e);
         localStorage.removeItem('hearthwick_keys_v3');
@@ -64,12 +67,14 @@ const yworld = ydoc.getMap('world');
 const yplayers = ydoc.getMap('players');
 const yevents = ydoc.getArray('event_log');
 
-let worldState = { seed: '', day: 0, mood: '' };
+let worldState = { seed: '', day: 0, mood: '', season: '', seasonNumber: 1, threatLevel: 0, scarcity: [] };
 
 const printStatus = () => {
     log(`\n--- WORLD STATUS ---`, '#ffa500');
-    log(`Day: ${worldState.day}`, '#ffa500');
+    log(`Day: ${worldState.day}  Season: ${worldState.season ? worldState.season.toUpperCase() + ' (Year ' + worldState.seasonNumber + ')' : 'Unknown'}`, '#ffa500');
     log(`Town Mood: ${worldState.mood ? worldState.mood.toUpperCase() : 'UNKNOWN'}`, '#ffa500');
+    log(`Threat Level: ${worldState.threatLevel}`, '#ffa500');
+    if (worldState.scarcity.length > 0) log(`Scarce Goods: ${worldState.scarcity.join(', ')}`, '#f55');
     log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
     log(`Total Events: ${yevents.length}`, '#ffa500');
     log(`--------------------\n`, '#ffa500');
@@ -85,12 +90,12 @@ const updateSimulation = () => {
         const isNewDay = newDay > worldState.day && !wasDisconnected;
         worldState.seed = newSeed;
         worldState.day = newDay;
-
-        const dailySeed = hashStr(worldState.seed + worldState.day);
-        const rng = seededRNG(dailySeed);
-        const baseMood = yworld.get('town_mood') || 'weary';
-        worldState.mood = nextMood(baseMood, rng);
-        yworld.set('town_mood', worldState.mood);
+        // Pi owns mood/season/threat — just read what the arbiter wrote
+        worldState.mood = yworld.get('town_mood') || 'weary';
+        worldState.season = yworld.get('season') || 'spring';
+        worldState.seasonNumber = yworld.get('season_number') || 1;
+        worldState.threatLevel = yworld.get('threat_level') || 0;
+        worldState.scarcity = yworld.get('market_scarcity') || [];
 
         if (wasDisconnected) {
             log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
@@ -107,7 +112,16 @@ const updateSimulation = () => {
 
 yworld.observe(() => updateSimulation());
 
-const getPlayerName = (id) => yplayers.get(id) || `Peer-${id.slice(0, 4)}`;
+const getPlayerEntry = (id) => yplayers.get(id);
+const getPlayerName = (id) => {
+    const entry = getPlayerEntry(id);
+    if (!entry) return `Peer-${id.slice(0, 4)}`;
+    return typeof entry === 'string' ? entry : (entry.name || `Peer-${id.slice(0, 4)}`);
+};
+const getPlayerLocation = (id) => {
+    const entry = getPlayerEntry(id);
+    return entry && typeof entry === 'object' ? entry.location : null;
+};
 let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar', ...DEFAULT_PLAYER_STATS };
 
 // --- PERSISTENCE ---
@@ -121,15 +135,16 @@ const loadLocalState = () => {
             log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error(e); }
     }
-    yplayers.set(selfId, localPlayer.name);
+    yplayers.set(selfId, { name: localPlayer.name, location: localPlayer.location });
 };
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(localPlayer));
-    yplayers.set(selfId, localPlayer.name);
+    yplayers.set(selfId, { name: localPlayer.name, location: localPlayer.location });
 };
 
 // --- NETWORKING ---
-let knownPeers = new Set();
+let knownPeers = new Set();    // currently connected
+let announcedPeers = new Set(); // ever announced — survives relay reconnects
 let gameActions = {};
 
 const initNetworking = () => {
@@ -151,16 +166,12 @@ const initNetworking = () => {
         });
 
         r.onPeerJoin(peerId => {
-            if (!knownPeers.has(peerId)) {
-                knownPeers.add(peerId);
+            knownPeers.add(peerId);
+            if (!announcedPeers.has(peerId)) {
+                announcedPeers.add(peerId);
                 // Delay so yplayers can sync before we read the name
                 setTimeout(() => {
-                    const name = getPlayerName(peerId);
-                    // Suppress duplicate transport connections from the same peer name
-                    const alreadyAnnounced = [...knownPeers].some(
-                        id => id !== peerId && getPlayerName(id) === name
-                    );
-                    if (!alreadyAnnounced) log(`[System] ${name} joined.`, '#aaa');
+                    log(`[System] ${getPlayerName(peerId)} joined.`, '#aaa');
                 }, 1500);
                 sendSync(encodeStateAsUpdate(ydoc), peerId);
             }
@@ -231,8 +242,12 @@ function handleCommand(cmd) {
             break;
 
         case 'who': {
-            const names = Array.from(knownPeers).map(id => getPlayerName(id));
-            log(`Current Peers (${knownPeers.size + 1}): You (${localPlayer.name}), ${names.join(', ') || 'None'}`);
+            const peerList = Array.from(knownPeers).map(id => {
+                const name = getPlayerName(id);
+                const loc = getPlayerLocation(id);
+                return loc ? `${name} (${loc})` : name;
+            });
+            log(`Online (${knownPeers.size + 1}): You — ${localPlayer.name} (${localPlayer.location}), ${peerList.join(', ') || 'None'}`);
             break;
         }
 
@@ -340,9 +355,14 @@ function handleCommand(cmd) {
         }
 
         case 'use': {
-            const itemId = args[1];
-            const idx = localPlayer.inventory.indexOf(itemId);
-            if (idx === -1) { log(`You don't have "${itemId}". Check /inventory.`); break; }
+            const query = args.slice(1).join(' ').toLowerCase();
+            if (!query) { log(`Usage: /use <item name>`); break; }
+            // Match by item ID or display name (case-insensitive)
+            const idx = localPlayer.inventory.findIndex(id =>
+                id.toLowerCase() === query || (ITEMS[id]?.name || '').toLowerCase() === query
+            );
+            if (idx === -1) { log(`You don't have "${query}". Check /inventory.`); break; }
+            const itemId = localPlayer.inventory[idx];
             const item = ITEMS[itemId];
             if (!item) { log(`Unknown item.`); break; }
             if (item.type === 'consumable') {
@@ -351,6 +371,8 @@ function handleCommand(cmd) {
                 localPlayer.inventory.splice(idx, 1);
                 log(`You use the ${item.name} and recover ${item.heal} HP. (HP: ${localPlayer.hp}/${localPlayer.maxHp + bonus.maxHp})`, '#0f0');
                 saveLocalState();
+            } else if (item.type === 'weapon') {
+                log(`You already have the ${item.name} equipped — it gives you +${item.bonus} attack.`);
             } else {
                 log(`You can't use that here.`);
             }
