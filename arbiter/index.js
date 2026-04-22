@@ -237,7 +237,15 @@ async function startArbiter() {
 }
 
 const SURVIVABLE_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND']);
-const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate', 'server response', 'socket hang up', 'ECONNRESET'];
+const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate', 'server response', 'socket hang up', 'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED'];
+
+// Silence library-level noise (Trystero/werift logging before throwing)
+const _consoleError = console.error.bind(console);
+console.error = (...args) => {
+    const msg = String(args[0] ?? '') + String(args[1]?.message ?? '');
+    if (SURVIVABLE_MESSAGES.some(m => msg.includes(m))) return;
+    _consoleError(...args);
+};
 
 const isSurvivable = (err) =>
     SURVIVABLE_ERRORS.has(err.code) ||

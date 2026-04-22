@@ -4,17 +4,21 @@ export const MASTER_PUBLIC_KEY = 'b+olHCMT7bRyA66bk6VRNJhd9/gRewVPP664Phd3a+s=';
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 export const ROOM_NAME = 'lobby';
 
-// snort.social and primal.net are open relays that work without PoW or web-of-trust.
-// nos.lol now requires 28-bit PoW (Trystero sends 12 — rejected).
-// offchain.pub requires web-of-trust membership — rejected.
+// Open relays — no PoW, no web-of-trust required.
+// nos.lol: 28-bit PoW required (rejected). offchain.pub: web-of-trust (rejected).
+// nostr.wine: subscription required (rejected).
 export const NOSTR_RELAYS = [
     'wss://relay.snort.social',
     'wss://relay.primal.net',
+    'wss://relay.damus.io',
+    'wss://relay.nostr.band',
+    'wss://nostr-pub.wellorder.net',
 ];
 
 // tracker.btorrent.xyz is hardcoded inside Trystero — its failures are harmless noise.
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
+    'wss://tracker.webtorrent.dev',
 ];
 
 // STUN first (free, no infra), TURN as last resort (relay, swappable).
