@@ -6,7 +6,10 @@ import {
     getSeason, getSeasonNumber, rollScarcity, SCARCITY_ITEMS,
     getMood, getThreatLevel, deriveWorldState, deriveNarrative,
     MOOD_INITIAL, EVENT_TYPES, NARRATIVE_EVENTS,
+    _resetMoodCache,
 } from './rules';
+
+beforeEach(() => _resetMoodCache());
 
 // --- Movement ---
 
