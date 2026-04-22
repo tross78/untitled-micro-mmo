@@ -4,6 +4,8 @@ import {
     resolveAttack, rollLoot, xpToLevel, levelBonus,
     ENEMIES, ITEMS,
     getSeason, getSeasonNumber, rollScarcity, SCARCITY_ITEMS,
+    getMood, getThreatLevel, deriveWorldState, deriveNarrative,
+    MOOD_INITIAL, EVENT_TYPES, NARRATIVE_EVENTS,
 } from './rules';
 
 // --- Movement ---
@@ -276,5 +278,138 @@ describe('rollScarcity', () => {
         const r1 = rollScarcity(seededRNG(7), 'autumn');
         const r2 = rollScarcity(seededRNG(7), 'autumn');
         expect(r1).toEqual(r2);
+    });
+});
+
+// --- getMood ---
+
+describe('getMood', () => {
+    test('day 1 returns MOOD_INITIAL', () => {
+        expect(getMood('any-seed', 1)).toBe(MOOD_INITIAL);
+    });
+
+    test('is deterministic for same seed+day', () => {
+        expect(getMood('test-seed', 42)).toBe(getMood('test-seed', 42));
+    });
+
+    test('output is always a valid mood', () => {
+        const valid = ['fearful', 'weary', 'joyful'];
+        for (let day = 1; day <= 30; day++) {
+            expect(valid).toContain(getMood('hearthwick-seed', day));
+        }
+    });
+
+    test('produces multiple distinct moods over 50 days', () => {
+        const results = new Set();
+        for (let d = 1; d <= 50; d++) results.add(getMood('seed-a', d));
+        expect(results.size).toBeGreaterThan(1);
+    });
+
+    test('matches manual Markov chain replay', () => {
+        const seed = 'replay-test';
+        let mood = MOOD_INITIAL;
+        for (let d = 1; d <= 20; d++) {
+            expect(getMood(seed, d)).toBe(mood);
+            const rng = seededRNG(hashStr(seed + d + 'daytick'));
+            mood = nextMood(mood, rng);
+        }
+    });
+});
+
+// --- getThreatLevel ---
+
+describe('getThreatLevel', () => {
+    test('returns 0 for days 1-6', () => {
+        for (let d = 1; d < 7; d++) expect(getThreatLevel(d)).toBe(0);
+    });
+
+    test('returns 1 at day 7', () => {
+        expect(getThreatLevel(7)).toBe(1);
+    });
+
+    test('returns 2 at day 14', () => {
+        expect(getThreatLevel(14)).toBe(2);
+    });
+
+    test('caps at 5 from day 35', () => {
+        expect(getThreatLevel(35)).toBe(5);
+        expect(getThreatLevel(1000)).toBe(5);
+    });
+
+    test('output is always an integer', () => {
+        [1, 7, 14, 35, 100].forEach(d => expect(Number.isInteger(getThreatLevel(d))).toBe(true));
+    });
+});
+
+// --- deriveWorldState ---
+
+describe('deriveWorldState', () => {
+    const seed = 'h3arthw1ck-test';
+
+    test('returns all required fields', () => {
+        const state = deriveWorldState(seed, 10);
+        expect(state).toHaveProperty('seed', seed);
+        expect(state).toHaveProperty('day', 10);
+        expect(state).toHaveProperty('season');
+        expect(state).toHaveProperty('seasonNumber');
+        expect(state).toHaveProperty('mood');
+        expect(state).toHaveProperty('threatLevel');
+        expect(state).toHaveProperty('scarcity');
+    });
+
+    test('is fully deterministic', () => {
+        expect(deriveWorldState(seed, 25)).toEqual(deriveWorldState(seed, 25));
+    });
+
+    test('season matches getSeason', () => {
+        expect(deriveWorldState(seed, 45).season).toBe(getSeason(45));
+    });
+
+    test('seasonNumber matches getSeasonNumber', () => {
+        expect(deriveWorldState(seed, 121).seasonNumber).toBe(getSeasonNumber(121));
+    });
+
+    test('threatLevel matches getThreatLevel', () => {
+        expect(deriveWorldState(seed, 14).threatLevel).toBe(getThreatLevel(14));
+    });
+
+    test('mood matches getMood', () => {
+        expect(deriveWorldState(seed, 30).mood).toBe(getMood(seed, 30));
+    });
+
+    test('scarcity is array of known items', () => {
+        const { scarcity } = deriveWorldState(seed, 5);
+        expect(Array.isArray(scarcity)).toBe(true);
+        scarcity.forEach(item => expect(SCARCITY_ITEMS).toContain(item));
+    });
+
+    test('different days produce different day values', () => {
+        expect(deriveWorldState(seed, 1).day).not.toBe(deriveWorldState(seed, 50).day);
+    });
+});
+
+// --- deriveNarrative ---
+
+describe('deriveNarrative', () => {
+    test('returns a string', () => {
+        expect(typeof deriveNarrative('seed', 1)).toBe('string');
+    });
+
+    test('is deterministic', () => {
+        expect(deriveNarrative('seed', 42)).toBe(deriveNarrative('seed', 42));
+    });
+
+    test('output is always a known narrative event', () => {
+        for (let day = 1; day <= 20; day++) {
+            expect(NARRATIVE_EVENTS).toContain(deriveNarrative('test-seed', day));
+        }
+    });
+
+    test('different seeds produce different results across sample', () => {
+        const a = new Set(Array.from({length: 10}, (_, i) => deriveNarrative('seed-a', i + 1)));
+        const b = new Set(Array.from({length: 10}, (_, i) => deriveNarrative('seed-b', i + 1)));
+        // At least one difference expected across 10 days with different seeds
+        const overlap = [...a].filter(x => b.has(x)).length;
+        expect(overlap).toBeLessThan(10);
     });
 });
