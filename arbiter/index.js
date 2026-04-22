@@ -230,8 +230,7 @@ async function startArbiter() {
         yevents.push([{ type: 'n', day }]);
     }
 
-    // Tick day every 60s for testing (change to 86400000 for production)
-    setInterval(advanceDay, 60000);
+    setInterval(advanceDay, 86400000); // 24h real-time days
 
     // Initial news on startup (don't advance day, just announce current day)
     setTimeout(() => broadcastNews(), 10000);
