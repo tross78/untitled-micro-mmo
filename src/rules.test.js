@@ -3,6 +3,7 @@ import {
     hashStr, seededRNG, nextMood,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
     ENEMIES, ITEMS,
+    getSeason, getSeasonNumber, rollScarcity, SCARCITY_ITEMS,
 } from './rules';
 
 // --- Movement ---
@@ -213,5 +214,67 @@ describe('Progression', () => {
         const l5 = levelBonus(5);
         expect(l5.attack).toBeGreaterThan(l1.attack);
         expect(l5.maxHp).toBeGreaterThan(l1.maxHp);
+    });
+});
+
+// --- Season ---
+
+describe('Season', () => {
+    test('day 1 is spring', () => {
+        expect(getSeason(1)).toBe('spring');
+    });
+
+    test('day 31 is summer', () => {
+        expect(getSeason(31)).toBe('summer');
+    });
+
+    test('day 61 is autumn', () => {
+        expect(getSeason(61)).toBe('autumn');
+    });
+
+    test('day 91 is winter', () => {
+        expect(getSeason(91)).toBe('winter');
+    });
+
+    test('day 121 cycles back to spring', () => {
+        expect(getSeason(121)).toBe('spring');
+    });
+
+    test('getSeasonNumber increments each 120 days', () => {
+        expect(getSeasonNumber(1)).toBe(1);
+        expect(getSeasonNumber(121)).toBe(2);
+        expect(getSeasonNumber(241)).toBe(3);
+    });
+
+    test('getSeason is deterministic', () => {
+        expect(getSeason(45)).toBe(getSeason(45));
+    });
+});
+
+// --- Market Scarcity ---
+
+describe('rollScarcity', () => {
+    test('returns an array', () => {
+        const rng = seededRNG(42);
+        const result = rollScarcity(rng, 'spring');
+        expect(Array.isArray(result)).toBe(true);
+    });
+
+    test('returns at most 2 items', () => {
+        const rng = seededRNG(hashStr('test'));
+        const result = rollScarcity(rng, 'summer');
+        expect(result.length).toBeLessThanOrEqual(2);
+    });
+
+    test('returns only known scarcity items', () => {
+        const rng = seededRNG(99999);
+        const result = rollScarcity(rng, 'winter');
+        result.forEach(item => expect(SCARCITY_ITEMS).toContain(item));
+    });
+
+    test('is deterministic with same seed', () => {
+        const r1 = rollScarcity(seededRNG(7), 'autumn');
+        const r2 = rollScarcity(seededRNG(7), 'autumn');
+        expect(r1).toEqual(r2);
     });
 });

@@ -24,6 +24,19 @@ export function hashStr(str) {
     return Math.abs(hash);
 }
 
+// --- SEASON ---
+
+export const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
+export const SEASON_LENGTH = 30; // days per season
+
+export function getSeason(day) {
+    return SEASONS[(Math.floor((day - 1) / SEASON_LENGTH) | 0) % 4];
+}
+
+export function getSeasonNumber(day) {
+    return (Math.floor((day - 1) / (SEASON_LENGTH * 4)) | 0) + 1;
+}
+
 // --- NARRATIVE ARC MACHINES ---
 
 export const arcTransitions = {
@@ -61,6 +74,31 @@ export const arcTransitions = {
     }
 };
 
+export const ARC_START_BEATS = {
+    escalation: 'seed',
+    mystery:    'clue_1',
+    rivalry:    'meet',
+    downfall:   'hubris',
+    bounty:     'emergence',
+};
+
+// Events that can fire automatically without player action
+export const ARC_AUTO_EVENTS = ['IGNORE', 'NEW_CYCLE', 'ESCALATE', 'REBUILD'];
+
+export const SEASON_ARC_BIAS = {
+    spring: ['mystery'],
+    summer: ['rivalry'],
+    autumn: ['bounty', 'downfall'],
+    winter: ['escalation', 'downfall'],
+};
+
+export function transitionArc(arc, event) {
+    const nextBeat = arcTransitions[arc.type]?.[arc.beat]?.[event];
+    return nextBeat ? { ...arc, beat: nextBeat } : arc;
+}
+
+// --- MOOD ---
+
 export const moodMarkov = {
     'fearful': { fearful: 70, weary: 20, joyful: 10 },
     'weary':   { fearful: 20, weary: 60, joyful: 20 },
@@ -78,29 +116,39 @@ export function nextMood(currentMood, rng) {
     return currentMood;
 }
 
-export function transitionArc(arc, event) {
-    const nextBeat = arcTransitions[arc.type]?.[arc.beat]?.[event];
-    return nextBeat ? { ...arc, beat: nextBeat } : arc;
+// --- MARKET SCARCITY ---
+
+export const SCARCITY_ITEMS = ['wheat', 'medicine', 'wood', 'iron', 'bread', 'cloth'];
+
+export function rollScarcity(rng, season) {
+    const count = rng(3); // 0, 1, or 2 scarce items
+    const pool = [...SCARCITY_ITEMS];
+    // Fisher-Yates shuffle with seeded RNG
+    for (let i = pool.length - 1; i > 0; i--) {
+        const j = rng(i + 1) | 0;
+        const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    }
+    return pool.slice(0, count);
 }
 
 // --- COMBAT ---
 
 export const ENEMIES = {
-    forest_wolf: { name: 'Forest Wolf',  hp: 20, attack: 5,  defense: 1, xp: 15, loot: ['wolf_pelt'] },
-    ruin_shade:  { name: 'Ruin Shade',   hp: 25, attack: 8,  defense: 0, xp: 25, loot: ['old_tome', 'gold'] },
-    cave_troll:  { name: 'Cave Troll',   hp: 40, attack: 10, defense: 3, xp: 40, loot: ['iron_key', 'gold'] },
+    forest_wolf: { name: 'Forest Wolf', hp: 20, attack: 5,  defense: 1, xp: 15, loot: ['wolf_pelt', 'potion'] },
+    ruin_shade:  { name: 'Ruin Shade',  hp: 25, attack: 8,  defense: 0, xp: 25, loot: ['old_tome', 'gold', 'potion'] },
+    cave_troll:  { name: 'Cave Troll',  hp: 40, attack: 10, defense: 3, xp: 40, loot: ['iron_key', 'gold', 'iron_sword'] },
 };
 
 export const ITEMS = {
-    wolf_pelt:  { name: 'Wolf Pelt',      type: 'material' },
-    old_tome:   { name: 'Old Tome',       type: 'material' },
-    iron_key:   { name: 'Iron Key',       type: 'key' },
-    gold:       { name: 'Gold (5)',        type: 'gold', amount: 5 },
-    potion:     { name: 'Health Potion',  type: 'consumable', heal: 20 },
-    iron_sword: { name: 'Iron Sword',     type: 'weapon', bonus: 3 },
+    wolf_pelt:  { name: 'Wolf Pelt',     type: 'material' },
+    old_tome:   { name: 'Old Tome',      type: 'material' },
+    iron_key:   { name: 'Iron Key',      type: 'key' },
+    gold:       { name: 'Gold (5)',       type: 'gold',       amount: 5 },
+    potion:     { name: 'Health Potion', type: 'consumable',  heal: 20 },
+    iron_sword: { name: 'Iron Sword',    type: 'weapon',      bonus: 3 },
 };
 
-// Integer-only damage roll: 1 to 2*(base), minimum 1
+// Integer-only damage roll: 1 to 2*base, minimum 1
 export function resolveAttack(attackStat, defenseStat, rng) {
     const base = Math.max(1, attackStat - defenseStat);
     return (rng(base * 2) + 1) | 0;
@@ -116,12 +164,11 @@ export function xpToLevel(xp) {
     return (Math.floor(Math.sqrt((xp / 10) | 0)) + 1) | 0;
 }
 
-// Flat stat bonuses from level
 export function levelBonus(level) {
     return {
-        attack: (level - 1) * 2,
+        attack:  (level - 1) * 2,
         defense: (level - 1) | 0,
-        maxHp: (level - 1) * 10,
+        maxHp:   (level - 1) * 10,
     };
 }
 
@@ -133,6 +180,7 @@ export const DEFAULT_PLAYER_STATS = {
     inventory: [],
     combatRound: 0,
     currentEnemy: null,
+    playerId: null,
 };
 
 // --- WORLD DATA ---
@@ -164,8 +212,8 @@ export const world = {
     },
     forest_edge: {
         name: 'The Forest Edge',
-        description: 'Twisted pines. A wolf watches from the dark. The hallway is west, ruins north.',
-        exits: { west: 'hallway', north: 'ruins' },
+        description: 'Twisted pines. A wolf watches from the dark. The hallway is west, ruins north, a cave south.',
+        exits: { west: 'hallway', north: 'ruins', south: 'cave' },
         enemy: 'forest_wolf',
     },
     ruins: {
@@ -173,6 +221,12 @@ export const world = {
         description: 'Cold stone and shifting shadows. A shade drifts between the pillars. The forest is south.',
         exits: { south: 'forest_edge' },
         enemy: 'ruin_shade',
+    },
+    cave: {
+        name: 'The Dark Cave',
+        description: 'Low ceilings, dripping water. A cave troll blocks the passage. The forest is north.',
+        exits: { north: 'forest_edge' },
+        enemy: 'cave_troll',
     },
 };
 
