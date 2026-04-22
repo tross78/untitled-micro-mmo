@@ -100,6 +100,8 @@ const updateSimulation = () => {
         if (wasDisconnected) {
             log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
             printStatus();
+            // Rebroadcast to any peers who joined before we had world state
+            if (knownPeers.size > 0) gameActions.broadcastSync();
         } else if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
             localPlayer.currentEnemy = null;
@@ -216,6 +218,11 @@ const initNetworking = () => {
         sendMove: (data, peerId) => {
             nostr.sendMove(data, peerId);
             torrent.sendMove(data, peerId);
+        },
+        broadcastSync: () => {
+            const update = encodeStateAsUpdate(ydoc);
+            nostr.sendSync(update);
+            torrent.sendSync(update);
         },
     };
 };
