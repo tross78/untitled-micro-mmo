@@ -30,6 +30,7 @@ async function startArbiter() {
     // --- STATE ---
     const ydoc = new Y.Doc();
     const yworld = ydoc.getMap('world');
+    const yplayers = ydoc.getMap('players');
     const yevents = ydoc.getArray('event_log');
 
     if (yworld.size === 0) {
@@ -39,6 +40,9 @@ async function startArbiter() {
         yworld.set('town_mood', 'weary');
     }
 
+    // Register arbiter in yplayers so browser clients can identify it by name
+    yplayers.set(selfId, 'Arbiter');
+
     // --- LOG TRIMMING ---
     const MAX_LOG_SIZE = 500;
     function trimEventLog() {
@@ -46,6 +50,8 @@ async function startArbiter() {
             yevents.delete(0, yevents.length - MAX_LOG_SIZE);
         }
     }
+    // Trim on every push, not just from broadcastNews
+    yevents.observe(() => trimEventLog());
 
     // --- NETWORKING ---
     const { lookup } = await import('dns/promises');
@@ -130,10 +136,14 @@ async function startArbiter() {
         "A strange owl was seen watching the hallway."
     ];
 
+    let lastBroadcastDay = 0;
+
     async function broadcastNews() {
         const day = yworld.get('day') || 1;
+        if (day === lastBroadcastDay) return; // deduplicate if day tick and interval collide
+        lastBroadcastDay = day;
+
         const worldSeed = yworld.get('world_seed') || 'default';
-        // Seeded selection — deterministic per day, not Math.random()
         const { hashStr, seededRNG } = await import('../src/rules.js');
         const rng = seededRNG(hashStr(worldSeed + day + 'news'));
         const event = NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length)];
@@ -147,16 +157,11 @@ async function startArbiter() {
         } catch (e) {
             console.warn('[Arbiter] Broadcast partially failed:', e.message);
         }
-        
-        yevents.push([{
-            type: 'narrative', day: day,
-            event: event, time: Date.now()
-        }]);
 
-        trimEventLog();
+        yevents.push([{ type: 'narrative', day, event, time: Date.now() }]);
     }
 
-    // Tick day every 60s for testing
+    // Tick day every 60s for testing (change to 86400000 for production)
     setInterval(() => {
         const currentDay = yworld.get('day') || 1;
         yworld.set('day', currentDay + 1);
@@ -164,23 +169,30 @@ async function startArbiter() {
         broadcastNews();
     }, 60000);
 
-    setInterval(broadcastNews, 300000);
+    // Initial news on startup
     setTimeout(broadcastNews, 10000);
 }
 
 const SURVIVABLE_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND']);
 const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate'];
 
-// Global error handler to prevent Node from crashing on P2P socket issues
+const isSurvivable = (err) =>
+    SURVIVABLE_ERRORS.has(err.code) ||
+    SURVIVABLE_MESSAGES.some(m => err.message?.includes(m));
+
 process.on('uncaughtException', (err) => {
     console.error('[Arbiter] Uncaught Exception:', err.message);
-    const isNetworkError = SURVIVABLE_ERRORS.has(err.code) ||
-        SURVIVABLE_MESSAGES.some(m => err.message.includes(m));
-    if (isNetworkError) {
+    if (isSurvivable(err)) {
         console.log('[Arbiter] Networking error (relay/TLS), continuing...');
     } else {
         process.exit(1);
     }
+});
+
+process.on('unhandledRejection', (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    console.error('[Arbiter] Unhandled Rejection:', err.message);
+    if (!isSurvivable(err)) process.exit(1);
 });
 
 startArbiter().catch(err => {
