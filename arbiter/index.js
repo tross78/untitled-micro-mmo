@@ -65,9 +65,9 @@ async function startArbiter() {
         }, 'init');
     }
 
-    // Register both transport selfIds as Arbiter
+    // One canonical arbiter entry — remove any stale torrent ID from previous runs
+    if (yplayers.has(torrentSelfId)) yplayers.delete(torrentSelfId);
     yplayers.set(nostrSelfId, 'Arbiter');
-    yplayers.set(torrentSelfId, 'Arbiter');
 
     // Persist state to disk, debounced
     let persistTimer = null;
@@ -140,16 +140,26 @@ async function startArbiter() {
 
     const setupArbiterRoom = (r, name) => {
         const [sendSync, getSync] = r.makeAction('sync');
+        const [sendSV,   getSV  ] = r.makeAction('sv');
         const [sendOfficialEvent] = r.makeAction('official_event');
 
+        // Browser sends its state vector → reply with only what it's missing
+        getSV((sv, peerId) => {
+            const diff = Y.encodeStateAsUpdate(ydoc, new Uint8Array(sv));
+            if (diff.length > 2) sendSync(diff, peerId);
+        });
+
+        // Apply incoming state from peers; log once per join (not per update)
+        const synced = new Set();
         getSync((update, peerId) => {
             Y.applyUpdate(ydoc, update, 'remote');
-            console.log(`[Arbiter][${name}] Synced state from peer ${peerId}`);
+            if (!synced.has(peerId)) { synced.add(peerId); console.log(`[Arbiter][${name}] Synced from ${peerId}`); }
         });
 
         r.onPeerJoin(peerId => {
             console.log(`[Arbiter][${name}] Peer joined: ${peerId}`);
-            sendSync(Y.encodeStateAsUpdate(ydoc), peerId);
+            // Send our SV — browser replies with what we're missing, we reply with what it's missing
+            sendSV(Array.from(Y.encodeStateVector(ydoc)), peerId);
         });
 
         return { sendSync, sendOfficialEvent };
@@ -182,8 +192,11 @@ async function startArbiter() {
         console.log(`[Arbiter] World reset. New seed: ${newSeed}`);
     };
 
-    // pm2 send hearthwick-arbiter reset
-    process.on('message', (msg) => { if (msg === 'reset') doReset(); });
+    // pm2 send hearthwick-arbiter reset  (pm2 wraps payload as {data, type})
+    process.on('message', (msg) => {
+        const cmd = msg?.data ?? msg;
+        if (cmd === 'reset') doReset();
+    });
     // kill -USR2 <pid> (when not using pm2)
     process.on('SIGUSR2', doReset);
 
