@@ -145,6 +145,7 @@ const saveLocalState = () => {
 // --- NETWORKING ---
 let knownPeers = new Set();    // currently connected
 let announcedPeers = new Set(); // ever announced — survives relay reconnects
+const peerLastSeen = new Map(); // peerId → timestamp of last leave
 let gameActions = {};
 
 const initNetworking = () => {
@@ -167,16 +168,25 @@ const initNetworking = () => {
 
         r.onPeerJoin(peerId => {
             knownPeers.add(peerId);
+            const RECONNECT_WINDOW_MS = 30000;
+            const isQuickReconnect = (Date.now() - (peerLastSeen.get(peerId) || 0)) < RECONNECT_WINDOW_MS;
+            peerLastSeen.delete(peerId);
             if (!announcedPeers.has(peerId)) {
                 announcedPeers.add(peerId);
-                // Delay so yplayers can sync before we read the name
+                sendSync(encodeStateAsUpdate(ydoc), peerId);
                 setTimeout(() => {
-                    log(`[System] ${getPlayerName(peerId)} joined.`, '#aaa');
+                    const name = getPlayerName(peerId);
+                    if (name !== 'Arbiter') log(`[System] ${name} joined.`, '#aaa');
                 }, 1500);
+            } else if (!isQuickReconnect) {
+                // Genuine return after a long absence — re-sync state
                 sendSync(encodeStateAsUpdate(ydoc), peerId);
             }
         });
-        r.onPeerLeave(peerId => { knownPeers.delete(peerId); });
+        r.onPeerLeave(peerId => {
+            knownPeers.delete(peerId);
+            peerLastSeen.set(peerId, Date.now());
+        });
 
         getMove((data, peerId) => {
             log(`[System] ${getPlayerName(peerId)} moved to ${data.to}.`, '#aaa');
