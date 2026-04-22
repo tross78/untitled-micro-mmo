@@ -1,4 +1,12 @@
-import { joinRoom, selfId } from '@trystero-p2p/torrent';
+// Suppress Trystero's hardcoded-relay noise — can't override their defaults, but we can quiet them.
+const _warn = console.warn.bind(console);
+console.warn = (...args) => {
+    if (typeof args[0] === 'string' && args[0].startsWith('Trystero:')) return;
+    _warn(...args);
+};
+
+import { joinRoom as joinNostr, selfId } from '@trystero-p2p/nostr';
+import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
 import { Doc, applyUpdate, encodeStateAsUpdate } from 'yjs';
 import {
     world, validateMove, hashStr, seededRNG, nextMood,
@@ -6,7 +14,7 @@ import {
     resolveAttack, rollLoot, xpToLevel, levelBonus,
 } from './rules';
 import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
-import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, TORRENT_TRACKERS } from './constants';
+import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, NOSTR_RELAYS, TORRENT_TRACKERS } from './constants';
 
 const output = document.getElementById('output');
 const input = document.getElementById('input');
@@ -122,7 +130,8 @@ let knownPeers = new Set();
 let gameActions = {};
 
 const initNetworking = () => {
-    const torrentRoom = joinRoom({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS }, ROOM_NAME);
+    const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS }, ROOM_NAME);
+    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS }, ROOM_NAME);
 
     const setupRoom = (r) => {
         const [sendSync, getSync] = r.makeAction('sync');
@@ -154,13 +163,22 @@ const initNetworking = () => {
         return { sendSync, sendMove };
     };
 
-    const transport = setupRoom(torrentRoom);
+    const nostr = setupRoom(nostrRoom);
+    const torrent = setupRoom(torrentRoom);
 
     ydoc.on('update', (update, origin) => {
-        if (origin !== 'remote') transport.sendSync(update);
+        if (origin !== 'remote') {
+            nostr.sendSync(update);
+            torrent.sendSync(update);
+        }
     });
 
-    gameActions = { sendMove: transport.sendMove };
+    gameActions = {
+        sendMove: (data, peerId) => {
+            nostr.sendMove(data, peerId);
+            torrent.sendMove(data, peerId);
+        },
+    };
 };
 
 // --- MAIN ---
