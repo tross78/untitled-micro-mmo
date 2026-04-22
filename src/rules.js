@@ -131,6 +131,52 @@ export function rollScarcity(rng, season) {
     return pool.slice(0, count);
 }
 
+// --- SIMULATION: WORLD AS PURE FUNCTION ---
+
+export const MOOD_INITIAL = 'weary';
+export const EVENT_TYPES = { MOVE: 'm', KILL: 'k', DEATH: 'd', NEWS: 'n' };
+
+export function getMood(worldSeed, day) {
+    let mood = MOOD_INITIAL;
+    for (let d = 1; d < day; d++) {
+        const rng = seededRNG(hashStr(worldSeed + d + 'daytick'));
+        mood = nextMood(mood, rng);
+    }
+    return mood;
+}
+
+export function getThreatLevel(day) {
+    return Math.min(5, Math.floor(day / 7));
+}
+
+export function deriveWorldState(worldSeed, day) {
+    const rng = seededRNG(hashStr(worldSeed + day + 'daytick'));
+    const season = getSeason(day);
+    return {
+        seed: worldSeed,
+        day,
+        season,
+        seasonNumber: getSeasonNumber(day),
+        mood: getMood(worldSeed, day),
+        threatLevel: getThreatLevel(day),
+        scarcity: rollScarcity(rng, season),
+    };
+}
+
+export const NARRATIVE_EVENTS = [
+    "A thick fog rolls into the town square.",
+    "The tavern was unusually quiet last night.",
+    "A rogue merchant was spotted near the ruins.",
+    "The crops seem to be growing well this season.",
+    "Faint music was heard coming from the cellar.",
+    "A strange owl was seen watching the hallway."
+];
+
+export function deriveNarrative(worldSeed, day) {
+    const rng = seededRNG(hashStr(worldSeed + day + 'news'));
+    return NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length)];
+}
+
 // --- COMBAT ---
 
 export const ENEMIES = {

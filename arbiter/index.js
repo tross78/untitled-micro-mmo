@@ -28,11 +28,8 @@ async function startArbiter() {
 
     // --- STATE ---
     const ydoc = new Y.Doc();
-    const yworld = ydoc.getMap('world');
-    const yplayers = ydoc.getMap('players');
-    const yevents = ydoc.getArray('event_log');
 
-    // Load persisted state if available
+    // Load persisted state before setting clientID so historical ops are preserved
     if (existsSync(STATE_FILE)) {
         try {
             const bin = readFileSync(STATE_FILE);
@@ -43,16 +40,28 @@ async function startArbiter() {
         }
     }
 
+    // Fixed clientID derived from secret key — ensures CRDT ops are always from
+    // the same author across restarts, preventing split-brain divergence
+    const { hashStr: _hashStr } = await import('../src/rules.js');
+    ydoc.clientID = _hashStr(MASTER_SECRET_KEY) >>> 0;
+    console.log(`[Arbiter] CRDT clientID: ${ydoc.clientID}`);
+
+    const yworld = ydoc.getMap('world');
+    const yplayers = ydoc.getMap('players');
+    const yevents = ydoc.getArray('event_log');
+
+    // One-time migration: remove legacy derived fields from yworld
+    const LEGACY_FIELDS = ['town_mood', 'season', 'season_number', 'threat_level', 'market_scarcity'];
+    if (LEGACY_FIELDS.some(f => yworld.has(f))) {
+        console.log('[Arbiter] Migrating legacy world state fields...');
+        ydoc.transact(() => LEGACY_FIELDS.forEach(f => { if (yworld.has(f)) yworld.delete(f); }), 'migration');
+    }
+
     if (!yworld.has('world_seed')) {
         console.log('[Arbiter] Initializing new world seed...');
         ydoc.transact(() => {
             yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
             yworld.set('day', 1);
-            yworld.set('town_mood', 'weary');
-            yworld.set('season', 'spring');
-            yworld.set('season_number', 1);
-            yworld.set('threat_level', 0);
-            yworld.set('market_scarcity', []);
         }, 'init');
     }
 
@@ -99,7 +108,7 @@ async function startArbiter() {
         });
     }
 
-    const { NOSTR_RELAYS: ALL_NOSTR_RELAYS, TORRENT_TRACKERS: ALL_TORRENT_TRACKERS } = await import('../src/constants.js');
+    const { NOSTR_RELAYS: ALL_NOSTR_RELAYS, TORRENT_TRACKERS: ALL_TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
 
     const [reachableRelays, reachableTrackers] = await Promise.all([
         filterReachable(ALL_NOSTR_RELAYS),
@@ -109,18 +118,10 @@ async function startArbiter() {
     console.log(`[Arbiter] Reachable Nostr relays: ${reachableRelays.length}/${ALL_NOSTR_RELAYS.length}`);
     console.log(`[Arbiter] Reachable trackers: ${reachableTrackers.length}/${ALL_TORRENT_TRACKERS.length}`);
 
-    const iceServers = [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'turn:openrelay.metered.ca:80',            username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443',           username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    ];
-
     const baseConfig = {
         appId: APP_ID,
         rtcPolyfill: RTCPeerConnection,
-        rtcConfig: { iceServers },
+        rtcConfig: { iceServers: ICE_SERVERS },
     };
 
     const nostrConfig = {
@@ -166,57 +167,35 @@ async function startArbiter() {
 
     console.log('[Arbiter] Started.');
 
-    // --- DAY TICK: Pi owns all world state ---
-    const { hashStr, seededRNG, nextMood, getSeason, getSeasonNumber, rollScarcity } = await import('../src/rules.js');
+    // --- DAY TICK ---
+    const { deriveWorldState, deriveNarrative } = await import('../src/rules.js');
 
     function advanceDay() {
         const currentDay = yworld.get('day') || 1;
         const nextDay = currentDay + 1;
-        const worldSeed = yworld.get('world_seed') || 'default';
-        const rng = seededRNG(hashStr(worldSeed + nextDay + 'daytick'));
-
-        const currentMood = yworld.get('town_mood') || 'weary';
-        const newMood = nextMood(currentMood, rng);
-        const newSeason = getSeason(nextDay);
-        const newSeasonNum = getSeasonNumber(nextDay);
-        const scarcity = rollScarcity(rng, newSeason);
-        // Threat level drifts: +1 every 7 days, capped at 5
-        const currentThreat = yworld.get('threat_level') || 0;
-        const newThreat = nextDay % 7 === 0 ? Math.min(5, currentThreat + 1) : currentThreat;
 
         ydoc.transact(() => {
             yworld.set('day', nextDay);
-            yworld.set('town_mood', newMood);
-            yworld.set('season', newSeason);
-            yworld.set('season_number', newSeasonNum);
-            yworld.set('threat_level', newThreat);
-            yworld.set('market_scarcity', scarcity);
         }, 'daytick');
 
-        console.log(`[Arbiter] Day ${nextDay} — ${newSeason}, mood: ${newMood}, threat: ${newThreat}, scarce: ${scarcity.join(',') || 'none'}`);
+        try { writeFileSync(STATE_FILE, Y.encodeStateAsUpdate(ydoc)); } catch (e) { console.warn('[Arbiter] Persist failed:', e.message); }
+
+        const worldSeed = yworld.get('world_seed') || 'default';
+        const derived = deriveWorldState(worldSeed, nextDay);
+        console.log(`[Arbiter] Day ${nextDay} — ${derived.season}, mood: ${derived.mood}, threat: ${derived.threatLevel}, scarce: ${derived.scarcity.join(',') || 'none'}`);
         broadcastNews(nextDay);
     }
 
     // --- NEWS LOOP ---
-    const NARRATIVE_EVENTS = [
-        "A thick fog rolls into the town square.",
-        "The tavern was unusually quiet last night.",
-        "A rogue merchant was spotted near the ruins.",
-        "The crops seem to be growing well this season.",
-        "Faint music was heard coming from the cellar.",
-        "A strange owl was seen watching the hallway."
-    ];
-
     async function broadcastNews(day) {
         day = day || yworld.get('day') || 1;
 
-        // Deduplicate: check if we already have a narrative event for this day
-        const alreadyBroadcast = yevents.toArray().some(e => e.type === 'narrative' && e.day === day);
+        // Deduplicate via compact event type
+        const alreadyBroadcast = yevents.toArray().some(e => e.type === 'n' && e.day === day);
         if (alreadyBroadcast) return;
 
         const worldSeed = yworld.get('world_seed') || 'default';
-        const rng = seededRNG(hashStr(worldSeed + day + 'news'));
-        const event = NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length)];
+        const event = deriveNarrative(worldSeed, day);
         const signature = await signMessage(event, MASTER_SECRET_KEY);
 
         console.log(`[Arbiter] Day ${day} News: ${event}`);
@@ -228,7 +207,7 @@ async function startArbiter() {
             console.warn('[Arbiter] Broadcast partially failed:', e.message);
         }
 
-        yevents.push([{ type: 'narrative', day, event, time: Date.now() }]);
+        yevents.push([{ type: 'n', day }]);
     }
 
     // Tick day every 60s for testing (change to 86400000 for production)

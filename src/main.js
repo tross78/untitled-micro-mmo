@@ -12,9 +12,10 @@ import {
     world, validateMove, hashStr, seededRNG,
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
+    deriveWorldState, deriveNarrative, EVENT_TYPES,
 } from './rules';
 import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
-import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, NOSTR_RELAYS, TORRENT_TRACKERS } from './constants';
+import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, NOSTR_RELAYS, TORRENT_TRACKERS, ICE_SERVERS } from './constants';
 
 const output = document.getElementById('output');
 const input = document.getElementById('input');
@@ -90,12 +91,13 @@ const updateSimulation = () => {
         const isNewDay = newDay > worldState.day && !wasDisconnected;
         worldState.seed = newSeed;
         worldState.day = newDay;
-        // Pi owns mood/season/threat — just read what the arbiter wrote
-        worldState.mood = yworld.get('town_mood') || 'weary';
-        worldState.season = yworld.get('season') || 'spring';
-        worldState.seasonNumber = yworld.get('season_number') || 1;
-        worldState.threatLevel = yworld.get('threat_level') || 0;
-        worldState.scarcity = yworld.get('market_scarcity') || [];
+        // Derive all world state locally — only seed+day come from Yjs
+        const derived = deriveWorldState(newSeed, newDay);
+        worldState.mood = derived.mood;
+        worldState.season = derived.season;
+        worldState.seasonNumber = derived.seasonNumber;
+        worldState.threatLevel = derived.threatLevel;
+        worldState.scarcity = derived.scarcity;
 
         if (wasDisconnected) {
             log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
@@ -151,16 +153,7 @@ const peerLastSeen = new Map(); // peerId → timestamp of last leave
 let gameActions = {};
 
 const initNetworking = () => {
-    const rtcConfig = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun.cloudflare.com:3478' },
-            // TURN relay — fallback when direct/STUN connection fails (e.g. symmetric NAT, different networks)
-            { urls: 'turn:openrelay.metered.ca:80',            username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443',           username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        ],
-    };
+    const rtcConfig = { iceServers: ICE_SERVERS };
     const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, ROOM_NAME);
     const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, ROOM_NAME);
 
@@ -353,7 +346,7 @@ function handleCommand(cmd) {
                     log(`LEVEL UP! You are now level ${localPlayer.level}!`, '#ff0');
                 }
                 localPlayer.currentEnemy = null;
-                yevents.push([{ type: 'player_kill', peer: selfId, day: worldState.day, entity: enemyDef.name, time: Date.now() }]);
+                yevents.push([{ type: EVENT_TYPES.KILL, peer: selfId.slice(0, 8), day: worldState.day, entity: loc.enemy }]);
             }
 
             if (localPlayer.hp <= 0) {
@@ -361,7 +354,7 @@ function handleCommand(cmd) {
                 localPlayer.hp = Math.floor((localPlayer.maxHp + levelBonus(localPlayer.level).maxHp) / 2);
                 localPlayer.location = 'cellar';
                 localPlayer.currentEnemy = null;
-                yevents.push([{ type: 'player_death', peer: selfId, day: worldState.day, entity: enemyDef.name, time: Date.now() }]);
+                yevents.push([{ type: EVENT_TYPES.DEATH, peer: selfId.slice(0, 8), day: worldState.day, entity: loc.enemy }]);
                 log(`You wake in the cellar...`, '#aaa');
                 handleCommand('look');
             }
@@ -420,8 +413,14 @@ function handleCommand(cmd) {
             days.forEach(d => {
                 log(`Day ${d}:`, '#ffa500');
                 history[d].slice(-5).forEach(e => {
-                    if (e.type === 'narrative')    log(`  - [OFFICIAL] ${e.event}`, '#0ff');
-                    else if (e.type === 'move')    log(`  - ${getPlayerName(e.peer)} moved from ${e.from} to ${e.to}`, '#aaa');
+                    // Compact schema
+                    if (e.type === 'n')      log(`  - [OFFICIAL] ${deriveNarrative(worldState.seed, e.day)}`, '#0ff');
+                    else if (e.type === 'm') log(`  - ${getPlayerName(e.peer)} moved from ${e.from} to ${e.to}`, '#aaa');
+                    else if (e.type === 'k') log(`  - ${getPlayerName(e.peer)} slew a ${ENEMIES[e.entity]?.name || e.entity}`, '#0f0');
+                    else if (e.type === 'd') log(`  - ${getPlayerName(e.peer)} was slain by a ${ENEMIES[e.entity]?.name || e.entity}`, '#f55');
+                    // Legacy schema fallback (until 500 events flush through)
+                    else if (e.type === 'narrative')    log(`  - [OFFICIAL] ${e.event}`, '#0ff');
+                    else if (e.type === 'move')         log(`  - ${getPlayerName(e.peer)} moved from ${e.from} to ${e.to}`, '#aaa');
                     else if (e.type === 'player_kill')  log(`  - ${getPlayerName(e.peer)} slew a ${e.entity}`, '#0f0');
                     else if (e.type === 'player_death') log(`  - ${getPlayerName(e.peer)} was slain by a ${e.entity}`, '#f55');
                 });
@@ -454,10 +453,7 @@ function handleCommand(cmd) {
                 log(`You move ${dir}.`);
                 handleCommand('look');
                 gameActions.sendMove({ from: prevLoc, to: nextLoc });
-                yevents.push([{
-                    type: 'move', peer: selfId, day: worldState.day,
-                    from: prevLoc, to: nextLoc, time: Date.now()
-                }]);
+                yevents.push([{ type: EVENT_TYPES.MOVE, peer: selfId.slice(0, 8), day: worldState.day, from: prevLoc, to: nextLoc }]);
             } else {
                 log(`You can't go that way.`);
             }
