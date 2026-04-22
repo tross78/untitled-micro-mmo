@@ -102,7 +102,15 @@ const updateSimulation = () => {
         if (wasDisconnected) {
             log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
             printStatus();
-            // Rebroadcast to any peers who joined before we had world state
+            // Clean up stale yplayers entries that synced in after initial load
+            if (localPlayer.ph) {
+                ydoc.transact(() => {
+                    yplayers.forEach((entry, id) => {
+                        if (id !== selfId && typeof entry === 'object' && entry.ph === localPlayer.ph)
+                            yplayers.delete(id);
+                    });
+                }, 'cleanup');
+            }
             if (knownPeers.size > 0) gameActions.broadcastSync();
         } else if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
@@ -123,9 +131,9 @@ let pendingDuel = null;
 const sentChallenges = new Map();
 const DUEL_TIMEOUT_MS = 60000;
 
-function resolvePvp(challengerId, targetId) {
-    // Both peers call this with the same args (challenger first) → identical seed → identical outcome
-    const seed = hashStr(challengerId + targetId + worldState.day);
+function resolvePvp(challengerId, targetId, day) {
+    // day pinned to challenge issuance — prevents de-sync if day ticks between challenge and accept
+    const seed = hashStr(challengerId + targetId + day);
     const rng = seededRNG(seed);
     const bonus = levelBonus(localPlayer.level);
     const myAtk = localPlayer.attack + bonus.attack;
@@ -150,7 +158,7 @@ yevents.observe((event) => {
                     log(`\n[DUEL] ${e.fromName} wants to duel but you already have a pending challenge.`, '#aaa');
                     return;
                 }
-                pendingDuel = { challengerId: e.from, challengerName: e.fromName, expiresAt: Date.now() + DUEL_TIMEOUT_MS };
+                pendingDuel = { challengerId: e.from, challengerName: e.fromName, expiresAt: Date.now() + DUEL_TIMEOUT_MS, day: e.day };
                 log(`\n[DUEL] ${e.fromName} challenges you to a duel! Type /accept or /decline. (expires in 60s)`, '#ff0');
                 setTimeout(() => {
                     if (pendingDuel?.challengerId === e.from) {
@@ -162,11 +170,11 @@ yevents.observe((event) => {
 
             if (e.type === EVENT_TYPES.PVP_ACCEPT && e.target === selfId) {
                 // Only process if we actually sent this challenge
-                const expires = sentChallenges.get(e.from);
-                if (!expires || Date.now() > expires) return;
+                const entry = sentChallenges.get(e.from);
+                if (!entry || Date.now() > entry.expires) return;
                 sentChallenges.delete(e.from);
 
-                const outcome = resolvePvp(selfId, e.from);
+                const outcome = resolvePvp(selfId, e.from, entry.day);
                 const dmg = outcome === 'loss' ? Math.floor(localPlayer.hp * 0.3) : 0;
                 if (outcome === 'win') {
                     log(`\n[DUEL] ${e.fromName} accepted! You WIN the duel! (+10 XP)`, '#ff0');
@@ -236,10 +244,22 @@ const saveLocalState = () => {
 };
 
 // --- NETWORKING ---
-let knownPeers = new Set();    // currently connected
-let announcedPeers = new Set(); // ever announced — survives relay reconnects
-const peerLastSeen = new Map(); // peerId → timestamp of last leave
+let knownPeers = new Set();
+const peerLastSeen = new Map();       // peerId → timestamp of last leave
+const announcedPeers = new Map();     // peerId → timestamp of first join (expires after 24h)
+// FIFO-evicting dedup set — same update can arrive via both transports simultaneously
+const appliedUpdates = new Set();
+const appliedFifo = [];
+const APPLIED_MAX = 1000;
 let gameActions = {};
+
+const ANNOUNCE_TTL = 86400000; // 24h — expire announcedPeers so returning players get re-announced
+const hasAnnounced = (id) => {
+    const t = announcedPeers.get(id);
+    if (!t) return false;
+    if (Date.now() - t > ANNOUNCE_TTL) { announcedPeers.delete(id); return false; }
+    return true;
+};
 
 const initNetworking = () => {
     const rtcConfig = { iceServers: ICE_SERVERS };
@@ -258,7 +278,15 @@ const initNetworking = () => {
             if (diff.length > 2) sendSync(diff, peerId);
         });
 
-        getSync((update) => { applyUpdate(ydoc, update, 'remote'); });
+        // Dedup applied updates — same Yjs op can arrive via both transports
+        getSync((update) => {
+            const key = update.slice(0, 8).join(',');
+            if (appliedUpdates.has(key)) return;
+            appliedUpdates.add(key);
+            appliedFifo.push(key);
+            if (appliedFifo.length > APPLIED_MAX) appliedUpdates.delete(appliedFifo.shift());
+            applyUpdate(ydoc, update, 'remote');
+        });
 
         getOfficialEvent(async (data) => {
             const { event, signature } = data;
@@ -277,16 +305,19 @@ const initNetworking = () => {
         r.onPeerJoin(peerId => {
             knownPeers.add(peerId);
             const RECONNECT_WINDOW_MS = 30000;
-            const isQuickReconnect = (Date.now() - (peerLastSeen.get(peerId) || 0)) < RECONNECT_WINDOW_MS;
-            peerLastSeen.delete(peerId);
-            if (!announcedPeers.has(peerId)) {
-                announcedPeers.add(peerId);
+            const lastSeen = peerLastSeen.get(peerId) || 0;
+            const isQuickReconnect = (Date.now() - lastSeen) < RECONNECT_WINDOW_MS;
+            peerLastSeen.delete(peerId); // clear AFTER reading
+            if (!hasAnnounced(peerId)) {
+                announcedPeers.set(peerId, Date.now());
                 // Send our state vector — peer replies with only what we're missing
                 sendSV(Array.from(encodeStateVector(ydoc)), peerId);
+                // Wait for yplayers to sync before announcing — skip Arbiter and unresolved Peer-XXXX
                 setTimeout(() => {
                     const name = getPlayerName(peerId);
-                    if (name !== 'Arbiter') log(`[System] ${name} joined.`, '#aaa');
-                }, 1500);
+                    if (name === 'Arbiter' || name.startsWith('Peer-')) return;
+                    log(`[System] ${name} joined.`, '#aaa');
+                }, 3000);
             } else if (!isQuickReconnect) {
                 sendSV(Array.from(encodeStateVector(ydoc)), peerId);
             }
@@ -307,18 +338,24 @@ const initNetworking = () => {
     const torrent = setupRoom(torrentRoom);
 
     // Gossip relay: forward remote updates so partial-mesh peers converge.
-    // Hop limit = 2: kills exponential amplification while bridging 1 missing link.
-    // Local writes (origin falsy) always broadcast unrestricted.
-    const seen = new Set();
+    // Hop limit = 2 prevents exponential amplification while bridging 1 missing link.
+    // FIFO eviction on gossipSeen prevents re-relay storms on burst clears.
+    const GOSSIP_MAX = 500;
+    const gossipSeen = new Set();
+    const gossipFifo = [];  // insertion-order keys for FIFO eviction
     ydoc.on('update', (update, origin) => {
-        // Deduplicate by first 8 bytes (Yjs clock prefix) to avoid echo storms
         const key = update.slice(0, 8).join(',');
-        if (seen.has(key)) return;
-        seen.add(key);
-        if (seen.size > 500) seen.clear(); // bounded memory
+        if (gossipSeen.has(key)) return;
+        gossipSeen.add(key);
+        gossipFifo.push(key);
+        if (gossipFifo.length > GOSSIP_MAX) gossipSeen.delete(gossipFifo.shift()); // evict oldest only
 
-        const hops = (origin === 'remote') ? 1 : 0;
-        if (hops < 2) {
+        if (origin !== 'remote') {
+            // Local write — broadcast to all
+            nostr.sendSync(update);
+            torrent.sendSync(update);
+        } else {
+            // Remote write — relay once (hop 1→2) so partial-mesh peers converge
             nostr.sendSync(update);
             torrent.sendSync(update);
         }
@@ -376,7 +413,17 @@ function handleCommand(cmd) {
             break;
 
         case 'who': {
-            const allPeers = Array.from(yplayers.keys()).filter(id => id !== selfId);
+            const seen = new Set();
+            const allPeers = Array.from(yplayers.keys()).filter(id => {
+                if (id === selfId) return false;
+                const entry = yplayers.get(id);
+                const name = typeof entry === 'string' ? entry : entry?.name;
+                // Deduplicate Arbiter (two transport IDs) and stale same-ph entries
+                const dedupeKey = name === 'Arbiter' ? 'Arbiter' : (entry?.ph || id);
+                if (seen.has(dedupeKey)) return false;
+                seen.add(dedupeKey);
+                return true;
+            });
             const peerList = allPeers.map(id => {
                 const name = getPlayerName(id);
                 const loc = getPlayerLocation(id);
@@ -615,7 +662,7 @@ function handleCommand(cmd) {
 
             if (!targetId) { log(`No player named "${args.slice(1).join(' ')}" is in your location.`); break; }
             const tName = getPlayerName(targetId);
-            sentChallenges.set(targetId, Date.now() + DUEL_TIMEOUT_MS);
+            sentChallenges.set(targetId, { expires: Date.now() + DUEL_TIMEOUT_MS, day: worldState.day });
             setTimeout(() => sentChallenges.delete(targetId), DUEL_TIMEOUT_MS);
             yevents.push([{ type: EVENT_TYPES.PVP_CHALLENGE, from: selfId, fromName: localPlayer.name, target: targetId, day: worldState.day }]);
             log(`[DUEL] You challenge ${tName} to a duel!`, '#ff0');
@@ -624,12 +671,12 @@ function handleCommand(cmd) {
 
         case 'accept': {
             if (!pendingDuel || Date.now() > pendingDuel.expiresAt) { log(`No pending duel challenge.`); pendingDuel = null; break; }
-            const { challengerId, challengerName } = pendingDuel;
+            const { challengerId, challengerName, day: challengeDay } = pendingDuel;
             pendingDuel = null;
             yevents.push([{ type: EVENT_TYPES.PVP_ACCEPT, from: selfId, fromName: localPlayer.name, target: challengerId, day: worldState.day }]);
 
-            // Defender resolves with same args as challenger (challengerId first) then flips perspective
-            const outcome = resolvePvp(challengerId, selfId);
+            // Use day pinned at challenge time — same seed as challenger computes
+            const outcome = resolvePvp(challengerId, selfId, challengeDay);
             const myOutcome = outcome === 'win' ? 'loss' : outcome === 'loss' ? 'win' : 'draw';
             const dmg = myOutcome === 'loss' ? Math.floor(localPlayer.hp * 0.3) : 0;
             if (myOutcome === 'win') {

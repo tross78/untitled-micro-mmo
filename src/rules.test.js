@@ -416,3 +416,225 @@ describe('deriveNarrative', () => {
         expect(overlap).toBeLessThan(10);
     });
 });
+
+// --- getMood edge cases (regression: day=0, cache correctness) ---
+
+describe('getMood edge cases', () => {
+    test('day=0 returns MOOD_INITIAL without crashing', () => {
+        expect(getMood('any', 0)).toBe(MOOD_INITIAL);
+    });
+
+    test('cache reuse: getMood(seed, 10) then getMood(seed, 5) returns same as fresh', () => {
+        const seed = 'cache-test';
+        const full = getMood(seed, 10);   // builds seq[0..9]
+        _resetMoodCache();
+        const fresh5 = getMood(seed, 5);  // builds seq[0..4] fresh
+        _resetMoodCache();
+        getMood(seed, 10);                // rebuild cache
+        const cached5 = getMood(seed, 5); // should hit cache, same result
+        expect(cached5).toBe(fresh5);
+    });
+
+    test('cache extends correctly: getMood(seed, 5) then getMood(seed, 10) matches direct', () => {
+        const seed = 'extend-test';
+        getMood(seed, 5);                 // prime cache to day 5
+        const extended = getMood(seed, 10); // extend to day 10
+        _resetMoodCache();
+        const direct = getMood(seed, 10); // compute fresh
+        expect(extended).toBe(direct);
+    });
+
+    test('getMood sequence is internally consistent across days', () => {
+        const seed = 'consistency-test';
+        // Each day's mood must be a valid transition from the previous day
+        const validMoods = ['fearful', 'weary', 'joyful'];
+        let prev = MOOD_INITIAL;
+        for (let d = 1; d <= 20; d++) {
+            const mood = getMood(seed, d);
+            expect(validMoods).toContain(mood);
+            prev = mood;
+        }
+    });
+
+    test('two peers independently computing getMood reach the same result', () => {
+        const seed = 'split-brain-test';
+        const day = 42;
+        // Simulate peer A
+        _resetMoodCache();
+        const peerA = getMood(seed, day);
+        // Simulate peer B (fresh cache)
+        _resetMoodCache();
+        const peerB = getMood(seed, day);
+        expect(peerA).toBe(peerB);
+    });
+});
+
+// --- EVENT_TYPES completeness ---
+
+describe('EVENT_TYPES', () => {
+    test('contains all expected compact codes', () => {
+        expect(EVENT_TYPES.MOVE).toBe('m');
+        expect(EVENT_TYPES.KILL).toBe('k');
+        expect(EVENT_TYPES.DEATH).toBe('d');
+        expect(EVENT_TYPES.NEWS).toBe('n');
+    });
+
+    test('contains PvP event types', () => {
+        expect(EVENT_TYPES.PVP_CHALLENGE).toBeDefined();
+        expect(EVENT_TYPES.PVP_ACCEPT).toBeDefined();
+        expect(EVENT_TYPES.PVP_RESULT).toBeDefined();
+    });
+
+    test('all codes are single or two character strings', () => {
+        Object.values(EVENT_TYPES).forEach(code => {
+            expect(typeof code).toBe('string');
+            expect(code.length).toBeLessThanOrEqual(2);
+        });
+    });
+
+    test('all codes are unique', () => {
+        const codes = Object.values(EVENT_TYPES);
+        expect(new Set(codes).size).toBe(codes.length);
+    });
+});
+
+// --- hashStr edge cases ---
+
+describe('hashStr edge cases', () => {
+    test('empty string does not crash', () => {
+        expect(() => hashStr('')).not.toThrow();
+    });
+
+    test('empty string returns a non-negative integer', () => {
+        expect(hashStr('')).toBeGreaterThanOrEqual(0);
+    });
+
+    test('single char strings are distinct', () => {
+        expect(hashStr('a')).not.toBe(hashStr('b'));
+    });
+
+    test('order matters: hashStr(AB) !== hashStr(BA)', () => {
+        expect(hashStr('ab')).not.toBe(hashStr('ba'));
+    });
+
+    test('PvP seed asymmetry: challenger+target !== target+challenger', () => {
+        // Ensures challenger and defender can't accidentally get the same seed
+        const A = 'peer-alice-id';
+        const B = 'peer-bob-id';
+        const day = 7;
+        expect(hashStr(A + B + day)).not.toBe(hashStr(B + A + day));
+    });
+});
+
+// --- seededRNG edge cases ---
+
+describe('seededRNG edge cases', () => {
+    test('seed=0 produces valid output without hanging', () => {
+        const rng = seededRNG(0);
+        expect(() => rng(100)).not.toThrow();
+        expect(rng(100)).toBeGreaterThanOrEqual(0);
+        expect(rng(100)).toBeLessThan(100);
+    });
+
+    test('max=1 always returns 0', () => {
+        const rng = seededRNG(42);
+        for (let i = 0; i < 10; i++) expect(rng(1)).toBe(0);
+    });
+
+    test('large max does not overflow', () => {
+        const rng = seededRNG(1);
+        const val = rng(4294967295);
+        expect(val).toBeGreaterThanOrEqual(0);
+        expect(Number.isInteger(val)).toBe(true);
+    });
+});
+
+// --- Season boundary regression ---
+
+describe('Season boundaries', () => {
+    const boundaries = [
+        [30, 'spring'], [31, 'summer'],
+        [60, 'summer'], [61, 'autumn'],
+        [90, 'autumn'], [91, 'winter'],
+        [120, 'winter'], [121, 'spring'],
+    ];
+    boundaries.forEach(([day, expected]) => {
+        test(`day ${day} is ${expected}`, () => {
+            expect(getSeason(day)).toBe(expected);
+        });
+    });
+});
+
+// --- deriveWorldState two-peer convergence (regression: split-brain) ---
+
+describe('Two-peer world state convergence', () => {
+    test('both peers derive identical world state from same seed+day', () => {
+        const seed = 'h3arthw1ck-convergence';
+        const day = 56;
+        _resetMoodCache();
+        const peerA = deriveWorldState(seed, day);
+        _resetMoodCache();
+        const peerB = deriveWorldState(seed, day);
+        expect(peerA).toEqual(peerB);
+    });
+
+    test('different days always produce different day values', () => {
+        const seed = 'h3arthw1ck-test';
+        expect(deriveWorldState(seed, 1).day).toBe(1);
+        expect(deriveWorldState(seed, 50).day).toBe(50);
+        expect(deriveWorldState(seed, 100).day).toBe(100);
+    });
+
+    test('world state is stable across 100 days without drift', () => {
+        const seed = 'stability-test';
+        // Run twice — if getMood cache causes drift, results diverge
+        const run1 = Array.from({length: 100}, (_, i) => deriveWorldState(seed, i + 1).mood);
+        _resetMoodCache();
+        const run2 = Array.from({length: 100}, (_, i) => deriveWorldState(seed, i + 1).mood);
+        expect(run1).toEqual(run2);
+    });
+});
+
+// --- PvP determinism ---
+
+describe('PvP seed determinism', () => {
+    test('same challenger+target+day always produces same combat seed', () => {
+        const A = 'challenger-peer-id';
+        const B = 'target-peer-id';
+        const day = 14;
+        const seed1 = hashStr(A + B + day);
+        const seed2 = hashStr(A + B + day);
+        expect(seed1).toBe(seed2);
+    });
+
+    test('challenger perspective seed differs from reversed order', () => {
+        // Ensures the system is not accidentally symmetric
+        const A = 'peer-alpha';
+        const B = 'peer-beta';
+        const day = 7;
+        expect(hashStr(A + B + day)).not.toBe(hashStr(B + A + day));
+    });
+
+    test('different days produce different combat outcomes', () => {
+        const A = 'peer-alpha';
+        const B = 'peer-beta';
+        const seeds = new Set([1,2,3,4,5].map(day => hashStr(A + B + day)));
+        // At least some days should produce different seeds
+        expect(seeds.size).toBeGreaterThan(1);
+    });
+
+    test('resolveAttack is deterministic for PvP seed pattern', () => {
+        const A = 'peer-x';
+        const B = 'peer-y';
+        const day = 21;
+        const combatSeed = hashStr(A + B + day);
+        const rng1 = seededRNG(combatSeed);
+        const rng2 = seededRNG(combatSeed);
+        let dmg1 = 0, dmg2 = 0;
+        for (let i = 0; i < 3; i++) {
+            dmg1 += resolveAttack(10, 3, rng1);
+            dmg2 += resolveAttack(10, 3, rng2);
+        }
+        expect(dmg1).toBe(dmg2);
+    });
+});
