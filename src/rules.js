@@ -134,15 +134,17 @@ export function rollScarcity(rng, season) {
 // --- SIMULATION: WORLD AS PURE FUNCTION ---
 
 export const MOOD_INITIAL = 'weary';
-export const EVENT_TYPES = { MOVE: 'm', KILL: 'k', DEATH: 'd', NEWS: 'n' };
+export const EVENT_TYPES = { MOVE: 'm', KILL: 'k', DEATH: 'd', NEWS: 'n', PVP_CHALLENGE: 'pc', PVP_ACCEPT: 'pa', PVP_RESULT: 'pr' };
 
+// Per-seed mood sequences: extend lazily, never recompute. ~6 bytes/day retained.
+const _moodSeqs = new Map();
+export const _resetMoodCache = () => _moodSeqs.clear(); // test isolation only
 export function getMood(worldSeed, day) {
-    let mood = MOOD_INITIAL;
-    for (let d = 1; d < day; d++) {
-        const rng = seededRNG(hashStr(worldSeed + d + 'daytick'));
-        mood = nextMood(mood, rng);
-    }
-    return mood;
+    let seq = _moodSeqs.get(worldSeed);
+    if (!seq) { seq = [MOOD_INITIAL]; _moodSeqs.set(worldSeed, seq); }
+    for (let d = seq.length; d < day; d++)
+        seq.push(nextMood(seq[d - 1], seededRNG(hashStr(worldSeed + d + 'daytick'))));
+    return seq[day - 1] ?? MOOD_INITIAL;
 }
 
 export function getThreatLevel(day) {
@@ -226,7 +228,6 @@ export const DEFAULT_PLAYER_STATS = {
     inventory: [],
     combatRound: 0,
     currentEnemy: null,
-    playerId: null,
 };
 
 // --- WORLD DATA ---

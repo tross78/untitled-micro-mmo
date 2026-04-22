@@ -167,6 +167,26 @@ async function startArbiter() {
 
     console.log('[Arbiter] Started.');
 
+    // --- RESET (from within the running process, via pm2 IPC or SIGUSR2) ---
+    const doReset = async () => {
+        const newSeed = 'h3arthw1ck-' + Math.random().toString(16).slice(2);
+        ydoc.transact(() => {
+            yworld.set('world_seed', newSeed);
+            yworld.set('day', 1);
+            yevents.delete(0, yevents.length);
+        }, 'reset');
+        try { writeFileSync(STATE_FILE, Y.encodeStateAsUpdate(ydoc)); } catch (e) {}
+        const signature = await signMessage('reset', MASTER_SECRET_KEY);
+        try { nostr.sendOfficialEvent({ event: 'reset', signature }); } catch (e) {}
+        try { torrent.sendOfficialEvent({ event: 'reset', signature }); } catch (e) {}
+        console.log(`[Arbiter] World reset. New seed: ${newSeed}`);
+    };
+
+    // pm2 send hearthwick-arbiter reset
+    process.on('message', (msg) => { if (msg === 'reset') doReset(); });
+    // kill -USR2 <pid> (when not using pm2)
+    process.on('SIGUSR2', doReset);
+
     // --- DAY TICK ---
     const { deriveWorldState, deriveNarrative } = await import('../src/rules.js');
 
