@@ -81,7 +81,8 @@ const updateSimulation = () => {
     const newDay = yworld.get('day') || 1;
 
     if (newSeed !== worldState.seed || newDay !== worldState.day) {
-        const isNewDay = newDay > worldState.day && worldState.day !== 0;
+        const wasDisconnected = worldState.day === 0;
+        const isNewDay = newDay > worldState.day && !wasDisconnected;
         worldState.seed = newSeed;
         worldState.day = newDay;
 
@@ -91,14 +92,16 @@ const updateSimulation = () => {
         worldState.mood = nextMood(baseMood, rng);
         yworld.set('town_mood', worldState.mood);
 
-        if (isNewDay) {
+        if (wasDisconnected) {
+            log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
+            printStatus();
+        } else if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
             localPlayer.currentEnemy = null;
             handleCommand('news');
             printStatus();
-        } else {
-            log(`\n[System] World synced — Day ${worldState.day}, mood: ${worldState.mood.toUpperCase()}.`, '#aaa');
         }
+        // Subsequent syncs from the same state (second transport arriving) are silent
     }
 };
 
@@ -150,7 +153,15 @@ const initNetworking = () => {
         r.onPeerJoin(peerId => {
             if (!knownPeers.has(peerId)) {
                 knownPeers.add(peerId);
-                setTimeout(() => log(`[System] ${getPlayerName(peerId)} joined.`, '#aaa'), 1000);
+                // Delay so yplayers can sync before we read the name
+                setTimeout(() => {
+                    const name = getPlayerName(peerId);
+                    // Suppress duplicate transport connections from the same peer name
+                    const alreadyAnnounced = [...knownPeers].some(
+                        id => id !== peerId && getPlayerName(id) === name
+                    );
+                    if (!alreadyAnnounced) log(`[System] ${name} joined.`, '#aaa');
+                }, 1500);
                 sendSync(encodeStateAsUpdate(ydoc), peerId);
             }
         });
