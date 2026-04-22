@@ -203,11 +203,11 @@ const initNetworking = () => {
     const nostr = setupRoom(nostrRoom);
     const torrent = setupRoom(torrentRoom);
 
-    ydoc.on('update', (update, origin) => {
-        if (origin !== 'remote') {
-            nostr.sendSync(update);
-            torrent.sendSync(update);
-        }
+    ydoc.on('update', (update) => {
+        // Relay ALL updates (including remote) so partial-mesh peers get gossip.
+        // Yjs updates are idempotent — re-applying is safe.
+        nostr.sendSync(update);
+        torrent.sendSync(update);
     });
 
     gameActions = {
@@ -262,12 +262,15 @@ function handleCommand(cmd) {
             break;
 
         case 'who': {
-            const peerList = Array.from(knownPeers).map(id => {
+            const allPeers = Array.from(yplayers.keys()).filter(id => id !== selfId);
+            const peerList = allPeers.map(id => {
                 const name = getPlayerName(id);
                 const loc = getPlayerLocation(id);
-                return loc ? `${name} (${loc})` : name;
+                const connected = knownPeers.has(id) ? '' : ' ~';
+                return loc ? `${name} (${loc})${connected}` : `${name}${connected}`;
             });
-            log(`Online (${knownPeers.size + 1}): You — ${localPlayer.name} (${localPlayer.location}), ${peerList.join(', ') || 'None'}`);
+            log(`In world (${allPeers.length + 1}): You — ${localPlayer.name} (${localPlayer.location}), ${peerList.join(', ') || 'None'}`);
+            log(`~ = known but not directly connected`, '#555');
             break;
         }
 
