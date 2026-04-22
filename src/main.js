@@ -153,9 +153,12 @@ let gameActions = {};
 const initNetworking = () => {
     const rtcConfig = {
         iceServers: [
-            { urls: 'stun:stun.cloudflare.com:3478' },
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            // TURN relay — fallback when direct/STUN connection fails (e.g. symmetric NAT, different networks)
+            { urls: 'turn:openrelay.metered.ca:80',            username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443',           username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
         ],
     };
     const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, ROOM_NAME);
