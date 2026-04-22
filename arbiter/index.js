@@ -109,7 +109,16 @@ async function startArbiter() {
     console.log(`[Arbiter] Reachable Nostr relays: ${reachableRelays.length}/${ALL_NOSTR_RELAYS.length}`);
     console.log(`[Arbiter] Reachable trackers: ${reachableTrackers.length}/${ALL_TORRENT_TRACKERS.length}`);
 
-    const baseConfig = { appId: APP_ID, rtcPolyfill: RTCPeerConnection };
+    const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+    ];
+
+    const baseConfig = {
+        appId: APP_ID,
+        rtcPolyfill: RTCPeerConnection,
+        rtcConfig: { iceServers },
+    };
 
     const nostrConfig = {
         ...baseConfig,
