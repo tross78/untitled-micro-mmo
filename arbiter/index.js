@@ -227,7 +227,7 @@ async function startArbiter() {
 }
 
 const SURVIVABLE_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND']);
-const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate'];
+const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate', 'server response', 'socket hang up', 'ECONNRESET'];
 
 const isSurvivable = (err) =>
     SURVIVABLE_ERRORS.has(err.code) ||
