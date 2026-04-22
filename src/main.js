@@ -149,8 +149,15 @@ const peerLastSeen = new Map(); // peerId → timestamp of last leave
 let gameActions = {};
 
 const initNetworking = () => {
-    const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS }, ROOM_NAME);
-    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS }, ROOM_NAME);
+    const rtcConfig = {
+        iceServers: [
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+    };
+    const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, ROOM_NAME);
+    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, ROOM_NAME);
 
     const setupRoom = (r) => {
         const [sendSync, getSync] = r.makeAction('sync');
