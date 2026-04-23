@@ -129,9 +129,10 @@ async function startArbiter() {
                 fraudCounts.delete(proposerKey);
                 worldState.bans = Array.from(bans);
                 schedulePersist();
-                const banMsg = JSON.stringify({ event: 'ban', target: proposerKey });
+                const banState = { type: 'ban', target: proposerKey };
+                const banMsg = JSON.stringify(banState);
                 const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
-                torrent.sendState({ state: { type: 'ban', target: proposerKey }, signature: banSig });
+                torrent.sendState({ state: banMsg, signature: banSig });
             }
         });
 
@@ -146,9 +147,9 @@ async function startArbiter() {
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
 
     async function broadcastState() {
-        const data = JSON.stringify(worldState);
-        const signature = await signMessage(data, MASTER_SECRET_KEY);
-        const packet = { state: worldState, signature };
+        const stateStr = JSON.stringify(worldState);
+        const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
+        const packet = { state: stateStr, signature };
         torrent.sendState(packet);
         console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
     }

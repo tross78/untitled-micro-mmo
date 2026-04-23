@@ -94,6 +94,11 @@ const printStatus = () => {
 };
 
 const updateSimulation = (state) => {
+    if (state.type === 'ban') {
+        log(`[Arbiter] Proposer banned: ${state.target.slice(0, 8)}`, '#f55');
+        return;
+    }
+
     const newSeed = state.world_seed;
     const newDay = state.day || 1;
     const newTick = state.last_tick || 0;
@@ -198,9 +203,11 @@ const initNetworking = () => {
     const [, getState] = globalRooms.torrent.makeAction('world_state');
     getState(async (data) => {
         const { state, signature } = data;
-        const valid = await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey).catch(e => { log(`[Debug] verifyMessage error: ${e.message}`, '#f55'); return false; });
+        const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+        const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(e => { log(`[Debug] verifyMessage error: ${e.message}`, '#f55'); return false; });
         if (valid) {
-            updateSimulation(state);
+            const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
+            updateSimulation(stateObj);
             if (isProposer()) gameActions.relayState(data);
         } else {
             log(`[Debug] Arbiter state received but signature invalid — check MASTER_PUBLIC_KEY`, '#f55');
@@ -393,7 +400,11 @@ const joinInstance = (location, instanceId) => {
 
         getRelay(async (data) => {
             const { state, signature } = data;
-            if (await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey)) updateSimulation(state);
+            const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+            if (await verifyMessage(stateStr, signature, arbiterPublicKey)) {
+                const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
+                updateSimulation(stateObj);
+            }
         });
 
         getMove((buf, peerId) => {
