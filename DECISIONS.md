@@ -15,12 +15,12 @@ These decisions are final. Do not relitigate them without explicit instruction.
 
 ---
 
-## ADR-002: Browser client uses torrent-only transport; arbiter keeps both
+## ADR-002: Nostr dropped — torrent-only transport
 
-**Status:** Decided (updated v0.7.0 — nostr dropped from browser)
-**Do not:** Re-add `@trystero-p2p/nostr` to `src/main.js`.
+**Status:** Decided (v0.7.0)
+**Do not:** Re-add `@trystero-p2p/nostr` to `src/main.js` or `arbiter/index.js`.
 
-**Why:** `@trystero-p2p/nostr` pulls in `@noble/secp256k1` (~54KB source), which dominated the bundle. Torrent DHT peer discovery is sufficient and more reliable than nostr relays (which are centralized and can rate-limit). Dropping nostr reduced the gzipped bundle from ~30KB to ~25KB. The arbiter (`arbiter/index.js`) retains both transports since bundle size is irrelevant there and the redundancy helps the Pi stay reachable.
+**Why:** Nostr relays proved unreliable, frequently rate-limiting the Arbiter and causing connection noise. Additionally, `@trystero-p2p/nostr` pulls in `@noble/secp256k1` (~54KB source), which dominated the client bundle. BitTorrent tracker discovery is sufficient, more resilient, and keeps the bundle small (~25KB gzipped). Both client and Arbiter now use only the torrent transport.
 
 ---
 
