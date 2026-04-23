@@ -102,15 +102,7 @@ const updateSimulation = () => {
         if (wasDisconnected) {
             log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
             printStatus();
-            // Clean up stale yplayers entries that synced in after initial load
-            if (localPlayer.ph) {
-                ydoc.transact(() => {
-                    yplayers.forEach((entry, id) => {
-                        if (id !== selfId && typeof entry === 'object' && entry.ph === localPlayer.ph)
-                            yplayers.delete(id);
-                    });
-                }, 'cleanup');
-            }
+            pruneStale();
             if (knownPeers.size > 0) gameActions.broadcastSync();
         } else if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
@@ -123,6 +115,19 @@ const updateSimulation = () => {
 };
 
 yworld.observe(() => updateSimulation());
+
+// Continuously evict stale entries for our own ph as they propagate in from peers.
+// Runs on every yplayers change so late-arriving entries are caught regardless of timing.
+yplayers.observe(() => {
+    if (!localPlayer.ph) return;
+    const stale = [];
+    yplayers.forEach((entry, id) => {
+        if (id !== selfId && typeof entry === 'object' && entry.ph === localPlayer.ph)
+            stale.push(id);
+    });
+    if (stale.length === 0) return;
+    ydoc.transact(() => stale.forEach(id => yplayers.delete(id)), 'cleanup');
+});
 
 // --- PVP ---
 // pendingDuel: { challengerId (full), challengerName, expiresAt }
@@ -217,6 +222,11 @@ let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar', ...D
 
 // --- PERSISTENCE ---
 const STORAGE_KEY = 'hearthwick_state_v4';
+const HEARTBEAT_MS = 5 * 60 * 1000;  // update ts every 5 min
+const PRESENCE_TTL = 15 * 60 * 1000; // prune entries absent > 15 min
+
+const myEntry = () => ({ name: localPlayer.name, location: localPlayer.location, ph: localPlayer.ph, ts: Date.now() });
+
 const loadLocalState = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -226,21 +236,24 @@ const loadLocalState = () => {
             log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error(e); }
     }
-    // Remove stale entries from previous sessions (same playerId, different selfId)
-    if (localPlayer.ph) {
-        ydoc.transact(() => {
-            yplayers.forEach((entry, id) => {
-                if (id !== selfId && typeof entry === 'object' && entry.ph === localPlayer.ph) {
-                    yplayers.delete(id);
-                }
-            });
-        }, 'cleanup');
-    }
-    yplayers.set(selfId, { name: localPlayer.name, location: localPlayer.location, ph: localPlayer.ph });
+    yplayers.set(selfId, myEntry());
 };
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(localPlayer));
-    yplayers.set(selfId, { name: localPlayer.name, location: localPlayer.location, ph: localPlayer.ph });
+    yplayers.set(selfId, myEntry());
+};
+
+const pruneStale = () => {
+    const cutoff = Date.now() - PRESENCE_TTL;
+    const stale = [];
+    yplayers.forEach((entry, id) => {
+        if (id === selfId) return;
+        if (typeof entry === 'string') return; // Arbiter — string entry, skip
+        if (!entry.ts || entry.ts < cutoff) stale.push(id);
+    });
+    if (stale.length === 0) return;
+    ydoc.transact(() => stale.forEach(id => yplayers.delete(id)), 'prune');
+    if (stale.length > 0) log(`[System] Pruned ${stale.length} stale player(s).`, '#555');
 };
 
 // --- NETWORKING ---
@@ -328,10 +341,24 @@ const initNetworking = () => {
         });
 
         getMove((data, peerId) => {
-            log(`[System] ${getPlayerName(peerId)} moved to ${data.to}.`, '#aaa');
+            const name = getPlayerName(peerId);
+            if (data.to === localPlayer.location) {
+                // Find which direction they came from
+                const fromDir = Object.entries(world[data.to]?.exits || {}).find(([, dest]) => dest === data.from)?.[0];
+                log(`[System] ${name} arrives${fromDir ? ' from the ' + fromDir : ''}.`, '#aaa');
+            } else if (data.from === localPlayer.location) {
+                const toDir = Object.entries(world[data.from]?.exits || {}).find(([, dest]) => dest === data.to)?.[0];
+                log(`[System] ${name} leaves${toDir ? ' to the ' + toDir : ''}.`, '#aaa');
+            }
         });
 
-        return { sendSync, sendMove };
+        const [sendEmote, getEmote] = r.makeAction('emote');
+        getEmote((data, peerId) => {
+            if (data.room !== localPlayer.location) return;
+            log(`[System] ${getPlayerName(peerId)} ${data.text}`, '#aaa');
+        });
+
+        return { sendSync, sendMove, sendEmote };
     };
 
     const nostr = setupRoom(nostrRoom);
@@ -366,6 +393,10 @@ const initNetworking = () => {
             nostr.sendMove(data, peerId);
             torrent.sendMove(data, peerId);
         },
+        sendEmote: (data) => {
+            nostr.sendEmote(data);
+            torrent.sendEmote(data);
+        },
         broadcastSync: () => {
             const update = encodeStateAsUpdate(ydoc);
             nostr.sendSync(update);
@@ -381,6 +412,10 @@ const start = async () => {
         loadLocalState();
         initNetworking();
 
+        // Keep our presence entry fresh; prune ghosts every 5 min
+        setInterval(() => { yplayers.set(selfId, myEntry()); }, HEARTBEAT_MS);
+        setInterval(pruneStale, HEARTBEAT_MS);
+
         log(`\nWelcome to Hearthwick.`);
         log(`Your Peer ID: ${selfId}`);
         log(`[System] Connecting to the world...`, '#aaa');
@@ -390,10 +425,29 @@ const start = async () => {
             log(world[localPlayer.location].description);
         }, 1000);
 
+        // Input history — up/down arrow recall
+        const inputHistory = [];
+        let historyIdx = -1;
         input.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (historyIdx < inputHistory.length - 1) {
+                    historyIdx++;
+                    input.value = inputHistory[historyIdx];
+                }
+                return;
+            }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (historyIdx > 0) { historyIdx--; input.value = inputHistory[historyIdx]; }
+                else { historyIdx = -1; input.value = ''; }
+                return;
+            }
             if (e.key === 'Enter') {
                 const val = input.value.trim();
                 if (val) {
+                    if (val !== inputHistory[0]) { inputHistory.unshift(val); if (inputHistory.length > 50) inputHistory.pop(); }
+                    historyIdx = -1;
                     if (val.startsWith('/')) handleCommand(val.slice(1));
                     else log(`[System] Unknown input. Type /help for commands.`, '#aaa');
                     input.value = '';
@@ -409,7 +463,10 @@ function handleCommand(cmd) {
 
     switch (command) {
         case 'help':
-            log('Commands: /help, /who, /look, /move <dir>, /attack, /duel <name>, /accept, /decline, /stats, /inventory, /use <item>, /rest, /rename <name>, /news, /status, /clear');
+            log('--- Movement: /look, /move <dir>, /map', '#ffa500');
+            log('--- Combat:   /attack, /rest, /stats, /inventory, /use <item>', '#ffa500');
+            log('--- Social:   /who, /wave, /bow, /cheer, /duel <name>, /accept, /decline', '#ffa500');
+            log('--- World:    /news, /status, /rename <name>, /clear', '#ffa500');
             break;
 
         case 'who': {
@@ -446,6 +503,15 @@ function handleCommand(cmd) {
             } else if (loc.enemy) {
                 log(`A ${ENEMIES[loc.enemy].name} lurks here. Type /attack to engage.`, '#f55');
             }
+            // Show other players in this room
+            const here = Array.from(yplayers.keys()).filter(id => {
+                if (id === selfId) return false;
+                const e = yplayers.get(id);
+                return typeof e === 'object' && e.location === localPlayer.location;
+            });
+            if (here.length > 0) log(`Also here: ${here.map(getPlayerName).join(', ')}`, '#aaa');
+            const exits = Object.keys(loc.exits).join(', ');
+            log(`Exits: ${exits}`, '#555');
             break;
         }
 
@@ -455,9 +521,17 @@ function handleCommand(cmd) {
 
         case 'stats': {
             const bonus = levelBonus(localPlayer.level);
+            const maxHp = localPlayer.maxHp + bonus.maxHp;
+            const hpPct = localPlayer.hp / maxHp;
+            const hpColor = hpPct < 0.25 ? '#f55' : hpPct < 0.5 ? '#fa0' : '#0f0';
+            // XP thresholds: level L requires (L-1)^2 * 10 XP
+            const xpForLevel = (l) => (l - 1) ** 2 * 10;
+            const xpNext = xpForLevel(localPlayer.level + 1);
+            const xpCurr = xpForLevel(localPlayer.level);
+            const xpNeeded = xpNext - localPlayer.xp;
             log(`\n--- ${localPlayer.name.toUpperCase()} ---`, '#ffa500');
-            log(`Level: ${localPlayer.level}  XP: ${localPlayer.xp}`, '#ffa500');
-            log(`HP: ${localPlayer.hp} / ${localPlayer.maxHp + bonus.maxHp}`, '#ffa500');
+            log(`Level: ${localPlayer.level}  XP: ${localPlayer.xp} (${xpNeeded} to next level)`, '#ffa500');
+            log(`HP: ${localPlayer.hp} / ${maxHp}`, hpColor);
             log(`Attack: ${localPlayer.attack + bonus.attack}  Defense: ${localPlayer.defense + bonus.defense}`, '#ffa500');
             log(`Gold: ${localPlayer.gold}`, '#ffa500');
             break;
