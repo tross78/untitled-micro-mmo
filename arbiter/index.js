@@ -12,7 +12,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, 'world_state.json');
 
 async function startArbiter() {
-    const { joinRoom: joinNostr } = await import('@trystero-p2p/nostr');
     const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
@@ -58,24 +57,7 @@ async function startArbiter() {
     };
 
     // --- NETWORKING ---
-    const { lookup } = await import('dns/promises');
-
-    async function filterReachable(urls) {
-        const results = await Promise.allSettled(
-            urls.map(url => lookup(new URL(url).hostname))
-        );
-        return urls.filter((_, i) => {
-            const r = results[i];
-            return r.status === 'fulfilled' && r.value.address !== '0.0.0.0';
-        });
-    }
-
-    const { NOSTR_RELAYS: ALL_NOSTR_RELAYS, TORRENT_TRACKERS: ALL_TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
-
-    const [reachableRelays, reachableTrackers] = await Promise.all([
-        filterReachable(ALL_NOSTR_RELAYS),
-        filterReachable(ALL_TORRENT_TRACKERS),
-    ]);
+    const { TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
 
     const baseConfig = {
         appId: APP_ID,
@@ -83,8 +65,7 @@ async function startArbiter() {
         rtcConfig: { iceServers: ICE_SERVERS },
     };
 
-    const room = joinNostr({ ...baseConfig, relayUrls: reachableRelays.length ? reachableRelays : ALL_NOSTR_RELAYS }, 'global');
-    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: reachableTrackers.length ? reachableTrackers : ALL_TORRENT_TRACKERS }, 'global');
+    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: TORRENT_TRACKERS }, 'global');
 
     const ROLLUP_INTERVAL = 10000;
     const FRAUD_BAN_THRESHOLD = 3;
@@ -150,7 +131,6 @@ async function startArbiter() {
                 schedulePersist();
                 const banMsg = JSON.stringify({ event: 'ban', target: proposerKey });
                 const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
-                nostr.sendState({ state: { type: 'ban', target: proposerKey }, signature: banSig });
                 torrent.sendState({ state: { type: 'ban', target: proposerKey }, signature: banSig });
             }
         });
@@ -163,14 +143,12 @@ async function startArbiter() {
         return { sendState };
     };
 
-    const nostr = setupArbiterRoom(room, 'Nostr');
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
 
     async function broadcastState() {
         const data = JSON.stringify(worldState);
         const signature = await signMessage(data, MASTER_SECRET_KEY);
         const packet = { state: worldState, signature };
-        nostr.sendState(packet);
         torrent.sendState(packet);
         console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
     }
@@ -244,7 +222,12 @@ console.error = (...args) => {
     _consoleError(...args);
 };
 
+const SURVIVABLE_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH']);
 process.on('uncaughtException', (err) => {
+    if (SURVIVABLE_CODES.has(err.code)) {
+        console.warn('[Arbiter] Network error (non-fatal):', err.message);
+        return;
+    }
     console.error('[Arbiter] Uncaught Exception:', err.message);
     process.exit(1);
 });
