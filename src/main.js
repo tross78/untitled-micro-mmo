@@ -198,9 +198,12 @@ const initNetworking = () => {
     const [, getState] = globalRooms.torrent.makeAction('world_state');
     getState(async (data) => {
         const { state, signature } = data;
-        if (await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey)) {
+        const valid = await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey).catch(e => { log(`[Debug] verifyMessage error: ${e.message}`, '#f55'); return false; });
+        if (valid) {
             updateSimulation(state);
             if (isProposer()) gameActions.relayState(data);
+        } else {
+            log(`[Debug] Arbiter state received but signature invalid — check MASTER_PUBLIC_KEY`, '#f55');
         }
     });
 
