@@ -8,7 +8,7 @@ A **micro cosy metaverse** — a living, persistent fantasy world (Stardew Valle
 - **Determinism:** All randomness uses `mulberry32` via `seededRNG(hashStr(...))`. **Never use `Math.random()`.**
 - **Math:** **Integer math only** in simulation logic (no floats in damage/XP calculations).
 - **Memory:** Pi Zero W constraint (512MB RAM). Keep arbiter logic O(1) or O(log n) per event.
-- **Dependencies:** Do not add npm packages. Trystero (nostr + torrent) is the only transport.
+- **Dependencies:** Do not add npm packages. Trystero (torrent) is the only transport.
 - **Tests:** Run `npm test` before finishing any task. All **171 tests must pass**. Do not submit if any fail.
 
 ---
@@ -23,7 +23,7 @@ A **micro cosy metaverse** — a living, persistent fantasy world (Stardew Valle
 - **Persistence**: `localStorage` under key `hearthwick_state_v5`.
 
 ### Transport Layer
-- **Two transports in parallel**: `@trystero-p2p/nostr` and `@trystero-p2p/torrent`. Every broadcast goes over both.
+- **Transport**: `@trystero-p2p/torrent` only. Nostr has been removed due to relay instability and bundle size.
 - **Instance sharding**: Players join dynamic rooms named `getShardName(APP_ID, location, instanceId)` (e.g. `hearthwick-tavern-2`). Instance cap: 50 players.
 - **Global room**: A separate `'global'` room used only for Arbiter↔client state and rollup/fraud messages.
 

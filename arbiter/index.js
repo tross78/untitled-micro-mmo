@@ -13,10 +13,9 @@ const STATE_FILE = join(__dirname, 'world_state.json');
 
 async function startArbiter() {
     const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
-    const { joinRoom: joinNostr } = await import('@trystero-p2p/nostr');
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
-    const { APP_ID, ROOM_NAME, TORRENT_TRACKERS, NOSTR_RELAYS, ICE_SERVERS } = await import('../src/constants.js');
+    const { APP_ID, ROOM_NAME, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
     const { deriveWorldState } = await import('../src/rules.js');
     const dotenv = await import('dotenv');
 
@@ -29,7 +28,7 @@ async function startArbiter() {
 
     // --- STATE ---
     let worldState = {
-        world_seed: 'h3arthw1ck-' + Math.random().toString(16).slice(2),
+        world_seed: 'h3arthw1ck-' + crypto.getRandomValues(new Uint32Array(2)).reduce((s, v) => s + v.toString(16), ''),
         day: 1,
         last_tick: Date.now()
     };
@@ -65,7 +64,6 @@ async function startArbiter() {
     };
 
     const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: TORRENT_TRACKERS }, 'global');
-    const nostrRoom = joinNostr({ ...baseConfig, relayUrls: NOSTR_RELAYS }, 'global');
 
     const ROLLUP_INTERVAL = 10000;
     const FRAUD_BAN_THRESHOLD = 3;
@@ -133,7 +131,6 @@ async function startArbiter() {
                 const banMsg = JSON.stringify(banState);
                 const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
                 torrent.sendState({ state: banMsg, signature: banSig });
-                nostr.sendState({ state: banMsg, signature: banSig });
             }
         });
 
@@ -146,14 +143,12 @@ async function startArbiter() {
     };
 
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
-    const nostr = setupArbiterRoom(nostrRoom, 'Nostr');
 
     async function broadcastState() {
         const stateStr = JSON.stringify(worldState);
         const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
         const packet = { state: stateStr, signature };
         torrent.sendState(packet);
-        nostr.sendState(packet);
         console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
     }
 
@@ -162,7 +157,7 @@ async function startArbiter() {
     // --- RESET ---
     const doReset = async () => {
         worldState = {
-            world_seed: 'h3arthw1ck-' + Math.random().toString(16).slice(2),
+            world_seed: 'h3arthw1ck-' + crypto.getRandomValues(new Uint32Array(2)).reduce((s, v) => s + v.toString(16), ''),
             day: 1,
             last_tick: Date.now()
         };
@@ -218,31 +213,57 @@ async function startArbiter() {
     setTimeout(() => broadcastState().catch(e => console.error('[Arbiter] Broadcast failed:', e.message, e.code)), 5000);
 }
 
-const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate', 'server response', 'socket hang up', 'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED'];
-const _consoleError = console.error.bind(console);
-console.error = (...args) => {
-    const msg = String(args[0] ?? '') + String(args[1]?.message ?? '');
-    if (SURVIVABLE_MESSAGES.some(m => msg.includes(m))) return;
-    _consoleError(...args);
-};
+const SURVIVABLE_MESSAGES = [
+    'unsupported',
+    'DECODER',
+    'SSL',
+    'certificate',
+    'server response',
+    'socket hang up',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ECONNREFUSED',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'Unexpected server response'
+];
 
-const SURVIVABLE_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH']);
+const SURVIVABLE_CODES = new Set([
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ENETUNREACH',
+    'EHOSTUNREACH',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'UND_ERR_CONNECT_TIMEOUT'
+]);
+
+function isSurvivable(err) {
+    const msg = String(err?.message || err || '');
+    const code = err?.code;
+    if (SURVIVABLE_CODES.has(code)) return true;
+    if (SURVIVABLE_MESSAGES.some(m => msg.includes(m))) return true;
+    return false;
+}
+
 process.on('uncaughtException', (err) => {
-    if (SURVIVABLE_CODES.has(err.code)) {
-        console.warn('[Arbiter] Network error (non-fatal):', err.message);
+    if (isSurvivable(err)) {
+        console.warn('[Arbiter] Network error (non-fatal):', err.message || err);
         return;
     }
-    console.error('[Arbiter] Uncaught Exception:', err.message);
+    console.error('[Arbiter] Uncaught Exception:', err.message || err, err.stack);
     process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
-    const code = reason?.code;
-    if (SURVIVABLE_CODES.has(code)) {
-        console.warn('[Arbiter] Network rejection (non-fatal):', reason?.message);
+    if (isSurvivable(reason)) {
+        console.warn('[Arbiter] Network rejection (non-fatal):', reason?.message || reason);
         return;
     }
-    console.error('[Arbiter] Unhandled Rejection:', reason?.message ?? reason, 'code:', code, 'stack:', reason?.stack);
+    console.error('[Arbiter] Unhandled Rejection:', reason?.message ?? reason, 'code:', reason?.code, 'stack:', reason?.stack);
     process.exit(1);
 });
 

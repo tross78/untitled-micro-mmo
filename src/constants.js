@@ -4,15 +4,6 @@ export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 export const ROOM_NAME = 'lobby';
 
-// Open relays — no PoW, no web-of-trust required.
-export const NOSTR_RELAYS = [
-    'wss://relay.snort.social',
-    'wss://relay.primal.net',
-    'wss://relay.damus.io',
-    'wss://relay.nostr.band',
-    'wss://nostr-pub.wellorder.net',
-];
-
 // tracker.btorrent.xyz is hardcoded inside Trystero — its failures are harmless noise.
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
