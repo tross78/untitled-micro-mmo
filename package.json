@@ -13,8 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@trystero-p2p/nostr": "^0.23.1",
-    "@trystero-p2p/torrent": "^0.23.1",
-    "yjs": "^13.6.30"
+    "@trystero-p2p/torrent": "^0.23.1"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.29.2",

@@ -7,14 +7,15 @@ console.warn = (...args) => {
 
 import { joinRoom as joinNostr, selfId } from '@trystero-p2p/nostr';
 import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
-import { Doc, applyUpdate, encodeStateAsUpdate, encodeStateVector } from 'yjs';
 import {
     world, validateMove, hashStr, seededRNG,
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
     deriveWorldState, deriveNarrative, EVENT_TYPES,
 } from './rules';
-import { verifyMessage, generateKeyPair, importKey, exportKey } from './crypto';
+import { verifyMessage, generateKeyPair, importKey, exportKey, signMessage, computeHash, createMerkleRoot } from './crypto';
+import { IBLT } from './iblt';
+import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer';
 import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, NOSTR_RELAYS, TORRENT_TRACKERS, ICE_SERVERS } from './constants';
 
 const output = document.getElementById('output');
@@ -52,23 +53,23 @@ const initIdentity = async () => {
             playerKeys = keys;
             log(`[System] New identity generated.`);
         }
-        // Compact stable fingerprint from Ed25519 public key (8 hex chars vs 44)
         const exported = JSON.parse(localStorage.getItem('hearthwick_keys_v3'));
         localPlayer.ph = pidHash(exported.publicKey);
     } catch (e) {
         console.error('Identity Init Failed', e);
-        localStorage.removeItem('hearthwick_keys_v3');
         throw e;
     }
 };
 
 // --- STATE ---
-const ydoc = new Doc();
-const yworld = ydoc.getMap('world');
-const yplayers = ydoc.getMap('players');
-const yevents = ydoc.getArray('event_log');
+let worldState = { seed: '', day: 0, mood: '', season: '', seasonNumber: 1, threatLevel: 0, scarcity: [], lastTick: 0 };
+const players = new Map(); // id -> {name, location, ph, level, xp, ts}
+let news = [];
 
-let worldState = { seed: '', day: 0, mood: '', season: '', seasonNumber: 1, threatLevel: 0, scarcity: [] };
+// --- PVP STATE CHANNELS ---
+let pendingDuel = null; // { challengerId, challengerName, expiresAt, day }
+const activeChannels = new Map(); // targetId -> { opponentName, lastCommit, myHistory, theirHistory }
+const DUEL_TIMEOUT_MS = 60000;
 
 const printStatus = () => {
     log(`\n--- WORLD STATUS ---`, '#ffa500');
@@ -76,22 +77,31 @@ const printStatus = () => {
     log(`Town Mood: ${worldState.mood ? worldState.mood.toUpperCase() : 'UNKNOWN'}`, '#ffa500');
     log(`Threat Level: ${worldState.threatLevel}`, '#ffa500');
     if (worldState.scarcity.length > 0) log(`Scarce Goods: ${worldState.scarcity.join(', ')}`, '#f55');
+
+    if (worldState.lastTick) {
+        const nextTick = worldState.lastTick + 86400000;
+        const diff = nextTick - Date.now();
+        if (diff > 0) {
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            log(`Next day in ${h}h ${m}m`, '#ffa500');
+        }
+    }
     log(`World Seed: ${worldState.seed ? worldState.seed.slice(0, 12) + '...' : 'Finding peers...'}`, '#ffa500');
-    log(`Total Events: ${yevents.length}`, '#ffa500');
     log(`--------------------\n`, '#ffa500');
 };
 
-const updateSimulation = () => {
-    if (!yworld.has('world_seed')) return;
-    const newSeed = yworld.get('world_seed');
-    const newDay = yworld.get('day') || 1;
+const updateSimulation = (state) => {
+    const newSeed = state.world_seed;
+    const newDay = state.day || 1;
+    const newTick = state.last_tick || 0;
 
-    if (newSeed !== worldState.seed || newDay !== worldState.day) {
+    if (newSeed !== worldState.seed || newDay !== worldState.day || newTick !== worldState.lastTick) {
         const wasDisconnected = worldState.day === 0;
         const isNewDay = newDay > worldState.day && !wasDisconnected;
         worldState.seed = newSeed;
         worldState.day = newDay;
-        // Derive all world state locally — only seed+day come from Yjs
+        worldState.lastTick = newTick;
         const derived = deriveWorldState(newSeed, newDay);
         worldState.mood = derived.mood;
         worldState.season = derived.season;
@@ -102,130 +112,46 @@ const updateSimulation = () => {
         if (wasDisconnected) {
             log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
             printStatus();
-            pruneStale();
-            if (knownPeers.size > 0) gameActions.broadcastSync();
         } else if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
             localPlayer.currentEnemy = null;
-            handleCommand('news');
             printStatus();
         }
-        // Subsequent syncs from the same state (second transport arriving) are silent
     }
 };
 
-yworld.observe(() => updateSimulation());
-
-// Continuously evict stale entries for our own ph as they propagate in from peers.
-// Runs on every yplayers change so late-arriving entries are caught regardless of timing.
-yplayers.observe(() => {
-    if (!localPlayer.ph) return;
-    const stale = [];
-    yplayers.forEach((entry, id) => {
-        if (id !== selfId && typeof entry === 'object' && entry.ph === localPlayer.ph)
-            stale.push(id);
-    });
-    if (stale.length === 0) return;
-    ydoc.transact(() => stale.forEach(id => yplayers.delete(id)), 'cleanup');
-});
-
-// --- PVP ---
-// pendingDuel: { challengerId (full), challengerName, expiresAt }
-let pendingDuel = null;
-// sentChallenges: targetId (full) → expiresAt — tracks challenges we sent, so we can verify accepts
-const sentChallenges = new Map();
-const DUEL_TIMEOUT_MS = 60000;
-
-function resolvePvp(challengerId, targetId, day) {
-    // day pinned to challenge issuance — prevents de-sync if day ticks between challenge and accept
-    const seed = hashStr(challengerId + targetId + day);
-    const rng = seededRNG(seed);
-    const bonus = levelBonus(localPlayer.level);
-    const myAtk = localPlayer.attack + bonus.attack;
-    const myDef = localPlayer.defense + bonus.defense;
-    let myDmgTotal = 0, theirDmgTotal = 0;
-    for (let i = 0; i < 3; i++) {
-        myDmgTotal   += resolveAttack(myAtk, 3,     rng);
-        theirDmgTotal += resolveAttack(10,   myDef, rng);
-    }
-    return myDmgTotal > theirDmgTotal ? 'win' : myDmgTotal < theirDmgTotal ? 'loss' : 'draw';
-}
-
-yevents.observe((event) => {
-    // Don't process PvP events until world state is initialized
-    if (!worldState.day) return;
-
-    event.changes.added.forEach(item => {
-        item.content.getContent().forEach(e => {
-            if (e.type === EVENT_TYPES.PVP_CHALLENGE && e.target === selfId) {
-                // Don't overwrite an existing unexpired challenge
-                if (pendingDuel && Date.now() < pendingDuel.expiresAt) {
-                    log(`\n[DUEL] ${e.fromName} wants to duel but you already have a pending challenge.`, '#aaa');
-                    return;
-                }
-                pendingDuel = { challengerId: e.from, challengerName: e.fromName, expiresAt: Date.now() + DUEL_TIMEOUT_MS, day: e.day };
-                log(`\n[DUEL] ${e.fromName} challenges you to a duel! Type /accept or /decline. (expires in 60s)`, '#ff0');
-                setTimeout(() => {
-                    if (pendingDuel?.challengerId === e.from) {
-                        pendingDuel = null;
-                        log(`[DUEL] Challenge from ${e.fromName} expired.`, '#aaa');
-                    }
-                }, DUEL_TIMEOUT_MS);
-            }
-
-            if (e.type === EVENT_TYPES.PVP_ACCEPT && e.target === selfId) {
-                // Only process if we actually sent this challenge
-                const entry = sentChallenges.get(e.from);
-                if (!entry || Date.now() > entry.expires) return;
-                sentChallenges.delete(e.from);
-
-                const outcome = resolvePvp(selfId, e.from, entry.day);
-                const dmg = outcome === 'loss' ? Math.floor(localPlayer.hp * 0.3) : 0;
-                if (outcome === 'win') {
-                    log(`\n[DUEL] ${e.fromName} accepted! You WIN the duel! (+10 XP)`, '#ff0');
-                    localPlayer.xp += 10;
-                } else if (outcome === 'loss') {
-                    log(`\n[DUEL] ${e.fromName} accepted! You LOSE and take ${dmg} damage.`, '#f55');
-                    localPlayer.hp = Math.max(1, localPlayer.hp - dmg);
-                } else {
-                    log(`\n[DUEL] ${e.fromName} accepted! The duel ends in a DRAW.`, '#aaa');
-                }
-                // Store full IDs in result so getPlayerName lookups work
-                yevents.push([{ type: EVENT_TYPES.PVP_RESULT, from: selfId, target: e.from, outcome, day: worldState.day }]);
-                saveLocalState();
-            }
-        });
-    });
-});
-
-const getPlayerEntry = (id) => yplayers.get(id);
-// pidHash: stable 32-bit fingerprint — stored in yplayers instead of full 44-char base64 key
+// --- PLAYER UTILS ---
 const pidHash = (playerId) => playerId ? (hashStr(playerId) >>> 0).toString(16).padStart(8, '0') : null;
 const getTag = (ph) => ph ? ph.slice(0, 4) : '????';
 const getPlayerName = (id) => {
-    const entry = getPlayerEntry(id);
+    const entry = players.get(id);
     if (!entry) return `Peer-${id.slice(0, 4)}`;
-    const name = typeof entry === 'string' ? entry : (entry.name || `Peer-${id.slice(0, 4)}`);
-    const tag = typeof entry === 'object' && entry.ph ? getTag(entry.ph) : null;
+    const name = entry.name || `Peer-${id.slice(0, 4)}`;
+    const tag = entry.ph ? getTag(entry.ph) : null;
     return tag ? `${name}#${tag}` : name;
 };
-const getPlayerBaseName = (id) => {
-    const entry = getPlayerEntry(id);
-    if (!entry) return `Peer-${id.slice(0, 4)}`;
-    return typeof entry === 'string' ? entry : (entry.name || `Peer-${id.slice(0, 4)}`);
-};
-const getPlayerLocation = (id) => {
-    const entry = getPlayerEntry(id);
-    return entry && typeof entry === 'object' ? entry.location : null;
-};
+const getPlayerLocation = (id) => players.get(id)?.location;
+const getPlayerEntry = (id) => players.get(id);
+
 let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar', ...DEFAULT_PLAYER_STATS };
 
 // --- PERSISTENCE ---
-const STORAGE_KEY = 'hearthwick_state_v4';
-const HEARTBEAT_MS = 5 * 60 * 1000;  // update ts every 5 min
-const PRESENCE_TTL = 15 * 60 * 1000; // prune entries absent > 15 min
+const STORAGE_KEY = 'hearthwick_state_v5';
+const HEARTBEAT_MS = 30000;
+const PRESENCE_TTL = 90000;
 
-const myEntry = () => ({ name: localPlayer.name, location: localPlayer.location, ph: localPlayer.ph, ts: Date.now() });
+const myEntry = async () => {
+    const data = { 
+        name: localPlayer.name, 
+        location: localPlayer.location, 
+        ph: localPlayer.ph, 
+        level: localPlayer.level, 
+        xp: localPlayer.xp,
+        ts: Date.now() 
+    };
+    const signature = await signMessage(JSON.stringify(data), playerKeys.privateKey);
+    return { ...data, signature };
+};
 
 const loadLocalState = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -236,172 +162,289 @@ const loadLocalState = () => {
             log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error(e); }
     }
-    yplayers.set(selfId, myEntry());
 };
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(localPlayer));
-    yplayers.set(selfId, myEntry());
 };
 
 const pruneStale = () => {
     const cutoff = Date.now() - PRESENCE_TTL;
-    const stale = [];
-    yplayers.forEach((entry, id) => {
-        if (id === selfId) return;
-        if (typeof entry === 'string') return; // Arbiter — string entry, skip
-        if (!entry.ts || entry.ts < cutoff) stale.push(id);
+    players.forEach((entry, id) => {
+        if (id !== selfId && entry.ts < cutoff) players.delete(id);
     });
-    if (stale.length === 0) return;
-    ydoc.transact(() => stale.forEach(id => yplayers.delete(id)), 'prune');
-    if (stale.length > 0) log(`[System] Pruned ${stale.length} stale player(s).`, '#555');
 };
 
 // --- NETWORKING ---
+const ROLLUP_INTERVAL = 10000;
+const SKETCH_INTERVAL = 30000;
+let currentInstance = 1;
+let rooms = { nostr: null, torrent: null };
+let globalRooms = { nostr: null, torrent: null };
 let knownPeers = new Set();
-const peerLastSeen = new Map();       // peerId → timestamp of last leave
-const announcedPeers = new Map();     // peerId → timestamp of first join (expires after 24h)
-// FIFO-evicting dedup set — same update can arrive via both transports simultaneously
-const appliedUpdates = new Set();
-const appliedFifo = [];
-const APPLIED_MAX = 1000;
 let gameActions = {};
-
-const ANNOUNCE_TTL = 86400000; // 24h — expire announcedPeers so returning players get re-announced
-const hasAnnounced = (id) => {
-    const t = announcedPeers.get(id);
-    if (!t) return false;
-    if (Date.now() - t > ANNOUNCE_TTL) { announcedPeers.delete(id); return false; }
-    return true;
-};
 
 const initNetworking = () => {
     const rtcConfig = { iceServers: ICE_SERVERS };
-    const nostrRoom = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, ROOM_NAME);
-    const torrentRoom = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, ROOM_NAME);
 
-    const setupRoom = (r) => {
-        const [sendSync, getSync] = r.makeAction('sync');
-        const [sendSV,   getSV  ] = r.makeAction('sv');
+    // Global room is ONLY for Arbiter state
+    globalRooms.nostr = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, 'global');
+    globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, 'global');
+
+    const setupGlobal = (r) => {
+        const [sendRollup] = r.makeAction('rollup');
+        const [sendFraud] = r.makeAction('fraud_proof');
+        const [, getState] = r.makeAction('world_state');
+        getState(async (data) => {
+            const { state, signature } = data;
+            if (await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey)) {
+                updateSimulation(state);
+                if (isProposer()) gameActions.relayState(data);
+            }
+        });
+        return { sendRollup, sendFraud };
+    };
+
+    const gn = setupGlobal(globalRooms.nostr);
+    const gt = setupGlobal(globalRooms.torrent);
+
+    gameActions.submitRollup = (rollup) => {
+        gn.sendRollup(rollup);
+        gt.sendRollup(rollup);
+    };
+    gameActions.submitFraudProof = (proof) => {
+        gn.sendFraud(proof);
+        gt.sendFraud(proof);
+    };
+
+    joinInstance(localPlayer.location, currentInstance);
+
+    // Periodic Rollups & Sketching
+    setInterval(async () => {
+        if (!isProposer()) return;
+        const leafData = Array.from(players.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
+        leafData.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
+        leafData.sort();
+
+        const root = await createMerkleRoot(leafData);
+        if (!root) return;
+
+        const rollup = {
+            shard: getShardName(APP_ID, localPlayer.location, currentInstance),
+            root,
+            timestamp: Date.now(),
+            count: leafData.length
+        };
+        const signature = await signMessage(JSON.stringify(rollup), playerKeys.privateKey);
+        const data = { rollup, signature, publicKey: await exportKey(playerKeys.publicKey) };
+        gameActions.submitRollup(data);
+        gameActions.sendRollupLocal(data);
+    }, ROLLUP_INTERVAL);
+
+    setInterval(() => {
+        const iblt = new IBLT();
+        players.forEach((_, id) => iblt.insert(id));
+        iblt.insert(selfId);
+        gameActions.sendSketch(iblt.serialize());
+    }, SKETCH_INTERVAL);
+};
+
+const isProposer = () => {
+    const all = Array.from(players.keys()).sort();
+    return all.length === 0 || selfId < all[0];
+};
+
+const joinInstance = (location, instanceId) => {
+    if (rooms.nostr) rooms.nostr.leave();
+    if (rooms.torrent) rooms.torrent.torrent?.destroy();
+
+    const shard = getShardName(APP_ID, location, instanceId);
+    const rtcConfig = { iceServers: ICE_SERVERS };
+    rooms.nostr = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, shard);
+    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, shard);
+
+    const checkFull = () => {
+        const peerCount = Object.keys(rooms.nostr.getPeers()).length;
+        if (peerCount >= INSTANCE_CAP && instanceId < 10) {
+            log(`[System] Instance ${instanceId} is full, moving to ${instanceId + 1}...`, '#aaa');
+            currentInstance = instanceId + 1;
+            joinInstance(location, currentInstance);
+        }
+    };
+    setTimeout(checkFull, 5000);
+
+    const setupShard = (r) => {
         const [sendMove, getMove] = r.makeAction('move');
-        const [, getOfficialEvent] = r.makeAction('official_event');
+        const [sendEmote, getEmote] = r.makeAction('emote');
+        const [sendPresence, getPresence] = r.makeAction('presence');
+        const [sendRelay, getRelay] = r.makeAction('world_state_relay');
+        const [sendRollupLocal, getRollupLocal] = r.makeAction('rollup_local');
+        const [sendDuelChallenge, getDuelChallenge] = r.makeAction('duel_challenge');
+        const [sendDuelAccept, getDuelAccept] = r.makeAction('duel_accept');
+        const [sendDuelCommit, getDuelCommit] = r.makeAction('duel_commit');
+        const [sendSketch, getSketch] = r.makeAction('presence_sketch');
+        const [sendRequest, getRequest] = r.makeAction('request_presence');
 
-        // Peer sends us its state vector → reply with only the delta it's missing
-        getSV((sv, peerId) => {
-            const diff = encodeStateAsUpdate(ydoc, new Uint8Array(sv));
-            if (diff.length > 2) sendSync(diff, peerId);
+        getDuelChallenge((data, peerId) => {
+            if (data.target !== selfId) return;
+            log(`\n[DUEL] ${data.fromName} challenges you to a duel! Type /accept or /decline.`, '#ff0');
+            pendingDuel = { challengerId: peerId, challengerName: data.fromName, expiresAt: Date.now() + DUEL_TIMEOUT_MS, day: worldState.day };
         });
 
-        // Dedup applied updates — same Yjs op can arrive via both transports
-        getSync((update) => {
-            const key = update.slice(0, 8).join(',');
-            if (appliedUpdates.has(key)) return;
-            appliedUpdates.add(key);
-            appliedFifo.push(key);
-            if (appliedFifo.length > APPLIED_MAX) appliedUpdates.delete(appliedFifo.shift());
-            applyUpdate(ydoc, update, 'remote');
+        getDuelAccept(async (data, peerId) => {
+            if (data.target !== selfId) return;
+            log(`\n[DUEL] ${data.fromName} accepted your challenge! Initiating combat...`, '#0f0');
+            startStateChannel(peerId, data.fromName, worldState.day);
         });
 
-        getOfficialEvent(async (data) => {
-            const { event, signature } = data;
-            if (!await verifyMessage(event, signature, arbiterPublicKey)) return;
-            if (event === 'reset') {
-                log(`\n[SYSTEM] The Arbiter has reset the world. Reloading in 3s...`, '#f00');
-                setTimeout(() => {
-                    localStorage.removeItem(STORAGE_KEY);
-                    location.reload();
-                }, 3000);
+        getDuelCommit(async (buf, peerId) => {
+            const chan = activeChannels.get(peerId);
+            if (!chan) return;
+            const { commit, signature } = unpackDuelCommit(buf);
+            if (!await verifyMessage(JSON.stringify(commit), signature, getPlayerEntry(peerId)?.ph)) {
+                log(`[System] Invalid signature from opponent. Channel corrupted.`, '#f55');
+                activeChannels.delete(peerId);
                 return;
             }
-            log(`\n[OFFICIAL] ${event}`, '#0ff');
+            chan.theirHistory.push(commit);
+            if (chan.myHistory.length < chan.theirHistory.length) await resolveRound(peerId);
         });
 
-        r.onPeerJoin(peerId => {
-            knownPeers.add(peerId);
-            const RECONNECT_WINDOW_MS = 30000;
-            const lastSeen = peerLastSeen.get(peerId) || 0;
-            const isQuickReconnect = (Date.now() - lastSeen) < RECONNECT_WINDOW_MS;
-            peerLastSeen.delete(peerId); // clear AFTER reading
-            if (!hasAnnounced(peerId)) {
-                announcedPeers.set(peerId, Date.now());
-                // Send our state vector — peer replies with only what we're missing
-                sendSV(Array.from(encodeStateVector(ydoc)), peerId);
-                // Wait for yplayers to sync before announcing — skip Arbiter and unresolved Peer-XXXX
-                setTimeout(() => {
-                    const name = getPlayerName(peerId);
-                    if (name === 'Arbiter' || name.startsWith('Peer-')) return;
-                    log(`[System] ${name} joined.`, '#aaa');
-                }, 3000);
-            } else if (!isQuickReconnect) {
-                sendSV(Array.from(encodeStateVector(ydoc)), peerId);
+        getSketch(async (remoteTable, peerId) => {
+            const localIblt = new IBLT();
+            players.forEach((_, id) => localIblt.insert(id));
+            localIblt.insert(selfId);
+            const remoteIblt = IBLT.fromSerialized(remoteTable);
+            const diff = IBLT.subtract(localIblt, remoteIblt);
+            const { added, removed, success } = diff.decode();
+            // JSON can't handle BigInt, convert to string for the wire
+            if (success && removed.length > 0) sendRequest(removed.map(id => id.toString()), peerId);
+        });
+
+        getRequest(async (idStrings, peerId) => {
+            const ids = idStrings.map(s => BigInt(s));
+            const response = {};
+            const liblt = new IBLT();
+            for (const [id, data] of players.entries()) {
+                const numeric = liblt._hashKey(id);
+                if (ids.includes(numeric)) {
+                    response[id] = packPresence(data);
+                }
+            }
+            const myIdNumeric = liblt._hashKey(selfId);
+            if (ids.includes(myIdNumeric)) {
+                const entry = await myEntry();
+                response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+            }
+            if (Object.keys(response).length > 0) sendPresence(response, peerId);
+        });
+
+        getPresence((data, peerId) => {
+            if (data instanceof Uint8Array) {
+                players.set(peerId, { ...unpackPresence(data), ts: Date.now() });
+            } else if (data.name) {
+                // Individual JSON update (fallback)
+                players.set(peerId, { ...data, ts: Date.now() });
+            } else {
+                // Batch update
+                Object.entries(data).forEach(([id, p]) => {
+                    if (id !== selfId) {
+                        // If it's the {presence, publicKey} format
+                        const presenceData = p.presence || p;
+                        const unpacked = (presenceData instanceof Uint8Array) ? unpackPresence(presenceData) : presenceData;
+                        players.set(id, { ...unpacked, ts: Date.now(), publicKey: p.publicKey });
+                    }
+                });
             }
         });
-        r.onPeerLeave(peerId => {
-            knownPeers.delete(peerId);
-            peerLastSeen.set(peerId, Date.now());
+
+        getRollupLocal(async (data) => {
+            const { rollup, signature, publicKey } = data;
+            if (!await verifyMessage(JSON.stringify(rollup), signature, publicKey)) return;
+            const leafData = Array.from(players.entries())
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
+            leafData.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
+            leafData.sort();
+            const ourRoot = await createMerkleRoot(leafData);
+            if (ourRoot !== rollup.root) {
+                log(`[System] Fraud detected in instance! Submitting proof to Arbiter...`, '#f55');
+                const proof = { 
+                    rollup: data, 
+                    witness: await Promise.all(Array.from(players.entries()).map(async ([id, p]) => ({ 
+                        id, 
+                        p, 
+                        publicKey: p.publicKey || (id === selfId ? await exportKey(playerKeys.publicKey) : null)
+                    })))
+                };
+                gameActions.submitFraudProof(proof);
+            }
         });
 
-        getMove((data, peerId) => {
+        getRelay(async (data) => {
+            const { state, signature } = data;
+            if (await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey)) updateSimulation(state);
+        });
+
+        getMove((buf, peerId) => {
+            const data = unpackMove(buf);
             const name = getPlayerName(peerId);
             if (data.to === localPlayer.location) {
-                // Find which direction they came from
                 const fromDir = Object.entries(world[data.to]?.exits || {}).find(([, dest]) => dest === data.from)?.[0];
                 log(`[System] ${name} arrives${fromDir ? ' from the ' + fromDir : ''}.`, '#aaa');
+                handleCommand('look');
             } else if (data.from === localPlayer.location) {
                 const toDir = Object.entries(world[data.from]?.exits || {}).find(([, dest]) => dest === data.to)?.[0];
                 log(`[System] ${name} leaves${toDir ? ' to the ' + toDir : ''}.`, '#aaa');
             }
         });
 
-        const [sendEmote, getEmote] = r.makeAction('emote');
-        getEmote((data, peerId) => {
-            if (data.room !== localPlayer.location) return;
+        getEmote((buf, peerId) => {
+            const data = unpackEmote(buf);
             log(`[System] ${getPlayerName(peerId)} ${data.text}`, '#aaa');
         });
 
-        return { sendSync, sendMove, sendEmote };
+        r.onPeerJoin(async peerId => {
+            knownPeers.add(peerId);
+            gameActions.sendPresence(await myEntry(), peerId);
+        });
+        r.onPeerLeave(peerId => {
+            knownPeers.delete(peerId);
+            players.delete(peerId);
+        });
+
+        return { sendMove, sendEmote, sendPresence, sendRelay, sendRollupLocal, sendSketch, sendRequest, sendDuelChallenge, sendDuelAccept, sendDuelCommit };
     };
 
-    const nostr = setupRoom(nostrRoom);
-    const torrent = setupRoom(torrentRoom);
-
-    // Gossip relay: forward remote updates so partial-mesh peers converge.
-    // Hop limit = 2 prevents exponential amplification while bridging 1 missing link.
-    // FIFO eviction on gossipSeen prevents re-relay storms on burst clears.
-    const GOSSIP_MAX = 500;
-    const gossipSeen = new Set();
-    const gossipFifo = [];  // insertion-order keys for FIFO eviction
-    ydoc.on('update', (update, origin) => {
-        const key = update.slice(0, 8).join(',');
-        if (gossipSeen.has(key)) return;
-        gossipSeen.add(key);
-        gossipFifo.push(key);
-        if (gossipFifo.length > GOSSIP_MAX) gossipSeen.delete(gossipFifo.shift()); // evict oldest only
-
-        if (origin !== 'remote') {
-            // Local write — broadcast to all
-            nostr.sendSync(update);
-            torrent.sendSync(update);
-        } else {
-            // Remote write — relay once (hop 1→2) so partial-mesh peers converge
-            nostr.sendSync(update);
-            torrent.sendSync(update);
-        }
-    });
+    const n = setupShard(rooms.nostr);
+    const t = setupShard(rooms.torrent);
 
     gameActions = {
-        sendMove: (data, peerId) => {
-            nostr.sendMove(data, peerId);
-            torrent.sendMove(data, peerId);
+        ...gameActions,
+        sendMove: (data) => {
+            const packed = packMove(data.from, data.to);
+            n.sendMove(packed); t.sendMove(packed);
         },
         sendEmote: (data) => {
-            nostr.sendEmote(data);
-            torrent.sendEmote(data);
+            const packed = packEmote(data.text);
+            n.sendEmote(packed); t.sendEmote(packed);
         },
-        broadcastSync: () => {
-            const update = encodeStateAsUpdate(ydoc);
-            nostr.sendSync(update);
-            torrent.sendSync(update);
+        sendPresence: (data, target) => { 
+            const packed = (data.signature) ? packPresence(data) : data;
+            if (target) { n.sendPresence(packed, target); t.sendPresence(packed, target); }
+            else { n.sendPresence(packed); t.sendPresence(packed); }
         },
+        relayState: (data) => { n.sendRelay(data); t.sendRelay(data); },
+        sendRollupLocal: (data) => { n.sendRollupLocal(data); t.sendRollupLocal(data); },
+        sendDuelChallenge: (data) => { n.sendDuelChallenge(data); t.sendDuelChallenge(data); },
+        sendDuelAccept: (data) => { n.sendDuelAccept(data); t.sendDuelAccept(data); },
+        sendDuelCommit: (data, target) => {
+            const packed = packDuelCommit({ ...data.commit, signature: data.signature });
+            n.sendDuelCommit(packed, target); t.sendDuelCommit(packed, target);
+        },
+        sendSketch: (data) => { n.sendSketch(data); t.sendSketch(data); },
+        sendRequest: (data, target) => { n.sendRequest(data, target); t.sendRequest(data, target); }
     };
 };
 
@@ -412,8 +455,7 @@ const start = async () => {
         loadLocalState();
         initNetworking();
 
-        // Keep our presence entry fresh; prune ghosts every 5 min
-        setInterval(() => { yplayers.set(selfId, myEntry()); }, HEARTBEAT_MS);
+        setInterval(async () => { gameActions.sendPresence(await myEntry()); }, HEARTBEAT_MS);
         setInterval(pruneStale, HEARTBEAT_MS);
 
         log(`\nWelcome to Hearthwick.`);
@@ -425,7 +467,6 @@ const start = async () => {
             log(world[localPlayer.location].description);
         }, 1000);
 
-        // Input history — up/down arrow recall
         const inputHistory = [];
         let historyIdx = -1;
         input.addEventListener('keydown', (e) => {
@@ -435,27 +476,76 @@ const start = async () => {
                     historyIdx++;
                     input.value = inputHistory[historyIdx];
                 }
-                return;
-            }
-            if (e.key === 'ArrowDown') {
+            } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 if (historyIdx > 0) { historyIdx--; input.value = inputHistory[historyIdx]; }
                 else { historyIdx = -1; input.value = ''; }
-                return;
-            }
-            if (e.key === 'Enter') {
+            } else if (e.key === 'Enter') {
                 const val = input.value.trim();
                 if (val) {
                     if (val !== inputHistory[0]) { inputHistory.unshift(val); if (inputHistory.length > 50) inputHistory.pop(); }
                     historyIdx = -1;
                     if (val.startsWith('/')) handleCommand(val.slice(1));
-                    else log(`[System] Unknown input. Type /help for commands.`, '#aaa');
                     input.value = '';
                 }
             }
         });
     } catch (err) { log(`[FATAL] Engine crash: ${err.message}`, '#f00'); }
 };
+
+async function startStateChannel(targetId, targetName, day) {
+    activeChannels.set(targetId, {
+        opponentName: targetName,
+        day,
+        round: 0,
+        myHistory: [],
+        theirHistory: []
+    });
+    await resolveRound(targetId);
+}
+
+async function resolveRound(targetId) {
+    const chan = activeChannels.get(targetId);
+    if (!chan) return;
+
+    chan.round++;
+    const seed = hashStr(selfId + targetId + chan.day + chan.round);
+    const rng = seededRNG(seed);
+    
+    const myBonus = levelBonus(localPlayer.level);
+    const myAtk = localPlayer.attack + myBonus.attack;
+    
+    const opponent = getPlayerEntry(targetId);
+    const opBonus = levelBonus(opponent?.level || 1);
+    const opDef = (DEFAULT_PLAYER_STATS.defense || 3) + opBonus.defense;
+
+    const dmg = resolveAttack(myAtk, opDef, rng);
+
+    const commit = { round: chan.round, dmg, day: chan.day };
+    const signature = await signMessage(JSON.stringify(commit), playerKeys.privateKey);
+    chan.myHistory.push(commit);
+    
+    gameActions.sendDuelCommit({ commit, signature }, targetId);
+
+    if (chan.round >= 3) {
+        let totalMyDmg = chan.myHistory.reduce((a, b) => a + b.dmg, 0);
+        let totalTheirDmg = chan.theirHistory.reduce((a, b) => a + b.dmg, 0);
+        
+        log(`\n--- DUEL RESULT vs ${chan.opponentName} ---`, '#ff0');
+        log(`You dealt: ${totalMyDmg} | Opponent dealt: ${totalTheirDmg}`, '#aaa');
+        
+        if (totalMyDmg > totalTheirDmg) {
+            log(`You WIN! (+10 XP)`, '#0f0');
+            localPlayer.xp += 10;
+        } else if (totalMyDmg < totalTheirDmg) {
+            log(`You LOSE.`, '#f55');
+        } else {
+            log(`It's a DRAW.`, '#aaa');
+        }
+        activeChannels.delete(targetId);
+        saveLocalState();
+    }
+}
 
 function handleCommand(cmd) {
     const args = cmd.split(' ');
@@ -466,31 +556,43 @@ function handleCommand(cmd) {
             log('--- Movement: /look, /move <dir>, /map', '#ffa500');
             log('--- Combat:   /attack, /rest, /stats, /inventory, /use <item>', '#ffa500');
             log('--- Social:   /who, /wave, /bow, /cheer, /duel <name>, /accept, /decline', '#ffa500');
-            log('--- World:    /news, /status, /rename <name>, /clear', '#ffa500');
+            log('--- World:    /status, /rename <name>, /clear', '#ffa500');
             break;
 
+        case 'duel': {
+            const targetName = args.slice(1).join(' ').toLowerCase();
+            if (!targetName) { log(`Usage: /duel <name>`); break; }
+            const targetId = Array.from(players.keys()).find(id => getPlayerName(id).toLowerCase().includes(targetName));
+            if (!targetId) { log(`Player not found.`); break; }
+            log(`[DUEL] Challenging ${getPlayerName(targetId)}...`, '#ff0');
+            gameActions.sendDuelChallenge({ target: targetId, fromName: localPlayer.name });
+            break;
+        }
+
+        case 'accept': {
+            if (!pendingDuel || Date.now() > pendingDuel.expiresAt) { log(`No pending challenge.`); break; }
+            log(`[DUEL] Accepting challenge from ${pendingDuel.challengerName}...`, '#0f0');
+            gameActions.sendDuelAccept({ target: pendingDuel.challengerId, fromName: localPlayer.name });
+            startStateChannel(pendingDuel.challengerId, pendingDuel.challengerName, pendingDuel.day);
+            pendingDuel = null;
+            break;
+        }
+
+        case 'decline': {
+            log(`[DUEL] Challenge declined.`);
+            pendingDuel = null;
+            break;
+        }
+
         case 'who': {
-            const seen = new Set();
-            const allPeers = Array.from(yplayers.keys()).filter(id => {
-                if (id === selfId) return false;
-                const entry = yplayers.get(id);
-                const name = typeof entry === 'string' ? entry : entry?.name;
-                // Deduplicate Arbiter (two transport IDs) and stale same-ph entries
-                const dedupeKey = name === 'Arbiter' ? 'Arbiter' : (entry?.ph || id);
-                if (seen.has(dedupeKey)) return false;
-                seen.add(dedupeKey);
-                return true;
-            });
+            const allPeers = Array.from(players.keys());
             const peerList = allPeers.map(id => {
                 const name = getPlayerName(id);
                 const loc = getPlayerLocation(id);
-                const connected = knownPeers.has(id) ? '' : ' ~';
-                return loc ? `${name} (${loc})${connected}` : `${name}${connected}`;
+                return loc ? `${name} (${loc})` : name;
             });
             const myTag = getTag(localPlayer.ph);
-            const myDisplay = localPlayer.ph ? `${localPlayer.name}#${myTag}` : localPlayer.name;
-            log(`In world (${allPeers.length + 1}): You — ${myDisplay} (${localPlayer.location}), ${peerList.join(', ') || 'None'}`);
-            log(`~ = known but not directly connected`, '#555');
+            log(`In world (${allPeers.length + 1}): You — ${localPlayer.name}#${myTag} (${localPlayer.location}), ${peerList.join(', ') || 'None'}`);
             break;
         }
 
@@ -503,12 +605,7 @@ function handleCommand(cmd) {
             } else if (loc.enemy) {
                 log(`A ${ENEMIES[loc.enemy].name} lurks here. Type /attack to engage.`, '#f55');
             }
-            // Show other players in this room
-            const here = Array.from(yplayers.keys()).filter(id => {
-                if (id === selfId) return false;
-                const e = yplayers.get(id);
-                return typeof e === 'object' && e.location === localPlayer.location;
-            });
+            const here = Array.from(players.keys()).filter(id => players.get(id).location === localPlayer.location);
             if (here.length > 0) log(`Also here: ${here.map(getPlayerName).join(', ')}`, '#aaa');
             const exits = Object.keys(loc.exits).join(', ');
             log(`Exits: ${exits}`, '#555');
@@ -519,16 +616,25 @@ function handleCommand(cmd) {
             printStatus();
             break;
 
+        case 'score': {
+            const list = Array.from(players.values());
+            list.push({ name: localPlayer.name, level: localPlayer.level, xp: localPlayer.xp, ph: localPlayer.ph });
+            list.sort((a, b) => b.level - a.level || b.xp - a.xp);
+            log(`\n--- TOP ADVENTURERS ---`, '#ffa500');
+            list.slice(0, 10).forEach((p, i) => {
+                log(`${i + 1}. ${p.name}#${getTag(p.ph)} - Level ${p.level} (${p.xp} XP)`, '#ffa500');
+            });
+            log(`-----------------------\n`, '#ffa500');
+            break;
+        }
+
         case 'stats': {
             const bonus = levelBonus(localPlayer.level);
             const maxHp = localPlayer.maxHp + bonus.maxHp;
             const hpPct = localPlayer.hp / maxHp;
             const hpColor = hpPct < 0.25 ? '#f55' : hpPct < 0.5 ? '#fa0' : '#0f0';
-            // XP thresholds: level L requires (L-1)^2 * 10 XP
             const xpForLevel = (l) => (l - 1) ** 2 * 10;
-            const xpNext = xpForLevel(localPlayer.level + 1);
-            const xpCurr = xpForLevel(localPlayer.level);
-            const xpNeeded = xpNext - localPlayer.xp;
+            const xpNeeded = xpForLevel(localPlayer.level + 1) - localPlayer.xp;
             log(`\n--- ${localPlayer.name.toUpperCase()} ---`, '#ffa500');
             log(`Level: ${localPlayer.level}  XP: ${localPlayer.xp} (${xpNeeded} to next level)`, '#ffa500');
             log(`HP: ${localPlayer.hp} / ${maxHp}`, hpColor);
@@ -538,9 +644,8 @@ function handleCommand(cmd) {
         }
 
         case 'inventory': {
-            if (localPlayer.inventory.length === 0) {
-                log(`Your pack is empty.`);
-            } else {
+            if (localPlayer.inventory.length === 0) log(`Your pack is empty.`);
+            else {
                 log(`\nInventory:`, '#ffa500');
                 localPlayer.inventory.forEach(id => log(`  - ${ITEMS[id]?.name || id}`, '#ffa500'));
             }
@@ -550,24 +655,19 @@ function handleCommand(cmd) {
         case 'attack': {
             const loc = world[localPlayer.location];
             if (!loc.enemy) { log(`There is nothing to fight here.`); break; }
-
             const enemyDef = ENEMIES[loc.enemy];
             if (!localPlayer.currentEnemy) {
                 localPlayer.currentEnemy = { type: loc.enemy, hp: enemyDef.hp };
                 log(`\nA ${enemyDef.name} snarls and lunges!`, '#f55');
             }
-
             const combatSeed = hashStr(worldState.seed + worldState.day + selfId + localPlayer.combatRound);
             localPlayer.combatRound++;
             const rng = seededRNG(combatSeed);
-
             const bonus = levelBonus(localPlayer.level);
             const playerDmg = resolveAttack(localPlayer.attack + bonus.attack, enemyDef.defense, rng);
             const enemyDmg = resolveAttack(enemyDef.attack, localPlayer.defense + bonus.defense, rng);
-
             localPlayer.currentEnemy.hp -= playerDmg;
             localPlayer.hp -= enemyDmg;
-
             log(`You hit the ${enemyDef.name} for ${playerDmg}. (Enemy HP: ${Math.max(0, localPlayer.currentEnemy.hp)}/${enemyDef.hp})`, '#0f0');
             log(`The ${enemyDef.name} hits you for ${enemyDmg}. (Your HP: ${Math.max(0, localPlayer.hp)}/${localPlayer.maxHp + bonus.maxHp})`, '#f55');
 
@@ -586,19 +686,15 @@ function handleCommand(cmd) {
                     log(`LEVEL UP! You are now level ${localPlayer.level}!`, '#ff0');
                 }
                 localPlayer.currentEnemy = null;
-                yevents.push([{ type: EVENT_TYPES.KILL, peer: selfId.slice(0, 8), day: worldState.day, entity: loc.enemy }]);
             }
-
             if (localPlayer.hp <= 0) {
-                log(`\nYou have been slain by the ${enemyDef.name}!`, '#f00');
+                log(`\nYou have been slain!`, '#f00');
                 localPlayer.hp = Math.floor((localPlayer.maxHp + levelBonus(localPlayer.level).maxHp) / 2);
                 localPlayer.location = 'cellar';
                 localPlayer.currentEnemy = null;
-                yevents.push([{ type: EVENT_TYPES.DEATH, peer: selfId.slice(0, 8), day: worldState.day, entity: loc.enemy }]);
                 log(`You wake in the cellar...`, '#aaa');
                 handleCommand('look');
             }
-
             saveLocalState();
             break;
         }
@@ -616,84 +712,25 @@ function handleCommand(cmd) {
 
         case 'use': {
             const query = args.slice(1).join(' ').toLowerCase();
-            if (!query) { log(`Usage: /use <item name>`); break; }
-            // Match by item ID or display name (case-insensitive)
-            const idx = localPlayer.inventory.findIndex(id =>
-                id.toLowerCase() === query || (ITEMS[id]?.name || '').toLowerCase() === query
-            );
-            if (idx === -1) { log(`You don't have "${query}". Check /inventory.`); break; }
-            const itemId = localPlayer.inventory[idx];
-            const item = ITEMS[itemId];
-            if (!item) { log(`Unknown item.`); break; }
-            if (item.type === 'consumable') {
+            const idx = localPlayer.inventory.findIndex(id => id.toLowerCase() === query || (ITEMS[id]?.name || '').toLowerCase() === query);
+            if (idx === -1) { log(`You don't have "${query}".`); break; }
+            const item = ITEMS[localPlayer.inventory[idx]];
+            if (item?.type === 'consumable') {
                 const bonus = levelBonus(localPlayer.level);
                 localPlayer.hp = Math.min(localPlayer.maxHp + bonus.maxHp, localPlayer.hp + item.heal);
                 localPlayer.inventory.splice(idx, 1);
-                log(`You use the ${item.name} and recover ${item.heal} HP. (HP: ${localPlayer.hp}/${localPlayer.maxHp + bonus.maxHp})`, '#0f0');
+                log(`You use the ${item.name} and recover ${item.heal} HP.`, '#0f0');
                 saveLocalState();
-            } else if (item.type === 'weapon') {
-                log(`You already have the ${item.name} equipped — it gives you +${item.bonus} attack.`);
-            } else {
-                log(`You can't use that here.`);
-            }
-            break;
-        }
-
-        case 'news': {
-            log(`\n--- THE HEARTHWICK CHRONICLE ---`, '#0ff');
-            const allEvents = yevents.toArray();
-            const history = {};
-            allEvents.forEach(e => {
-                const day = e.day || 0;
-                if (!history[day]) history[day] = [];
-                history[day].push(e);
-            });
-            const days = Object.keys(history).sort((a, b) => b - a).slice(0, 3);
-            if (days.length === 0) log('The archives are empty.');
-            days.forEach(d => {
-                log(`Day ${d}:`, '#ffa500');
-                history[d].slice(-5).forEach(e => {
-                    // Compact schema
-                    if (e.type === 'n')      log(`  - [OFFICIAL] ${deriveNarrative(worldState.seed, e.day)}`, '#0ff');
-                    else if (e.type === 'm') log(`  - ${getPlayerName(e.peer)} moved from ${e.from} to ${e.to}`, '#aaa');
-                    else if (e.type === 'k') log(`  - ${getPlayerName(e.peer)} slew a ${ENEMIES[e.entity]?.name || e.entity}`, '#0f0');
-                    else if (e.type === 'd') log(`  - ${getPlayerName(e.peer)} was slain by a ${ENEMIES[e.entity]?.name || e.entity}`, '#f55');
-                    else if (e.type === 'pc') log(`  - ${e.fromName} challenged ${getPlayerName(e.target)} to a duel`, '#ff0');
-                    else if (e.type === 'pr') {
-                        const w = getPlayerName(e.from); const l = getPlayerName(e.target);
-                        if (e.outcome === 'win') log(`  - ${w} defeated ${l} in a duel`, '#ff0');
-                        else if (e.outcome === 'loss') log(`  - ${l} defeated ${w} in a duel`, '#ff0');
-                        else log(`  - ${w} and ${l} dueled to a draw`, '#aaa');
-                    }
-                    // Legacy schema fallback (until 500 events flush through)
-                    else if (e.type === 'narrative')    log(`  - [OFFICIAL] ${e.event}`, '#0ff');
-                    else if (e.type === 'move')         log(`  - ${getPlayerName(e.peer)} moved from ${e.from} to ${e.to}`, '#aaa');
-                    else if (e.type === 'player_kill')  log(`  - ${getPlayerName(e.peer)} slew a ${e.entity}`, '#0f0');
-                    else if (e.type === 'player_death') log(`  - ${getPlayerName(e.peer)} was slain by a ${e.entity}`, '#f55');
-                });
-            });
-            log(`--------------------------------\n`, '#0ff');
+            } else log(`You can't use that.`);
             break;
         }
 
         case 'rename': {
             const newName = args.slice(1).join(' ').trim();
             if (!newName) { log(`Usage: /rename <name>`); break; }
-            const myTag = getTag(localPlayer.ph);
-            const taken = Array.from(yplayers.entries()).some(([id, entry]) => {
-                if (id === selfId) return false;
-                const name = typeof entry === 'string' ? entry : entry?.name;
-                const tag = typeof entry === 'object' && entry.ph ? getTag(entry.ph) : null;
-                // Same base name AND same tag = same person (shouldn't happen). Same base name + different tag = allowed.
-                return name?.toLowerCase() === newName.toLowerCase() && tag === myTag;
-            });
-            if (taken) {
-                log(`[System] "${newName}" is already taken. Choose another name.`, '#f55');
-            } else {
-                localPlayer.name = newName;
-                saveLocalState();
-                log(`[System] You are now known as ${newName}`);
-            }
+            localPlayer.name = newName;
+            saveLocalState();
+            log(`[System] You are now known as ${newName}`);
             break;
         }
 
@@ -701,82 +738,43 @@ function handleCommand(cmd) {
             const dir = args[1];
             const nextLoc = validateMove(localPlayer.location, dir);
             if (nextLoc) {
-                if (localPlayer.currentEnemy) {
-                    log(`You can't flee mid-combat! Defeat the enemy first.`);
-                    break;
-                }
+                if (localPlayer.currentEnemy) { log(`You can't flee!`); break; }
                 const prevLoc = localPlayer.location;
                 localPlayer.location = nextLoc;
                 saveLocalState();
                 log(`You move ${dir}.`);
                 handleCommand('look');
                 gameActions.sendMove({ from: prevLoc, to: nextLoc });
-                yevents.push([{ type: EVENT_TYPES.MOVE, peer: selfId.slice(0, 8), day: worldState.day, from: prevLoc, to: nextLoc }]);
-            } else {
-                log(`You can't go that way.`);
-            }
+                joinInstance(nextLoc, currentInstance);
+            } else log(`You can't go that way.`);
             break;
         }
 
-        case 'duel': {
-            const targetName = args.slice(1).join(' ').toLowerCase();
-            if (!targetName) { log(`Usage: /duel <player name>`); break; }
-            if (localPlayer.currentEnemy) { log(`Finish your current fight first.`); break; }
-
-            const targetId = Array.from(yplayers.keys()).find(id => {
-                if (id === selfId) return false;
-                const entry = yplayers.get(id);
-                const name = typeof entry === 'string' ? entry : entry?.name;
-                const tag = typeof entry === 'object' && entry.ph ? getTag(entry.ph) : null;
-                const tagged = tag ? `${name}#${tag}`.toLowerCase() : name?.toLowerCase();
-                const loc = typeof entry === 'object' ? entry?.location : null;
-                const matches = name?.toLowerCase() === targetName || tagged === targetName;
-                return matches && name?.toLowerCase() !== 'arbiter' && loc === localPlayer.location;
-            });
-
-            if (!targetId) { log(`No player named "${args.slice(1).join(' ')}" is in your location.`); break; }
-            const tName = getPlayerName(targetId);
-            sentChallenges.set(targetId, { expires: Date.now() + DUEL_TIMEOUT_MS, day: worldState.day });
-            setTimeout(() => sentChallenges.delete(targetId), DUEL_TIMEOUT_MS);
-            yevents.push([{ type: EVENT_TYPES.PVP_CHALLENGE, from: selfId, fromName: localPlayer.name, target: targetId, day: worldState.day }]);
-            log(`[DUEL] You challenge ${tName} to a duel!`, '#ff0');
-            break;
-        }
-
-        case 'accept': {
-            if (!pendingDuel || Date.now() > pendingDuel.expiresAt) { log(`No pending duel challenge.`); pendingDuel = null; break; }
-            const { challengerId, challengerName, day: challengeDay } = pendingDuel;
-            pendingDuel = null;
-            yevents.push([{ type: EVENT_TYPES.PVP_ACCEPT, from: selfId, fromName: localPlayer.name, target: challengerId, day: worldState.day }]);
-
-            // Use day pinned at challenge time — same seed as challenger computes
-            const outcome = resolvePvp(challengerId, selfId, challengeDay);
-            const myOutcome = outcome === 'win' ? 'loss' : outcome === 'loss' ? 'win' : 'draw';
-            const dmg = myOutcome === 'loss' ? Math.floor(localPlayer.hp * 0.3) : 0;
-            if (myOutcome === 'win') {
-                log(`[DUEL] You WIN the duel against ${challengerName}! (+10 XP)`, '#ff0');
-                localPlayer.xp += 10;
-            } else if (myOutcome === 'loss') {
-                log(`[DUEL] You LOSE the duel to ${challengerName} and take ${dmg} damage.`, '#f55');
-                localPlayer.hp = Math.max(1, localPlayer.hp - dmg);
-            } else {
-                log(`[DUEL] The duel with ${challengerName} ends in a DRAW.`, '#aaa');
-            }
-            saveLocalState();
-            break;
-        }
-
-        case 'decline': {
-            if (!pendingDuel) { log(`No pending duel challenge.`); break; }
-            log(`[DUEL] You decline ${pendingDuel.challengerName}'s challenge.`, '#aaa');
-            pendingDuel = null;
+        case 'map': {
+            const loc = localPlayer.location;
+            const m = (id) => (loc === id ? '[YOU]' : ' [ ] ');
+            log(`\n--- WORLD MAP ---`, '#aaa');
+            log(`      ${m('tavern')}--${m('market')}`, '#aaa');
+            log(`         |`, '#aaa');
+            log(`      ${m('hallway')}--${m('forest_edge')}--${m('ruins')}`, '#aaa');
+            log(`         |          |`, '#aaa');
+            log(`      ${m('cellar')}     ${m('cave')}`, '#aaa');
+            log(`-----------------\n`, '#aaa');
             break;
         }
 
         case 'clear':
             output.innerHTML = '';
-            log('Screen cleared.');
             break;
+
+        case 'wave':
+        case 'bow':
+        case 'cheer': {
+            const emoteText = command === 'wave' ? 'waves hello.' : command === 'bow' ? 'bows respectfully.' : 'cheers loudly!';
+            gameActions.sendEmote({ room: localPlayer.location, text: emoteText });
+            log(`[Social] You ${emoteText}`);
+            break;
+        }
 
         default:
             log(`Unknown command: ${command}. Type /help.`);

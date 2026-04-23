@@ -8,15 +8,15 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 if (!globalThis.WebSocket) globalThis.WebSocket = WebSocket;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const STATE_FILE = join(__dirname, 'world_state.bin');
+const STATE_FILE = join(__dirname, 'world_state.json');
 
 async function startArbiter() {
-    const { joinRoom: joinNostr, selfId: nostrSelfId } = await import('@trystero-p2p/nostr');
-    const { joinRoom: joinTorrent, selfId: torrentSelfId } = await import('@trystero-p2p/torrent');
+    const { joinRoom: joinNostr } = await import('@trystero-p2p/nostr');
+    const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
     const { RTCPeerConnection } = await import('werift');
-    const Y = await import('yjs');
-    const { signMessage } = await import('../src/crypto.js');
+    const { signMessage, verifyMessage } = await import('../src/crypto.js');
     const { APP_ID, ROOM_NAME } = await import('../src/constants.js');
+    const { deriveWorldState } = await import('../src/rules.js');
     const dotenv = await import('dotenv');
 
     dotenv.config({ path: new URL('.env', import.meta.url).pathname });
@@ -27,47 +27,21 @@ async function startArbiter() {
     }
 
     // --- STATE ---
-    const ydoc = new Y.Doc();
+    let worldState = {
+        world_seed: 'h3arthw1ck-' + Math.random().toString(16).slice(2),
+        day: 1,
+        last_tick: Date.now()
+    };
 
-    // Load persisted state before setting clientID so historical ops are preserved
     if (existsSync(STATE_FILE)) {
         try {
-            const bin = readFileSync(STATE_FILE);
-            Y.applyUpdate(ydoc, bin, 'persist');
+            const bin = readFileSync(STATE_FILE, 'utf8');
+            worldState = JSON.parse(bin);
             console.log('[Arbiter] Loaded persisted world state.');
         } catch (e) {
             console.warn('[Arbiter] Failed to load state file, starting fresh:', e.message);
         }
     }
-
-    // Fixed clientID derived from secret key — ensures CRDT ops are always from
-    // the same author across restarts, preventing split-brain divergence
-    const { hashStr: _hashStr } = await import('../src/rules.js');
-    ydoc.clientID = _hashStr(MASTER_SECRET_KEY) >>> 0;
-    console.log(`[Arbiter] CRDT clientID: ${ydoc.clientID}`);
-
-    const yworld = ydoc.getMap('world');
-    const yplayers = ydoc.getMap('players');
-    const yevents = ydoc.getArray('event_log');
-
-    // One-time migration: remove legacy derived fields from yworld
-    const LEGACY_FIELDS = ['town_mood', 'season', 'season_number', 'threat_level', 'market_scarcity'];
-    if (LEGACY_FIELDS.some(f => yworld.has(f))) {
-        console.log('[Arbiter] Migrating legacy world state fields...');
-        ydoc.transact(() => LEGACY_FIELDS.forEach(f => { if (yworld.has(f)) yworld.delete(f); }), 'migration');
-    }
-
-    if (!yworld.has('world_seed')) {
-        console.log('[Arbiter] Initializing new world seed...');
-        ydoc.transact(() => {
-            yworld.set('world_seed', 'h3arthw1ck-' + Math.random().toString(16).slice(2));
-            yworld.set('day', 1);
-        }, 'init');
-    }
-
-    // One canonical arbiter entry — remove any stale torrent ID from previous runs
-    if (yplayers.has(torrentSelfId)) yplayers.delete(torrentSelfId);
-    yplayers.set(nostrSelfId, 'Arbiter');
 
     // Persist state to disk, debounced
     let persistTimer = null;
@@ -75,25 +49,12 @@ async function startArbiter() {
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
             try {
-                writeFileSync(STATE_FILE, Y.encodeStateAsUpdate(ydoc));
+                writeFileSync(STATE_FILE, JSON.stringify(worldState));
             } catch (e) {
                 console.warn('[Arbiter] Failed to persist state:', e.message);
             }
         }, 2000);
     };
-
-    // --- LOG TRIMMING ---
-    const MAX_LOG_SIZE = 500;
-    yevents.observe(() => {
-        if (yevents.length > MAX_LOG_SIZE) {
-            yevents.delete(0, yevents.length - MAX_LOG_SIZE);
-        }
-    });
-
-    // Persist on any local change
-    ydoc.on('update', (_, origin) => {
-        if (origin !== 'remote') schedulePersist();
-    });
 
     // --- NETWORKING ---
     const { lookup } = await import('dns/promises');
@@ -115,144 +76,133 @@ async function startArbiter() {
         filterReachable(ALL_TORRENT_TRACKERS),
     ]);
 
-    console.log(`[Arbiter] Reachable Nostr relays: ${reachableRelays.length}/${ALL_NOSTR_RELAYS.length}`);
-    console.log(`[Arbiter] Reachable trackers: ${reachableTrackers.length}/${ALL_TORRENT_TRACKERS.length}`);
-
     const baseConfig = {
         appId: APP_ID,
         rtcPolyfill: RTCPeerConnection,
         rtcConfig: { iceServers: ICE_SERVERS },
     };
 
-    const nostrConfig = {
-        ...baseConfig,
-        relayUrls: reachableRelays.length ? reachableRelays : ALL_NOSTR_RELAYS,
-    };
-    const torrentConfig = {
-        ...baseConfig,
-        trackerUrls: reachableTrackers.length ? reachableTrackers : ALL_TORRENT_TRACKERS,
-    };
+    const room = joinNostr({ ...baseConfig, relayUrls: reachableRelays.length ? reachableRelays : ALL_NOSTR_RELAYS }, 'global');
+    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: reachableTrackers.length ? reachableTrackers : ALL_TORRENT_TRACKERS }, 'global');
 
-    console.log(`[Arbiter] Joining mesh (nostr: ${nostrSelfId}, torrent: ${torrentSelfId})...`);
-
-    const room = joinNostr(nostrConfig, ROOM_NAME);
-    const torrentRoom = joinTorrent(torrentConfig, ROOM_NAME);
+    // --- ROLLUPS & FRAUD ---
+    const lastRollups = new Map(); // shard -> {root, proposer, timestamp}
+    const bans = new Set();
 
     const setupArbiterRoom = (r, name) => {
-        const [sendSync, getSync] = r.makeAction('sync');
-        const [sendSV,   getSV  ] = r.makeAction('sv');
-        const [sendOfficialEvent] = r.makeAction('official_event');
+        const [sendState] = r.makeAction('world_state');
+        const [, getRollup] = r.makeAction('rollup');
+        const [, getFraud] = r.makeAction('fraud_proof');
 
-        // Browser sends its state vector → reply with only what it's missing
-        getSV((sv, peerId) => {
-            const diff = Y.encodeStateAsUpdate(ydoc, new Uint8Array(sv));
-            if (diff.length > 2) sendSync(diff, peerId);
+        getRollup(async (data) => {
+            const { rollup, signature, publicKey } = data;
+            if (bans.has(publicKey)) return;
+            if (!await verifyMessage(JSON.stringify(rollup), signature, publicKey)) {
+                console.warn(`[Arbiter][${name}] Invalid rollup signature from ${publicKey.slice(0, 8)}`);
+                return;
+            }
+            console.log(`[Arbiter][${name}] Rollup received for ${rollup.shard}: Root ${rollup.root.slice(0, 8)}`);
+            lastRollups.set(rollup.shard, { ...rollup, proposer: publicKey });
         });
 
-        // Apply incoming state from peers; log once per join (not per update)
-        const synced = new Set();
-        getSync((update, peerId) => {
-            Y.applyUpdate(ydoc, update, 'remote');
-            if (!synced.has(peerId)) { synced.add(peerId); console.log(`[Arbiter][${name}] Synced from ${peerId}`); }
+        getFraud(async (data) => {
+            const { rollup: rollupData, witness } = data;
+            const { rollup, signature, publicKey: proposerKey } = rollupData;
+            
+            // 1. Verify Proposer's signature on the rollup they submitted
+            if (!await verifyMessage(JSON.stringify(rollup), signature, proposerKey)) return;
+
+            // 2. Reconstruct leaf data from witness and verify each player's signature
+            const leafData = [];
+            const { hashStr: _hashStr } = await import('../src/rules.js');
+            for (const { id, p, publicKey } of witness) {
+                // Verify publicKey matches the ph (pidHash)
+                const expectedPh = (_hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+                if (p.ph !== expectedPh) {
+                    console.warn(`[Arbiter] Fraud Proof rejected: Public key mismatch for witness ${id}`);
+                    continue;
+                }
+
+                const pData = { name: p.name, location: p.location, ph: p.ph, level: p.level, xp: p.xp, ts: p.ts };
+                if (await verifyMessage(JSON.stringify(pData), p.signature, publicKey)) {
+                    leafData.push(`${id}:${p.level}:${p.xp}:${p.location}`);
+                }
+            }
+            leafData.sort();
+
+            // 3. Compare roots
+            const { createMerkleRoot: _createMerkleRoot } = await import('../src/crypto.js');
+            const actualRoot = await _createMerkleRoot(leafData);
+
+            if (actualRoot !== rollup.root) {
+                console.log(`[FRAUD PROVEN] Proposer ${proposerKey.slice(0, 8)} submitted invalid root! Banning...`);
+                bans.add(proposerKey);
+                // Broadcast ban/reset event
+                const banMsg = JSON.stringify({ event: 'ban', target: proposerKey });
+                const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
+                nostr.sendState({ state: { type: 'ban', target: proposerKey }, signature: banSig });
+                torrent.sendState({ state: { type: 'ban', target: proposerKey }, signature: banSig });
+            }
         });
 
         r.onPeerJoin(peerId => {
             console.log(`[Arbiter][${name}] Peer joined: ${peerId}`);
-            // Send our SV — browser replies with what we're missing, we reply with what it's missing
-            sendSV(Array.from(Y.encodeStateVector(ydoc)), peerId);
+            broadcastState();
         });
 
-        return { sendSync, sendOfficialEvent };
+        return { sendState };
     };
 
     const nostr = setupArbiterRoom(room, 'Nostr');
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
 
-    ydoc.on('update', (update, origin) => {
-        if (origin !== 'remote') {
-            nostr.sendSync(update);
-            torrent.sendSync(update);
-        }
-    });
+    async function broadcastState() {
+        const data = JSON.stringify(worldState);
+        const signature = await signMessage(data, MASTER_SECRET_KEY);
+        const packet = { state: worldState, signature };
+        nostr.sendState(packet);
+        torrent.sendState(packet);
+        console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
+    }
 
     console.log('[Arbiter] Started.');
 
-    // --- RESET (from within the running process, via pm2 IPC or SIGUSR2) ---
+    // --- RESET ---
     const doReset = async () => {
-        const newSeed = 'h3arthw1ck-' + Math.random().toString(16).slice(2);
-        ydoc.transact(() => {
-            yworld.set('world_seed', newSeed);
-            yworld.set('day', 1);
-            yevents.delete(0, yevents.length);
-        }, 'reset');
-        try { writeFileSync(STATE_FILE, Y.encodeStateAsUpdate(ydoc)); } catch (e) {}
-        const signature = await signMessage('reset', MASTER_SECRET_KEY);
-        try { nostr.sendOfficialEvent({ event: 'reset', signature }); } catch (e) {}
-        try { torrent.sendOfficialEvent({ event: 'reset', signature }); } catch (e) {}
-        console.log(`[Arbiter] World reset. New seed: ${newSeed}`);
+        worldState = {
+            world_seed: 'h3arthw1ck-' + Math.random().toString(16).slice(2),
+            day: 1,
+            last_tick: Date.now()
+        };
+        schedulePersist();
+        await broadcastState();
+        console.log(`[Arbiter] World reset. New seed: ${worldState.world_seed}`);
     };
 
-    // pm2 send hearthwick-arbiter reset  (pm2 wraps payload as {data, type})
     process.on('message', (msg) => {
         const cmd = msg?.data ?? msg;
         if (cmd === 'reset') doReset();
     });
-    // kill -USR2 <pid> (when not using pm2)
     process.on('SIGUSR2', doReset);
 
     // --- DAY TICK ---
-    const { deriveWorldState, deriveNarrative } = await import('../src/rules.js');
-
     function advanceDay() {
-        const currentDay = yworld.get('day') || 1;
-        const nextDay = currentDay + 1;
+        worldState.day++;
+        worldState.last_tick = Date.now();
+        schedulePersist();
 
-        ydoc.transact(() => {
-            yworld.set('day', nextDay);
-        }, 'daytick');
-
-        try { writeFileSync(STATE_FILE, Y.encodeStateAsUpdate(ydoc)); } catch (e) { console.warn('[Arbiter] Persist failed:', e.message); }
-
-        const worldSeed = yworld.get('world_seed') || 'default';
-        const derived = deriveWorldState(worldSeed, nextDay);
-        console.log(`[Arbiter] Day ${nextDay} — ${derived.season}, mood: ${derived.mood}, threat: ${derived.threatLevel}, scarce: ${derived.scarcity.join(',') || 'none'}`);
-        broadcastNews(nextDay);
-    }
-
-    // --- NEWS LOOP ---
-    async function broadcastNews(day) {
-        day = day || yworld.get('day') || 1;
-
-        // Deduplicate via compact event type
-        const alreadyBroadcast = yevents.toArray().some(e => e.type === 'n' && e.day === day);
-        if (alreadyBroadcast) return;
-
-        const worldSeed = yworld.get('world_seed') || 'default';
-        const event = deriveNarrative(worldSeed, day);
-        const signature = await signMessage(event, MASTER_SECRET_KEY);
-
-        console.log(`[Arbiter] Day ${day} News: ${event}`);
-
-        try {
-            nostr.sendOfficialEvent({ event, signature });
-            torrent.sendOfficialEvent({ event, signature });
-        } catch (e) {
-            console.warn('[Arbiter] Broadcast partially failed:', e.message);
-        }
-
-        yevents.push([{ type: 'n', day }]);
+        const derived = deriveWorldState(worldState.world_seed, worldState.day);
+        console.log(`[Arbiter] Day ${worldState.day} — ${derived.season}, mood: ${derived.mood}, threat: ${derived.threatLevel}`);
+        broadcastState();
     }
 
     setInterval(advanceDay, 86400000); // 24h real-time days
 
-    // Initial news on startup (don't advance day, just announce current day)
-    setTimeout(() => broadcastNews(), 10000);
+    // Initial broadcast on startup
+    setTimeout(() => broadcastState(), 5000);
 }
 
-const SURVIVABLE_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND']);
 const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate', 'server response', 'socket hang up', 'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED'];
-
-// Silence library-level noise (Trystero/werift logging before throwing)
 const _consoleError = console.error.bind(console);
 console.error = (...args) => {
     const msg = String(args[0] ?? '') + String(args[1]?.message ?? '');
@@ -260,23 +210,9 @@ console.error = (...args) => {
     _consoleError(...args);
 };
 
-const isSurvivable = (err) =>
-    SURVIVABLE_ERRORS.has(err.code) ||
-    SURVIVABLE_MESSAGES.some(m => err.message?.includes(m));
-
 process.on('uncaughtException', (err) => {
     console.error('[Arbiter] Uncaught Exception:', err.message);
-    if (isSurvivable(err)) {
-        console.log('[Arbiter] Networking error (relay/TLS), continuing...');
-    } else {
-        process.exit(1);
-    }
-});
-
-process.on('unhandledRejection', (reason) => {
-    const err = reason instanceof Error ? reason : new Error(String(reason));
-    console.error('[Arbiter] Unhandled Rejection:', err.message);
-    if (!isSurvivable(err)) process.exit(1);
+    process.exit(1);
 });
 
 startArbiter().catch(err => {

@@ -230,6 +230,10 @@ export const DEFAULT_PLAYER_STATS = {
     currentEnemy: null,
 };
 
+// --- SCALING & SHARDING ---
+export const INSTANCE_CAP = 50;
+export const getShardName = (appId, location, instanceId) => `${appId}-${location}-${instanceId}`;
+
 // --- WORLD DATA ---
 
 export const world = {
