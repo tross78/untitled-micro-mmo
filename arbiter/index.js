@@ -13,9 +13,10 @@ const STATE_FILE = join(__dirname, 'world_state.json');
 
 async function startArbiter() {
     const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
+    const { joinRoom: joinNostr } = await import('@trystero-p2p/nostr');
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
-    const { APP_ID, ROOM_NAME } = await import('../src/constants.js');
+    const { APP_ID, ROOM_NAME, TORRENT_TRACKERS, NOSTR_RELAYS, ICE_SERVERS } = await import('../src/constants.js');
     const { deriveWorldState } = await import('../src/rules.js');
     const dotenv = await import('dotenv');
 
@@ -57,8 +58,6 @@ async function startArbiter() {
     };
 
     // --- NETWORKING ---
-    const { TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
-
     const baseConfig = {
         appId: APP_ID,
         rtcPolyfill: RTCPeerConnection,
@@ -66,6 +65,7 @@ async function startArbiter() {
     };
 
     const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: TORRENT_TRACKERS }, 'global');
+    const nostrRoom = joinNostr({ ...baseConfig, relayUrls: NOSTR_RELAYS }, 'global');
 
     const ROLLUP_INTERVAL = 10000;
     const FRAUD_BAN_THRESHOLD = 3;
@@ -133,6 +133,7 @@ async function startArbiter() {
                 const banMsg = JSON.stringify(banState);
                 const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
                 torrent.sendState({ state: banMsg, signature: banSig });
+                nostr.sendState({ state: banMsg, signature: banSig });
             }
         });
 
@@ -145,12 +146,14 @@ async function startArbiter() {
     };
 
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
+    const nostr = setupArbiterRoom(nostrRoom, 'Nostr');
 
     async function broadcastState() {
         const stateStr = JSON.stringify(worldState);
         const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
         const packet = { state: stateStr, signature };
         torrent.sendState(packet);
+        nostr.sendState(packet);
         console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
     }
 

@@ -1,12 +1,10 @@
-export const MASTER_PUBLIC_KEY = 'b+olHCMT7bRyA66bk6VRNJhd9/gRewVPP664Phd3a+s=';
+export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
 // Derived from MASTER_PUBLIC_KEY so this room is unique to your Pi instance.
 // Strip non-alphanumeric chars — base64 contains + and / which can break Trystero's room hashing.
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 export const ROOM_NAME = 'lobby';
 
 // Open relays — no PoW, no web-of-trust required.
-// nos.lol: 28-bit PoW required (rejected). offchain.pub: web-of-trust (rejected).
-// nostr.wine: subscription required (rejected).
 export const NOSTR_RELAYS = [
     'wss://relay.snort.social',
     'wss://relay.primal.net',
