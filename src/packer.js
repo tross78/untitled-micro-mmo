@@ -53,7 +53,7 @@ export const packPresence = (p) => {
     }
     
     view.setUint8(21, p.level);
-    view.setUint32(22, p.xp);
+    view.setUint32(22, p.xp, false); // big-endian
     
     // TS (low 48 bits)
     const ts = p.ts || Date.now();
@@ -82,7 +82,7 @@ export const unpackPresence = (buf) => {
     for (let i = 0; i < 4; i++) ph += buf[17 + i].toString(16).padStart(2, '0');
     
     const level = view.getUint8(21);
-    const xp = view.getUint32(22);
+    const xp = view.getUint32(22, false); // big-endian
     
     // TS
     const tsHigh = view.getUint16(26);
@@ -96,7 +96,7 @@ export const unpackPresence = (buf) => {
 };
 
 /**
- * Duel Commit Packet (Fixed Size: 77 bytes)
+ * Duel Commit Packet (Fixed Size: 70 bytes)
  * [0]     Round (Uint8)
  * [1]     Damage (Uint8)
  * [2-5]   Day (Uint32BE)

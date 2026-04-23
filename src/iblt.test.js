@@ -59,6 +59,8 @@ describe('IBLT (Invertible Bloom Lookup Table)', () => {
         const data = original.serialize();
         const copy = IBLT.fromSerialized(data);
         
-        expect(copy.table).toEqual(original.table);
+        expect(Array.from(copy.count)).toEqual(Array.from(original.count));
+        expect(Array.from(copy.keySum)).toEqual(Array.from(original.keySum));
+        expect(Array.from(copy.hashSum)).toEqual(Array.from(original.hashSum));
     });
 });

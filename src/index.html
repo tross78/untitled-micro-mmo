@@ -2,53 +2,162 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Hearthwick</title>
     <link rel="manifest" href="manifest.json">
     <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
         body {
             background-color: #000;
             color: #0f0;
             font-family: 'Courier New', Courier, monospace;
-            padding: 20px;
+            padding: 12px 12px 0 12px;
             margin: 0;
             display: flex;
             flex-direction: column;
+            /* 100dvh shrinks automatically when the virtual keyboard opens (iOS 15.4+, Chrome 108+).
+               Falls back to 100vh on older browsers. */
             height: 100vh;
-            box-sizing: border-box;
+            height: 100dvh;
         }
+
         #output {
-            flex-grow: 1;
+            flex: 1 1 0;
             overflow-y: auto;
             white-space: pre-wrap;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            /* Without min-height: 0, flex children won't scroll — they expand instead. */
+            min-height: 0;
             scrollbar-width: thin;
             scrollbar-color: #0f0 #000;
+            overscroll-behavior: contain;
         }
+
+        /* Suggestion chips */
+        #suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 4px 0;
+            min-height: 0;
+        }
+
+        .chip {
+            background: #000;
+            border: 1px solid #0a0;
+            color: #0f0;
+            font-family: inherit;
+            font-size: 0.82em;
+            padding: 4px 10px;
+            cursor: pointer;
+            border-radius: 2px;
+            user-select: none;
+            touch-action: manipulation;
+            transition: background 0.08s, color 0.08s;
+        }
+
+        .chip:hover,
+        .chip.active {
+            background: #0f0;
+            color: #000;
+        }
+
+        .chip.immediate {
+            border-color: #0f0;
+        }
+
+        /* Input row */
         #input-container {
             display: flex;
+            align-items: center;
+            padding: 4px 0;
+            border-top: 1px solid #222;
         }
+
         #prompt {
-            margin-right: 10px;
+            color: #0a0;
+            margin-right: 8px;
+            flex-shrink: 0;
         }
+
         #input {
             background: transparent;
             border: none;
             color: #0f0;
             font-family: inherit;
             font-size: inherit;
-            flex-grow: 1;
+            flex: 1;
             outline: none;
+            min-width: 0;
+        }
+
+        /* Quick-action bar — visible only on touch devices */
+        #quick-actions {
+            display: none;
+            gap: 6px;
+            padding: 6px 0;
+            /* Respect iPhone home indicator / notch at the bottom */
+            padding-bottom: max(6px, env(safe-area-inset-bottom));
+        }
+
+        @media (pointer: coarse) {
+            #quick-actions {
+                display: flex;
+            }
+        }
+
+        .quick-btn {
+            flex: 1;
+            background: #000;
+            border: 1px solid #333;
+            color: #0a0;
+            font-family: inherit;
+            font-size: 0.75em;
+            padding: 9px 2px;
+            cursor: pointer;
+            border-radius: 2px;
+            text-align: center;
+            touch-action: manipulation;
+        }
+
+        .quick-btn:active {
+            background: #0a0;
+            color: #000;
+            border-color: #0f0;
+        }
+
+        /* Safe-area padding for input bar on iPhone notch devices */
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+            #input-container {
+                padding-bottom: max(4px, env(safe-area-inset-bottom));
+            }
         }
     </style>
 </head>
 <body>
     <div id="output">Initializing P2P network...
 Searching for peers in the BitTorrent DHT...</div>
+
+    <div id="suggestions"></div>
+
     <div id="input-container">
         <span id="prompt">></span>
-        <input type="text" id="input" autofocus spellcheck="false" autocomplete="off">
+        <input type="text" id="input" autofocus spellcheck="false" autocomplete="off"
+               autocorrect="off" autocapitalize="off" enterkeyhint="send"
+               placeholder="type a command or tap below">
     </div>
+
+    <div id="quick-actions">
+        <button class="quick-btn" data-cmd="look">look</button>
+        <button class="quick-btn" data-cmd="attack">attack</button>
+        <button class="quick-btn" data-cmd="rest">rest</button>
+        <button class="quick-btn" data-cmd="inventory">bag</button>
+    </div>
+
     <script src="main.js"></script>
 </body>
 </html>

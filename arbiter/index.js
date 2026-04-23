@@ -1,4 +1,5 @@
 import { webcrypto } from 'node:crypto';
+import { createServer } from 'node:http';
 import WebSocket from 'ws';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -85,9 +86,14 @@ async function startArbiter() {
     const room = joinNostr({ ...baseConfig, relayUrls: reachableRelays.length ? reachableRelays : ALL_NOSTR_RELAYS }, 'global');
     const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: reachableTrackers.length ? reachableTrackers : ALL_TORRENT_TRACKERS }, 'global');
 
+    const ROLLUP_INTERVAL = 10000;
+    const FRAUD_BAN_THRESHOLD = 3;
+
     // --- ROLLUPS & FRAUD ---
     const lastRollups = new Map(); // shard -> {root, proposer, timestamp}
-    const bans = new Set();
+    const lastRollupTime = new Map(); // publicKey -> timestamp (rate limiting)
+    const fraudCounts = new Map(); // proposerKey -> Set of claimant publicKeys
+    const bans = new Set(worldState.bans || []);
 
     const setupArbiterRoom = (r, name) => {
         const [sendState] = r.makeAction('world_state');
@@ -97,8 +103,14 @@ async function startArbiter() {
         getRollup(async (data) => {
             const { rollup, signature, publicKey } = data;
             if (bans.has(publicKey)) return;
+
+            // Rate-limit: one accepted rollup per proposer per interval
+            const last = lastRollupTime.get(publicKey) || 0;
+            if (Date.now() - last < ROLLUP_INTERVAL * 0.8) return;
+            lastRollupTime.set(publicKey, Date.now());
+
             if (!await verifyMessage(JSON.stringify(rollup), signature, publicKey)) {
-                console.warn(`[Arbiter][${name}] Invalid rollup signature from ${publicKey.slice(0, 8)}`);
+                console.warn(`[Arbiter][${name}] Invalid rollup signature from ${String(publicKey).slice(0, 8)}`);
                 return;
             }
             console.log(`[Arbiter][${name}] Rollup received for ${rollup.shard}: Root ${rollup.root.slice(0, 8)}`);
@@ -108,36 +120,34 @@ async function startArbiter() {
         getFraud(async (data) => {
             const { rollup: rollupData, witness } = data;
             const { rollup, signature, publicKey: proposerKey } = rollupData;
-            
-            // 1. Verify Proposer's signature on the rollup they submitted
+            const { id, presence, signature: witnessSig, publicKey: witnessKey } = witness;
+
+            // 1. Verify the Proposer's signature on the disputed rollup
             if (!await verifyMessage(JSON.stringify(rollup), signature, proposerKey)) return;
 
-            // 2. Reconstruct leaf data from witness and verify each player's signature
-            const leafData = [];
+            // 2. Verify the witness's signed presence
+            if (!await verifyMessage(JSON.stringify(presence), witnessSig, witnessKey)) return;
+
+            // 3. Verify witnessKey matches the ph in the presence packet
             const { hashStr: _hashStr } = await import('../src/rules.js');
-            for (const { id, p, publicKey } of witness) {
-                // Verify publicKey matches the ph (pidHash)
-                const expectedPh = (_hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
-                if (p.ph !== expectedPh) {
-                    console.warn(`[Arbiter] Fraud Proof rejected: Public key mismatch for witness ${id}`);
-                    continue;
-                }
-
-                const pData = { name: p.name, location: p.location, ph: p.ph, level: p.level, xp: p.xp, ts: p.ts };
-                if (await verifyMessage(JSON.stringify(pData), p.signature, publicKey)) {
-                    leafData.push(`${id}:${p.level}:${p.xp}:${p.location}`);
-                }
+            const expectedPh = (_hashStr(witnessKey) >>> 0).toString(16).padStart(8, '0');
+            if (presence.ph !== expectedPh) {
+                console.warn(`[Arbiter] Fraud Proof rejected: key/ph mismatch for witness ${id}`);
+                return;
             }
-            leafData.sort();
 
-            // 3. Compare roots
-            const { createMerkleRoot: _createMerkleRoot } = await import('../src/crypto.js');
-            const actualRoot = await _createMerkleRoot(leafData);
+            // 4. Accumulate distinct fraud reports; ban after threshold
+            if (!fraudCounts.has(proposerKey)) fraudCounts.set(proposerKey, new Set());
+            fraudCounts.get(proposerKey).add(witnessKey);
+            const count = fraudCounts.get(proposerKey).size;
+            console.log(`[Arbiter][${name}] Fraud report ${count}/${FRAUD_BAN_THRESHOLD} against ${String(proposerKey).slice(0, 8)}`);
 
-            if (actualRoot !== rollup.root) {
-                console.log(`[FRAUD PROVEN] Proposer ${proposerKey.slice(0, 8)} submitted invalid root! Banning...`);
+            if (count >= FRAUD_BAN_THRESHOLD) {
+                console.log(`[FRAUD PROVEN] Banning proposer ${String(proposerKey).slice(0, 8)}`);
                 bans.add(proposerKey);
-                // Broadcast ban/reset event
+                fraudCounts.delete(proposerKey);
+                worldState.bans = Array.from(bans);
+                schedulePersist();
                 const banMsg = JSON.stringify({ event: 'ban', target: proposerKey });
                 const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
                 nostr.sendState({ state: { type: 'ban', target: proposerKey }, signature: banSig });
@@ -196,7 +206,31 @@ async function startArbiter() {
         broadcastState();
     }
 
-    setInterval(advanceDay, 86400000); // 24h real-time days
+    // Drift-corrected day tick: target next tick based on last_tick, not interval start
+    const scheduleTick = () => {
+        const delay = Math.max(0, (worldState.last_tick + 86400000) - Date.now());
+        setTimeout(() => { advanceDay(); scheduleTick(); }, delay);
+    };
+    scheduleTick();
+
+    // Health endpoint for Pi debugging
+    const healthServer = createServer((req, res) => {
+        if (req.url === '/health') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                day: worldState.day,
+                seed: worldState.world_seed.slice(0, 12),
+                bans: bans.size,
+                uptime: Math.floor(process.uptime()),
+            }));
+        } else {
+            res.writeHead(404);
+            res.end();
+        }
+    });
+    healthServer.listen(3001, '127.0.0.1', () =>
+        console.log('[Arbiter] Health: http://127.0.0.1:3001/health')
+    );
 
     // Initial broadcast on startup
     setTimeout(() => broadcastState(), 5000);
