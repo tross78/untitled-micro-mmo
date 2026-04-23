@@ -122,3 +122,38 @@ export async function verifyMessage(message, signatureBase64, publicKey) {
         return verify(null, data, keyObj, signature);
     }
 }
+
+/**
+ * Computes a SHA-256 hash of a string.
+ */
+export async function computeHash(message) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(message);
+    if (!isNode) {
+        const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } else {
+        const { createHash } = await import('crypto');
+        return createHash('sha256').update(data).digest('hex');
+    }
+}
+
+/**
+ * Creates a Merkle Root from a list of strings (leaf nodes).
+ */
+export async function createMerkleRoot(leaves) {
+    if (leaves.length === 0) return '';
+    let hashes = await Promise.all(leaves.map(l => computeHash(l)));
+
+    while (hashes.length > 1) {
+        const nextLevel = [];
+        for (let i = 0; i < hashes.length; i += 2) {
+            const left = hashes[i];
+            const right = hashes[i + 1] || hashes[i]; // Duplicate last if odd
+            nextLevel.push(await computeHash(left + right));
+        }
+        hashes = nextLevel;
+    }
+    return hashes[0];
+}

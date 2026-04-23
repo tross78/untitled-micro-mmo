@@ -9,6 +9,8 @@ on:
       - 'src/rules.js'
       - 'src/crypto.js'
       - 'src/constants.js'
+      - 'src/iblt.js'
+      - 'src/packer.js'
       - 'package.json'
 
 jobs:
@@ -76,6 +78,9 @@ jobs:
               exit 1
             fi
 
-            # Restart the arbiter (if using PM2)
-            # pm2 restart arbiter || pm2 start arbiter/index.js --name arbiter
+            # Handle transition: purge legacy Yjs binary state if it exists
+            [ -f "state_update.bin" ] && rm state_update.bin && echo "Purged legacy Yjs state."
+
+            # Restart the arbiter (using PM2 with memory protection)
+            pm2 restart arbiter --max-memory-restart 150M || pm2 start index.js --name arbiter --max-memory-restart 150M
 
