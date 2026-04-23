@@ -181,7 +181,7 @@ async function startArbiter() {
 
         const derived = deriveWorldState(worldState.world_seed, worldState.day);
         console.log(`[Arbiter] Day ${worldState.day} — ${derived.season}, mood: ${derived.mood}, threat: ${derived.threatLevel}`);
-        broadcastState();
+        broadcastState().catch(e => console.error('[Arbiter] Day tick broadcast failed:', e.message, e.code));
     }
 
     // Drift-corrected day tick: target next tick based on last_tick, not interval start
@@ -211,7 +211,7 @@ async function startArbiter() {
     );
 
     // Initial broadcast on startup
-    setTimeout(() => broadcastState(), 5000);
+    setTimeout(() => broadcastState().catch(e => console.error('[Arbiter] Broadcast failed:', e.message, e.code)), 5000);
 }
 
 const SURVIVABLE_MESSAGES = ['unsupported', 'DECODER', 'SSL', 'certificate', 'server response', 'socket hang up', 'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED'];
@@ -232,6 +232,17 @@ process.on('uncaughtException', (err) => {
     process.exit(1);
 });
 
+process.on('unhandledRejection', (reason) => {
+    const code = reason?.code;
+    if (SURVIVABLE_CODES.has(code)) {
+        console.warn('[Arbiter] Network rejection (non-fatal):', reason?.message);
+        return;
+    }
+    console.error('[Arbiter] Unhandled Rejection:', reason?.message ?? reason, 'code:', code, 'stack:', reason?.stack);
+    process.exit(1);
+});
+
 startArbiter().catch(err => {
     console.error('[Arbiter] Failed to start:', err);
+    process.exit(1);
 });
