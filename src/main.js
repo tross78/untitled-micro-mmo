@@ -5,21 +5,23 @@ console.warn = (...args) => {
     _warn(...args);
 };
 
-import { joinRoom as joinNostr, selfId } from '@trystero-p2p/nostr';
-import { joinRoom as joinTorrent } from '@trystero-p2p/torrent';
+import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
 import {
     world, validateMove, hashStr, seededRNG,
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
-    deriveWorldState, deriveNarrative, EVENT_TYPES,
+    deriveWorldState,
+    getShardName, INSTANCE_CAP,
 } from './rules';
-import { verifyMessage, generateKeyPair, importKey, exportKey, signMessage, computeHash, createMerkleRoot } from './crypto';
+import { verifyMessage, generateKeyPair, importKey, exportKey, signMessage, computeHash } from './crypto';
 import { IBLT } from './iblt';
 import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer';
-import { MASTER_PUBLIC_KEY, APP_ID, ROOM_NAME, NOSTR_RELAYS, TORRENT_TRACKERS, ICE_SERVERS } from './constants';
+import { MASTER_PUBLIC_KEY, APP_ID, TORRENT_TRACKERS, ICE_SERVERS } from './constants';
+import { getSuggestions } from './autocomplete';
 
 const output = document.getElementById('output');
 const input = document.getElementById('input');
+const suggestionsEl = document.getElementById('suggestions');
 
 const log = (msg, color = '#0f0') => {
     const div = document.createElement('div');
@@ -177,48 +179,37 @@ const pruneStale = () => {
 // --- NETWORKING ---
 const ROLLUP_INTERVAL = 10000;
 const SKETCH_INTERVAL = 30000;
+const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
 let currentInstance = 1;
-let rooms = { nostr: null, torrent: null };
-let globalRooms = { nostr: null, torrent: null };
+let rooms = { torrent: null };
+let globalRooms = { torrent: null };
 let knownPeers = new Set();
 let gameActions = {};
+let lastRollupReceivedAt = 0;
 
 const initNetworking = () => {
     const rtcConfig = { iceServers: ICE_SERVERS };
 
     // Global room is ONLY for Arbiter state
-    globalRooms.nostr = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, 'global');
     globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, 'global');
 
-    const setupGlobal = (r) => {
-        const [sendRollup] = r.makeAction('rollup');
-        const [sendFraud] = r.makeAction('fraud_proof');
-        const [, getState] = r.makeAction('world_state');
-        getState(async (data) => {
-            const { state, signature } = data;
-            if (await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey)) {
-                updateSimulation(state);
-                if (isProposer()) gameActions.relayState(data);
-            }
-        });
-        return { sendRollup, sendFraud };
-    };
+    const [sendRollup] = globalRooms.torrent.makeAction('rollup');
+    const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
+    const [, getState] = globalRooms.torrent.makeAction('world_state');
+    getState(async (data) => {
+        const { state, signature } = data;
+        if (await verifyMessage(JSON.stringify(state), signature, arbiterPublicKey)) {
+            updateSimulation(state);
+            if (isProposer()) gameActions.relayState(data);
+        }
+    });
 
-    const gn = setupGlobal(globalRooms.nostr);
-    const gt = setupGlobal(globalRooms.torrent);
-
-    gameActions.submitRollup = (rollup) => {
-        gn.sendRollup(rollup);
-        gt.sendRollup(rollup);
-    };
-    gameActions.submitFraudProof = (proof) => {
-        gn.sendFraud(proof);
-        gt.sendFraud(proof);
-    };
+    gameActions.submitRollup = (rollup) => sendRollup(rollup);
+    gameActions.submitFraudProof = (proof) => sendFraud(proof);
 
     joinInstance(localPlayer.location, currentInstance);
 
-    // Periodic Rollups & Sketching
+    // Periodic Rollups & Sketching — createMerkleRoot lazy-imported so non-proposers pay no cost
     setInterval(async () => {
         if (!isProposer()) return;
         const leafData = Array.from(players.entries())
@@ -227,14 +218,17 @@ const initNetworking = () => {
         leafData.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
         leafData.sort();
 
+        const { createMerkleRoot } = await import('./crypto');
         const root = await createMerkleRoot(leafData);
         if (!root) return;
 
+        const proposerEpoch = Math.floor(Date.now() / ROLLUP_INTERVAL);
         const rollup = {
             shard: getShardName(APP_ID, localPlayer.location, currentInstance),
             root,
             timestamp: Date.now(),
-            count: leafData.length
+            count: leafData.length,
+            proposerEpoch,
         };
         const signature = await signMessage(JSON.stringify(rollup), playerKeys.privateKey);
         const data = { rollup, signature, publicKey: await exportKey(playerKeys.publicKey) };
@@ -251,21 +245,25 @@ const initNetworking = () => {
 };
 
 const isProposer = () => {
-    const all = Array.from(players.keys()).sort();
-    return all.length === 0 || selfId < all[0];
+    const all = Array.from(players.keys()).concat(selfId).sort();
+    const slot = Math.floor(Date.now() / ROLLUP_INTERVAL) % all.length;
+    if (all[slot] === selfId) return true;
+    // Fallback: if the elected peer missed their window, next in sorted order steps up
+    if (Date.now() - lastRollupReceivedAt > PROPOSER_GRACE_MS) {
+        return all[(slot + 1) % all.length] === selfId;
+    }
+    return false;
 };
 
 const joinInstance = (location, instanceId) => {
-    if (rooms.nostr) rooms.nostr.leave();
     if (rooms.torrent) rooms.torrent.torrent?.destroy();
 
     const shard = getShardName(APP_ID, location, instanceId);
     const rtcConfig = { iceServers: ICE_SERVERS };
-    rooms.nostr = joinNostr({ appId: APP_ID, relayUrls: NOSTR_RELAYS, rtcConfig }, shard);
     rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, shard);
 
     const checkFull = () => {
-        const peerCount = Object.keys(rooms.nostr.getPeers()).length;
+        const peerCount = Object.keys(rooms.torrent.getPeers()).length;
         if (peerCount >= INSTANCE_CAP && instanceId < 10) {
             log(`[System] Instance ${instanceId} is full, moving to ${instanceId + 1}...`, '#aaa');
             currentInstance = instanceId + 1;
@@ -277,7 +275,8 @@ const joinInstance = (location, instanceId) => {
     const setupShard = (r) => {
         const [sendMove, getMove] = r.makeAction('move');
         const [sendEmote, getEmote] = r.makeAction('emote');
-        const [sendPresence, getPresence] = r.makeAction('presence');
+        const [sendPresenceSingle, getPresenceSingle] = r.makeAction('presence_single');
+        const [sendPresenceBatch, getPresenceBatch] = r.makeAction('presence_batch');
         const [sendRelay, getRelay] = r.makeAction('world_state_relay');
         const [sendRollupLocal, getRollupLocal] = r.makeAction('rollup_local');
         const [sendDuelChallenge, getDuelChallenge] = r.makeAction('duel_challenge');
@@ -302,7 +301,14 @@ const joinInstance = (location, instanceId) => {
             const chan = activeChannels.get(peerId);
             if (!chan) return;
             const { commit, signature } = unpackDuelCommit(buf);
-            if (!await verifyMessage(JSON.stringify(commit), signature, getPlayerEntry(peerId)?.ph)) {
+            const playerEntry = getPlayerEntry(peerId);
+            if (!playerEntry?.publicKey) {
+                log(`[System] No public key on record for opponent. Channel corrupted.`, '#f55');
+                activeChannels.delete(peerId);
+                return;
+            }
+            const opponentPubKey = await importKey(playerEntry.publicKey, 'public');
+            if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) {
                 log(`[System] Invalid signature from opponent. Channel corrupted.`, '#f55');
                 activeChannels.delete(peerId);
                 return;
@@ -325,58 +331,58 @@ const joinInstance = (location, instanceId) => {
         getRequest(async (idStrings, peerId) => {
             const ids = idStrings.map(s => BigInt(s));
             const response = {};
-            const liblt = new IBLT();
             for (const [id, data] of players.entries()) {
-                const numeric = liblt._hashKey(id);
-                if (ids.includes(numeric)) {
-                    response[id] = packPresence(data);
+                if (ids.some(x => x === IBLT.hashId(id))) {
+                    response[id] = { presence: packPresence(data), publicKey: data.publicKey };
                 }
             }
-            const myIdNumeric = liblt._hashKey(selfId);
-            if (ids.includes(myIdNumeric)) {
+            if (ids.some(x => x === IBLT.hashId(selfId))) {
                 const entry = await myEntry();
                 response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
             }
-            if (Object.keys(response).length > 0) sendPresence(response, peerId);
+            if (Object.keys(response).length > 0) sendPresenceBatch(response, peerId);
         });
 
-        getPresence((data, peerId) => {
-            if (data instanceof Uint8Array) {
-                players.set(peerId, { ...unpackPresence(data), ts: Date.now() });
-            } else if (data.name) {
-                // Individual JSON update (fallback)
-                players.set(peerId, { ...data, ts: Date.now() });
-            } else {
-                // Batch update
-                Object.entries(data).forEach(([id, p]) => {
-                    if (id !== selfId) {
-                        // If it's the {presence, publicKey} format
-                        const presenceData = p.presence || p;
-                        const unpacked = (presenceData instanceof Uint8Array) ? unpackPresence(presenceData) : presenceData;
-                        players.set(id, { ...unpacked, ts: Date.now(), publicKey: p.publicKey });
-                    }
-                });
-            }
+        getPresenceSingle((buf, peerId) => {
+            players.set(peerId, { ...unpackPresence(buf), ts: Date.now() });
+        });
+
+        getPresenceBatch((data) => {
+            Object.entries(data).forEach(([id, { presence, publicKey }]) => {
+                if (id !== selfId) {
+                    players.set(id, { ...unpackPresence(presence), ts: Date.now(), publicKey });
+                }
+            });
         });
 
         getRollupLocal(async (data) => {
+            lastRollupReceivedAt = Date.now();
             const { rollup, signature, publicKey } = data;
-            if (!await verifyMessage(JSON.stringify(rollup), signature, publicKey)) return;
+            const proposerPubKey = await importKey(publicKey, 'public');
+            if (!await verifyMessage(JSON.stringify(rollup), signature, proposerPubKey)) return;
             const leafData = Array.from(players.entries())
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
             leafData.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
             leafData.sort();
+            const { createMerkleRoot } = await import('./crypto');
             const ourRoot = await createMerkleRoot(leafData);
             if (ourRoot !== rollup.root) {
                 log(`[System] Fraud detected in instance! Submitting proof to Arbiter...`, '#f55');
-                const proof = { 
-                    rollup: data, 
-                    witness: await Promise.all(Array.from(players.entries()).map(async ([id, p]) => ({ 
-                        id, 
-                        p, 
-                        publicKey: p.publicKey || (id === selfId ? await exportKey(playerKeys.publicKey) : null)
-                    })))
+                // O(1) witness: just submit our own signed presence as proof
+                const myPresenceData = {
+                    name: localPlayer.name, location: localPlayer.location, ph: localPlayer.ph,
+                    level: localPlayer.level, xp: localPlayer.xp, ts: Date.now()
+                };
+                const witnessSig = await signMessage(JSON.stringify(myPresenceData), playerKeys.privateKey);
+                const proof = {
+                    rollup: data,
+                    witness: {
+                        id: selfId,
+                        presence: myPresenceData,
+                        signature: witnessSig,
+                        publicKey: await exportKey(playerKeys.publicKey),
+                    }
                 };
                 gameActions.submitFraudProof(proof);
             }
@@ -407,44 +413,36 @@ const joinInstance = (location, instanceId) => {
 
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId);
-            gameActions.sendPresence(await myEntry(), peerId);
+            gameActions.sendPresenceSingle(await myEntry(), peerId);
         });
         r.onPeerLeave(peerId => {
             knownPeers.delete(peerId);
             players.delete(peerId);
         });
 
-        return { sendMove, sendEmote, sendPresence, sendRelay, sendRollupLocal, sendSketch, sendRequest, sendDuelChallenge, sendDuelAccept, sendDuelCommit };
+        return { sendMove, sendEmote, sendPresenceSingle, sendPresenceBatch, sendRelay, sendRollupLocal, sendSketch, sendRequest, sendDuelChallenge, sendDuelAccept, sendDuelCommit };
     };
 
-    const n = setupShard(rooms.nostr);
-    const t = setupShard(rooms.torrent);
+    const r = setupShard(rooms.torrent);
 
     gameActions = {
         ...gameActions,
-        sendMove: (data) => {
-            const packed = packMove(data.from, data.to);
-            n.sendMove(packed); t.sendMove(packed);
+        sendMove: (data) => { r.sendMove(packMove(data.from, data.to)); },
+        sendEmote: (data) => { r.sendEmote(packEmote(data.text)); },
+        sendPresenceSingle: (data, target) => {
+            const packed = packPresence(data);
+            target ? r.sendPresenceSingle(packed, target) : r.sendPresenceSingle(packed);
         },
-        sendEmote: (data) => {
-            const packed = packEmote(data.text);
-            n.sendEmote(packed); t.sendEmote(packed);
+        sendPresenceBatch: (data, target) => {
+            target ? r.sendPresenceBatch(data, target) : r.sendPresenceBatch(data);
         },
-        sendPresence: (data, target) => { 
-            const packed = (data.signature) ? packPresence(data) : data;
-            if (target) { n.sendPresence(packed, target); t.sendPresence(packed, target); }
-            else { n.sendPresence(packed); t.sendPresence(packed); }
-        },
-        relayState: (data) => { n.sendRelay(data); t.sendRelay(data); },
-        sendRollupLocal: (data) => { n.sendRollupLocal(data); t.sendRollupLocal(data); },
-        sendDuelChallenge: (data) => { n.sendDuelChallenge(data); t.sendDuelChallenge(data); },
-        sendDuelAccept: (data) => { n.sendDuelAccept(data); t.sendDuelAccept(data); },
-        sendDuelCommit: (data, target) => {
-            const packed = packDuelCommit({ ...data.commit, signature: data.signature });
-            n.sendDuelCommit(packed, target); t.sendDuelCommit(packed, target);
-        },
-        sendSketch: (data) => { n.sendSketch(data); t.sendSketch(data); },
-        sendRequest: (data, target) => { n.sendRequest(data, target); t.sendRequest(data, target); }
+        relayState: (data) => r.sendRelay(data),
+        sendRollupLocal: (data) => r.sendRollupLocal(data),
+        sendDuelChallenge: (data) => r.sendDuelChallenge(data),
+        sendDuelAccept: (data) => r.sendDuelAccept(data),
+        sendDuelCommit: (data, target) => r.sendDuelCommit(packDuelCommit({ ...data.commit, signature: data.signature }), target),
+        sendSketch: (data) => r.sendSketch(data),
+        sendRequest: (data, target) => r.sendRequest(data, target),
     };
 };
 
@@ -455,7 +453,7 @@ const start = async () => {
         loadLocalState();
         initNetworking();
 
-        setInterval(async () => { gameActions.sendPresence(await myEntry()); }, HEARTBEAT_MS);
+        setInterval(async () => { gameActions.sendPresenceSingle(await myEntry()); }, HEARTBEAT_MS);
         setInterval(pruneStale, HEARTBEAT_MS);
 
         log(`\nWelcome to Hearthwick.`);
@@ -467,29 +465,123 @@ const start = async () => {
             log(world[localPlayer.location].description);
         }, 1000);
 
+        // --- AUTOCOMPLETE ---
+        const getAutoCompleteContext = () => ({
+            inventory: localPlayer.inventory,
+            location: localPlayer.location,
+            world,
+            players,
+            ITEMS,
+        });
+
+        let currentSuggestions = [];
+        let activeSuggestionIdx = -1;
+
+        const renderSuggestions = (suggestions) => {
+            currentSuggestions = suggestions;
+            activeSuggestionIdx = -1;
+            suggestionsEl.innerHTML = '';
+            suggestions.forEach((s, i) => {
+                const chip = document.createElement('button');
+                chip.className = 'chip' + (s.immediate ? ' immediate' : '');
+                chip.textContent = s.display;
+                chip.addEventListener('click', () => selectSuggestion(i));
+                suggestionsEl.appendChild(chip);
+            });
+        };
+
+        const selectSuggestion = (idx) => {
+            const s = currentSuggestions[idx];
+            if (!s) return;
+            if (s.immediate) {
+                log(`> ${s.fill}`, '#555');
+                handleCommand(s.fill);
+                input.value = '';
+                renderSuggestions([]);
+            } else {
+                input.value = s.fill;
+                input.focus();
+                renderSuggestions(getSuggestions(s.fill, getAutoCompleteContext()));
+            }
+        };
+
+        const submitCommand = (raw) => {
+            const val = raw.trim();
+            if (!val) return;
+            handleCommand(val.startsWith('/') ? val.slice(1) : val);
+        };
+
+        // --- INPUT EVENTS ---
         const inputHistory = [];
         let historyIdx = -1;
+
         input.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (historyIdx < inputHistory.length - 1) {
                     historyIdx++;
                     input.value = inputHistory[historyIdx];
+                    renderSuggestions(getSuggestions(input.value, getAutoCompleteContext()));
                 }
             } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 if (historyIdx > 0) { historyIdx--; input.value = inputHistory[historyIdx]; }
                 else { historyIdx = -1; input.value = ''; }
+                renderSuggestions(getSuggestions(input.value, getAutoCompleteContext()));
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                if (currentSuggestions.length === 0) return;
+                activeSuggestionIdx = (activeSuggestionIdx + 1) % currentSuggestions.length;
+                // Highlight active chip
+                suggestionsEl.querySelectorAll('.chip').forEach((el, i) =>
+                    el.classList.toggle('active', i === activeSuggestionIdx)
+                );
+                // Fill input with the active suggestion (don't submit yet)
+                input.value = currentSuggestions[activeSuggestionIdx].fill;
             } else if (e.key === 'Enter') {
                 const val = input.value.trim();
-                if (val) {
+                if (!val) return;
+                // If a chip is Tab-selected and it's immediate, submit it
+                if (activeSuggestionIdx >= 0 && currentSuggestions[activeSuggestionIdx]?.immediate) {
+                    selectSuggestion(activeSuggestionIdx);
+                } else {
                     if (val !== inputHistory[0]) { inputHistory.unshift(val); if (inputHistory.length > 50) inputHistory.pop(); }
                     historyIdx = -1;
-                    if (val.startsWith('/')) handleCommand(val.slice(1));
+                    submitCommand(val);
                     input.value = '';
+                    renderSuggestions([]);
                 }
             }
         });
+
+        input.addEventListener('input', () => {
+            historyIdx = -1;
+            renderSuggestions(getSuggestions(input.value, getAutoCompleteContext()));
+        });
+
+        // --- QUICK-ACTION BAR ---
+        document.querySelectorAll('.quick-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const cmd = btn.dataset.cmd;
+                log(`> ${cmd}`, '#555');
+                handleCommand(cmd);
+            });
+        });
+
+        // --- MOBILE KEYBOARD / VIEWPORT HANDLING ---
+        // visualViewport fires reliably when the on-screen keyboard opens on iOS.
+        // Without this, the input bar can hide behind the keyboard.
+        if (window.visualViewport) {
+            const onViewportChange = () => {
+                // 100dvh handles this on modern browsers, but this is a belt-and-suspenders
+                // fallback for older iOS where dvh isn't supported.
+                document.body.style.height = window.visualViewport.height + 'px';
+                output.scrollTop = output.scrollHeight;
+            };
+            window.visualViewport.addEventListener('resize', onViewportChange);
+            window.visualViewport.addEventListener('scroll', onViewportChange);
+        }
+
     } catch (err) { log(`[FATAL] Engine crash: ${err.message}`, '#f00'); }
 };
 
@@ -517,7 +609,7 @@ async function resolveRound(targetId) {
     
     const opponent = getPlayerEntry(targetId);
     const opBonus = levelBonus(opponent?.level || 1);
-    const opDef = (DEFAULT_PLAYER_STATS.defense || 3) + opBonus.defense;
+    const opDef = (opponent?.defense ?? DEFAULT_PLAYER_STATS.defense) + opBonus.defense;
 
     const dmg = resolveAttack(myAtk, opDef, rng);
 

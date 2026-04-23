@@ -43,19 +43,54 @@ A serverless P2P MMO using Yjs for state, Trystero for signaling, and a Pi Zero 
 - XP/levelling with stat scaling
 - Death respawn to cellar at half HP
 - Combat events in `/news` (player_kill, player_death)
-- 26 determinism/regression tests (all passing)
 
-## Implementation Phases (DONE: 1, 2, 3)
+## Scaling Refactor (complete — v0.6.0)
+- Yjs fully removed; global state is Arbiter-signed JSON
+- Instance sharding via dynamic Trystero room IDs (`getShardName`)
+- IBLT sketch reconciliation for ephemeral presence sync
+- Binary packing (`packer.js`): move (2B), presence (96B), duelCommit (70B)
+- Rotating time-slot proposer election with fallback
+- O(1) fraud proofs (single signed witness, threshold accumulation)
+- Arbiter: ban persistence, rate limiting, drift-corrected day tick, health endpoint
+- 161 tests passing
 
-### Phase 4: The "Commissioner" (LLM) (CURRENT)
+## Implementation Phases (DONE: 1, 2, 3, Scaling)
+
+### Phase 4: UX — Mobile & Input (CURRENT)
+
+#### Input Model
+The slash-command model works on desktop but breaks on mobile: the `/` prefix is awkward on a phone keyboard, autocorrect corrupts command names, and there is no affordance for what commands or arguments are valid.
+
+Proposed model: **command word without slash + Tab/suggestion autocomplete**.
+- Player types `use` → UI shows matching items from inventory inline
+- Player types `move` → UI shows valid exit directions for current room
+- Player types `attack` → UI shows current enemy if present
+- Slash still accepted as an alias so existing habits aren't broken
+
+#### Tasks
+- [ ] **Autocomplete engine** (`src/autocomplete.js`) — pure function `getSuggestions(input, context)` returning ranked candidates. Context includes `localPlayer.inventory`, `world[location].exits`, `players` map, current enemy. No DOM dependency so it is fully testable.
+- [ ] **Suggestion UI** — show up to 4 candidates above the input bar as tappable chips. Tapping a chip fills the input and submits. On desktop, Tab cycles through candidates, Enter submits.
+- [ ] **`/use <item>`** — autocomplete resolves item display names from inventory (e.g. typing `use pot` completes to `use potion`). Player never needs to know the internal item ID.
+- [ ] **`/move <dir>`** — autocomplete shows only valid exits for the current room. Tapping a direction chip moves immediately without pressing Enter.
+- [ ] **`/duel <name>`** — autocomplete resolves visible player names from the `players` map.
+- [ ] **Mobile layout** — fix input staying above keyboard on iOS/Android (`env(safe-area-inset-bottom)`, `position: fixed` input bar). Output area scrolls independently.
+- [ ] **Touch-friendly quick-action bar** — row of icon buttons for the four highest-frequency actions: look, attack, rest, inventory. Visible only on `pointer: coarse` devices (CSS media query). Each button dispatches the same `handleCommand` path as typed input.
+- [ ] **Virtual keyboard handling** — detect `visualViewport` resize events and reflow the output area height so the input is never obscured by the on-screen keyboard.
+
+#### Design constraints
+- No new dependencies. Autocomplete is vanilla JS + DOM.
+- Autocomplete state is derived entirely from existing `localPlayer`, `world`, and `players` — no new network calls.
+- `getSuggestions` must be a pure function so it can be unit tested without a DOM.
+
+### Phase 5: The "Commissioner" (LLM)
 - [ ] Setup `llama.cpp` and RWKV7-0.4B on Pi (ARMv6 build).
 - [ ] Create the "Nightly Cron" bash script.
 - [ ] Implement "The Ticker" UI element.
 
-### Phase 5: Anti-Cheat & Security
+### Phase 6: Anti-Cheat & Security
 - [ ] Ed25519 Action Signatures for `/move`.
 - [ ] Deterministic validation in `getMove` action handler.
 - [ ] Pi blacklisting and rollback logic.
 
-### Phase 6: Graphical Client (Visuals)
+### Phase 7: Graphical Client (Visuals)
 - [ ] Kontra.js renderer.

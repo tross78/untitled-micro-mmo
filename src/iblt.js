@@ -22,6 +22,10 @@ export class IBLT {
     }
 
     _hashKey(id) {
+        return IBLT.hashId(id);
+    }
+
+    static hashId(id) {
         let h = 0n;
         for (let i = 0; i < id.length; i++) {
             h = (h * 31n + BigInt(id.charCodeAt(i))) & 0xFFFFFFFFFFFFFFFFn;

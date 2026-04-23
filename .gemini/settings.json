@@ -1,0 +1,20 @@
+{
+  "contextFileName": "GEMINI.md",
+  "coreTools": [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_shell_command",
+    "search_file_content",
+    "list_directory",
+    "glob"
+  ],
+  "hooks": {
+    "AfterTool": [
+      {
+        "command": "node scripts/hooks/after-write.js",
+        "trigger": ["write_file", "edit_file"]
+      }
+    ]
+  }
+}

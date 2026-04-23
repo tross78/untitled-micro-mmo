@@ -6,7 +6,9 @@
   "main": "index.js",
   "scripts": {
     "build": "esbuild src/main.js --bundle --minify --loader:.wasm=dataurl --external:crypto --outfile=dist/main.js && cp src/index.html dist/index.html && cp src/manifest.json dist/manifest.json",
-    "test": "jest"
+    "test": "jest",
+    "verify": "bash scripts/verify.sh",
+    "diagnose": "bash scripts/diagnose.sh"
   },
   "keywords": [],
   "author": "",

@@ -7,6 +7,7 @@ const isNode = typeof window === 'undefined';
 
 /**
  * Generates a new Ed25519 keypair.
+ * @returns {Promise<CryptoKeyPair>} Browser only. Returns null in Node.
  */
 export async function generateKeyPair() {
     if (!isNode) {
@@ -20,8 +21,10 @@ export async function generateKeyPair() {
 }
 
 /**
- * Exports a key to Base64 format.
- * Browser uses 'raw' for public keys for maximum compatibility.
+ * Exports a CryptoKey to a Base64 string.
+ * Public keys use 'raw' format (32 bytes). Private keys use 'pkcs8'.
+ * @param {CryptoKey} key
+ * @returns {Promise<string>} Base64-encoded key. Returns null in Node.
  */
 export async function exportKey(key) {
     if (!isNode) {
@@ -33,8 +36,13 @@ export async function exportKey(key) {
 }
 
 /**
- * Imports a key from Base64 format.
- * Supports 'raw' for public keys and 'pkcs8' for private keys.
+ * Imports an Ed25519 key from a Base64 string.
+ * @param {string} base64 - Raw 32-byte public key OR PKCS8 private key, Base64-encoded.
+ * @param {'public'|'private'} type
+ * @returns {Promise<CryptoKey|Buffer>} CryptoKey in browser; raw Buffer in Node.
+ *
+ * IMPORTANT: In browser code, always call importKey before passing to verifyMessage.
+ * Never pass a `ph` hash string (8-char hex) — it is NOT a key and will throw.
  */
 export async function importKey(base64, type) {
     if (!isNode) {
@@ -50,22 +58,19 @@ export async function importKey(base64, type) {
             type === 'private' ? ['sign'] : ['verify']
         );
     } else {
-        // Node implementation (Arbiter)
-        const { createPublicKey, createPrivateKey } = await import('crypto');
-        const buffer = Buffer.from(base64, 'base64');
-        
-        if (type === 'public') {
-            // Node expects Ed25519 raw public keys as-is
-            return buffer;
-        } else {
-            // Node expects private keys in a specific format or raw
-            return buffer;
-        }
+        // Node implementation (Arbiter) — returns raw Buffer; signMessage/verifyMessage
+        // accept Buffer and wrap it in DER themselves, so no KeyObject needed here.
+        return Buffer.from(base64, 'base64');
     }
 }
 
 /**
- * Signs a message.
+ * Signs a message with an Ed25519 private key.
+ * @param {string} message - The plaintext message to sign.
+ * @param {CryptoKey|Buffer|string} privateKey
+ *   Browser: must be a CryptoKey from importKey(b64, 'private') or generateKeyPair().
+ *   Node: accepts a raw Base64 seed string OR Buffer (32 or 64 bytes).
+ * @returns {Promise<string>} Base64-encoded 64-byte signature.
  */
 export async function signMessage(message, privateKey) {
     const encoder = new TextEncoder();
@@ -93,7 +98,18 @@ export async function signMessage(message, privateKey) {
 }
 
 /**
- * Verifies a message signature.
+ * Verifies an Ed25519 signature.
+ * @param {string} message - The original plaintext message.
+ * @param {string} signatureBase64 - Base64-encoded 64-byte signature.
+ * @param {CryptoKey|Buffer|string} publicKey
+ *   Browser: MUST be a CryptoKey from importKey(b64, 'public'). Passing any other type
+ *   (a raw Base64 string, a `ph` hash, a peer ID) will throw or return false.
+ *   Node: accepts a raw Base64 string or Buffer (32-byte public key).
+ * @returns {Promise<boolean>}
+ *
+ * WRONG:  verifyMessage(msg, sig, playerEntry.ph)        // ph is a hash, not a key
+ * WRONG:  verifyMessage(msg, sig, pubKeyBase64)           // string in browser path
+ * CORRECT: verifyMessage(msg, sig, await importKey(pubKeyBase64, 'public'))
  */
 export async function verifyMessage(message, signatureBase64, publicKey) {
     const encoder = new TextEncoder();
@@ -140,7 +156,11 @@ export async function computeHash(message) {
 }
 
 /**
- * Creates a Merkle Root from a list of strings (leaf nodes).
+ * Creates a Merkle Root from an array of pre-sorted leaf strings.
+ * Lazy-imported in main.js — do not move to a top-level import (bundle size).
+ * Only the elected Proposer calls this; non-proposers must never load it eagerly.
+ * @param {string[]} leaves - Must be sorted before calling.
+ * @returns {Promise<string>} 64-char hex SHA-256 root, or '' for empty input.
  */
 export async function createMerkleRoot(leaves) {
     if (leaves.length === 0) return '';
