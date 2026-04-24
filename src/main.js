@@ -236,7 +236,7 @@ const initNetworking = async () => {
     const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
         
-        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, APP_ID + '-global');
+        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, 'global');
 
         const [sendRollup] = globalRooms.torrent.makeAction('rollup');
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -299,7 +299,7 @@ const initNetworking = async () => {
         const globalPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
         const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
         const shardName = getShardName(APP_ID, localPlayer.location, currentInstance);
-        console.log(`[P2P] Global Room: ${APP_ID}-global (${globalPeers} peers) | Shard Room: ${shardName} (${shardPeers} peers) | Synced: ${hasSyncedWithArbiter}`);
+        console.log(`[P2P] Global Room: global (${globalPeers} peers) | Shard Room: ${shardName} (${shardPeers} peers) | Synced: ${hasSyncedWithArbiter}`);
     }, 10000);
 
     // Fallback to TURN after 20 seconds if we haven't synced with the Arbiter OR if we are alone in the shard
@@ -922,7 +922,7 @@ async function handleCommand(cmd) {
             const sPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
             const shardName = getShardName(APP_ID, localPlayer.location, currentInstance);
             log(`\n--- NETWORK STATUS ---`, '#0af');
-            log(`Global Room: ${APP_ID}-global (${gPeers} peers)`);
+            log(`Global Room: global (${gPeers} peers)`);
             log(`Shard Room: ${shardName} (${sPeers} peers)`);
             log(`Arbiter Sync: ${hasSyncedWithArbiter ? 'YES' : 'NO'}`);
             log(`Identity: ${localPlayer.name}#${getTag(localPlayer.ph)}`);
