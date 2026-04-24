@@ -10,12 +10,13 @@ export const TORRENT_TRACKERS = [
     'wss://tracker.webtorrent.dev',
 ];
 
-// STUN first (free, no infra), TURN as last resort (relay, swappable).
-// openrelay.metered.ca = Metered.ca free tier (20GB/month). Swap credentials here if needed.
+// STUN first (free, fast), then Cloudflare TURN (free open beta, low-latency global network).
+// openrelay.metered.ca used the public shared credentials — chronically overloaded, removed.
+// If Cloudflare TURN exits beta or requires auth, swap in Metered.ca paid credentials here.
 export const ICE_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'turn:openrelay.metered.ca:80',                username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443',               username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:turn.cloudflare.com:3478',               username: 'cloudflare', credential: 'cloudflare' },
+    { urls: 'turn:turn.cloudflare.com:443',                username: 'cloudflare', credential: 'cloudflare' },
+    { urls: 'turn:turn.cloudflare.com:443?transport=tcp',  username: 'cloudflare', credential: 'cloudflare' },
 ];

@@ -212,13 +212,11 @@ let gameActions = {};
 let lastRollupReceivedAt = 0;
 let lastValidStatePacket = null;
 
-// Pre-warm: join the global room immediately at module load so tracker WebSocket
-// connections begin during identity init rather than after it.
-const rtcConfig = { iceServers: ICE_SERVERS };
-globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, 'global');
-
 const initNetworking = () => {
-    // Room already created above — attach action handlers now that identity is ready.
+    const rtcConfig = { iceServers: ICE_SERVERS };
+
+    // Global room is ONLY for Arbiter state
+    globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, 'global');
 
     const [sendRollup] = globalRooms.torrent.makeAction('rollup');
     const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -549,22 +547,7 @@ const start = async () => {
         // Ask other open tabs for state before touching the network
         TAB_CHANNEL.postMessage({ type: 'request_state' });
 
-        // Web Locks: only one tab runs the P2P connection at a time.
-        // The lock is held for the lifetime of the tab; when it closes the next
-        // tab acquires it automatically. Non-coordinator tabs still receive state
-        // via BroadcastChannel from the coordinator.
-        if (typeof navigator.locks !== 'undefined') {
-            navigator.locks.request('hearthwick_network', { ifAvailable: true }, async (lock) => {
-                if (lock) {
-                    initNetworking();
-                    // Hold the lock indefinitely (return a never-resolving promise)
-                    return new Promise(() => {});
-                }
-                // Another tab holds the lock — rely on BroadcastChannel for state
-            });
-        } else {
-            initNetworking();
-        }
+        initNetworking();
 
         setInterval(async () => { gameActions.sendPresenceSingle(await myEntry()); }, HEARTBEAT_MS);
         setInterval(pruneStale, HEARTBEAT_MS);
