@@ -16,7 +16,7 @@ async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
-    const { APP_ID, ROOM_NAME, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
+    const { APP_ID, ROOM_NAME, TORRENT_TRACKERS, ICE_SERVERS, NOSTR_RELAYS } = await import('../src/constants.js');
     const { deriveWorldState } = await import('../src/rules.js');
     const dotenv = await import('dotenv');
 
@@ -24,7 +24,6 @@ async function startArbiter() {
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
     const GH_GIST_TOKEN = process.env.GH_GIST_TOKEN;
     const GH_GIST_ID = process.env.GH_GIST_ID;
-    const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'];
 
     if (!MASTER_SECRET_KEY) {
         console.error('ERROR: MASTER_SECRET_KEY not found in .env');
@@ -104,9 +103,14 @@ async function startArbiter() {
         const [, getFraud] = r.makeAction('fraud_proof');
         const [, getRequestState] = r.makeAction('request_state');
 
-        getRequestState((_, peerId) => {
+        getRequestState(async (_, peerId) => {
             console.log(`[Arbiter][${name}] State requested by ${peerId}`);
-            broadcastState();
+            const stateStr = JSON.stringify(worldState);
+            const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
+            // 500ms delay to ensure reverse data channel is ready
+            setTimeout(() => {
+                sendState({ state: stateStr, signature }, [peerId]);
+            }, 500);
         });
 
         getRollup(async (data) => {
