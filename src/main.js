@@ -261,16 +261,15 @@ const initNetworking = () => {
 
     let { requestState } = connectGlobal(currentRtcConfig);
 
-    // Fallback to TURN after 5 seconds if we haven't synced
+    // Fallback to TURN after 10 seconds if we haven't found any other players
     setTimeout(() => {
-        if (!hasSyncedWithArbiter) {
-            log(`[System] Optimization: Adding TURN relay for restricted networks...`, '#555');
+        if (knownPeers.size === 0) {
+            log(`[System] Optimization: Searching deeper for peers via TURN relay...`, '#555');
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
-            ({ requestState } = connectGlobal(currentRtcConfig));
-            // Only rejoin shard if sync failed
-            if (worldState.day === 0) joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+            connectGlobal(currentRtcConfig);
+            joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
-    }, 5000);
+    }, 10000);
 
     // Exponential backoff retry: 1s, 2s, 4s, 8s, then cap at 10s
     const RETRY_DELAYS = [1000, 2000, 4000, 8000];
