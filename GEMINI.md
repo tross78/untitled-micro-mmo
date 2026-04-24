@@ -174,6 +174,8 @@ Do **not** use `selfId < all[0]` (old, broken logic — every peer independently
 
 10. **`createMerkleRoot` at top-level import**: Keep it as a lazy `await import('./crypto')` inside the rollup interval. Non-proposers should not load it eagerly.
 
+11. **Redundant room names (Peer Discovery)**: Do not prefix room names with `APP_ID`. Trystero swarms are already isolated by the `appId` in the config. Redundant prefixes cause long room names that break tracker/DHT discovery. Use `'global'` for the global room and `getShardName` (which returns `${location}-${instanceId}`) for shards. If you see 0 peers in a shard but peers in global, check the room name length/redundancy.
+
 ---
 
 ## When You Are Stuck — Loop Prevention Protocol

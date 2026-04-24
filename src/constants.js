@@ -11,10 +11,12 @@ export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 export const ROOM_NAME = 'lobby';
 
-// Stable high-uptime trackers.
+// Stable high-uptime trackers (WebTorrent-compatible)
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
     'wss://tracker.files.fm:7073/announce',
+    'wss://tracker.gbitt.info:443/announce',
+    'wss://tracker.open-internet.nl:443/announce'
 ];
 
 // Expanded STUN list for better browser-to-browser NAT traversal.

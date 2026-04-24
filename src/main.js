@@ -385,12 +385,14 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
     players.clear(); // Important: stop seeing ghost players from other rooms
 
     const shard = getShardName(APP_ID, location, instanceId);
+    console.log(`[P2P] Joining Shard Room: ${shard} (Config: ${rtcConfig ? 'Custom/TURN' : 'Default/STUN'})`);
     const config = rtcConfig || { iceServers: STUN_SERVERS };
     // Use unique APP_ID for swarm isolation, and short shard name for room.
     rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, shard);
 
     const checkFull = () => {
         const peerCount = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
+        console.log(`[P2P] Shard Room Status (${shard}): ${peerCount} peers.`);
         if (peerCount >= INSTANCE_CAP && instanceId < 10) {
             log(`[System] Instance ${instanceId} is full, moving to ${instanceId + 1}...`, '#aaa');
             currentInstance = instanceId + 1;
@@ -569,6 +571,7 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
 
         r.onPeerJoin(async peerId => {
+            console.log(`[P2P] Peer found in Shard: ${peerId}`);
             knownPeers.add(peerId);
             if (typeof gameActions.sendPresenceSingle === 'function') {
                 const handshake = async () => {
