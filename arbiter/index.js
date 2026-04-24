@@ -16,7 +16,7 @@ async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
-    const { APP_ID, ROOM_NAME, TORRENT_TRACKERS, ICE_SERVERS, NOSTR_RELAYS } = await import('../src/constants.js');
+    const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
     const { deriveWorldState } = await import('../src/rules.js');
     const dotenv = await import('dotenv');
 
@@ -30,9 +30,13 @@ async function startArbiter() {
         process.exit(1);
     }
 
+    const randomSeed = () =>
+        'h3arthw1ck-' + crypto.getRandomValues(new Uint32Array(2))
+            .reduce((s, v) => s + v.toString(16).padStart(8, '0'), '');
+
     // --- STATE ---
     let worldState = {
-        world_seed: 'h3arthw1ck-' + crypto.getRandomValues(new Uint32Array(2)).reduce((s, v) => s + v.toString(16), ''),
+        world_seed: randomSeed(),
         day: 1,
         last_tick: Date.now()
     };
@@ -105,72 +109,94 @@ async function startArbiter() {
 
         getRequestState(async (_, peerId) => {
             console.log(`[Arbiter][${name}] State requested by ${peerId}`);
-            const stateStr = JSON.stringify(worldState);
-            const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
-            // 500ms delay to ensure reverse data channel is ready
-            setTimeout(() => {
-                sendState({ state: stateStr, signature }, [peerId]);
-            }, 500);
+            try {
+                // Reuse the last broadcast packet if available to avoid re-signing on every request
+                if (lastBroadcastPacket) {
+                    setTimeout(() => sendState(lastBroadcastPacket, [peerId]), 500);
+                } else {
+                    const stateStr = JSON.stringify(worldState);
+                    const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
+                    setTimeout(() => sendState({ state: stateStr, signature }, [peerId]), 500);
+                }
+            } catch (e) {
+                console.warn(`[Arbiter][${name}] Failed to respond to state request:`, e.message);
+            }
         });
 
         getRollup(async (data) => {
-            const { rollup, signature, publicKey } = data;
-            if (bans.has(publicKey)) return;
+            try {
+                const { rollup, signature, publicKey } = data;
+                if (bans.has(publicKey)) return;
 
-            // Rate-limit: one accepted rollup per proposer per interval
-            const last = lastRollupTime.get(publicKey) || 0;
-            if (Date.now() - last < ROLLUP_INTERVAL * 0.8) return;
-            lastRollupTime.set(publicKey, Date.now());
+                // Rate-limit: one accepted rollup per proposer per interval
+                const last = lastRollupTime.get(publicKey) || 0;
+                if (Date.now() - last < ROLLUP_INTERVAL * 0.8) return;
+                lastRollupTime.set(publicKey, Date.now());
 
-            if (!await verifyMessage(JSON.stringify(rollup), signature, publicKey)) {
-                console.warn(`[Arbiter][${name}] Invalid rollup signature from ${String(publicKey).slice(0, 8)}`);
-                return;
+                if (!await verifyMessage(JSON.stringify(rollup), signature, publicKey)) {
+                    console.warn(`[Arbiter][${name}] Invalid rollup signature from ${String(publicKey).slice(0, 8)}`);
+                    return;
+                }
+                console.log(`[Arbiter][${name}] Rollup received for ${rollup.shard}: Root ${rollup.root.slice(0, 8)}`);
+                lastRollups.set(rollup.shard, { ...rollup, proposer: publicKey });
+            } catch (e) {
+                console.warn(`[Arbiter][${name}] Rollup handler error:`, e.message);
             }
-            console.log(`[Arbiter][${name}] Rollup received for ${rollup.shard}: Root ${rollup.root.slice(0, 8)}`);
-            lastRollups.set(rollup.shard, { ...rollup, proposer: publicKey });
         });
 
         getFraud(async (data) => {
-            const { rollup: rollupData, witness } = data;
-            const { rollup, signature, publicKey: proposerKey } = rollupData;
-            const { id, presence, signature: witnessSig, publicKey: witnessKey } = witness;
+            try {
+                const { rollup: rollupData, witness } = data;
+                const { rollup, signature, publicKey: proposerKey } = rollupData;
+                const { id, presence, signature: witnessSig, publicKey: witnessKey } = witness;
 
-            // 1. Verify the Proposer's signature on the disputed rollup
-            if (!await verifyMessage(JSON.stringify(rollup), signature, proposerKey)) return;
+                // 1. Verify the Proposer's signature on the disputed rollup
+                if (!await verifyMessage(JSON.stringify(rollup), signature, proposerKey)) return;
 
-            // 2. Verify the witness's signed presence
-            if (!await verifyMessage(JSON.stringify(presence), witnessSig, witnessKey)) return;
+                // 2. Verify the witness's signed presence — presence must reference the disputed rollup root
+                //    to prevent replay of old witness signatures against new proposers
+                if (presence.disputedRoot !== rollup.root) {
+                    console.warn(`[Arbiter] Fraud Proof rejected: witness not tied to this rollup`);
+                    return;
+                }
+                if (!await verifyMessage(JSON.stringify(presence), witnessSig, witnessKey)) return;
 
-            // 3. Verify witnessKey matches the ph in the presence packet
-            const { hashStr: _hashStr } = await import('../src/rules.js');
-            const expectedPh = (_hashStr(witnessKey) >>> 0).toString(16).padStart(8, '0');
-            if (presence.ph !== expectedPh) {
-                console.warn(`[Arbiter] Fraud Proof rejected: key/ph mismatch for witness ${id}`);
-                return;
-            }
+                // 3. Verify witnessKey matches the ph in the presence packet
+                const { hashStr: _hashStr } = await import('../src/rules.js');
+                const expectedPh = (_hashStr(witnessKey) >>> 0).toString(16).padStart(8, '0');
+                if (presence.ph !== expectedPh) {
+                    console.warn(`[Arbiter] Fraud Proof rejected: key/ph mismatch for witness ${id}`);
+                    return;
+                }
 
-            // 4. Accumulate distinct fraud reports; ban after threshold
-            if (!fraudCounts.has(proposerKey)) fraudCounts.set(proposerKey, new Set());
-            fraudCounts.get(proposerKey).add(witnessKey);
-            const count = fraudCounts.get(proposerKey).size;
-            console.log(`[Arbiter][${name}] Fraud report ${count}/${FRAUD_BAN_THRESHOLD} against ${String(proposerKey).slice(0, 8)}`);
+                // 4. Accumulate distinct fraud reports; ban after threshold
+                if (!fraudCounts.has(proposerKey)) fraudCounts.set(proposerKey, new Set());
+                fraudCounts.get(proposerKey).add(witnessKey);
+                const count = fraudCounts.get(proposerKey).size;
+                console.log(`[Arbiter][${name}] Fraud report ${count}/${FRAUD_BAN_THRESHOLD} against ${String(proposerKey).slice(0, 8)}`);
 
-            if (count >= FRAUD_BAN_THRESHOLD) {
-                console.log(`[FRAUD PROVEN] Banning proposer ${String(proposerKey).slice(0, 8)}`);
-                bans.add(proposerKey);
-                fraudCounts.delete(proposerKey);
-                worldState.bans = Array.from(bans);
-                schedulePersist();
-                const banState = { type: 'ban', target: proposerKey };
-                const banMsg = JSON.stringify(banState);
-                const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
-                torrent.sendState({ state: banMsg, signature: banSig });
+                if (count >= FRAUD_BAN_THRESHOLD) {
+                    console.log(`[FRAUD PROVEN] Banning proposer ${String(proposerKey).slice(0, 8)}`);
+                    bans.add(proposerKey);
+                    fraudCounts.delete(proposerKey);
+                    worldState.bans = Array.from(bans);
+                    schedulePersist();
+                    const banState = { type: 'ban', target: proposerKey };
+                    const banMsg = JSON.stringify(banState);
+                    const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
+                    torrent.sendState({ state: banMsg, signature: banSig });
+                }
+            } catch (e) {
+                console.warn(`[Arbiter][${name}] Fraud handler error:`, e.message);
             }
         });
 
         r.onPeerJoin(peerId => {
             console.log(`[Arbiter][${name}] Peer joined: ${peerId}`);
-            broadcastState();
+            // Send only to the new peer — broadcastState() would spam all existing peers
+            if (lastBroadcastPacket) {
+                setTimeout(() => sendState(lastBroadcastPacket, [peerId]), 500);
+            }
         });
 
         return { sendState };
@@ -207,29 +233,6 @@ async function startArbiter() {
             }
         }
 
-        // 2. Nostr Beacon (Gossip-style speed)
-        // We broadcast a Kind 1 message with a specific tag for this world.
-        // For simplicity on Pi Zero, we just blast to relays without complex signing
-        // as the state itself is already signed by MASTER_SECRET_KEY.
-        NOSTR_RELAYS.forEach(url => {
-            const ws = new WebSocket(url);
-            ws.on('open', () => {
-                const event = ['EVENT', {
-                    kind: 1,
-                    created_at: Math.floor(Date.now() / 1000),
-                    tags: [['t', APP_ID], ['t', 'hearthwick-discovery']],
-                    content: payload,
-                    pubkey: '0000000000000000000000000000000000000000000000000000000000000000', // Placeholder
-                    id: '0000000000000000000000000000000000000000000000000000000000000000', // Placeholder
-                    sig: '0000000000000000000000000000000000000000000000000000000000000000'  // Placeholder
-                }];
-                // However, the payload is already end-to-end signed for the game client.
-                ws.send(JSON.stringify(event));
-                console.log(`[Arbiter] Nostr beacon sent to ${url}`);
-                setTimeout(() => ws.close(), 1000);
-            });
-            ws.on('error', () => {});
-        });
     }
 
     async function broadcastState() {
@@ -247,10 +250,12 @@ async function startArbiter() {
     // --- RESET ---
     const doReset = async () => {
         worldState = {
-            world_seed: 'h3arthw1ck-' + crypto.getRandomValues(new Uint32Array(2)).reduce((s, v) => s + v.toString(16), ''),
+            world_seed: randomSeed(),
             day: 1,
             last_tick: Date.now()
         };
+        fraudCounts.clear();
+        lastRollupTime.clear();
         schedulePersist();
         await broadcastState();
         console.log(`[Arbiter] World reset. New seed: ${worldState.world_seed}`);
@@ -264,8 +269,9 @@ async function startArbiter() {
 
     // --- DAY TICK ---
     function advanceDay() {
+        // Advance last_tick by exactly one day period (not wall-clock) to avoid drift accumulation
+        worldState.last_tick += 86400000;
         worldState.day++;
-        worldState.last_tick = Date.now();
         schedulePersist();
 
         const derived = deriveWorldState(worldState.world_seed, worldState.day);
@@ -273,12 +279,28 @@ async function startArbiter() {
         broadcastState().catch(e => console.error('[Arbiter] Day tick broadcast failed:', e.message, e.code));
     }
 
-    // Drift-corrected day tick: target next tick based on last_tick, not interval start
+    // Drift-corrected day tick: catches up all missed days if arbiter was offline
     const scheduleTick = () => {
-        const delay = Math.max(0, (worldState.last_tick + 86400000) - Date.now());
+        // Catch up any days missed during downtime before scheduling the next real tick
+        while (worldState.last_tick + 86400000 <= Date.now()) {
+            advanceDay();
+        }
+        const delay = (worldState.last_tick + 86400000) - Date.now();
         setTimeout(() => { advanceDay(); scheduleTick(); }, delay);
     };
     scheduleTick();
+
+    // Periodic cleanup of rate-limit and fraud maps to prevent unbounded growth on Pi Zero
+    setInterval(() => {
+        const cutoff = Date.now() - ROLLUP_INTERVAL * 10;
+        for (const [key, ts] of lastRollupTime) {
+            if (ts < cutoff) lastRollupTime.delete(key);
+        }
+        // Stale fraud counts (proposer hasn't been seen in >10 intervals) are dropped
+        for (const [key] of fraudCounts) {
+            if (!lastRollupTime.has(key)) fraudCounts.delete(key);
+        }
+    }, 3600000);
 
     // Health endpoint for Pi debugging
     const healthServer = createServer((req, res) => {

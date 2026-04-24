@@ -30,70 +30,11 @@ export const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
 export const SEASON_LENGTH = 30; // days per season
 
 export function getSeason(day) {
-    return SEASONS[(Math.floor((day - 1) / SEASON_LENGTH) | 0) % 4];
+    return SEASONS[(Math.floor((Math.max(1, day) - 1) / SEASON_LENGTH) | 0) % 4];
 }
 
 export function getSeasonNumber(day) {
-    return (Math.floor((day - 1) / (SEASON_LENGTH * 4)) | 0) + 1;
-}
-
-// --- NARRATIVE ARC MACHINES ---
-
-export const arcTransitions = {
-    escalation: {
-        seed:        { ESCALATE: 'growth' },
-        growth:      { ESCALATE: 'crisis', RESOLVE: 'resolution' },
-        crisis:      { PLAYER_ACTS: 'resolution', IGNORE: 'catastrophe' },
-        resolution:  { NEW_THREAT: 'seed' },
-        catastrophe: { REBUILD: 'seed' }
-    },
-    mystery: {
-        clue_1:      { DISCOVER: 'clue_2' },
-        clue_2:      { DISCOVER: 'reveal' },
-        reveal:      { ACT: 'consequence' },
-        consequence: { RESOLVE: 'clue_1' }
-    },
-    rivalry: {
-        meet:        { CONFLICT: 'conflict' },
-        conflict:    { ESCALATE: 'escalation', TRUCE: 'truce' },
-        escalation:  { WIN: 'dominance', NEGOTIATE: 'truce' },
-        dominance:   { CHALLENGE: 'meet' },
-        truce:       { BREAK: 'conflict' }
-    },
-    downfall: {
-        hubris:      { WARNING: 'warning' },
-        warning:     { IGNORE: 'collapse', HEED: 'hubris' },
-        collapse:    { SURVIVE: 'aftermath' },
-        aftermath:   { REBUILD: 'hubris' }
-    },
-    bounty: {
-        emergence:   { HUNT: 'hunt' },
-        hunt:        { CLIMAX: 'climax' },
-        climax:      { RESOLVE: 'resolution' },
-        resolution:  { NEW_CYCLE: 'emergence' }
-    }
-};
-
-export const ARC_START_BEATS = {
-    escalation: 'seed',
-    mystery:    'clue_1',
-    rivalry:    'meet',
-    downfall:   'hubris',
-    bounty:     'emergence',
-};
-
-export const ARC_AUTO_EVENTS = ['IGNORE', 'NEW_CYCLE', 'ESCALATE', 'REBUILD'];
-
-export const SEASON_ARC_BIAS = {
-    spring: ['mystery'],
-    summer: ['rivalry'],
-    autumn: ['bounty', 'downfall'],
-    winter: ['escalation', 'downfall'],
-};
-
-export function transitionArc(arc, event) {
-    const nextBeat = arcTransitions[arc.type]?.[arc.beat]?.[event];
-    return nextBeat ? { ...arc, beat: nextBeat } : arc;
+    return (Math.floor((Math.max(1, day) - 1) / (SEASON_LENGTH * 4)) | 0) + 1;
 }
 
 // --- MOOD ---
@@ -133,7 +74,6 @@ export function rollScarcity(rng, season) {
 // --- SIMULATION: WORLD AS PURE FUNCTION ---
 
 export const MOOD_INITIAL = 'weary';
-export const EVENT_TYPES = { MOVE: 'm', KILL: 'k', DEATH: 'd', NEWS: 'n', PVP_CHALLENGE: 'pc', PVP_ACCEPT: 'pa', PVP_RESULT: 'pr' };
 
 // Per-seed mood sequences: extend lazily, never recompute. ~6 bytes/day retained.
 const _moodSeqs = new Map();
@@ -162,20 +102,6 @@ export function deriveWorldState(worldSeed, day) {
         threatLevel: getThreatLevel(day),
         scarcity: rollScarcity(rng, season),
     };
-}
-
-export const NARRATIVE_EVENTS = [
-    "A thick fog rolls into the town square.",
-    "The tavern was unusually quiet last night.",
-    "A rogue merchant was spotted near the ruins.",
-    "The crops seem to be growing well this season.",
-    "Faint music was heard coming from the cellar.",
-    "A strange owl was seen watching the hallway."
-];
-
-export function deriveNarrative(worldSeed, day) {
-    const rng = seededRNG(hashStr(worldSeed + day + 'news'));
-    return NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length) | 0];
 }
 
 // --- COMBAT ---
@@ -231,8 +157,8 @@ export const DEFAULT_PLAYER_STATS = {
 
 // --- SCALING & SHARDING ---
 export const INSTANCE_CAP = 50;
-// Use unique APP_ID to isolate this world's shards from other Trystero games.
-export const getShardName = (appId, loc, inst) => `${loc}-${inst}`;
+// appId in joinTorrent config handles swarm isolation; room name just needs to be unique within the app.
+export const getShardName = (loc, inst) => `${loc}-${inst}`;
 
 // --- WORLD DATA ---
 

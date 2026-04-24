@@ -9,7 +9,6 @@ export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
 // Derived from MASTER_PUBLIC_KEY so this room is unique to your Pi instance.
 // Strip non-alphanumeric chars — base64 contains + and / which can break Trystero's room hashing.
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-export const ROOM_NAME = 'lobby';
 
 // Stable high-uptime trackers (WebTorrent-compatible)
 export const TORRENT_TRACKERS = [

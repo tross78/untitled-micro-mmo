@@ -1,96 +1,137 @@
 # Claude Context & Implementation Notes - Hearthwick
 
 ## Architecture
-A serverless P2P MMO using Yjs for state, Trystero for signaling, and a Pi Zero W for narrative generation (RWKV7).
+A serverless P2P browser MMO. Trystero (WebTorrent/WebRTC) for transport, Ed25519 for identity, a Pi Zero W as the Arbiter (state authority). No server-side game logic — the Arbiter only signs world state and validates rollups.
+
+## Source Layout
+
+| File | Purpose |
+|---|---|
+| `src/main.js` | Entry point — calls `start()` from `ui.js` |
+| `src/store.js` | Shared mutable state singleton (`state`) and `selfId` re-export |
+| `src/log.js` | `log(msg, color)` — DOM output helper |
+| `src/identity.js` | `initIdentity()` — key generation/loading, `arbiterPublicKey` setup |
+| `src/world-state.js` | `updateSimulation()`, `loadLocalState()`, `saveLocalState()`, `printStatus()`, `pruneStale()` |
+| `src/networking.js` | `initNetworking()`, `joinInstance()`, `isProposer()`, `buildLeafData()` |
+| `src/combat.js` | `startStateChannel()`, `resolveRound()` — PvP duel state channels |
+| `src/commands.js` | `handleCommand(cmd)` — all slash commands |
+| `src/ui.js` | `start()` — DOM wiring, autocomplete, input events, viewport handling |
+| `src/rules.js` | Pure deterministic simulation (combat, world, sharding). No side effects. |
+| `src/crypto.js` | Universal Ed25519 sign/verify (WebCrypto in browser, `node:crypto` on Pi) |
+| `src/packer.js` | Binary serialization: move (2B), emote (1B), presence (96B), duelCommit (70B) |
+| `src/iblt.js` | Invertible Bloom Lookup Table for O(diff) presence reconciliation |
+| `src/constants.js` | `APP_ID`, tracker/STUN/TURN URLs, `GH_GIST_ID`, `ARBITER_URL` |
+| `src/autocomplete.js` | `getSuggestions(input, context)` — pure, DOM-free autocomplete |
+| `arbiter/index.js` | Pi Zero: state authority, day tick, rollup validation, fraud/ban |
+
+**Production build:** `npm run build` — esbuild bundles all modules into a single `dist/main.js`. The module split is dev-only.
 
 ## Key Implementation Details
 
 ### Seed-Based Determinism
-- Simulation state is `world_seed` + `event_log` (Y.Array).
-- All randomness uses `mulberry32` with integer math only.
+- World state is `world_seed` + `day` only (Yjs is gone).
+- All randomness uses `seededRNG(hashStr(...))` (mulberry32 variant). **Never use `Math.random()`.**
+- Integer math only in simulation (no floats in damage/XP).
+
+### Shared State (`src/store.js`)
+All modules that need shared mutable state import `{ state }` from `./store`. The `state` object is a plain singleton — mutate its properties directly (`state.localPlayer.hp -= 5`). Do not reassign `state` itself.
+
+`selfId` (Trystero peer ID) is re-exported from `store.js` for convenience.
 
 ### Universal Cryptography (`src/crypto.js`)
-- **Browser:** `window.crypto.subtle` (WebCrypto).
-- **Node (Pi):** `crypto` module (via `await import('crypto')`).
-- Player identity: Ed25519 generated on first visit, stored in `localStorage`.
+- **Browser:** `window.crypto.subtle` (WebCrypto). `verifyMessage` requires a `CryptoKey` from `importKey()`.
+- **Node (Pi):** `node:crypto`. `verifyMessage` accepts a raw Base64 string or Buffer.
+- Player identity: Ed25519 key pair generated on first visit, stored in `localStorage` under `hearthwick_keys_v3`.
+- `ph` (8-char hex) = `(hashStr(pubKeyBase64) >>> 0).toString(16).padStart(8,'0')`. It is NOT a key — never pass it to `verifyMessage`.
 
 ### Memory Optimization (Pi Zero W)
-- 512MB RAM constraint.
-- Nightly sequential pattern: `pm2 stop arbiter` -> run `llama.cpp` -> `pm2 start arbiter`.
+- 512MB RAM constraint. Arbiter logic must be O(1) or O(log n) per event.
+- Nightly sequential pattern: `pm2 stop arbiter` → run `llama.cpp` → `pm2 start arbiter`.
 
-## Known Bugs Fixed
-- **`move` event `from` field** was always equal to `to` — captured `prevLoc` before mutation.
-- **Mood never propagated** — `updateSimulation()` now calls `yworld.set('town_mood', ...)` after seeded RNG step.
-- **`verifyMessage` Node path** — raw 32-byte public key wrapped in SubjectPublicKeyInfo DER for OpenSSL 3.
-- **`signMessage` Node path** — raw 32-byte seed (or first 32 bytes of 64-byte tweetnacl key) wrapped in PKCS8 DER.
-- **Arbiter relay DNS** — preflight filters `0.0.0.0`-resolving relays before passing to Trystero.
-- **`dotenv` path** — explicit `import.meta.url`-relative path.
-- **Double Yjs broadcast** — `ydoc.on('update')` was registered once per room; now a single listener sends over both meshes.
-- **`sendMove` dead code** — now wired in `handleCommand('move')` and broadcasts over both transports.
-- **Arbiter `Math.random()`** — `broadcastNews` now uses `seededRNG(hashStr(worldSeed + day + 'news'))`.
-- **`y-protocols`** — removed unused dependency.
+## Current Status
+
+### Phase 4: UX — Mobile & Input (COMPLETE)
+- Autocomplete engine (`src/autocomplete.js`) with `getSuggestions(input, context)`
+- Suggestion chips UI (up to 4, tappable, Tab-cycles on desktop)
+- `/move <dir>` autocomplete shows valid exits; tapping moves immediately
+- Mobile layout: `env(safe-area-inset-bottom)`, `position: fixed` input bar
+- Quick-action bar: look / attack / rest / inventory (visible on `pointer: coarse` only)
+- `visualViewport` resize handler for virtual keyboard reflow
+
+### Phase 5: The "Commissioner" (LLM) — TODO
+- `llama.cpp` + RWKV7-0.4B on Pi (ARMv6 build)
+- "Nightly Cron" bash script
+- "The Ticker" UI element for LLM-generated narrative
+
+### Phase 6: Anti-Cheat & Security — TODO
+- Ed25519 signatures on `/move` actions
+- Deterministic move validation in `getMove` handler
+- Pi blacklisting and rollback logic
+
+### Phase 7: Graphical Client — TODO
+- Kontra.js renderer
 
 ## Key Gaps (not yet implemented)
-- **Arbiter election** (`electArbiter`) — Pi currently always assumed arbiter.
-- **Arc machines not wired** — `arcTransitions`/`transitionArc` defined in `rules.js` but no `arcs` Y.Map in doc, never activated.
-- **Season system absent** — no `season`, `season_number`, `season_seed` in world state.
+- **Arbiter election** — Pi is always assumed to be the sole Arbiter. No `electArbiter` logic exists.
 
-## Phase 3 Features (complete)
-- Combat system: `/attack`, `/stats`, `/inventory`, `/use <item>`, `/rest`
-- 6 rooms: cellar, hallway, tavern, market, forest_edge, ruins
-- Enemies: forest_wolf, ruin_shade, cave_troll
-- Loot: wolf_pelt, old_tome, iron_key, gold, potion, iron_sword
-- XP/levelling with stat scaling
-- Death respawn to cellar at half HP
-- Combat events in `/news` (player_kill, player_death)
+## Packer Layouts
 
-## Scaling Refactor (complete — v0.6.0)
-- Yjs fully removed; global state is Arbiter-signed JSON
-- Instance sharding via dynamic Trystero room IDs (`getShardName`)
-- IBLT sketch reconciliation for ephemeral presence sync
-- Binary packing (`packer.js`): move (2B), presence (96B), duelCommit (70B)
-- Rotating time-slot proposer election with fallback
-- O(1) fraud proofs (single signed witness, threshold accumulation)
-- Arbiter: ban persistence, rate limiting, drift-corrected day tick, health endpoint
-- 161 tests passing
+Presence packet (96 bytes):
+```
+[0-15]  Name (UTF-8, null-padded, byte-truncated to 16)
+[16]    Location (index into ROOM_MAP)
+[17-20] PH (4 bytes from 8-char hex)
+[21]    Level (Uint8)
+[22-25] XP (Uint32BE)
+[26-31] TS (48-bit: Uint16BE high word at 26, Uint32BE low word at 28)
+[32-95] Signature (64 bytes, Ed25519)
+```
 
-## Implementation Phases (DONE: 1, 2, 3, Scaling)
+DuelCommit packet (70 bytes):
+```
+[0]    Round (Uint8)
+[1]    Damage (Uint8)
+[2-5]  Day (Uint32BE)
+[6-69] Signature (64 bytes)
+```
 
-### Phase 4: UX — Mobile & Input (CURRENT)
+All multi-byte DataView fields are big-endian. Always pass `false` explicitly.
 
-#### Input Model
-The slash-command model works on desktop but breaks on mobile: the `/` prefix is awkward on a phone keyboard, autocorrect corrupts command names, and there is no affordance for what commands or arguments are valid.
+## Fraud Proof Format
 
-Proposed model: **command word without slash + Tab/suggestion autocomplete**.
-- Player types `use` → UI shows matching items from inventory inline
-- Player types `move` → UI shows valid exit directions for current room
-- Player types `attack` → UI shows current enemy if present
-- Slash still accepted as an alias so existing habits aren't broken
+```js
+// witness.presence must include disputedRoot to prevent replay attacks
+{
+  rollup: { rollup, signature, publicKey },
+  witness: {
+    id: selfId,
+    presence: { name, location, ph, level, xp, ts, disputedRoot: rollup.root },
+    signature: string,   // Ed25519 sig over JSON.stringify(presence)
+    publicKey: string,   // Base64 public key of the witness
+  }
+}
+```
 
-#### Tasks
-- [ ] **Autocomplete engine** (`src/autocomplete.js`) — pure function `getSuggestions(input, context)` returning ranked candidates. Context includes `localPlayer.inventory`, `world[location].exits`, `players` map, current enemy. No DOM dependency so it is fully testable.
-- [ ] **Suggestion UI** — show up to 4 candidates above the input bar as tappable chips. Tapping a chip fills the input and submits. On desktop, Tab cycles through candidates, Enter submits.
-- [ ] **`/use <item>`** — autocomplete resolves item display names from inventory (e.g. typing `use pot` completes to `use potion`). Player never needs to know the internal item ID.
-- [ ] **`/move <dir>`** — autocomplete shows only valid exits for the current room. Tapping a direction chip moves immediately without pressing Enter.
-- [ ] **`/duel <name>`** — autocomplete resolves visible player names from the `players` map.
-- [ ] **Mobile layout** — fix input staying above keyboard on iOS/Android (`env(safe-area-inset-bottom)`, `position: fixed` input bar). Output area scrolls independently.
-- [ ] **Touch-friendly quick-action bar** — row of icon buttons for the four highest-frequency actions: look, attack, rest, inventory. Visible only on `pointer: coarse` devices (CSS media query). Each button dispatches the same `handleCommand` path as typed input.
-- [ ] **Virtual keyboard handling** — detect `visualViewport` resize events and reflow the output area height so the input is never obscured by the on-screen keyboard.
+Arbiter checks `presence.disputedRoot === rollup.root` before accumulating the report.
 
-#### Design constraints
-- No new dependencies. Autocomplete is vanilla JS + DOM.
-- Autocomplete state is derived entirely from existing `localPlayer`, `world`, and `players` — no new network calls.
-- `getSuggestions` must be a pure function so it can be unit tested without a DOM.
+## Proposer Election
 
-### Phase 5: The "Commissioner" (LLM)
-- [ ] Setup `llama.cpp` and RWKV7-0.4B on Pi (ARMv6 build).
-- [ ] Create the "Nightly Cron" bash script.
-- [ ] Implement "The Ticker" UI element.
+```js
+const all = Array.from(players.keys()).concat(selfId).sort();
+const slot = Math.floor(Date.now() / ROLLUP_INTERVAL) % all.length;
+// Primary: all[slot] === selfId
+// Fallback: if lastRollupReceivedAt > 1.5× interval, all[(slot+1) % all.length] === selfId
+```
 
-### Phase 6: Anti-Cheat & Security
-- [ ] Ed25519 Action Signatures for `/move`.
-- [ ] Deterministic validation in `getMove` action handler.
-- [ ] Pi blacklisting and rollback logic.
+- Don't propose if alone (`all.length < 2`) — prevents Arbiter spam.
+- `createMerkleRoot` is **lazy-imported** inside the rollup interval. Don't move it to top-level imports.
+- `buildLeafData()` in `networking.js` filters `selfId` from `players` before pushing self explicitly — prevents double-leaf fraud false-positives.
 
-### Phase 7: Graphical Client (Visuals)
-- [ ] Kontra.js renderer.
+## Arbiter Notes
+
+- Day tick: `scheduleTick()` (recursive `setTimeout` targeting `last_tick + 86400000`). On restart it loops to catch up all missed days before scheduling the next real tick.
+- Rate limiting: one rollup per public key per `ROLLUP_INTERVAL * 0.8` ms (`lastRollupTime` map).
+- Ban persistence: `worldState.bans = Array.from(bans)` written before every `schedulePersist()`.
+- Peer join: sends state only to the new peer (`sendState(packet, [peerId])`), not a full broadcast.
+- Maps `lastRollupTime` and `fraudCounts` are purged hourly to prevent unbounded growth on Pi Zero.
+- `doReset()` clears `fraudCounts` and `lastRollupTime`.

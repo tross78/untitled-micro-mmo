@@ -1,10 +1,4 @@
 // Suppress Trystero's hardcoded-relay noise — can't override their defaults, but we can quiet them.
-const _warn = console.warn.bind(console);
-console.warn = (...args) => {
-    if (typeof args[0] === 'string' && args[0].startsWith('Trystero:')) return;
-    _warn(...args);
-};
-
 import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
 import {
     world, validateMove, hashStr, seededRNG,
@@ -13,7 +7,7 @@ import {
     deriveWorldState,
     getShardName, INSTANCE_CAP,
 } from './rules';
-import { verifyMessage, generateKeyPair, importKey, exportKey, signMessage, computeHash } from './crypto';
+import { verifyMessage, generateKeyPair, importKey, exportKey, signMessage } from './crypto';
 import { IBLT } from './iblt';
 import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer';
 import { MASTER_PUBLIC_KEY, APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL, GH_GIST_ID } from './constants';
@@ -32,20 +26,6 @@ const log = (msg, color = '#0f0') => {
     div.style.color = color;
     output.appendChild(div);
     output.scrollTop = output.scrollHeight;
-};
-
-const probeWebSocket = async (url, timeout = 2000) => {
-    return new Promise((resolve) => {
-        const ws = new WebSocket(url);
-        const timer = setTimeout(() => {
-            if (ws.readyState !== 1) {
-                ws.close();
-                resolve(false);
-            }
-        }, timeout);
-        ws.onopen = () => { clearTimeout(timer); ws.close(); resolve(true); };
-        ws.onerror = () => { clearTimeout(timer); ws.close(); resolve(false); };
-    });
 };
 
 // --- IDENTITY ---
@@ -83,7 +63,6 @@ const initIdentity = async () => {
 // --- STATE ---
 let worldState = { seed: '', day: 0, mood: '', season: '', seasonNumber: 1, threatLevel: 0, scarcity: [], lastTick: 0 };
 const players = new Map(); // id -> {name, location, ph, level, xp, ts}
-let news = [];
 
 // --- PVP STATE CHANNELS ---
 let pendingDuel = null; // { challengerId, challengerName, expiresAt, day }
@@ -158,7 +137,6 @@ const getPlayerName = (id) => {
     const tag = entry.ph ? getTag(entry.ph) : null;
     return tag ? `${name}#${tag}` : name;
 };
-const getPlayerLocation = (id) => players.get(id)?.location;
 const getPlayerEntry = (id) => players.get(id);
 
 let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar', ...DEFAULT_PLAYER_STATS };
@@ -188,6 +166,9 @@ const loadLocalState = () => {
         try {
             const data = JSON.parse(saved);
             Object.assign(localPlayer, data);
+            if (typeof localPlayer.combatRound !== 'number' || isNaN(localPlayer.combatRound)) {
+                localPlayer.combatRound = 0;
+            }
             log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error(e); }
     }
@@ -223,6 +204,7 @@ const ROLLUP_INTERVAL = 10000;
 const SKETCH_INTERVAL = 30000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
 let currentInstance = 1;
+let currentRtcConfig = { iceServers: STUN_SERVERS };
 let rooms = { torrent: null };
 let globalRooms = { torrent: null };
 let knownPeers = new Set();
@@ -230,8 +212,17 @@ let gameActions = {};
 let lastRollupReceivedAt = 0;
 let lastValidStatePacket = null;
 
+const buildLeafData = () => {
+    const leaves = Array.from(players.entries())
+        .filter(([id]) => id !== selfId)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
+    leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
+    leaves.sort();
+    return leaves;
+};
+
 const initNetworking = async () => {
-    let currentRtcConfig = { iceServers: STUN_SERVERS };
 
     const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
@@ -298,14 +289,14 @@ const initNetworking = async () => {
     setInterval(() => {
         const globalPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
         const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
-        const shardName = getShardName(APP_ID, localPlayer.location, currentInstance);
+        const shardName = getShardName(localPlayer.location, currentInstance);
         console.log(`[P2P] Global Room: global (${globalPeers} peers) | Shard Room: ${shardName} (${shardPeers} peers) | Synced: ${hasSyncedWithArbiter}`);
     }, 10000);
 
-    // Fallback to TURN after 20 seconds if we haven't synced with the Arbiter OR if we are alone in the shard
+    // Fallback to TURN after 20 seconds if we haven't synced with the Arbiter
     setTimeout(async () => {
         const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
-        if (!hasSyncedWithArbiter || shardPeers === 0) {
+        if (!hasSyncedWithArbiter) {
             log(`\n[System] Connection sparse. Attempting relay fallback...`, '#555');
             console.warn(`[Discovery] Falling back to TURN (Sync: ${hasSyncedWithArbiter}, Shard Peers: ${shardPeers})`);
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
@@ -335,11 +326,7 @@ const initNetworking = async () => {
     // Periodic Rollups & Sketching — createMerkleRoot lazy-imported so non-proposers pay no cost
     setInterval(async () => {
         if (!isProposer()) return;
-        const leafData = Array.from(players.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
-        leafData.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
-        leafData.sort();
+        const leafData = buildLeafData();
 
         const { createMerkleRoot } = await import('./crypto');
         const root = await createMerkleRoot(leafData);
@@ -347,7 +334,7 @@ const initNetworking = async () => {
 
         const proposerEpoch = Math.floor(Date.now() / ROLLUP_INTERVAL);
         const rollup = {
-            shard: getShardName(APP_ID, localPlayer.location, currentInstance),
+            shard: getShardName(localPlayer.location, currentInstance),
             root,
             timestamp: Date.now(),
             count: leafData.length,
@@ -384,19 +371,19 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
     players.clear(); // Important: stop seeing ghost players from other rooms
 
-    const shard = getShardName(APP_ID, location, instanceId);
+    const shard = getShardName(location, instanceId);
     console.log(`[P2P] Joining Shard Room: ${shard} (Config: ${rtcConfig ? 'Custom/TURN' : 'Default/STUN'})`);
     const config = rtcConfig || { iceServers: STUN_SERVERS };
     // Use unique APP_ID for swarm isolation, and short shard name for room.
     rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, shard);
 
-    const checkFull = () => {
+    const checkFull = async () => {
         const peerCount = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
         console.log(`[P2P] Shard Room Status (${shard}): ${peerCount} peers.`);
         if (peerCount >= INSTANCE_CAP && instanceId < 10) {
             log(`[System] Instance ${instanceId} is full, moving to ${instanceId + 1}...`, '#aaa');
             currentInstance = instanceId + 1;
-            joinInstance(location, currentInstance);
+            await joinInstance(location, currentInstance, rtcConfig);
         }
     };
     setTimeout(checkFull, 5000);
@@ -418,7 +405,7 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
         myEntry().then(entry => {
             const packed = packPresence(entry);
             sendPresenceSingle(packed);
-        });
+        }).catch(e => console.warn('[P2P] Initial presence broadcast failed:', e.message));
 
         getDuelChallenge((data, peerId) => {
             if (data.target !== selfId) return;
@@ -439,12 +426,14 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
             const playerEntry = getPlayerEntry(peerId);
             if (!playerEntry?.publicKey) {
                 log(`[System] No public key on record for opponent. Channel corrupted.`, '#f55');
+                clearTimeout(chan.timeoutId);
                 activeChannels.delete(peerId);
                 return;
             }
             const opponentPubKey = await importKey(playerEntry.publicKey, 'public');
             if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) {
                 log(`[System] Invalid signature from opponent. Channel corrupted.`, '#f55');
+                clearTimeout(chan.timeoutId);
                 activeChannels.delete(peerId);
                 return;
             }
@@ -459,8 +448,23 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
             const remoteIblt = IBLT.fromSerialized(remoteTable);
             const diff = IBLT.subtract(localIblt, remoteIblt);
             const { added, removed, success } = diff.decode();
-            // JSON can't handle BigInt, convert to string for the wire
-            if (success && removed.length > 0) sendRequest(removed.map(id => id.toString()), peerId);
+            if (!success) return;
+            // Pull: entries remote has that we don't
+            if (removed.length > 0) sendRequest(removed.map(id => id.toString()), peerId);
+            // Push: entries we have that remote doesn't
+            if (added.length > 0) {
+                const response = {};
+                for (const [id, data] of players.entries()) {
+                    if (added.some(h => h === IBLT.hashId(id))) {
+                        response[id] = { presence: packPresence(data), publicKey: data.publicKey };
+                    }
+                }
+                if (added.some(h => h === IBLT.hashId(selfId))) {
+                    const entry = await myEntry();
+                    response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+                }
+                if (Object.keys(response).length > 0) sendPresenceBatch(response, peerId);
+            }
         });
 
         getRequest(async (idStrings, peerId) => {
@@ -478,18 +482,38 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
             if (Object.keys(response).length > 0) sendPresenceBatch(response, peerId);
         });
 
-        getPresenceSingle((buf, peerId) => {
+        getPresenceSingle(async (buf, peerId) => {
+            if (peerId === selfId) return;
+            const unpacked = unpackPresence(buf);
+            // Verify signature against known public key if we have it
+            const existingKey = players.get(peerId)?.publicKey;
+            if (existingKey) {
+                try {
+                    const { signature, ...sigData } = unpacked;
+                    const pubKey = await importKey(existingKey, 'public');
+                    if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) return;
+                } catch { return; }
+            }
             const entry = players.get(peerId) || {};
-            players.set(peerId, { ...entry, ...unpackPresence(buf), ts: Date.now() });
+            players.set(peerId, { ...entry, ...unpacked, ts: Date.now() });
         });
 
-        getPresenceBatch((data) => {
-            Object.entries(data).forEach(([id, { presence, publicKey }]) => {
-                if (id !== selfId) {
+        getPresenceBatch(async (data) => {
+            for (const [id, { presence, publicKey }] of Object.entries(data)) {
+                if (id === selfId || !publicKey) continue;
+                try {
+                    const unpacked = unpackPresence(presence);
+                    // Verify ph matches publicKey
+                    const expectedPh = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+                    if (unpacked.ph !== expectedPh) continue;
+                    // Verify signature
+                    const { signature, ...sigData } = unpacked;
+                    const pubKey = await importKey(publicKey, 'public');
+                    if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) continue;
                     const entry = players.get(id) || {};
-                    players.set(id, { ...entry, ...unpackPresence(presence), ts: Date.now(), publicKey });
-                }
-            });
+                    players.set(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
+                } catch { /* skip malformed entries */ }
+            }
         });
 
         let joinTime = Date.now();
@@ -510,11 +534,7 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
             // Stabilization Grace Period: Don't check fraud for the first 3 seconds in a room
             if (Date.now() - joinTime < 3000) return;
 
-            const leafData = Array.from(players.entries())
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
-            leafData.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
-            leafData.sort();
+            const leafData = buildLeafData();
             const { createMerkleRoot } = await import('./crypto');
             const ourRoot = await createMerkleRoot(leafData);
 
@@ -522,10 +542,11 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
                 // Final check: did we just miss a peer join/leave?
                 console.warn(`[Sync] Merkle Root mismatch! Local: ${ourRoot.slice(0,8)} Proposer: ${rollup.root.slice(0,8)}`);
                 log(`[System] Fraud detected in instance! Submitting proof to Arbiter...`, '#f55');
-                // O(1) witness: just submit our own signed presence as proof
+                // O(1) witness: submit our signed presence, tied to the disputed rollup root
                 const myPresenceData = {
                     name: localPlayer.name, location: localPlayer.location, ph: localPlayer.ph,
-                    level: localPlayer.level, xp: localPlayer.xp, ts: Date.now()
+                    level: localPlayer.level, xp: localPlayer.xp, ts: Date.now(),
+                    disputedRoot: rollup.root,
                 };
                 const witnessSig = await signMessage(JSON.stringify(myPresenceData), playerKeys.privateKey);
                 const proof = {
@@ -575,12 +596,11 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
             knownPeers.add(peerId);
             if (typeof gameActions.sendPresenceSingle === 'function') {
                 const handshake = async () => {
-                    if (players.get(peerId)?.publicKey) return; // Already have it
+                    if (!knownPeers.has(peerId) || players.get(peerId)?.publicKey) return;
                     console.log(`[Discovery] Handshaking with ${peerId} in shard.`);
                     const entry = await myEntry();
                     sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
                     gameActions.sendPresenceSingle(entry, [peerId]);
-                    // Retry every 3s until we have their key
                     setTimeout(handshake, 3000);
                 };
                 setTimeout(handshake, 500);
@@ -852,12 +872,19 @@ const start = async () => {
 };
 
 async function startStateChannel(targetId, targetName, day) {
+    const timeoutId = setTimeout(() => {
+        if (activeChannels.has(targetId)) {
+            log(`[DUEL] Combat with ${targetName} timed out.`, '#555');
+            activeChannels.delete(targetId);
+        }
+    }, 30000);
     activeChannels.set(targetId, {
         opponentName: targetName,
         day,
         round: 0,
         myHistory: [],
-        theirHistory: []
+        theirHistory: [],
+        timeoutId,
     });
     await resolveRound(targetId);
 }
@@ -900,6 +927,7 @@ async function resolveRound(targetId) {
         } else {
             log(`It's a DRAW.`, '#aaa');
         }
+        clearTimeout(chan.timeoutId);
         activeChannels.delete(targetId);
         saveLocalState();
     }
@@ -923,7 +951,7 @@ async function handleCommand(cmd) {
         case 'net': {
             const gPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
             const sPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
-            const shardName = getShardName(APP_ID, localPlayer.location, currentInstance);
+            const shardName = getShardName(localPlayer.location, currentInstance);
             log(`\n--- NETWORK STATUS ---`, '#0af');
             log(`Global Room: global (${gPeers} peers)`);
             log(`Shard Room: ${shardName} (${sPeers} peers)`);
@@ -943,7 +971,9 @@ async function handleCommand(cmd) {
         case 'duel': {
             const targetName = args.slice(1).join(' ').toLowerCase();
             if (!targetName) { log(`Usage: /duel <name>`); break; }
-            const targetId = Array.from(players.keys()).find(id => getPlayerName(id).toLowerCase().includes(targetName));
+            const ids = Array.from(players.keys());
+            const targetId = ids.find(id => getPlayerName(id).toLowerCase() === targetName)
+                          ?? ids.find(id => getPlayerName(id).toLowerCase().includes(targetName));
             if (!targetId) { log(`Player not found.`); break; }
             log(`[DUEL] Challenging ${getPlayerName(targetId)}...`, '#ff0');
             gameActions.sendDuelChallenge({ target: targetId, fromName: localPlayer.name });
@@ -1059,9 +1089,12 @@ async function handleCommand(cmd) {
             if (localPlayer.hp <= 0) {
                 log(`\nYou have been slain!`, '#f00');
                 localPlayer.hp = Math.floor((localPlayer.maxHp + levelBonus(localPlayer.level).maxHp) / 2);
+                const deathLoc = localPlayer.location;
                 localPlayer.location = 'cellar';
                 localPlayer.currentEnemy = null;
                 log(`You wake in the cellar...`, '#aaa');
+                gameActions.sendMove({ from: deathLoc, to: 'cellar' });
+                await joinInstance('cellar', currentInstance, currentRtcConfig);
                 handleCommand('look');
             }
             saveLocalState();
@@ -1114,7 +1147,7 @@ async function handleCommand(cmd) {
                 log(`You move ${dir}.`);
                 handleCommand('look');
                 gameActions.sendMove({ from: prevLoc, to: nextLoc });
-                await joinInstance(nextLoc, currentInstance);
+                await joinInstance(nextLoc, currentInstance, currentRtcConfig);
             } else log(`You can't go that way.`);
             break;
         }
