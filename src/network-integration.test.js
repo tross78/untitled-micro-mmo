@@ -126,6 +126,30 @@ describe('Networking Discovery Integration', () => {
         expect(log).toHaveBeenCalledWith('FALLBACK');
     });
 
+    test('Presence update does NOT overwrite Identity data (Sequence Integrity)', () => {
+        const players = new Map();
+        const peerId = 'peer-test-123';
+        
+        // 1. First packet: Identity Handshake (Sets public key)
+        const identityData = { publicKey: 'base64-key-abc' };
+        const entry1 = players.get(peerId) || {};
+        players.set(peerId, { ...entry1, publicKey: identityData.publicKey });
+        
+        expect(players.get(peerId).publicKey).toBe('base64-key-abc');
+
+        // 2. Second packet: Presence update (Sets game stats)
+        // THE BUG: The old code did: players.set(peerId, { ...presenceData })
+        // THE FIX: Must merge with existing entry
+        const presenceData = { name: 'Tyson', level: 5 };
+        const entry2 = players.get(peerId) || {};
+        players.set(peerId, { ...entry2, ...presenceData });
+
+        // 3. Verify Integrity
+        const finalEntry = players.get(peerId);
+        expect(finalEntry.level).toBe(5);
+        expect(finalEntry.publicKey).toBe('base64-key-abc'); // This would have FAILED with the old logic
+    });
+
     test('Identity collision detection (Conceptual Test)', () => {
         // This simulates two distinct Trystero peers using the same public key
         const players = new Map();

@@ -236,12 +236,7 @@ const initNetworking = async () => {
     const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
         
-        // Browser preflight: probe trackers to avoid hanging on dead ones
-        const results = await Promise.all(TORRENT_TRACKERS.map(url => probeWebSocket(url, 2000)));
-        const healthyTrackers = TORRENT_TRACKERS.filter((_, i) => results[i]);
-        const trackersToUse = healthyTrackers.length > 0 ? healthyTrackers : TORRENT_TRACKERS;
-
-        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: trackersToUse, rtcConfig: config }, APP_ID + '-global');
+        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, APP_ID + '-global');
 
         const [sendRollup] = globalRooms.torrent.makeAction('rollup');
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -384,14 +379,9 @@ const isProposer = () => {
 const joinInstance = async (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
 
-    // Browser preflight: probe trackers
-    const results = await Promise.all(TORRENT_TRACKERS.map(url => probeWebSocket(url, 2000)));
-    const healthyTrackers = TORRENT_TRACKERS.filter((_, i) => results[i]);
-    const trackersToUse = healthyTrackers.length > 0 ? healthyTrackers : TORRENT_TRACKERS;
-
     const shard = getShardName(APP_ID, location, instanceId);
     const config = rtcConfig || { iceServers: STUN_SERVERS };
-    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: trackersToUse, rtcConfig: config }, shard);
+    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, shard);
 
     const checkFull = () => {
         const peerCount = Object.keys(rooms.torrent.getPeers()).length;
@@ -481,13 +471,15 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         getPresenceSingle((buf, peerId) => {
-            players.set(peerId, { ...unpackPresence(buf), ts: Date.now() });
+            const entry = players.get(peerId) || {};
+            players.set(peerId, { ...entry, ...unpackPresence(buf), ts: Date.now() });
         });
 
         getPresenceBatch((data) => {
             Object.entries(data).forEach(([id, { presence, publicKey }]) => {
                 if (id !== selfId) {
-                    players.set(id, { ...unpackPresence(presence), ts: Date.now(), publicKey });
+                    const entry = players.get(id) || {};
+                    players.set(id, { ...entry, ...unpackPresence(presence), ts: Date.now(), publicKey });
                 }
             });
         });
