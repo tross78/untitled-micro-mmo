@@ -200,7 +200,9 @@ const initNetworking = () => {
 
     const [sendRollup] = globalRooms.torrent.makeAction('rollup');
     const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
+    const [requestState] = globalRooms.torrent.makeAction('request_state');
     const [, getState] = globalRooms.torrent.makeAction('world_state');
+
     getState(async (data) => {
         const { state, signature } = data;
         const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
@@ -212,6 +214,11 @@ const initNetworking = () => {
         } else {
             log(`[Debug] Arbiter state received but signature invalid — check MASTER_PUBLIC_KEY`, '#f55');
         }
+    });
+
+    globalRooms.torrent.onPeerJoin(peerId => {
+        log(`[System] Peer discovery in progress...`, '#555');
+        requestState();
     });
 
     gameActions.submitRollup = (rollup) => sendRollup(rollup);
@@ -266,7 +273,7 @@ const isProposer = () => {
 };
 
 const joinInstance = (location, instanceId) => {
-    if (rooms.torrent) rooms.torrent.torrent?.destroy();
+    if (rooms.torrent) rooms.torrent.leave();
 
     const shard = getShardName(APP_ID, location, instanceId);
     const rtcConfig = { iceServers: ICE_SERVERS };
@@ -294,6 +301,12 @@ const joinInstance = (location, instanceId) => {
         const [sendDuelCommit, getDuelCommit] = r.makeAction('duel_commit');
         const [sendSketch, getSketch] = r.makeAction('presence_sketch');
         const [sendRequest, getRequest] = r.makeAction('request_presence');
+
+        // Immediate presence broadcast when joining shard
+        myEntry().then(entry => {
+            const packed = packPresence(entry);
+            sendPresenceSingle(packed);
+        });
 
         getDuelChallenge((data, peerId) => {
             if (data.target !== selfId) return;
