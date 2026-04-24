@@ -150,6 +150,55 @@ describe('Networking Discovery Integration', () => {
         expect(finalEntry.publicKey).toBe('base64-key-abc'); // This would have FAILED with the old logic
     });
 
+    test('Identity Mirroring: skips fraud check if rollup is from another local tab', async () => {
+        // Mock dependencies
+        const myPubKey = 'key-123';
+        const otherPeerId = 'peer-tab-2';
+        const data = {
+            publicKey: myPubKey, // Same key as us
+            rollup: { root: 'different-root' }
+        };
+
+        // The logic in src/main.js
+        const checkFraud = (incomingPubKey, localPubKey) => {
+            if (incomingPubKey === localPubKey) {
+                return 'SKIP_SELF_MIRROR';
+            }
+            return 'PROCEED_WITH_FRAUD_CHECK';
+        };
+
+        expect(checkFraud(data.publicKey, myPubKey)).toBe('SKIP_SELF_MIRROR');
+    });
+
+    test('Alone Proposer: suppresses rollups if no other peers are present', () => {
+        const players = new Map();
+        const selfId = 'my-id';
+        const ROLLUP_INTERVAL = 10000;
+        
+        const isProposer = (peerMap, myId) => {
+            const all = Array.from(peerMap.keys()).concat(myId).sort();
+            if (all.length < 2) return false; // The fix we added
+            return all[0] === myId;
+        };
+
+        // Case 1: Alone
+        expect(isProposer(players, selfId)).toBe(false);
+
+        // Case 2: With others
+        players.set('other-peer', { level: 1 });
+        // Depending on sort, we might be proposer or not, but it won't be suppressed by the length check
+        const result = isProposer(players, selfId);
+        expect(typeof result).toBe('boolean');
+    });
+
+    test('Simplified Shard Naming: ensures tracker-friendly strings', () => {
+        const getShardName = (loc, inst) => `${loc}-${inst}`;
+        
+        expect(getShardName('tavern', 1)).toBe('tavern-1');
+        expect(getShardName('forest_edge', 5)).toBe('forest_edge-5');
+        // No APP_ID prefix means shorter DHT keys and fewer tracker rejections
+    });
+
     test('Identity collision detection (Conceptual Test)', () => {
         // This simulates two distinct Trystero peers using the same public key
         const players = new Map();

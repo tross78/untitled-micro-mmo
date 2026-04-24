@@ -367,6 +367,8 @@ const initNetworking = async () => {
 
 const isProposer = () => {
     const all = Array.from(players.keys()).concat(selfId).sort();
+    if (all.length < 2) return false; // Don't propose if alone (prevents Arbiter spam)
+
     const slot = Math.floor(Date.now() / ROLLUP_INTERVAL) % all.length;
     if (all[slot] === selfId) return true;
     // Fallback: if the elected peer missed their window, next in sorted order steps up
@@ -381,10 +383,11 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
 
     const shard = getShardName(APP_ID, location, instanceId);
     const config = rtcConfig || { iceServers: STUN_SERVERS };
+    // Use unique APP_ID for swarm isolation, and short shard name for room.
     rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, shard);
 
     const checkFull = () => {
-        const peerCount = Object.keys(rooms.torrent.getPeers()).length;
+        const peerCount = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
         if (peerCount >= INSTANCE_CAP && instanceId < 10) {
             log(`[System] Instance ${instanceId} is full, moving to ${instanceId + 1}...`, '#aaa');
             currentInstance = instanceId + 1;
@@ -893,11 +896,33 @@ async function handleCommand(cmd) {
     const command = args[0].toLowerCase();
 
     switch (command) {
+        case 'who': {
+            log(`\n--- PLAYERS NEARBY ---`, '#aaa');
+            players.forEach((p, id) => {
+                log(`${getPlayerName(id)} (Level ${p.level})`, '#aaa');
+            });
+            if (players.size === 0) log(`You are alone here.`, '#555');
+            log(`----------------------\n`, '#aaa');
+            break;
+        }
+
+        case 'net': {
+            const gPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
+            const sPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
+            log(`\n--- NETWORK STATUS ---`, '#0af');
+            log(`Global Room: ${APP_ID}-global (${gPeers} peers)`);
+            log(`Shard Room: ${localPlayer.location}-${currentInstance} (${sPeers} peers)`);
+            log(`Arbiter Sync: ${hasSyncedWithArbiter ? 'YES' : 'NO'}`);
+            log(`Identity: ${localPlayer.name}#${getTag(localPlayer.ph)}`);
+            log(`----------------------\n`, '#0af');
+            break;
+        }
+
         case 'help':
             log('--- Movement: /look, /move <dir>, /map', '#ffa500');
             log('--- Combat:   /attack, /rest, /stats, /inventory, /use <item>', '#ffa500');
             log('--- Social:   /who, /wave, /bow, /cheer, /duel <name>, /accept, /decline', '#ffa500');
-            log('--- World:    /status, /rename <name>, /clear', '#ffa500');
+            log('--- World:    /status, /rename <name>, /net, /clear', '#ffa500');
             break;
 
         case 'duel': {
@@ -922,19 +947,6 @@ async function handleCommand(cmd) {
         case 'decline': {
             log(`[DUEL] Challenge declined.`);
             pendingDuel = null;
-            break;
-        }
-
-        case 'who': {
-            const allPeers = Array.from(players.keys());
-            const peerList = allPeers.map(id => {
-                const name = getPlayerName(id);
-                const loc = getPlayerLocation(id);
-                return loc ? `${name} (${loc})` : name;
-            });
-            const myTag = getTag(localPlayer.ph);
-            const peersStr = peerList.length > 0 ? `, ${peerList.join(', ')}` : '';
-            log(`In world (${allPeers.length + 1}): You — ${localPlayer.name}#${myTag} (${localPlayer.location})${peersStr}`);
             break;
         }
 

@@ -15,13 +15,14 @@ export const ROOM_NAME = 'lobby';
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
     'wss://tracker.files.fm:7073/announce',
-    'wss://tracker.btorrent.xyz',
 ];
 
-// STUN is always tried first (free, fast, works when at least one peer has a public IP).
+// Expanded STUN list for better browser-to-browser NAT traversal.
 export const STUN_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com' },
 ];
 
 // TURN is the relay fallback for symmetric NAT (both peers behind NAT, e.g. Pi + mobile).
