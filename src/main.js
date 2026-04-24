@@ -302,16 +302,17 @@ const initNetworking = async () => {
         console.log(`[P2P] Global Room: ${APP_ID}-global (${globalPeers} peers) | Shard Room: ${shardName} (${shardPeers} peers) | Synced: ${hasSyncedWithArbiter}`);
     }, 10000);
 
-    // Fallback to TURN after 15 seconds if we haven't synced with the Arbiter
+    // Fallback to TURN after 20 seconds if we haven't synced with the Arbiter OR if we are alone in the shard
     setTimeout(async () => {
-        if (!hasSyncedWithArbiter) {
-            log(`\n[System] Direct connection slow. Attempting relay fallback...`, '#555');
-            console.warn(`[Discovery] No sync after 15s. Switching to TURN.`);
+        const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
+        if (!hasSyncedWithArbiter || shardPeers === 0) {
+            log(`\n[System] Connection sparse. Attempting relay fallback...`, '#555');
+            console.warn(`[Discovery] Falling back to TURN (Sync: ${hasSyncedWithArbiter}, Shard Peers: ${shardPeers})`);
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
             await connectGlobal(currentRtcConfig);
             await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
-    }, 15000);
+    }, 20000);
 
     // Exponential backoff retry: 1s, 2s, 4s, 8s, then cap at 10s
     const RETRY_DELAYS = [1000, 2000, 4000, 8000];
@@ -381,6 +382,7 @@ const isProposer = () => {
 
 const joinInstance = async (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
+    players.clear(); // Important: stop seeing ghost players from other rooms
 
     const shard = getShardName(APP_ID, location, instanceId);
     const config = rtcConfig || { iceServers: STUN_SERVERS };
@@ -569,12 +571,16 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId);
             if (typeof gameActions.sendPresenceSingle === 'function') {
-                setTimeout(async () => {
+                const handshake = async () => {
+                    if (players.get(peerId)?.publicKey) return; // Already have it
                     console.log(`[Discovery] Handshaking with ${peerId} in shard.`);
                     const entry = await myEntry();
                     sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
                     gameActions.sendPresenceSingle(entry, [peerId]);
-                }, 500);
+                    // Retry every 3s until we have their key
+                    setTimeout(handshake, 3000);
+                };
+                setTimeout(handshake, 500);
             }
         });
 
