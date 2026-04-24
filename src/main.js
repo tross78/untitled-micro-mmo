@@ -569,24 +569,30 @@ const start = async () => {
         // Ask other open tabs for state before touching the network
         TAB_CHANNEL.postMessage({ type: 'request_state' });
 
-        const processBeacon = async (packet) => {
+        const processBeacon = async (packet, source) => {
             if (!packet || worldState.day !== 0) return;
-            const { state, signature } = packet;
+            const { state, signature, peerId } = packet;
             const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
             const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
             if (valid) {
+                log(`[System] Fast-Path connected via ${source}!`, '#0f0');
                 lastValidStatePacket = packet;
                 TAB_CHANNEL.postMessage({ type: 'state', packet });
                 const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
                 updateSimulation(stateObj);
+                
+                // If the beacon gave us a peerId, tell Trystero to prioritize it
+                if (peerId && globalRooms.torrent) {
+                    globalRooms.torrent.onPeerJoin(peerId);
+                }
             }
         };
 
-        // Gist Discovery (~500ms) - Cache-busting with timestamp
+        // Gist Discovery (~500ms) - Corrected RAW URL
         if (GH_GIST_ID && worldState.day === 0) {
-            fetch(`https://gist.githubusercontent.com/raw/${GH_GIST_ID}/mmo_arbiter_discovery.json?t=${Date.now()}`)
+            fetch(`https://gist.githubusercontent.com/tross78/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`)
                 .then(r => r.ok ? r.json() : null)
-                .then(packet => processBeacon(packet))
+                .then(packet => processBeacon(packet, 'GitHub Gist'))
                 .catch(() => {});
         }
 
@@ -600,7 +606,7 @@ const start = async () => {
                     ws.onmessage = (e) => {
                         try {
                             const msg = JSON.parse(e.data);
-                            if (msg[0] === 'EVENT') processBeacon(JSON.parse(msg[2].content));
+                            if (msg[0] === 'EVENT') processBeacon(JSON.parse(msg[2].content), 'Nostr Relay');
                         } catch (err) {}
                         ws.close();
                     };
