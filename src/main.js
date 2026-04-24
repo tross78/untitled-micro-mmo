@@ -720,7 +720,8 @@ function handleCommand(cmd) {
                 return loc ? `${name} (${loc})` : name;
             });
             const myTag = getTag(localPlayer.ph);
-            log(`In world (${allPeers.length + 1}): You — ${localPlayer.name}#${myTag} (${localPlayer.location}), ${peerList.join(', ') || 'None'}`);
+            const peersStr = peerList.length > 0 ? `, ${peerList.join(', ')}` : '';
+            log(`In world (${allPeers.length + 1}): You — ${localPlayer.name}#${myTag} (${localPlayer.location})${peersStr}`);
             break;
         }
 
