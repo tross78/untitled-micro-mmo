@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, 'world_state.json');
 
 async function startArbiter() {
-    const { joinRoom: joinTorrent } = await import('@trystero-p2p/torrent');
+    const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
     const { APP_ID, ROOM_NAME, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
@@ -177,7 +177,7 @@ async function startArbiter() {
 
     async function publishBeacon(packet) {
         const payload = JSON.stringify({
-            peerId: torrentRoom.selfId,
+            peerId: selfId,
             ...packet
         });
 
