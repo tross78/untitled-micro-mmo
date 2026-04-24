@@ -254,7 +254,11 @@ const initNetworking = () => {
             knownPeers.add(peerId);
             if (!hasSyncedWithArbiter) log(`[System] Peer discovery in progress...`, '#555');
             gameActions.requestState(true, [peerId]);
-            if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
+            if (lastValidStatePacket) {
+                setTimeout(() => {
+                    sendWorldState(lastValidStatePacket, [peerId]);
+                }, 100);
+            }
         });
 
         gameActions.requestState = requestState;
@@ -263,7 +267,7 @@ const initNetworking = () => {
 
     connectGlobal(currentRtcConfig);
 
-    // Fallback to TURN after 5 seconds if we haven't found any other players
+    // Fallback to TURN after 15 seconds if we haven't found any other players
     setTimeout(() => {
         if (knownPeers.size === 0) {
             log(`[System] Optimization: Searching deeper for peers via TURN relay...`, '#555');
@@ -271,7 +275,7 @@ const initNetworking = () => {
             connectGlobal(currentRtcConfig);
             joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
-    }, 5000);
+    }, 15000);
 
     // Exponential backoff retry: 1s, 2s, 4s, 8s, then cap at 10s
     const RETRY_DELAYS = [1000, 2000, 4000, 8000];
@@ -506,7 +510,9 @@ const joinInstance = (location, instanceId, rtcConfig) => {
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId);
             if (typeof gameActions.sendPresenceSingle === 'function') {
-                gameActions.sendPresenceSingle(await myEntry(), peerId);
+                setTimeout(async () => {
+                    gameActions.sendPresenceSingle(await myEntry(), peerId);
+                }, 100);
             }
         });
         r.onPeerLeave(peerId => {
