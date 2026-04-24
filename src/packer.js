@@ -47,9 +47,10 @@ export const packPresence = (p) => {
     
     view.setUint8(16, ROOM_MAP.indexOf(p.location));
     
-    // PH (8 hex chars -> 4 bytes)
+    // PH (8 hex chars -> 4 bytes); default to zeros if identity not yet set
+    const ph = p.ph || '00000000';
     for (let i = 0; i < 4; i++) {
-        buf[17 + i] = parseInt(p.ph.substr(i * 2, 2), 16);
+        buf[17 + i] = parseInt(ph.substr(i * 2, 2), 16);
     }
     
     view.setUint8(21, p.level);

@@ -184,6 +184,51 @@ describe('Network Protocol Integration', () => {
         });
     });
 
+    describe('Heartbeat presence pipeline', () => {
+        // Catches bug: gameActions.sendPresenceSingle was called before initNetworking()
+        // ran (Web Locks non-coordinator tabs never called initNetworking, so gameActions
+        // was still {}). The guard added in main.js prevents the TypeError, but this test
+        // ensures packPresence — the first thing sendPresenceSingle does — never throws
+        // for any data shape myEntry() can produce, including uninitialised fields.
+
+        const makeEntry = (overrides = {}) => ({
+            name: 'TestPlayer',
+            location: 'tavern',
+            ph: '1a2b3c4d',
+            level: 1,
+            xp: 0,
+            ts: 1700000000000,
+            signature: btoa('s'.repeat(64)),
+            ...overrides,
+        });
+
+        test('packPresence does not throw with a valid myEntry-shaped payload', () => {
+            expect(() => packPresence(makeEntry())).not.toThrow();
+        });
+
+        test('packPresence round-trips name, location, level, xp, ts, ph correctly', () => {
+            const entry = makeEntry({ name: 'Alice', location: 'forest_edge', level: 5, xp: 1200, ph: 'deadbeef' });
+            const unpacked = unpackPresence(packPresence(entry));
+            expect(unpacked.name).toBe('Alice');
+            expect(unpacked.location).toBe('forest_edge');
+            expect(unpacked.level).toBe(5);
+            expect(unpacked.xp).toBe(1200);
+            expect(unpacked.ph).toBe('deadbeef');
+            expect(unpacked.ts).toBe(entry.ts);
+            expect(unpacked.signature).toBe(entry.signature);
+        });
+
+        test('packPresence does not throw when ph is null (identity not yet set)', () => {
+            // localPlayer.ph starts as null before initIdentity() completes.
+            // The heartbeat may fire in this window on very slow devices.
+            expect(() => packPresence(makeEntry({ ph: null }))).not.toThrow();
+        });
+
+        test('packPresence does not throw when ph is undefined', () => {
+            expect(() => packPresence(makeEntry({ ph: undefined }))).not.toThrow();
+        });
+    });
+
     describe('Binary Packet Chaining', () => {
         test('Move packets survive round-trip', () => {
             const buf = packMove('cellar', 'hallway');
