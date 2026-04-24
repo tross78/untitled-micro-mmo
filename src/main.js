@@ -580,10 +580,6 @@ const start = async () => {
                 TAB_CHANNEL.postMessage({ type: 'state', packet });
                 const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
                 updateSimulation(stateObj);
-                
-                if (peerId && globalRooms.torrent) {
-                    globalRooms.torrent.onPeerJoin(peerId);
-                }
             } else {
                 console.warn(`[System] Beacon from ${source} failed verification.`);
             }
