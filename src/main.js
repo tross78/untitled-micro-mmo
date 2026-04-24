@@ -208,8 +208,7 @@ const pruneStale = () => {
 const ROLLUP_INTERVAL = 10000;
 const SKETCH_INTERVAL = 30000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
-const initRng = seededRNG(hashStr(selfId + Date.now()));
-let currentInstance = (initRng(5) + 1);
+let currentInstance = 1;
 let rooms = { torrent: null };
 let globalRooms = { torrent: null };
 let knownPeers = new Set();
@@ -268,7 +267,8 @@ const initNetworking = () => {
             log(`[System] Optimization: Adding TURN relay for restricted networks...`, '#555');
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
             ({ requestState } = connectGlobal(currentRtcConfig));
-            joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+            // Only rejoin shard if sync failed
+            if (worldState.day === 0) joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
     }, 5000);
 
