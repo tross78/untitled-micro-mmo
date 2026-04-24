@@ -16,7 +16,7 @@ import {
 import { verifyMessage, generateKeyPair, importKey, exportKey, signMessage, computeHash } from './crypto';
 import { IBLT } from './iblt';
 import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer';
-import { MASTER_PUBLIC_KEY, APP_ID, TORRENT_TRACKERS, ICE_SERVERS, ARBITER_URL } from './constants';
+import { MASTER_PUBLIC_KEY, APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL, GH_GIST_ID } from './constants';
 import { getSuggestions } from './autocomplete';
 
 const output = document.getElementById('output');
@@ -208,7 +208,8 @@ const pruneStale = () => {
 const ROLLUP_INTERVAL = 10000;
 const SKETCH_INTERVAL = 30000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
-let currentInstance = 1;
+const initRng = seededRNG(hashStr(selfId + Date.now()));
+let currentInstance = (initRng(5) + 1);
 let rooms = { torrent: null };
 let globalRooms = { torrent: null };
 let knownPeers = new Set();
@@ -217,41 +218,59 @@ let lastRollupReceivedAt = 0;
 let lastValidStatePacket = null;
 
 const initNetworking = () => {
-    const rtcConfig = { iceServers: ICE_SERVERS };
+    let currentRtcConfig = { iceServers: STUN_SERVERS };
 
-    // Global room is ONLY for Arbiter state
-    globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, 'global');
+    const connectGlobal = (config) => {
+        if (globalRooms.torrent) globalRooms.torrent.leave();
+        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, 'global');
 
-    const [sendRollup] = globalRooms.torrent.makeAction('rollup');
-    const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
-    const [requestState, getIncomingRequest] = globalRooms.torrent.makeAction('request_state');
-    const [sendWorldState, getState] = globalRooms.torrent.makeAction('world_state');
+        const [sendRollup] = globalRooms.torrent.makeAction('rollup');
+        const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
+        const [requestState, getIncomingRequest] = globalRooms.torrent.makeAction('request_state');
+        const [sendWorldState, getState] = globalRooms.torrent.makeAction('world_state');
 
-    getState(async (data) => {
-        const { state, signature } = data;
-        const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
-        const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(e => { log(`[Debug] verifyMessage error: ${e.message}`, '#f55'); return false; });
-        if (valid) {
-            lastValidStatePacket = data;
-            TAB_CHANNEL.postMessage({ type: 'state', packet: data });
-            const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
-            updateSimulation(stateObj);
-            if (isProposer()) gameActions.relayState(data);
-        } else {
-            log(`[Debug] Arbiter state received but signature invalid — check MASTER_PUBLIC_KEY`, '#f55');
+        gameActions.submitRollup = (rollup) => sendRollup(rollup);
+        gameActions.submitFraudProof = (proof) => sendFraud(proof);
+
+        getState(async (data) => {
+            const { state, signature } = data;
+            const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+            const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(e => { log(`[Debug] verifyMessage error: ${e.message}`, '#f55'); return false; });
+            if (valid) {
+                lastValidStatePacket = data;
+                TAB_CHANNEL.postMessage({ type: 'state', packet: data });
+                const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
+                updateSimulation(stateObj);
+                if (isProposer()) gameActions.relayState(data);
+            } else {
+                log(`[Debug] Arbiter state received but signature invalid — check MASTER_PUBLIC_KEY`, '#f55');
+            }
+        });
+
+        getIncomingRequest((_, peerId) => {
+            if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
+        });
+
+        globalRooms.torrent.onPeerJoin(peerId => {
+            if (!hasSyncedWithArbiter) log(`[System] Peer discovery in progress...`, '#555');
+            requestState(true, [peerId]);
+            if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
+        });
+
+        return { requestState };
+    };
+
+    let { requestState } = connectGlobal(currentRtcConfig);
+
+    // Fallback to TURN after 5 seconds if we haven't synced
+    setTimeout(() => {
+        if (!hasSyncedWithArbiter) {
+            log(`[System] Optimization: Adding TURN relay for restricted networks...`, '#555');
+            currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+            ({ requestState } = connectGlobal(currentRtcConfig));
+            joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
-    });
-
-    // Any peer with valid state responds to request_state — not just the proposer or arbiter
-    getIncomingRequest((_, peerId) => {
-        if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
-    });
-
-    globalRooms.torrent.onPeerJoin(peerId => {
-        log(`[System] Peer discovery in progress...`, '#555');
-        requestState(true, [peerId]);
-        if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
-    });
+    }, 5000);
 
     // Exponential backoff retry: 1s, 2s, 4s, 8s, then cap at 10s
     const RETRY_DELAYS = [1000, 2000, 4000, 8000];
@@ -269,10 +288,7 @@ const initNetworking = () => {
     };
     scheduleRetry();
 
-    gameActions.submitRollup = (rollup) => sendRollup(rollup);
-    gameActions.submitFraudProof = (proof) => sendFraud(proof);
-
-    joinInstance(localPlayer.location, currentInstance);
+    joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
 
     // Periodic Rollups & Sketching — createMerkleRoot lazy-imported so non-proposers pay no cost
     setInterval(async () => {
@@ -320,12 +336,12 @@ const isProposer = () => {
     return false;
 };
 
-const joinInstance = (location, instanceId) => {
+const joinInstance = (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
 
     const shard = getShardName(APP_ID, location, instanceId);
-    const rtcConfig = { iceServers: ICE_SERVERS };
-    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, shard);
+    const config = rtcConfig || { iceServers: STUN_SERVERS };
+    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, shard);
 
     const checkFull = () => {
         const peerCount = Object.keys(rooms.torrent.getPeers()).length;
@@ -552,6 +568,46 @@ const start = async () => {
 
         // Ask other open tabs for state before touching the network
         TAB_CHANNEL.postMessage({ type: 'request_state' });
+
+        const processBeacon = async (packet) => {
+            if (!packet || worldState.day !== 0) return;
+            const { state, signature } = packet;
+            const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+            const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
+            if (valid) {
+                lastValidStatePacket = packet;
+                TAB_CHANNEL.postMessage({ type: 'state', packet });
+                const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
+                updateSimulation(stateObj);
+            }
+        };
+
+        // Gist Discovery (~500ms) - Cache-busting with timestamp
+        if (GH_GIST_ID && worldState.day === 0) {
+            fetch(`https://gist.githubusercontent.com/raw/${GH_GIST_ID}/mmo_arbiter_discovery.json?t=${Date.now()}`)
+                .then(r => r.ok ? r.json() : null)
+                .then(packet => processBeacon(packet))
+                .catch(() => {});
+        }
+
+        // Nostr Discovery (~300ms) - Parallel relay gossip
+        const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'];
+        if (worldState.day === 0) {
+            NOSTR_RELAYS.forEach(url => {
+                try {
+                    const ws = new WebSocket(url);
+                    ws.onopen = () => ws.send(JSON.stringify(['REQ', 'h-disc', { kinds: [1], '#t': [APP_ID], limit: 1 }]));
+                    ws.onmessage = (e) => {
+                        try {
+                            const msg = JSON.parse(e.data);
+                            if (msg[0] === 'EVENT') processBeacon(JSON.parse(msg[2].content));
+                        } catch (err) {}
+                        ws.close();
+                    };
+                    setTimeout(() => { if (ws.readyState < 2) ws.close(); }, 3000);
+                } catch (err) {}
+            });
+        }
 
         // HTTP bootstrap: fetch signed state from arbiter's Cloudflare Tunnel in ~300ms
         if (ARBITER_URL && worldState.day === 0) {
