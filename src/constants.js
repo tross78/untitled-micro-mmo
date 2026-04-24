@@ -8,6 +8,10 @@ export const ROOM_NAME = 'lobby';
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
     'wss://tracker.webtorrent.dev',
+    'wss://tracker.files.fm:7073/announce',
+    'wss://tracker.gbitt.info',
+    'wss://tracker.fastcast.nz',
+    'wss://tracker.btorrent.xyz',
 ];
 
 // STUN first (free, no infra), TURN as last resort (relay, swappable).
