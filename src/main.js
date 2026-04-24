@@ -484,7 +484,9 @@ const joinInstance = (location, instanceId) => {
 
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId);
-            gameActions.sendPresenceSingle(await myEntry(), peerId);
+            if (typeof gameActions.sendPresenceSingle === 'function') {
+                gameActions.sendPresenceSingle(await myEntry(), peerId);
+            }
         });
         r.onPeerLeave(peerId => {
             knownPeers.delete(peerId);
@@ -549,7 +551,11 @@ const start = async () => {
 
         initNetworking();
 
-        setInterval(async () => { gameActions.sendPresenceSingle(await myEntry()); }, HEARTBEAT_MS);
+        setInterval(async () => {
+            if (typeof gameActions.sendPresenceSingle === 'function') {
+                gameActions.sendPresenceSingle(await myEntry());
+            }
+        }, HEARTBEAT_MS);
         setInterval(pruneStale, HEARTBEAT_MS);
 
         log(`\nWelcome to Hearthwick.`);
