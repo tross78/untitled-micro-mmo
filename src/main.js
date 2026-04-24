@@ -221,7 +221,8 @@ const initNetworking = () => {
 
     const connectGlobal = (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
-        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, 'global');
+        // Use a unique room name to avoid collisions with other Trystero apps
+        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, APP_ID + '-global');
 
         const [sendRollup] = globalRooms.torrent.makeAction('rollup');
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -253,7 +254,7 @@ const initNetworking = () => {
         globalRooms.torrent.onPeerJoin(peerId => {
             knownPeers.add(peerId);
             if (!hasSyncedWithArbiter) log(`[System] Peer discovery in progress...`, '#555');
-            gameActions.requestState(true, [peerId]);
+            requestState(true, [peerId]);
             if (lastValidStatePacket) {
                 setTimeout(() => {
                     sendWorldState(lastValidStatePacket, [peerId]);
@@ -267,9 +268,10 @@ const initNetworking = () => {
 
     connectGlobal(currentRtcConfig);
 
-    // Fallback to TURN after 15 seconds if we haven't found any other players
+    // Fallback to TURN after 15 seconds if we haven't synced with the Arbiter
+    // We check sync status instead of peer count because we specifically need the Arbiter.
     setTimeout(() => {
-        if (knownPeers.size === 0) {
+        if (!hasSyncedWithArbiter) {
             log(`[System] Optimization: Searching deeper for peers via TURN relay...`, '#555');
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
             connectGlobal(currentRtcConfig);

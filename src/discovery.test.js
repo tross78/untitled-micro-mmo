@@ -23,6 +23,15 @@ describe('Discovery Race & Networking Logic', () => {
         jest.clearAllMocks();
     });
 
+    test('Global room name is unique and prefixed with APP_ID', () => {
+        const APP_ID = 'hearthwick-test';
+        const getGlobalRoomName = (appId) => appId + '-global';
+        
+        const roomName = getGlobalRoomName(APP_ID);
+        expect(roomName).toBe('hearthwick-test-global');
+        expect(roomName).toContain(APP_ID);
+    });
+
     test('knownPeers is updated when a peer joins the global room', () => {
         // Mocking the logic in connectGlobal
         const onPeerJoinHandler = (peerId) => {

@@ -86,7 +86,8 @@ async function startArbiter() {
     }
     console.log(`[Arbiter] Using trackers: ${reachableTrackers.join(', ')}`);
 
-    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: reachableTrackers }, 'global');
+    // Use a unique room name to avoid collisions with other Trystero apps
+    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: reachableTrackers }, APP_ID + '-global');
 
     const ROLLUP_INTERVAL = 10000;
     const FRAUD_BAN_THRESHOLD = 3;
