@@ -218,9 +218,9 @@ async function startArbiter() {
                     id: '0000000000000000000000000000000000000000000000000000000000000000', // Placeholder
                     sig: '0000000000000000000000000000000000000000000000000000000000000000'  // Placeholder
                 }];
-                // NOTE: Proper Nostr signing would go here if we wanted relay-level validation.
                 // However, the payload is already end-to-end signed for the game client.
                 ws.send(JSON.stringify(event));
+                console.log(`[Arbiter] Nostr beacon sent to ${url}`);
                 setTimeout(() => ws.close(), 1000);
             });
             ws.on('error', () => {});
