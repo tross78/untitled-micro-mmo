@@ -11,11 +11,9 @@ export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 export const ROOM_NAME = 'lobby';
 
-// Only the most reliable trackers.
+// Only the most stable and high-uptime trackers.
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
-    'wss://tracker.webtorrent.dev',
-    'wss://tracker.btorrent.xyz',
     'wss://tracker.files.fm:7073/announce',
 ];
 

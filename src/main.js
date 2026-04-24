@@ -34,6 +34,20 @@ const log = (msg, color = '#0f0') => {
     output.scrollTop = output.scrollHeight;
 };
 
+const probeWebSocket = async (url, timeout = 2000) => {
+    return new Promise((resolve) => {
+        const ws = new WebSocket(url);
+        const timer = setTimeout(() => {
+            if (ws.readyState !== 1) {
+                ws.close();
+                resolve(false);
+            }
+        }, timeout);
+        ws.onopen = () => { clearTimeout(timer); ws.close(); resolve(true); };
+        ws.onerror = () => { clearTimeout(timer); ws.close(); resolve(false); };
+    });
+};
+
 // --- IDENTITY ---
 let playerKeys = null;
 let arbiterPublicKey = null;
@@ -216,13 +230,18 @@ let gameActions = {};
 let lastRollupReceivedAt = 0;
 let lastValidStatePacket = null;
 
-const initNetworking = () => {
+const initNetworking = async () => {
     let currentRtcConfig = { iceServers: STUN_SERVERS };
 
-    const connectGlobal = (config) => {
+    const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
-        // Use a unique room name to avoid collisions with other Trystero apps
-        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, APP_ID + '-global');
+        
+        // Browser preflight: probe trackers to avoid hanging on dead ones
+        const results = await Promise.all(TORRENT_TRACKERS.map(url => probeWebSocket(url, 2000)));
+        const healthyTrackers = TORRENT_TRACKERS.filter((_, i) => results[i]);
+        const trackersToUse = healthyTrackers.length > 0 ? healthyTrackers : TORRENT_TRACKERS;
+
+        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: trackersToUse, rtcConfig: config }, APP_ID + '-global');
 
         const [sendRollup] = globalRooms.torrent.makeAction('rollup');
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -232,18 +251,26 @@ const initNetworking = () => {
         gameActions.submitRollup = (rollup) => sendRollup(rollup);
         gameActions.submitFraudProof = (proof) => sendFraud(proof);
 
-        getState(async (data) => {
+        getState(async (data, peerId) => {
+            console.log(`[Sync] Received state from ${peerId}`);
             const { state, signature } = data;
             const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
-            const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(e => { log(`[Debug] verifyMessage error: ${e.message}`, '#f55'); return false; });
-            if (valid) {
-                lastValidStatePacket = data;
-                TAB_CHANNEL.postMessage({ type: 'state', packet: data });
-                const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
-                updateSimulation(stateObj);
-                if (isProposer()) gameActions.relayState(data);
-            } else {
-                log(`[Debug] Arbiter state received but signature invalid — check MASTER_PUBLIC_KEY`, '#f55');
+            try {
+                const valid = await verifyMessage(stateStr, signature, arbiterPublicKey);
+                if (valid) {
+                    console.log(`[Sync] Signature valid! Updating simulation.`);
+                    lastValidStatePacket = data;
+                    TAB_CHANNEL.postMessage({ type: 'state', packet: data });
+                    const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
+                    updateSimulation(stateObj);
+                    if (isProposer()) gameActions.relayState(data);
+                } else {
+                    console.warn(`[Sync] Signature INVALID from ${peerId}. Check MASTER_PUBLIC_KEY.`);
+                    log(`[Sync] Warning: Received signed state but signature failed verification.`, '#f55');
+                }
+            } catch (e) {
+                console.error(`[Sync] Verification error:`, e);
+                log(`[Sync] Error verifying Arbiter signature: ${e.message}`, '#f00');
             }
         });
 
@@ -253,29 +280,40 @@ const initNetworking = () => {
 
         globalRooms.torrent.onPeerJoin(peerId => {
             knownPeers.add(peerId);
-            if (!hasSyncedWithArbiter) log(`[System] Peer discovery in progress...`, '#555');
+            if (!hasSyncedWithArbiter) {
+                console.log(`[Discovery] Peer ${peerId} joined global room. Requesting state...`);
+                log(`[System] Found a peer (${peerId.slice(0, 8)}). Syncing...`, '#555');
+            }
             requestState(true, [peerId]);
             if (lastValidStatePacket) {
                 setTimeout(() => {
                     sendWorldState(lastValidStatePacket, [peerId]);
-                }, 100);
+                }, 500); // 500ms delay for data channel warm-up
             }
         });
 
         gameActions.requestState = requestState;
+        gameActions.sendWorldState = sendWorldState;
         return { requestState };
     };
 
-    connectGlobal(currentRtcConfig);
+    await connectGlobal(currentRtcConfig);
+
+    // Networking Status Heartbeat
+    setInterval(() => {
+        const globalPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
+        const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
+        console.log(`[P2P] Global Room: ${globalPeers} peers | Shard Room: ${shardPeers} peers | Synced: ${hasSyncedWithArbiter}`);
+    }, 10000);
 
     // Fallback to TURN after 15 seconds if we haven't synced with the Arbiter
-    // We check sync status instead of peer count because we specifically need the Arbiter.
-    setTimeout(() => {
+    setTimeout(async () => {
         if (!hasSyncedWithArbiter) {
-            log(`[System] Optimization: Searching deeper for peers via TURN relay...`, '#555');
+            log(`\n[System] Direct connection slow. Attempting relay fallback...`, '#555');
+            console.warn(`[Discovery] No sync after 15s. Switching to TURN.`);
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
-            connectGlobal(currentRtcConfig);
-            joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+            await connectGlobal(currentRtcConfig);
+            await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
     }, 15000);
 
@@ -286,7 +324,7 @@ const initNetworking = () => {
         if (worldState.day !== 0) return;
         const delay = RETRY_DELAYS[retryIndex] ?? 10000;
         retryIndex = Math.min(retryIndex + 1, RETRY_DELAYS.length);
-        setTimeout(() => {
+        setTimeout(async () => {
             if (worldState.day === 0) {
                 if (gameActions.requestState) gameActions.requestState(true);
                 scheduleRetry();
@@ -295,7 +333,7 @@ const initNetworking = () => {
     };
     scheduleRetry();
 
-    joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+    await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
 
     // Periodic Rollups & Sketching — createMerkleRoot lazy-imported so non-proposers pay no cost
     setInterval(async () => {
@@ -343,12 +381,17 @@ const isProposer = () => {
     return false;
 };
 
-const joinInstance = (location, instanceId, rtcConfig) => {
+const joinInstance = async (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
+
+    // Browser preflight: probe trackers
+    const results = await Promise.all(TORRENT_TRACKERS.map(url => probeWebSocket(url, 2000)));
+    const healthyTrackers = TORRENT_TRACKERS.filter((_, i) => results[i]);
+    const trackersToUse = healthyTrackers.length > 0 ? healthyTrackers : TORRENT_TRACKERS;
 
     const shard = getShardName(APP_ID, location, instanceId);
     const config = rtcConfig || { iceServers: STUN_SERVERS };
-    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, shard);
+    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: trackersToUse, rtcConfig: config }, shard);
 
     const checkFull = () => {
         const peerCount = Object.keys(rooms.torrent.getPeers()).length;
@@ -509,14 +552,26 @@ const joinInstance = (location, instanceId, rtcConfig) => {
             log(`[System] ${getPlayerName(peerId)} ${data.text}`, '#aaa');
         });
 
+        const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
+
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId);
             if (typeof gameActions.sendPresenceSingle === 'function') {
                 setTimeout(async () => {
-                    gameActions.sendPresenceSingle(await myEntry(), peerId);
-                }, 100);
+                    console.log(`[Discovery] Handshaking with ${peerId} in shard.`);
+                    const entry = await myEntry();
+                    sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
+                    gameActions.sendPresenceSingle(entry, [peerId]);
+                }, 500);
             }
         });
+
+        getIdentity(({ publicKey }, peerId) => {
+            console.log(`[Discovery] Received public key from ${peerId}`);
+            const entry = players.get(peerId) || {};
+            players.set(peerId, { ...entry, publicKey, ts: Date.now() });
+        });
+
         r.onPeerLeave(peerId => {
             knownPeers.delete(peerId);
             players.delete(peerId);
@@ -596,30 +651,23 @@ const start = async () => {
 
         // Gist Discovery (~500ms)
         if (GH_GIST_ID && !hasSyncedWithArbiter) {
-            fetch(`https://gist.githubusercontent.com/tross78/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`)
-                .then(r => r.ok ? r.json() : null)
-                .then(packet => processBeacon(packet, 'GitHub Gist'))
-                .catch(e => console.warn('[System] Gist fetch failed:', e));
-        }
-
-        // Nostr Discovery (~300ms)
-        const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'];
-        if (!hasSyncedWithArbiter) {
-            NOSTR_RELAYS.forEach(url => {
-                try {
-                    const ws = new WebSocket(url);
-                    ws.onopen = () => ws.send(JSON.stringify(['REQ', 'h-disc', { kinds: [1], '#t': [APP_ID], limit: 1 }]));
-                    ws.onmessage = (e) => {
-                        try {
-                            const msg = JSON.parse(e.data);
-                            if (msg[0] === 'EVENT') processBeacon(JSON.parse(msg[2].content), 'Nostr Relay');
-                        } catch (err) {}
-                        if (ws.readyState === 1) ws.close();
-                    };
-                    // Only close if it's already open; if still connecting, let it time out or connect
-                    setTimeout(() => { if (ws.readyState === 1) ws.close(); }, 3000);
-                } catch (err) {}
-            });
+            // Try direct raw URL first (fastest, avoids API limits)
+            const directUrl = `https://gist.githubusercontent.com/tross78/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`;
+            fetch(directUrl)
+                .then(r => r.ok ? r.json() : Promise.reject('Direct fail'))
+                .then(packet => processBeacon(packet, 'GitHub Gist (Direct)'))
+                .catch(() => {
+                    // Fallback to API if direct URL is stale or failing
+                    fetch(`https://api.github.com/gists/${GH_GIST_ID}`)
+                        .then(r => r.ok ? r.json() : null)
+                        .then(gist => {
+                            const file = gist?.files?.['mmo_arbiter_discovery.json'];
+                            if (file?.raw_url) return fetch(file.raw_url + '?t=' + Date.now()).then(r => r.json());
+                            return null;
+                        })
+                        .then(packet => processBeacon(packet, 'GitHub Gist (API)'))
+                        .catch(() => {});
+                });
         }
 
         // HTTP bootstrap
@@ -640,7 +688,7 @@ const start = async () => {
                 .catch(() => {}); // silently ignore — P2P is the fallback
         }
 
-        initNetworking();
+        await initNetworking();
 
         setInterval(async () => {
             if (typeof gameActions.sendPresenceSingle === 'function') {
@@ -832,7 +880,7 @@ async function resolveRound(targetId) {
     }
 }
 
-function handleCommand(cmd) {
+async function handleCommand(cmd) {
     const args = cmd.split(' ');
     const command = args[0].toLowerCase();
 
@@ -1031,7 +1079,7 @@ function handleCommand(cmd) {
                 log(`You move ${dir}.`);
                 handleCommand('look');
                 gameActions.sendMove({ from: prevLoc, to: nextLoc });
-                joinInstance(nextLoc, currentInstance);
+                await joinInstance(nextLoc, currentInstance);
             } else log(`You can't go that way.`);
             break;
         }
