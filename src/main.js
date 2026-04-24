@@ -298,7 +298,8 @@ const initNetworking = async () => {
     setInterval(() => {
         const globalPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
         const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
-        console.log(`[P2P] Global Room: ${globalPeers} peers | Shard Room: ${shardPeers} peers | Synced: ${hasSyncedWithArbiter}`);
+        const shardName = getShardName(APP_ID, localPlayer.location, currentInstance);
+        console.log(`[P2P] Global Room: ${APP_ID}-global (${globalPeers} peers) | Shard Room: ${shardName} (${shardPeers} peers) | Synced: ${hasSyncedWithArbiter}`);
     }, 10000);
 
     // Fallback to TURN after 15 seconds if we haven't synced with the Arbiter
@@ -580,10 +581,14 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
         getIdentity(({ publicKey }, peerId) => {
             console.log(`[Discovery] Received public key from ${peerId}`);
             const entry = players.get(peerId) || {};
+            const isNew = !entry.publicKey;
             players.set(peerId, { ...entry, publicKey, ts: Date.now() });
+            if (isNew) log(`[Social] Peer ${peerId.slice(0,4)} entered the world.`, '#aaa');
         });
 
         r.onPeerLeave(peerId => {
+            const name = getPlayerName(peerId);
+            log(`[Social] ${name} has vanished.`, '#555');
             knownPeers.delete(peerId);
             players.delete(peerId);
         });
@@ -909,9 +914,10 @@ async function handleCommand(cmd) {
         case 'net': {
             const gPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
             const sPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
+            const shardName = getShardName(APP_ID, localPlayer.location, currentInstance);
             log(`\n--- NETWORK STATUS ---`, '#0af');
             log(`Global Room: ${APP_ID}-global (${gPeers} peers)`);
-            log(`Shard Room: ${localPlayer.location}-${currentInstance} (${sPeers} peers)`);
+            log(`Shard Room: ${shardName} (${sPeers} peers)`);
             log(`Arbiter Sync: ${hasSyncedWithArbiter ? 'YES' : 'NO'}`);
             log(`Identity: ${localPlayer.name}#${getTag(localPlayer.ph)}`);
             log(`----------------------\n`, '#0af');

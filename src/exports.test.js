@@ -60,7 +60,7 @@ describe('Module Exports — Smoke Tests', () => {
         // These two caused a ReferenceError in main.js when Gemini forgot to import them.
         test('getShardName is exported and callable', () => {
             expect(typeof getShardName).toBe('function');
-            expect(getShardName('app', 'cellar', 1)).toBe('cellar-1');
+            expect(getShardName('app', 'cellar', 1)).toBe('app-cellar-1');
         });
 
         test('INSTANCE_CAP is exported and is a number', () => {
