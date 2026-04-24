@@ -251,17 +251,19 @@ const initNetworking = () => {
         });
 
         globalRooms.torrent.onPeerJoin(peerId => {
+            knownPeers.add(peerId);
             if (!hasSyncedWithArbiter) log(`[System] Peer discovery in progress...`, '#555');
-            requestState(true, [peerId]);
+            gameActions.requestState(true, [peerId]);
             if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
         });
 
+        gameActions.requestState = requestState;
         return { requestState };
     };
 
-    let { requestState } = connectGlobal(currentRtcConfig);
+    connectGlobal(currentRtcConfig);
 
-    // Fallback to TURN after 10 seconds if we haven't found any other players
+    // Fallback to TURN after 5 seconds if we haven't found any other players
     setTimeout(() => {
         if (knownPeers.size === 0) {
             log(`[System] Optimization: Searching deeper for peers via TURN relay...`, '#555');
@@ -269,7 +271,7 @@ const initNetworking = () => {
             connectGlobal(currentRtcConfig);
             joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
-    }, 10000);
+    }, 5000);
 
     // Exponential backoff retry: 1s, 2s, 4s, 8s, then cap at 10s
     const RETRY_DELAYS = [1000, 2000, 4000, 8000];
@@ -280,7 +282,7 @@ const initNetworking = () => {
         retryIndex = Math.min(retryIndex + 1, RETRY_DELAYS.length);
         setTimeout(() => {
             if (worldState.day === 0) {
-                requestState(true);
+                if (gameActions.requestState) gameActions.requestState(true);
                 scheduleRetry();
             }
         }, delay);
@@ -604,9 +606,10 @@ const start = async () => {
                             const msg = JSON.parse(e.data);
                             if (msg[0] === 'EVENT') processBeacon(JSON.parse(msg[2].content), 'Nostr Relay');
                         } catch (err) {}
-                        ws.close();
+                        if (ws.readyState === 1) ws.close();
                     };
-                    setTimeout(() => { if (ws.readyState < 2) ws.close(); }, 3000);
+                    // Only close if it's already open; if still connecting, let it time out or connect
+                    setTimeout(() => { if (ws.readyState === 1) ws.close(); }, 3000);
                 } catch (err) {}
             });
         }

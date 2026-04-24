@@ -3,7 +3,8 @@
  * Universal implementation for Browser (WebCrypto) and Node (crypto)
  */
 
-const isNode = typeof window === 'undefined';
+export let isNode = typeof window === 'undefined';
+export const setNode = (val) => isNode = val;
 
 /**
  * Generates a new Ed25519 keypair.

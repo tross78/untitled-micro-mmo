@@ -63,4 +63,18 @@ describe('IBLT (Invertible Bloom Lookup Table)', () => {
         expect(Array.from(copy.keySum)).toEqual(Array.from(original.keySum));
         expect(Array.from(copy.hashSum)).toEqual(Array.from(original.hashSum));
     });
+
+    test('Can insert BigInt keys directly', () => {
+        const iblt = new IBLT();
+        const key = 12345n;
+        expect(() => iblt.insert(key)).not.toThrow();
+        const data = ibkle_test_extract(iblt);
+        expect(data.keySum.some(k => k !== 0n)).toBe(true);
+    });
 });
+
+function ibkle_test_extract(iblt) {
+    return {
+        keySum: Array.from(iblt.keySum)
+    };
+}

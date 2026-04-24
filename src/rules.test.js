@@ -5,6 +5,7 @@ import {
     ENEMIES, ITEMS,
     getSeason, getSeasonNumber, rollScarcity, SCARCITY_ITEMS,
     getMood, getThreatLevel, deriveWorldState, deriveNarrative,
+    transitionArc, ARC_AUTO_EVENTS,
     MOOD_INITIAL, EVENT_TYPES, NARRATIVE_EVENTS,
     _resetMoodCache,
 } from './rules';
@@ -178,6 +179,7 @@ describe('Combat determinism', () => {
     test('high defense does not reduce damage below 1', () => {
         const rng = seededRNG(1);
         expect(resolveAttack(5, 100, rng)).toBeGreaterThanOrEqual(1);
+        expect(resolveAttack(10, 10, rng)).toBeGreaterThanOrEqual(1);
     });
 
     test('rollLoot is deterministic for same seed', () => {
@@ -414,6 +416,28 @@ describe('deriveNarrative', () => {
         // At least one difference expected across 10 days with different seeds
         const overlap = [...a].filter(x => b.has(x)).length;
         expect(overlap).toBeLessThan(10);
+    });
+});
+
+// --- Narrative Arcs ---
+
+describe('Narrative Arcs', () => {
+    test('transitionArc moves to next beat on valid event', () => {
+        const arc = { type: 'escalation', beat: 'seed' };
+        const next = transitionArc(arc, 'ESCALATE');
+        expect(next.beat).toBe('growth');
+    });
+
+    test('transitionArc ignores invalid event', () => {
+        const arc = { type: 'escalation', beat: 'seed' };
+        const next = transitionArc(arc, 'BOGUS');
+        expect(next.beat).toBe('seed');
+        expect(next).toBe(arc);
+    });
+
+    test('ARC_AUTO_EVENTS is an array of strings', () => {
+        expect(Array.isArray(ARC_AUTO_EVENTS)).toBe(true);
+        ARC_AUTO_EVENTS.forEach(e => expect(typeof e).toBe('string'));
     });
 });
 
