@@ -232,7 +232,7 @@ export const DEFAULT_PLAYER_STATS = {
 // --- SCALING & SHARDING ---
 export const INSTANCE_CAP = 50;
 // Use unique APP_ID to isolate this world's shards from other Trystero games.
-export const getShardName = (appId, loc, inst) => `${appId}-${loc}-${inst}`;
+export const getShardName = (appId, loc, inst) => `${loc}-${inst}`;
 
 // --- WORLD DATA ---
 

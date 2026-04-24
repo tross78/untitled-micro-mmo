@@ -21,9 +21,9 @@ describe('Network Protocol Integration', () => {
         // Catches bug: getShardName was used in main.js but not imported — any consumer
         // test that imports and calls it would surface a missing-export error immediately.
         test('getShardName produces correct shard room identifier', () => {
-            expect(getShardName('hearthwick', 'tavern', 1)).toBe('hearthwick-tavern-1');
-            expect(getShardName('hearthwick', 'cellar', 3)).toBe('hearthwick-cellar-3');
-            expect(getShardName('hearthwick', 'forest_edge', 10)).toBe('hearthwick-forest_edge-10');
+            expect(getShardName('hearthwick', 'tavern', 1)).toBe('tavern-1');
+            expect(getShardName('hearthwick', 'cellar', 3)).toBe('cellar-3');
+            expect(getShardName('hearthwick', 'forest_edge', 10)).toBe('forest_edge-10');
         });
 
         test('INSTANCE_CAP is exported and equals 50', () => {
