@@ -82,7 +82,6 @@ export const ARC_START_BEATS = {
     bounty:     'emergence',
 };
 
-// Events that can fire automatically without player action
 export const ARC_AUTO_EVENTS = ['IGNORE', 'NEW_CYCLE', 'ESCALATE', 'REBUILD'];
 
 export const SEASON_ARC_BIAS = {
@@ -176,7 +175,7 @@ export const NARRATIVE_EVENTS = [
 
 export function deriveNarrative(worldSeed, day) {
     const rng = seededRNG(hashStr(worldSeed + day + 'news'));
-    return NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length)];
+    return NARRATIVE_EVENTS[rng(NARRATIVE_EVENTS.length) | 0];
 }
 
 // --- COMBAT ---
@@ -205,7 +204,7 @@ export function resolveAttack(attackStat, defenseStat, rng) {
 export function rollLoot(enemyType, rng) {
     const enemy = ENEMIES[enemyType];
     if (!enemy) return [];
-    return enemy.loot.filter(() => rng(100) < 60);
+    return enemy.loot.filter(() => (rng(100) | 0) < 60);
 }
 
 export function xpToLevel(xp) {

@@ -108,17 +108,17 @@ export const packDuelCommit = (c) => {
     const view = new DataView(buf.buffer);
     view.setUint8(0, c.round);
     view.setUint8(1, c.dmg);
-    view.setUint32(2, c.day);
+    view.setUint32(2, c.day, false);
     const sigDecoded = Uint8Array.from(atob(c.signature), ch => ch.charCodeAt(0));
     buf.set(sigDecoded, 6);
     return buf;
-};
+    };
 
-export const unpackDuelCommit = (buf) => {
+    export const unpackDuelCommit = (buf) => {
     const view = new DataView(buf.buffer);
     const round = view.getUint8(0);
     const dmg = view.getUint8(1);
-    const day = view.getUint32(2);
+    const day = view.getUint32(2, false);
     const signature = btoa(String.fromCharCode(...buf.subarray(6, 70)));
     return { commit: { round, dmg, day }, signature };
-};
+    };

@@ -13,30 +13,34 @@ A **micro cosy metaverse** — a living, persistent fantasy world (Stardew Valle
 
 ---
 
-## Current Architecture (v0.6.0 — Scaling Refactor COMPLETE)
+## Current Architecture (v0.6.1 — Zero-Wait Discovery & Scaling)
 
-**Yjs has been completely removed.** The old CRDT-based architecture is gone. Do not reference it.
+**Yjs has been completely removed.** The architecture now focuses on high-performance discovery and spatial sharding.
 
 ### State Model
 - **Global state** (day, seed, mood, season): Signed JSON broadcast by the Arbiter. Clients verify the Ed25519 signature against `MASTER_PUBLIC_KEY` before accepting.
 - **Player state**: Ephemeral. Gossipped as binary `Uint8Array` (see `packer.js`) over Trystero data channels.
 - **Persistence**: `localStorage` under key `hearthwick_state_v5`.
 
-### Transport Layer
-- **Transport**: `@trystero-p2p/torrent` only. Nostr has been removed due to relay instability and bundle size.
-- **Instance sharding**: Players join dynamic rooms named `getShardName(APP_ID, location, instanceId)` (e.g. `hearthwick-tavern-2`). Instance cap: 50 players.
+### Transport Layer & Discovery
+- **Transport**: `@trystero-p2p/torrent` sharded instances.
+- **Fast-Path Discovery**: To achieve < 500ms "Connected" status, the client races three discovery beacons:
+    - **GitHub Gist**: Signed discovery JSON fetched via CDN.
+    - **Nostr Beacons**: Signed Kind 1 events on public relays (`damus.io`, `nos.lol`, `snort.social`).
+    - **HTTP Fallback**: Direct `/state` fetch if `ARBITER_URL` is configured.
+- **Instance sharding**: Players join dynamic rooms named `getShardName(APP_ID, location, instanceId)`. Instance cap: 50 players.
 - **Global room**: A separate `'global'` room used only for Arbiter↔client state and rollup/fraud messages.
 
 ### Key Files
 | File | Purpose |
 |---|---|
-| `src/main.js` | Client entry: identity, networking, game loop, command handler |
+| `src/main.js` | Client entry: identity, networking, game loop, discovery race |
 | `src/rules.js` | Pure deterministic simulation (combat, world, sharding) |
 | `src/crypto.js` | Universal Ed25519 sign/verify for browser (WebCrypto) and Node |
 | `src/packer.js` | Binary serialization: move (2B), emote (1B), presence (96B), duelCommit (70B) |
 | `src/iblt.js` | IBLT for O(diff) presence reconciliation |
-| `src/constants.js` | APP_ID, relay/tracker URLs, ICE servers |
-| `arbiter/index.js` | Pi Zero: state authority, rollup validation, fraud banning, health endpoint |
+| `src/constants.js` | APP_ID, relay/tracker URLs, STUN/TURN servers, Gist ID |
+| `arbiter/index.js` | Pi Zero: state authority, discovery beacon publisher, rollup validation |
 
 ---
 
