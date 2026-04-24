@@ -11,10 +11,12 @@ export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 export const ROOM_NAME = 'lobby';
 
-// Only the two most reliable trackers. btorrent.xyz is hardcoded in Trystero anyway.
+// Only the most reliable trackers.
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
     'wss://tracker.webtorrent.dev',
+    'wss://tracker.btorrent.xyz',
+    'wss://tracker.files.fm:7073/announce',
 ];
 
 // STUN is always tried first (free, fast, works when at least one peer has a public IP).

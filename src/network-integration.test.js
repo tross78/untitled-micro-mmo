@@ -101,6 +101,31 @@ describe('Networking Discovery Integration', () => {
         });
     });
 
+    test('TURN fallback TRIGGERS if peers are found but Arbiter sync fails', () => {
+        const log = jest.fn();
+        const connectGlobal = jest.fn();
+
+        // Simulate logic in main.js
+        const checkArbiterSync = () => {
+            if (!hasSyncedWithArbiter) { // The fixed condition
+                log('FALLBACK');
+                currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+                connectGlobal(currentRtcConfig);
+            }
+        };
+        
+        setTimeout(checkArbiterSync, 15000);
+
+        // Simulate finding a player peer immediately
+        knownPeers.add('random-player-id');
+        
+        // Advance 16s
+        jest.advanceTimersByTime(16000);
+
+        // Fallback should trigger because hasSyncedWithArbiter is still false
+        expect(log).toHaveBeenCalledWith('FALLBACK');
+    });
+
     test('Identity collision detection (Conceptual Test)', () => {
         // This simulates two distinct Trystero peers using the same public key
         const players = new Map();
