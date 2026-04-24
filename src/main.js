@@ -570,7 +570,7 @@ const start = async () => {
         TAB_CHANNEL.postMessage({ type: 'request_state' });
 
         const processBeacon = async (packet, source) => {
-            if (!packet || worldState.day !== 0) return;
+            if (!packet || hasSyncedWithArbiter) return;
             const { state, signature, peerId } = packet;
             const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
             const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
@@ -581,24 +581,25 @@ const start = async () => {
                 const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
                 updateSimulation(stateObj);
                 
-                // If the beacon gave us a peerId, tell Trystero to prioritize it
                 if (peerId && globalRooms.torrent) {
                     globalRooms.torrent.onPeerJoin(peerId);
                 }
+            } else {
+                console.warn(`[System] Beacon from ${source} failed verification.`);
             }
         };
 
-        // Gist Discovery (~500ms) - Corrected RAW URL
-        if (GH_GIST_ID && worldState.day === 0) {
+        // Gist Discovery (~500ms)
+        if (GH_GIST_ID && !hasSyncedWithArbiter) {
             fetch(`https://gist.githubusercontent.com/tross78/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`)
                 .then(r => r.ok ? r.json() : null)
                 .then(packet => processBeacon(packet, 'GitHub Gist'))
-                .catch(() => {});
+                .catch(e => console.warn('[System] Gist fetch failed:', e));
         }
 
-        // Nostr Discovery (~300ms) - Parallel relay gossip
+        // Nostr Discovery (~300ms)
         const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'];
-        if (worldState.day === 0) {
+        if (!hasSyncedWithArbiter) {
             NOSTR_RELAYS.forEach(url => {
                 try {
                     const ws = new WebSocket(url);
@@ -615,15 +616,16 @@ const start = async () => {
             });
         }
 
-        // HTTP bootstrap: fetch signed state from arbiter's Cloudflare Tunnel in ~300ms
-        if (ARBITER_URL && worldState.day === 0) {
+        // HTTP bootstrap
+        if (ARBITER_URL && !hasSyncedWithArbiter) {
             fetch(`${ARBITER_URL}/state`, { signal: AbortSignal.timeout(5000) })
                 .then(r => r.ok ? r.json() : null)
                 .then(async packet => {
-                    if (!packet || worldState.day !== 0) return;
+                    if (!packet || hasSyncedWithArbiter) return;
                     const stateStr = typeof packet.state === 'string' ? packet.state : JSON.stringify(packet.state);
                     const valid = await verifyMessage(stateStr, packet.signature, arbiterPublicKey).catch(() => false);
                     if (valid) {
+                        log(`[System] Fast-Path connected via HTTP!`, '#0f0');
                         lastValidStatePacket = packet;
                         TAB_CHANNEL.postMessage({ type: 'state', packet });
                         updateSimulation(typeof packet.state === 'string' ? JSON.parse(packet.state) : packet.state);
