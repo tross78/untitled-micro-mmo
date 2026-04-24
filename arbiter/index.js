@@ -169,10 +169,13 @@ async function startArbiter() {
 
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
 
+    let lastBroadcastPacket = null;
+
     async function broadcastState() {
         const stateStr = JSON.stringify(worldState);
         const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
         const packet = { state: stateStr, signature };
+        lastBroadcastPacket = packet;
         torrent.sendState(packet);
         console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
     }
@@ -217,14 +220,23 @@ async function startArbiter() {
 
     // Health endpoint for Pi debugging
     const healthServer = createServer((req, res) => {
+        const cors = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
         if (req.url === '/health') {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.writeHead(200, cors);
             res.end(JSON.stringify({
                 day: worldState.day,
                 seed: worldState.world_seed.slice(0, 12),
                 bans: bans.size,
                 uptime: Math.floor(process.uptime()),
             }));
+        } else if (req.url === '/state') {
+            if (lastBroadcastPacket) {
+                res.writeHead(200, cors);
+                res.end(JSON.stringify(lastBroadcastPacket));
+            } else {
+                res.writeHead(503, cors);
+                res.end(JSON.stringify({ error: 'not ready' }));
+            }
         } else {
             res.writeHead(404);
             res.end();
