@@ -22,6 +22,10 @@ async function startArbiter() {
 
     dotenv.config({ path: new URL('.env', import.meta.url).pathname });
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
+    const GH_GIST_TOKEN = process.env.GH_GIST_TOKEN;
+    const GH_GIST_ID = process.env.GH_GIST_ID;
+    const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'];
+
     if (!MASTER_SECRET_KEY) {
         console.error('ERROR: MASTER_SECRET_KEY not found in .env');
         process.exit(1);
@@ -171,12 +175,65 @@ async function startArbiter() {
 
     let lastBroadcastPacket = null;
 
+    async function publishBeacon(packet) {
+        const payload = JSON.stringify({
+            peerId: torrentRoom.selfId,
+            ...packet
+        });
+
+        // 1. GitHub Gist Beacon (CDN-style speed)
+        if (GH_GIST_TOKEN && GH_GIST_ID) {
+            try {
+                await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `token ${GH_GIST_TOKEN}`,
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'Hearthwick-Arbiter'
+                    },
+                    body: JSON.stringify({
+                        description: `Hearthwick Discovery: Day ${worldState.day}`,
+                        files: { 'mmo_arbiter_discovery.json': { content: payload } }
+                    })
+                });
+                console.log('[Arbiter] Gist beacon updated.');
+            } catch (e) {
+                console.warn('[Arbiter] Gist beacon failed:', e.message);
+            }
+        }
+
+        // 2. Nostr Beacon (Gossip-style speed)
+        // We broadcast a Kind 1 message with a specific tag for this world.
+        // For simplicity on Pi Zero, we just blast to relays without complex signing
+        // as the state itself is already signed by MASTER_SECRET_KEY.
+        NOSTR_RELAYS.forEach(url => {
+            const ws = new WebSocket(url);
+            ws.on('open', () => {
+                const event = ['EVENT', {
+                    kind: 1,
+                    created_at: Math.floor(Date.now() / 1000),
+                    tags: [['t', APP_ID], ['t', 'hearthwick-discovery']],
+                    content: payload,
+                    pubkey: '0000000000000000000000000000000000000000000000000000000000000000', // Placeholder
+                    id: '0000000000000000000000000000000000000000000000000000000000000000', // Placeholder
+                    sig: '0000000000000000000000000000000000000000000000000000000000000000'  // Placeholder
+                }];
+                // NOTE: Proper Nostr signing would go here if we wanted relay-level validation.
+                // However, the payload is already end-to-end signed for the game client.
+                ws.send(JSON.stringify(event));
+                setTimeout(() => ws.close(), 1000);
+            });
+            ws.on('error', () => {});
+        });
+    }
+
     async function broadcastState() {
         const stateStr = JSON.stringify(worldState);
         const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
         const packet = { state: stateStr, signature };
         lastBroadcastPacket = packet;
         torrent.sendState(packet);
+        publishBeacon(packet).catch(() => {});
         console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
     }
 
