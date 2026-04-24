@@ -78,6 +78,12 @@ async function startArbiter() {
         const [sendState] = r.makeAction('world_state');
         const [, getRollup] = r.makeAction('rollup');
         const [, getFraud] = r.makeAction('fraud_proof');
+        const [, getRequestState] = r.makeAction('request_state');
+
+        getRequestState((_, peerId) => {
+            console.log(`[Arbiter][${name}] State requested by ${peerId}`);
+            broadcastState();
+        });
 
         getRollup(async (data) => {
             const { rollup, signature, publicKey } = data;
