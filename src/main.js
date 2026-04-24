@@ -105,10 +105,10 @@ const updateSimulation = (state) => {
     const newSeed = state.world_seed;
     const newDay = state.day || 1;
     const newTick = state.last_tick || 0;
+    const firstSync = !hasSyncedWithArbiter;
 
     if (newSeed !== worldState.seed || newDay !== worldState.day || newTick !== worldState.lastTick) {
-        const wasDisconnected = worldState.day === 0;
-        const isNewDay = newDay > worldState.day && !wasDisconnected;
+        const isNewDay = newDay > worldState.day && hasSyncedWithArbiter;
         worldState.seed = newSeed;
         worldState.day = newDay;
         worldState.lastTick = newTick;
@@ -120,14 +120,17 @@ const updateSimulation = (state) => {
         worldState.threatLevel = derived.threatLevel;
         worldState.scarcity = derived.scarcity;
 
-        if (wasDisconnected) {
-            log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#aaa');
-            printStatus();
-        } else if (isNewDay) {
+        if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
             localPlayer.currentEnemy = null;
             printStatus();
         }
+    }
+
+    if (firstSync) {
+        hasSyncedWithArbiter = true;
+        log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#0f0');
+        printStatus();
     }
 };
 
@@ -145,6 +148,7 @@ const getPlayerLocation = (id) => players.get(id)?.location;
 const getPlayerEntry = (id) => players.get(id);
 
 let localPlayer = { name: `Peer-${selfId.slice(0, 4)}`, location: 'cellar', ...DEFAULT_PLAYER_STATS };
+let hasSyncedWithArbiter = false;
 
 // --- PERSISTENCE ---
 const STORAGE_KEY = 'hearthwick_state_v5';
