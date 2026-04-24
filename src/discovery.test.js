@@ -99,23 +99,4 @@ describe('Discovery Race & Networking Logic', () => {
         expect(triggerFallbackIfEmpty(new Set(['peer-1']))).toBe('STAY');
     });
 
-    test('Nostr WebSocket handling handles readyState correctly', () => {
-        // Mock WebSocket
-        const mockWs = {
-            readyState: 1, // OPEN
-            close: jest.fn(),
-        };
-
-        const closeIfOpen = (ws) => {
-            if (ws.readyState === 1) ws.close();
-        };
-
-        closeIfOpen(mockWs);
-        expect(mockWs.close).toHaveBeenCalledTimes(1);
-
-        mockWs.readyState = 0; // CONNECTING
-        mockWs.close.mockClear();
-        closeIfOpen(mockWs);
-        expect(mockWs.close).not.toHaveBeenCalled();
-    });
 });

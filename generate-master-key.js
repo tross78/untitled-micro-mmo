@@ -1,13 +1,13 @@
-import nacl from 'tweetnacl';
-import pkg from 'tweetnacl-util';
-const { encodeBase64 } = pkg;
+#!/usr/bin/env node
+// Generates an Ed25519 master key pair for the Hearthwick arbiter using node:crypto (no deps).
+import { generateKeyPairSync } from 'node:crypto';
 
-const keyPair = nacl.sign.keyPair();
+const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+
+const pubB64  = publicKey.export({ type: 'spki',  format: 'der' }).slice(12).toString('base64');
+const privB64 = privateKey.export({ type: 'pkcs8', format: 'der' }).slice(16).toString('base64');
 
 console.log('--- MASTER KEY GENERATED ---');
-console.log('Public Key (Base64):', encodeBase64(keyPair.publicKey));
-console.log('Secret Key (Base64):', encodeBase64(keyPair.secretKey));
-console.log('\n--- HOW TO USE ---');
-console.log('1. Save the Public Key in src/constants.js');
-console.log('2. Save the Secret Key in the .env file on your Raspberry Pi.');
+console.log('Public Key  (for src/constants.js MASTER_PUBLIC_KEY):', pubB64);
+console.log('Private Key (for arbiter/.env MASTER_SECRET_KEY):     ', privB64);
 console.log('----------------------------');

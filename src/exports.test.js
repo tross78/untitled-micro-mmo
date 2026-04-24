@@ -11,11 +11,10 @@ import {
     world, validateMove, hashStr, seededRNG,
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
-    deriveWorldState, deriveNarrative, EVENT_TYPES,
+    deriveWorldState,
     getSeason, getSeasonNumber, SEASONS, SEASON_LENGTH,
     // Scaling — these were missing from main.js imports and caused a ReferenceError
     getShardName, INSTANCE_CAP,
-    arcTransitions,
 } from './rules';
 
 import {
@@ -52,7 +51,6 @@ describe('Module Exports — Smoke Tests', () => {
             expect(typeof ENEMIES).toBe('object');
             expect(typeof ITEMS).toBe('object');
             expect(typeof DEFAULT_PLAYER_STATS).toBe('object');
-            expect(typeof EVENT_TYPES).toBe('object');
             expect(Array.isArray(SEASONS)).toBe(true);
             expect(typeof SEASON_LENGTH).toBe('number');
         });
@@ -60,7 +58,7 @@ describe('Module Exports — Smoke Tests', () => {
         // These two caused a ReferenceError in main.js when Gemini forgot to import them.
         test('getShardName is exported and callable', () => {
             expect(typeof getShardName).toBe('function');
-            expect(getShardName('app', 'cellar', 1)).toBe('cellar-1');
+            expect(getShardName('cellar', 1)).toBe('cellar-1');
         });
 
         test('INSTANCE_CAP is exported and is a number', () => {

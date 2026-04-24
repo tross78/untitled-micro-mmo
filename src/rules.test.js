@@ -4,9 +4,8 @@ import {
     resolveAttack, rollLoot, xpToLevel, levelBonus,
     ENEMIES, ITEMS,
     getSeason, getSeasonNumber, rollScarcity, SCARCITY_ITEMS,
-    getMood, getThreatLevel, deriveWorldState, deriveNarrative,
-    transitionArc, ARC_AUTO_EVENTS,
-    MOOD_INITIAL, EVENT_TYPES, NARRATIVE_EVENTS,
+    getMood, getThreatLevel, deriveWorldState,
+    MOOD_INITIAL,
     _resetMoodCache,
 } from './rules';
 
@@ -393,54 +392,6 @@ describe('deriveWorldState', () => {
     });
 });
 
-// --- deriveNarrative ---
-
-describe('deriveNarrative', () => {
-    test('returns a string', () => {
-        expect(typeof deriveNarrative('seed', 1)).toBe('string');
-    });
-
-    test('is deterministic', () => {
-        expect(deriveNarrative('seed', 42)).toBe(deriveNarrative('seed', 42));
-    });
-
-    test('output is always a known narrative event', () => {
-        for (let day = 1; day <= 20; day++) {
-            expect(NARRATIVE_EVENTS).toContain(deriveNarrative('test-seed', day));
-        }
-    });
-
-    test('different seeds produce different results across sample', () => {
-        const a = new Set(Array.from({length: 10}, (_, i) => deriveNarrative('seed-a', i + 1)));
-        const b = new Set(Array.from({length: 10}, (_, i) => deriveNarrative('seed-b', i + 1)));
-        // At least one difference expected across 10 days with different seeds
-        const overlap = [...a].filter(x => b.has(x)).length;
-        expect(overlap).toBeLessThan(10);
-    });
-});
-
-// --- Narrative Arcs ---
-
-describe('Narrative Arcs', () => {
-    test('transitionArc moves to next beat on valid event', () => {
-        const arc = { type: 'escalation', beat: 'seed' };
-        const next = transitionArc(arc, 'ESCALATE');
-        expect(next.beat).toBe('growth');
-    });
-
-    test('transitionArc ignores invalid event', () => {
-        const arc = { type: 'escalation', beat: 'seed' };
-        const next = transitionArc(arc, 'BOGUS');
-        expect(next.beat).toBe('seed');
-        expect(next).toBe(arc);
-    });
-
-    test('ARC_AUTO_EVENTS is an array of strings', () => {
-        expect(Array.isArray(ARC_AUTO_EVENTS)).toBe(true);
-        ARC_AUTO_EVENTS.forEach(e => expect(typeof e).toBe('string'));
-    });
-});
-
 // --- getMood edge cases (regression: day=0, cache correctness) ---
 
 describe('getMood edge cases', () => {
@@ -490,35 +441,6 @@ describe('getMood edge cases', () => {
         _resetMoodCache();
         const peerB = getMood(seed, day);
         expect(peerA).toBe(peerB);
-    });
-});
-
-// --- EVENT_TYPES completeness ---
-
-describe('EVENT_TYPES', () => {
-    test('contains all expected compact codes', () => {
-        expect(EVENT_TYPES.MOVE).toBe('m');
-        expect(EVENT_TYPES.KILL).toBe('k');
-        expect(EVENT_TYPES.DEATH).toBe('d');
-        expect(EVENT_TYPES.NEWS).toBe('n');
-    });
-
-    test('contains PvP event types', () => {
-        expect(EVENT_TYPES.PVP_CHALLENGE).toBeDefined();
-        expect(EVENT_TYPES.PVP_ACCEPT).toBeDefined();
-        expect(EVENT_TYPES.PVP_RESULT).toBeDefined();
-    });
-
-    test('all codes are single or two character strings', () => {
-        Object.values(EVENT_TYPES).forEach(code => {
-            expect(typeof code).toBe('string');
-            expect(code.length).toBeLessThanOrEqual(2);
-        });
-    });
-
-    test('all codes are unique', () => {
-        const codes = Object.values(EVENT_TYPES);
-        expect(new Set(codes).size).toBe(codes.length);
     });
 });
 
