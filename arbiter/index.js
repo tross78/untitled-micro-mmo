@@ -1,5 +1,6 @@
 import { webcrypto } from 'node:crypto';
 import { createServer } from 'node:http';
+import { lookup } from 'node:dns/promises';
 import WebSocket from 'ws';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -63,7 +64,25 @@ async function startArbiter() {
         rtcConfig: { iceServers: ICE_SERVERS },
     };
 
-    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: TORRENT_TRACKERS }, 'global');
+    const reachableTrackers = (await Promise.all(
+        TORRENT_TRACKERS.map(async url => {
+            try {
+                const host = new URL(url).hostname;
+                const { address } = await lookup(host);
+                return address === '0.0.0.0' ? null : url;
+            } catch {
+                return null;
+            }
+        })
+    )).filter(Boolean);
+
+    if (reachableTrackers.length === 0) {
+        console.warn('[Arbiter] All trackers failed DNS preflight — falling back to full list.');
+        reachableTrackers.push(...TORRENT_TRACKERS);
+    }
+    console.log(`[Arbiter] Using trackers: ${reachableTrackers.join(', ')}`);
+
+    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: reachableTrackers }, 'global');
 
     const ROLLUP_INTERVAL = 10000;
     const FRAUD_BAN_THRESHOLD = 3;
