@@ -23,6 +23,9 @@ const output = document.getElementById('output');
 const input = document.getElementById('input');
 const suggestionsEl = document.getElementById('suggestions');
 
+const WORLD_STATE_KEY = 'hearthwick_worldstate_v1';
+const TAB_CHANNEL = new BroadcastChannel('hearthwick_state');
+
 const log = (msg, color = '#0f0') => {
     const div = document.createElement('div');
     div.textContent = msg;
@@ -109,6 +112,7 @@ const updateSimulation = (state) => {
         worldState.seed = newSeed;
         worldState.day = newDay;
         worldState.lastTick = newTick;
+        localStorage.setItem(WORLD_STATE_KEY, JSON.stringify({ seed: newSeed, day: newDay, lastTick: newTick }));
         const derived = deriveWorldState(newSeed, newDay);
         worldState.mood = derived.mood;
         worldState.season = derived.season;
@@ -169,6 +173,21 @@ const loadLocalState = () => {
             log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error(e); }
     }
+    const cachedWorld = localStorage.getItem(WORLD_STATE_KEY);
+    if (cachedWorld) {
+        try {
+            const { seed, day, lastTick } = JSON.parse(cachedWorld);
+            worldState.seed = seed;
+            worldState.day = day;
+            worldState.lastTick = lastTick;
+            const derived = deriveWorldState(seed, day);
+            worldState.mood = derived.mood;
+            worldState.season = derived.season;
+            worldState.seasonNumber = derived.seasonNumber;
+            worldState.threatLevel = derived.threatLevel;
+            worldState.scarcity = derived.scarcity;
+        } catch (e) { console.error(e); }
+    }
 };
 const saveLocalState = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(localPlayer));
@@ -191,23 +210,28 @@ let globalRooms = { torrent: null };
 let knownPeers = new Set();
 let gameActions = {};
 let lastRollupReceivedAt = 0;
+let lastValidStatePacket = null;
+
+// Pre-warm: join the global room immediately at module load so tracker WebSocket
+// connections begin during identity init rather than after it.
+const rtcConfig = { iceServers: ICE_SERVERS };
+globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, 'global');
 
 const initNetworking = () => {
-    const rtcConfig = { iceServers: ICE_SERVERS };
-
-    // Global room is ONLY for Arbiter state
-    globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig }, 'global');
+    // Room already created above — attach action handlers now that identity is ready.
 
     const [sendRollup] = globalRooms.torrent.makeAction('rollup');
     const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
-    const [requestState] = globalRooms.torrent.makeAction('request_state');
-    const [, getState] = globalRooms.torrent.makeAction('world_state');
+    const [requestState, getIncomingRequest] = globalRooms.torrent.makeAction('request_state');
+    const [sendWorldState, getState] = globalRooms.torrent.makeAction('world_state');
 
     getState(async (data) => {
         const { state, signature } = data;
         const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
         const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(e => { log(`[Debug] verifyMessage error: ${e.message}`, '#f55'); return false; });
         if (valid) {
+            lastValidStatePacket = data;
+            TAB_CHANNEL.postMessage({ type: 'state', packet: data });
             const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
             updateSimulation(stateObj);
             if (isProposer()) gameActions.relayState(data);
@@ -216,19 +240,32 @@ const initNetworking = () => {
         }
     });
 
-    globalRooms.torrent.onPeerJoin(peerId => {
-        log(`[System] Peer discovery in progress...`, '#555');
-        requestState(true);
+    // Any peer with valid state responds to request_state — not just the proposer or arbiter
+    getIncomingRequest((_, peerId) => {
+        if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
     });
 
-    // Retry state request until we get it
-    const stateRetry = setInterval(() => {
-        if (worldState.day === 0) {
-            requestState(true);
-        } else {
-            clearInterval(stateRetry);
-        }
-    }, 5000);
+    globalRooms.torrent.onPeerJoin(peerId => {
+        log(`[System] Peer discovery in progress...`, '#555');
+        requestState(true, [peerId]);
+        if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]);
+    });
+
+    // Exponential backoff retry: 1s, 2s, 4s, 8s, then cap at 10s
+    const RETRY_DELAYS = [1000, 2000, 4000, 8000];
+    let retryIndex = 0;
+    const scheduleRetry = () => {
+        if (worldState.day !== 0) return;
+        const delay = RETRY_DELAYS[retryIndex] ?? 10000;
+        retryIndex = Math.min(retryIndex + 1, RETRY_DELAYS.length);
+        setTimeout(() => {
+            if (worldState.day === 0) {
+                requestState(true);
+                scheduleRetry();
+            }
+        }, delay);
+    };
+    scheduleRetry();
 
     gameActions.submitRollup = (rollup) => sendRollup(rollup);
     gameActions.submitFraudProof = (proof) => sendFraud(proof);
@@ -482,12 +519,52 @@ const joinInstance = (location, instanceId) => {
     };
 };
 
+// --- CROSS-TAB BOOTSTRAP ---
+// Any tab that already has valid arbiter state responds immediately to newly opened tabs,
+// cutting bootstrap to zero round-trips when another tab is open.
+TAB_CHANNEL.onmessage = ({ data }) => {
+    if (data.type === 'request_state' && lastValidStatePacket) {
+        TAB_CHANNEL.postMessage({ type: 'state', packet: lastValidStatePacket });
+    }
+    if (data.type === 'state' && worldState.day === 0) {
+        verifyMessage(
+            typeof data.packet.state === 'string' ? data.packet.state : JSON.stringify(data.packet.state),
+            data.packet.signature,
+            arbiterPublicKey
+        ).then(valid => {
+            if (!valid) return;
+            lastValidStatePacket = data.packet;
+            const stateObj = typeof data.packet.state === 'string' ? JSON.parse(data.packet.state) : data.packet.state;
+            updateSimulation(stateObj);
+        }).catch(() => {});
+    }
+};
+
 // --- MAIN ---
 const start = async () => {
     try {
         await initIdentity();
         loadLocalState();
-        initNetworking();
+
+        // Ask other open tabs for state before touching the network
+        TAB_CHANNEL.postMessage({ type: 'request_state' });
+
+        // Web Locks: only one tab runs the P2P connection at a time.
+        // The lock is held for the lifetime of the tab; when it closes the next
+        // tab acquires it automatically. Non-coordinator tabs still receive state
+        // via BroadcastChannel from the coordinator.
+        if (typeof navigator.locks !== 'undefined') {
+            navigator.locks.request('hearthwick_network', { ifAvailable: true }, async (lock) => {
+                if (lock) {
+                    initNetworking();
+                    // Hold the lock indefinitely (return a never-resolving promise)
+                    return new Promise(() => {});
+                }
+                // Another tab holds the lock — rely on BroadcastChannel for state
+            });
+        } else {
+            initNetworking();
+        }
 
         setInterval(async () => { gameActions.sendPresenceSingle(await myEntry()); }, HEARTBEAT_MS);
         setInterval(pruneStale, HEARTBEAT_MS);

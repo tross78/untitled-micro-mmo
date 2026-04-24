@@ -4,14 +4,10 @@ export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
 export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 export const ROOM_NAME = 'lobby';
 
-// tracker.btorrent.xyz is hardcoded inside Trystero — its failures are harmless noise.
+// Only the two most reliable trackers. btorrent.xyz is hardcoded in Trystero anyway.
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
     'wss://tracker.webtorrent.dev',
-    'wss://tracker.files.fm:7073/announce',
-    'wss://tracker.gbitt.info',
-    'wss://tracker.fastcast.nz',
-    'wss://tracker.btorrent.xyz',
 ];
 
 // STUN first (free, no infra), TURN as last resort (relay, swappable).
