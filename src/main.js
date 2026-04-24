@@ -16,7 +16,7 @@ import {
 import { verifyMessage, generateKeyPair, importKey, exportKey, signMessage, computeHash } from './crypto';
 import { IBLT } from './iblt';
 import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer';
-import { MASTER_PUBLIC_KEY, APP_ID, TORRENT_TRACKERS, ICE_SERVERS } from './constants';
+import { MASTER_PUBLIC_KEY, APP_ID, TORRENT_TRACKERS, ICE_SERVERS, ARBITER_URL } from './constants';
 import { getSuggestions } from './autocomplete';
 
 const output = document.getElementById('output');
@@ -548,6 +548,23 @@ const start = async () => {
 
         // Ask other open tabs for state before touching the network
         TAB_CHANNEL.postMessage({ type: 'request_state' });
+
+        // HTTP bootstrap: fetch signed state from arbiter's Cloudflare Tunnel in ~300ms
+        if (ARBITER_URL && worldState.day === 0) {
+            fetch(`${ARBITER_URL}/state`, { signal: AbortSignal.timeout(5000) })
+                .then(r => r.ok ? r.json() : null)
+                .then(async packet => {
+                    if (!packet || worldState.day !== 0) return;
+                    const stateStr = typeof packet.state === 'string' ? packet.state : JSON.stringify(packet.state);
+                    const valid = await verifyMessage(stateStr, packet.signature, arbiterPublicKey).catch(() => false);
+                    if (valid) {
+                        lastValidStatePacket = packet;
+                        TAB_CHANNEL.postMessage({ type: 'state', packet });
+                        updateSimulation(typeof packet.state === 'string' ? JSON.parse(packet.state) : packet.state);
+                    }
+                })
+                .catch(() => {}); // silently ignore — P2P is the fallback
+        }
 
         initNetworking();
 
