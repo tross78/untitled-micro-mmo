@@ -218,8 +218,17 @@ const initNetworking = () => {
 
     globalRooms.torrent.onPeerJoin(peerId => {
         log(`[System] Peer discovery in progress...`, '#555');
-        requestState();
+        requestState(true);
     });
+
+    // Retry state request until we get it
+    const stateRetry = setInterval(() => {
+        if (worldState.day === 0) {
+            requestState(true);
+        } else {
+            clearInterval(stateRetry);
+        }
+    }, 5000);
 
     gameActions.submitRollup = (rollup) => sendRollup(rollup);
     gameActions.submitFraudProof = (proof) => sendFraud(proof);
