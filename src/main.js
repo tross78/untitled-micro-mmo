@@ -492,11 +492,24 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
             });
         });
 
+        let joinTime = Date.now();
         getRollupLocal(async (data) => {
             lastRollupReceivedAt = Date.now();
             const { rollup, signature, publicKey } = data;
+
+            // Identity Mirroring Check: Don't report fraud against yourself (multi-tab support)
+            const myPubKeyB64 = await exportKey(playerKeys.publicKey);
+            if (publicKey === myPubKeyB64) {
+                console.log(`[Sync] Received rollup from another local tab. Skipping fraud check.`);
+                return;
+            }
+
             const proposerPubKey = await importKey(publicKey, 'public');
             if (!await verifyMessage(JSON.stringify(rollup), signature, proposerPubKey)) return;
+
+            // Stabilization Grace Period: Don't check fraud for the first 3 seconds in a room
+            if (Date.now() - joinTime < 3000) return;
+
             const leafData = Array.from(players.entries())
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
@@ -504,7 +517,10 @@ const joinInstance = async (location, instanceId, rtcConfig) => {
             leafData.sort();
             const { createMerkleRoot } = await import('./crypto');
             const ourRoot = await createMerkleRoot(leafData);
+
             if (ourRoot !== rollup.root) {
+                // Final check: did we just miss a peer join/leave?
+                console.warn(`[Sync] Merkle Root mismatch! Local: ${ourRoot.slice(0,8)} Proposer: ${rollup.root.slice(0,8)}`);
                 log(`[System] Fraud detected in instance! Submitting proof to Arbiter...`, '#f55');
                 // O(1) witness: just submit our own signed presence as proof
                 const myPresenceData = {
