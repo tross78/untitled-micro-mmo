@@ -6,8 +6,9 @@
 import {
     SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL,
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, INSTANCE_CAP, world,
-    NPCS, DIALOGUE_POOLS, QUESTS
+    NPCS, DIALOGUE_POOLS, QUESTS, CORPORA, GAME_NAME
 } from './data.js';
+import { generateSentence } from './markov.js';
 
 export function seededRNG(seed) {
     let state = seed | 0;
@@ -69,13 +70,23 @@ export function rollScarcity(rng, season) {
 // --- SIMULATION: WORLD AS PURE FUNCTION ---
 
 // Per-seed mood sequences: extend lazily, never recompute. ~6 bytes/day retained.
+// Cap at 3650 entries (~10 years) to bound Pi Zero memory; older days recompute on demand.
 const _moodSeqs = new Map();
+const MOOD_SEQ_CAP = 3650;
 export const _resetMoodCache = () => _moodSeqs.clear(); // test isolation only
 export function getMood(worldSeed, day) {
     let seq = _moodSeqs.get(worldSeed);
     if (!seq) { seq = [MOOD_INITIAL]; _moodSeqs.set(worldSeed, seq); }
-    for (let d = seq.length; d < day; d++)
+    // If the day requested is beyond the cap, recompute from the last cached entry
+    const startDay = Math.min(day, MOOD_SEQ_CAP);
+    for (let d = seq.length; d < startDay; d++)
         seq.push(nextMood(seq[d - 1], seededRNG(hashStr(worldSeed + d + 'daytick'))));
+    if (day > MOOD_SEQ_CAP) {
+        let mood = seq[MOOD_SEQ_CAP - 1];
+        for (let d = MOOD_SEQ_CAP; d < day; d++)
+            mood = nextMood(mood, seededRNG(hashStr(worldSeed + d + 'daytick')));
+        return mood;
+    }
     return seq[day - 1] ?? MOOD_INITIAL;
 }
 
@@ -99,10 +110,17 @@ export function deriveWorldState(worldSeed, day) {
 
 // --- COMBAT ---
 
-// Integer-only damage roll: 1 to 2*base, minimum 1
+// Integer-only damage roll: handles critical hits and dodges
 export function resolveAttack(attackStat, defenseStat, rng) {
+    const isDodge = rng(100) < 7;
+    if (isDodge) return { damage: 0, isCrit: false, isDodge: true };
+
+    const isCrit = rng(100) < 10;
     const base = Math.max(1, attackStat - defenseStat);
-    return (rng(base * 2) + 1) | 0;
+    let damage = (rng(base * 2) + 1) | 0;
+    if (isCrit) damage *= 2;
+    
+    return { damage, isCrit, isDodge: false };
 }
 
 export function rollLoot(enemyType, rng) {
@@ -125,7 +143,12 @@ export function levelBonus(level) {
 
 // --- SCALING & SHARDING ---
 // appId in joinTorrent config handles swarm isolation; room name just needs to be unique within the app.
-export const getShardName = (loc, inst) => `${loc}-${inst}`;
+// We append the instance ID and a 15-minute time epoch to shard the discovery layer,
+// preventing info_hash bans on public trackers.
+export const getShardName = (loc, inst) => {
+    const epoch = Math.floor(Date.now() / 900000); // 15 minute chunks
+    return `${GAME_NAME}-${loc}-v1-${inst}-${epoch}`;
+};
 
 // --- WORLD DATA ---
 
@@ -145,12 +168,10 @@ export function getNPCLocation(npcId, worldSeed, day) {
 export function getNPCDialogue(npcId, worldSeed, day, mood) {
     const npc = NPCS[npcId];
     if (!npc) return "";
-    const rng = seededRNG(hashStr(worldSeed + npcId + day + 'dialogue'));
-    const moodPool = DIALOGUE_POOLS[mood] || [];
-    // NPC either has a mood-specific line for today or uses their base dialogue.
-    // This choice is now stable for the entire day.
-    if (rng(100) < 40 && moodPool.length > 0) {
-        return moodPool[rng(moodPool.length)];
-    }
-    return npc.baseDialogue;
+    
+    // Seeded RNG for cross-peer sync
+    const rng = seededRNG(hashStr(worldSeed + npcId + day + 'markov'));
+    
+    const corpus = CORPORA[npcId] || CORPORA[npc.role] || CORPORA['sage'];
+    return generateSentence(corpus, rng);
 }

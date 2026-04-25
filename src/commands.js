@@ -1,9 +1,10 @@
 import { selfId } from '@trystero-p2p/torrent';
-import { 
-    worldState, players, localPlayer, pendingDuel, setPendingDuel, 
-    activeChannels, STORAGE_KEY, hasSyncedWithArbiter 
+import {
+    worldState, players, localPlayer, pendingDuel, setPendingDuel,
+    activeChannels, hasSyncedWithArbiter, pendingTrade, setPendingTrade, shardEnemies
 } from './store.js';
-import { log, printStatus, triggerShake } from './ui.js';
+
+import { log, printStatus, triggerShake, getHealthBar } from './ui.js';
 import { 
     world, ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, GAME_NAME,
     NPCS, QUESTS, ENABLE_ADS
@@ -21,13 +22,16 @@ import {
 import { playerKeys, arbiterPublicKey } from './identity.js';
 import { showRewardedAd } from './ads.js';
 
+export const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const nameColor = (name, color) => `<span style="color:${color || '#fff'}">${escapeHtml(name)}</span>`;
+
 export const getTag = (ph) => ph ? ph.slice(0, 4) : '????';
 export const getPlayerEntry = (id) => players.get(id);
 
 export const getPlayerName = (id) => {
     const entry = players.get(id);
-    if (!entry) return `Peer-${id.slice(0, 4)}`;
-    const name = entry.name || `Peer-${id.slice(0, 4)}`;
+    if (!entry) return `Peer-${escapeHtml(id.slice(0, 4))}`;
+    const name = escapeHtml(entry.name || `Peer-${id.slice(0, 4)}`);
     const tag = entry.ph ? getTag(entry.ph) : null;
     return tag ? `${name}#${tag}` : name;
 };
@@ -36,9 +40,25 @@ const getNPCsAt = (location) => {
     return Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === location);
 };
 
-export const saveLocalState = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(localPlayer));
+export const getBestGear = () => {
+    let weaponBonus = 0;
+    let defenseBonus = 0;
+    localPlayer.inventory.forEach(id => {
+        const item = ITEMS[id];
+        if (!item) return;
+        if (item.type === 'weapon' && item.bonus > weaponBonus) weaponBonus = item.bonus;
+        if (item.type === 'armor' && item.bonus > defenseBonus) defenseBonus = item.bonus;
+    });
+    return { weaponBonus, defenseBonus };
 };
+
+// --- DEV TOOLS ---
+if (typeof window !== 'undefined') {
+    window.devReset = () => {
+        localStorage.clear();
+        window.location.reload();
+    };
+}
 
 export async function handleCommand(cmd) {
     const raw = cmd.trim();
@@ -83,7 +103,7 @@ export async function handleCommand(cmd) {
 
         case 'duel': {
             const targetName = args.slice(1).join(' ').toLowerCase();
-            if (!targetName) { log(`Usage: /duel <name>`); break; }
+            if (!targetName) break;
             const ids = Array.from(players.keys());
             const getNameOnly = (id) => (getPlayerEntry(id)?.name || '').toLowerCase();
             const targetId = ids.find(id => getNameOnly(id) === targetName)
@@ -113,10 +133,16 @@ export async function handleCommand(cmd) {
             const loc = world[localPlayer.location];
             log(`\n${loc.name}`);
             log(loc.description);
-            if (loc.enemy && localPlayer.currentEnemy) {
-                log(`A wounded ${ENEMIES[loc.enemy].name} is here! (HP: ${localPlayer.currentEnemy.hp})`, '#f55');
+            
+            const sharedEnemy = shardEnemies.get(localPlayer.location);
+            if (loc.enemy && sharedEnemy && sharedEnemy.hp > 0) {
+                const enemyDef = ENEMIES[loc.enemy];
+                const eName = nameColor(enemyDef.name, enemyDef.color);
+                const bar = getHealthBar(sharedEnemy.hp, sharedEnemy.maxHp);
+                log(`A wounded ${eName} is here! ${bar} (${sharedEnemy.hp} HP)`, '#f55');
             } else if (loc.enemy) {
-                log(`A ${ENEMIES[loc.enemy].name} lurks here. Type /attack to engage.`, '#f55');
+                const enemyDef = ENEMIES[loc.enemy];
+                log(`A ${nameColor(enemyDef.name, enemyDef.color)} lurks here.`, '#f55');
             }
             const npcs = getNPCsAt(localPlayer.location);
             if (npcs.length > 0) log(`NPCs here: ${npcs.map(id => NPCS[id].name).join(', ')}`, '#0ff');
@@ -137,7 +163,8 @@ export async function handleCommand(cmd) {
             list.sort((a, b) => b.level - a.level || b.xp - a.xp);
             log(`\n--- TOP ADVENTURERS ---`, '#ffa500');
             list.slice(0, 10).forEach((p, i) => {
-                log(`${i + 1}. ${p.name}#${getTag(p.ph)} - Level ${p.level} (${p.xp} XP)`, '#ffa500');
+                const name = escapeHtml(p.name || `Peer-${getTag(p.ph)}`);
+                log(`${i + 1}. ${name}#${getTag(p.ph)} - Level ${p.level} (${p.xp} XP)`, '#ffa500');
             });
             log(`-----------------------\n`, '#ffa500');
             break;
@@ -145,15 +172,16 @@ export async function handleCommand(cmd) {
 
         case 'stats': {
             const bonus = levelBonus(localPlayer.level);
+            const gear = getBestGear();
             const maxHp = localPlayer.maxHp + bonus.maxHp;
             const hpPct = localPlayer.hp / maxHp;
             const hpColor = hpPct < 0.25 ? '#f55' : hpPct < 0.5 ? '#fa0' : '#0f0';
             const xpForLevel = (l) => (l - 1) ** 2 * 10;
             const xpNeeded = xpForLevel(localPlayer.level + 1) - localPlayer.xp;
-            log(`\n--- ${localPlayer.name.toUpperCase()} ---`, '#ffa500');
+            log(`\n--- ${escapeHtml(localPlayer.name).toUpperCase()} ---`, '#ffa500');
             log(`Level: ${localPlayer.level}  XP: ${localPlayer.xp} (${xpNeeded} to next level) ✨`, '#ffa500');
             log(`HP: ${localPlayer.hp} / ${maxHp} ❤️`, hpColor);
-            log(`Attack: ${localPlayer.attack + bonus.attack} ⚔️  Defense: ${localPlayer.defense + bonus.defense} 🛡️`, '#ffa500');
+            log(`Attack: ${localPlayer.attack + bonus.attack + gear.weaponBonus} ⚔️  Defense: ${localPlayer.defense + bonus.defense + gear.defenseBonus} 🛡️`, '#ffa500');
             log(`Gold: ${localPlayer.gold} 💰  Bank: ${localPlayer.bankedGold} 🏦`, '#ffa500');
             log(`Daily Fights Remaining: ${localPlayer.forestFights} ⚡`, '#0af');
             break;
@@ -163,7 +191,18 @@ export async function handleCommand(cmd) {
             if (localPlayer.inventory.length === 0) log(`Your pack is empty.`);
             else {
                 log(`\nInventory:`, '#ffa500');
-                localPlayer.inventory.forEach(id => log(`  - ${ITEMS[id]?.name || id}`, '#ffa500'));
+                const gear = getBestGear();
+                localPlayer.inventory.forEach(id => {
+                    const item = ITEMS[id];
+                    if (!item) { log(`  - ${id}`, '#ffa500'); return; }
+                    let label = `  - ${item.name}`;
+                    if (item.type === 'weapon') {
+                        label += ` (+${item.bonus} ATK)`;
+                        if (item.bonus === gear.weaponBonus) label += ' [EQUIPPED]';
+                    }
+                    if (item.type === 'consumable') label += ` (+${item.heal} HP)`;
+                    log(label, '#ffa500');
+                });
             }
             break;
         }
@@ -171,33 +210,69 @@ export async function handleCommand(cmd) {
         case 'attack': {
             const loc = world[localPlayer.location];
             if (!loc.enemy) { log(`There is nothing to fight here.`); break; }
-            if (localPlayer.forestFights <= 0 && !localPlayer.currentEnemy) {
-                log(`You are too exhausted to look for more trouble today. Come back tomorrow!`, '#aaa');
-                if (ENABLE_ADS) log(`[Hint] Perhaps the Bard in the Tavern can grant you a /vision to restore your energy?`, '#0af');
-                break;
+            
+            let sharedEnemy = shardEnemies.get(localPlayer.location);
+            const enemyDef = ENEMIES[loc.enemy];
+            // Threat Scaling
+            const scale = 1 + (worldState.threatLevel * 0.1);
+            const scaledHP = Math.floor(enemyDef.hp * scale);
+            const scaledAtk = Math.floor(enemyDef.attack * scale);
+            const scaledDef = Math.floor(enemyDef.defense * scale);
+
+            if (!sharedEnemy || sharedEnemy.hp <= 0) {
+                if (localPlayer.forestFights <= 0) {
+                    log(`You are too exhausted to look for more trouble today. Come back tomorrow!`, '#aaa');
+                    break;
+                }
+                localPlayer.forestFights--;
+                sharedEnemy = { type: loc.enemy, hp: scaledHP, maxHp: scaledHP };
+                shardEnemies.set(localPlayer.location, sharedEnemy);
+                log(`\nA ${nameColor(enemyDef.name, enemyDef.color)} snarls and lunges!`, '#f55');
             }
 
-            const enemyDef = ENEMIES[loc.enemy];
-            if (!localPlayer.currentEnemy) {
-                localPlayer.forestFights--;
-                localPlayer.currentEnemy = { type: loc.enemy, hp: enemyDef.hp };
-                log(`\nA ${enemyDef.name} snarls and lunges!`, '#f55');
-            }
             const combatSeed = hashStr(worldState.seed + worldState.day + selfId + localPlayer.combatRound);
             localPlayer.combatRound++;
             const rng = seededRNG(combatSeed);
             const bonus = levelBonus(localPlayer.level);
-            const playerDmg = resolveAttack(localPlayer.attack + bonus.attack, enemyDef.defense, rng);
-            const enemyDmg = resolveAttack(enemyDef.attack, localPlayer.defense + bonus.defense, rng);
-            localPlayer.currentEnemy.hp -= playerDmg;
-            localPlayer.hp -= enemyDmg;
-            if (enemyDmg > 0) triggerShake();
-            log(`You hit the ${enemyDef.name} for ${playerDmg}. (Enemy HP: ${Math.max(0, localPlayer.currentEnemy.hp)}/${enemyDef.hp})`, '#0f0');
-            log(`The ${enemyDef.name} hits you for ${enemyDmg}. (Your HP: ${Math.max(0, localPlayer.hp)}/${localPlayer.maxHp + bonus.maxHp})`, '#f55');
+            const gear = getBestGear();
+            const elixirBonus = (localPlayer.buffs?.activeElixir === 'strength_elixir') ? 5 : 0;
 
-            if (localPlayer.currentEnemy.hp <= 0) {
+            const playerRes = resolveAttack(localPlayer.attack + bonus.attack + gear.weaponBonus + elixirBonus, scaledDef, rng);
+            const enemyRes = resolveAttack(scaledAtk, localPlayer.defense + bonus.defense + gear.defenseBonus, rng);
+
+            const eName = nameColor(enemyDef.name, enemyDef.color);
+
+            // Player Attack
+            if (playerRes.isDodge) {
+                log(`${eName} dodged your attack!`, '#aaa');
+            } else {
+                let msg = `You hit ${eName} for ${playerRes.damage}.`;
+                if (playerRes.isCrit) msg = `<b>CRITICAL HIT!</b> ` + msg;
+                sharedEnemy.hp -= playerRes.damage;
+                gameActions.sendMonsterDmg({ roomId: localPlayer.location, damage: playerRes.damage });
+                const eBar = getHealthBar(Math.max(0, sharedEnemy.hp), sharedEnemy.maxHp);
+                log(`${msg} ${eBar}`, '#0f0');
+            }
+
+            // Enemy Attack
+            if (sharedEnemy.hp > 0) {
+                if (enemyRes.isDodge) {
+                    log(`You dodged ${eName}'s attack!`, '#0af');
+                } else {
+                    let msg = `${eName} hits you for ${enemyRes.damage}.`;
+                    if (enemyRes.isCrit) msg = `<b>CRITICAL!</b> ` + msg;
+                    localPlayer.hp -= enemyRes.damage;
+                    if (enemyRes.damage > 0) triggerShake();
+                    const maxHp = localPlayer.maxHp + bonus.maxHp + (localPlayer.buffs?.rested ? 5 : 0);
+                    const pBar = getHealthBar(Math.max(0, localPlayer.hp), maxHp);
+                    log(`${msg} ${pBar}`, '#f55');
+                }
+            }
+
+            if (sharedEnemy.hp <= 0) {
                 const loot = rollLoot(loc.enemy, rng);
                 localPlayer.xp += enemyDef.xp;
+                localPlayer.combatRound = 0; // Reset per fight so seeds stay bounded
                 const newLevel = xpToLevel(localPlayer.xp);
 
                 // Security: Broadcast Action Log
@@ -216,8 +291,11 @@ export async function handleCommand(cmd) {
                     if (ITEMS[itemId]?.type === 'gold') localPlayer.gold += ITEMS[itemId].amount;
                     else localPlayer.inventory.push(itemId);
                 });
-                log(`\nYou defeated the ${enemyDef.name}! (+${enemyDef.xp} XP)`, '#ff0');
-                if (loot.length > 0) log(`Loot: ${loot.map(i => ITEMS[i]?.name || i).join(', ')}`, '#ff0');
+                log(`\nYou defeated the ${eName}! (+${enemyDef.xp} XP)`, '#ff0');
+                if (loot.length > 0) {
+                    const lootStrs = loot.map(i => nameColor(ITEMS[i]?.name || i, ITEMS[i]?.color));
+                    log(`Loot: ${lootStrs.join(', ')}`, '#ff0');
+                }
                 
                 // Quest Progress
                 Object.keys(localPlayer.quests).forEach(qid => {
@@ -232,36 +310,84 @@ export async function handleCommand(cmd) {
                 if (newLevel > localPlayer.level) {
                     localPlayer.level = newLevel;
                     log(`LEVEL UP! You are now level ${localPlayer.level}! ✨`, '#ff0');
+                    
+                    // Immediate presence broadcast for updated stats
+                    myEntry().then(entry => {
+                        if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
+                    });
+
                     saveLocalState(true);
                 }
-
-                localPlayer.currentEnemy = null;
             }
             if (localPlayer.hp <= 0) {
-                log(`\nYou have been slain! 💀`, '#f00');
-                triggerShake();
-                localPlayer.hp = Math.floor((localPlayer.maxHp + levelBonus(localPlayer.level).maxHp) / 2);
-                const deathLoc = localPlayer.location;
-                localPlayer.location = 'cellar';
-                localPlayer.currentEnemy = null;
-                log(`You wake in the cellar...`, '#aaa');
-                gameActions.sendMove({ from: deathLoc, to: 'cellar' });
-                await joinInstance('cellar', currentInstance, currentRtcConfig);
-                handleCommand('look');
-                saveLocalState(true);
+                handleCommand('die');
             } else {
                 saveLocalState();
             }
             break;
         }
 
+        case 'flee': {
+            if (!localPlayer.currentEnemy) { log(`There is nothing to flee from.`); break; }
+            const combatSeed = hashStr(worldState.seed + worldState.day + selfId + localPlayer.combatRound + 99);
+            const rng = seededRNG(combatSeed);
+            if (rng(100) < 50) {
+                log(`You successfully fled from combat!`, '#0af');
+                localPlayer.currentEnemy = null;
+                localPlayer.combatRound = 0;
+                const loc = world[localPlayer.location];
+                const exits = Object.keys(loc.exits);
+                if (exits.length > 0) {
+                    const dir = exits[rng(exits.length)];
+                    handleCommand(`move ${dir}`);
+                }
+            } else {
+                log(`Failed to flee! The enemy gets a free hit.`, '#f55');
+                const enemyDef = ENEMIES[localPlayer.currentEnemy.type];
+                const scale = 1 + (worldState.threatLevel * 0.1);
+                const scaledAtk = Math.floor(enemyDef.attack * scale);
+                const bonus = levelBonus(localPlayer.level);
+                const enemyRes = resolveAttack(scaledAtk, localPlayer.defense + bonus.defense + getBestGear().defenseBonus, rng);
+                if (!enemyRes.isDodge) {
+                    localPlayer.hp -= enemyRes.damage;
+                    triggerShake();
+                    log(`${nameColor(enemyDef.name, enemyDef.color)} hits you for ${enemyRes.damage}!`, '#f55');
+                    if (localPlayer.hp <= 0) handleCommand('die');
+                }
+                saveLocalState();
+            }
+            break;
+        }
+
+        case 'die': {
+            log(`\nYou have been slain! 💀`, '#f00');
+            triggerShake();
+            const deathMaxHp = localPlayer.maxHp + levelBonus(localPlayer.level).maxHp + (localPlayer.buffs?.rested ? 5 : 0);
+            localPlayer.hp = Math.floor(deathMaxHp / 2);
+            const deathLoc = localPlayer.location;
+            localPlayer.location = 'cellar';
+            localPlayer.currentEnemy = null;
+            localPlayer.combatRound = 0;
+            log(`You wake in the cellar...`, '#aaa');
+            gameActions.sendMove({ from: deathLoc, to: 'cellar' });
+            joinInstance('cellar', currentInstance, currentRtcConfig).then(() => handleCommand('look'));
+            saveLocalState(true);
+            break;
+        }
+
         case 'rest': {
             if (localPlayer.currentEnemy) { log(`You can't rest mid-combat!`); break; }
             const bonus = levelBonus(localPlayer.level);
-            const cap = localPlayer.maxHp + bonus.maxHp;
-            const healed = Math.min(10, cap - localPlayer.hp);
+            const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.buffs?.rested ? 5 : 0);
+            const healed = Math.max(0, Math.min(10, cap - localPlayer.hp));
             localPlayer.hp += healed;
             log(`You rest and recover ${healed} HP. (HP: ${localPlayer.hp}/${cap})`, '#0f0');
+
+            if (!localPlayer.buffs) localPlayer.buffs = { rested: false, activeElixir: null };
+            if (localPlayer.location === 'tavern' && !localPlayer.buffs.rested) {
+                localPlayer.buffs.rested = true;
+                log(`The comfort of the Tavern makes you feel <b>Well Rested</b>! (+5 Max HP today)`, '#0af');
+            }
             saveLocalState();
             break;
         }
@@ -270,12 +396,20 @@ export async function handleCommand(cmd) {
             const query = args.slice(1).join(' ').toLowerCase();
             const idx = localPlayer.inventory.findIndex(id => id.toLowerCase() === query || (ITEMS[id]?.name || '').toLowerCase() === query);
             if (idx === -1) { log(`You don't have "${query}".`); break; }
-            const item = ITEMS[localPlayer.inventory[idx]];
+            const itemId = localPlayer.inventory[idx];
+            const item = ITEMS[itemId];
             if (item?.type === 'consumable') {
                 const bonus = levelBonus(localPlayer.level);
-                localPlayer.hp = Math.min(localPlayer.maxHp + bonus.maxHp, localPlayer.hp + item.heal);
+                const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.buffs?.rested ? 5 : 0);
+                localPlayer.hp = Math.min(cap, localPlayer.hp + item.heal);
                 localPlayer.inventory.splice(idx, 1);
-                log(`You use the ${item.name} and recover ${item.heal} HP.`, '#0f0');
+                log(`You use the ${nameColor(item.name, item.color)} and recover ${item.heal} HP.`, '#0f0');
+                saveLocalState();
+            } else if (item?.type === 'buff') {
+                if (!localPlayer.buffs) localPlayer.buffs = { rested: false, activeElixir: null };
+                localPlayer.buffs.activeElixir = itemId;
+                localPlayer.inventory.splice(idx, 1);
+                log(`You drink the ${nameColor(item.name, item.color)}. You feel much stronger! (+${item.atkBonus} ATK today)`, '#fa0');
                 saveLocalState();
             } else log(`You can't use that.`);
             break;
@@ -284,6 +418,7 @@ export async function handleCommand(cmd) {
         case 'rename': {
             const newName = args.slice(1).join(' ').trim();
             if (!newName) { log(`Usage: /rename <name>`); break; }
+            if (newName.length > 14) { log(`Name too long (max 14 characters).`); break; }
             localPlayer.name = newName;
             saveLocalState();
             log(`[System] You are now known as ${newName}`);
@@ -299,6 +434,18 @@ export async function handleCommand(cmd) {
                 localPlayer.location = nextLoc;
                 saveLocalState();
                 log(`You move ${dir}.`);
+                
+                // Cancel active trade on move
+                if (pendingTrade) {
+                    setPendingTrade(null);
+                    log(`[Trade] Session cancelled due to movement.`, '#555');
+                }
+
+                // Immediate presence broadcast for responsiveness
+                myEntry().then(entry => {
+                    if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
+                });
+
                 handleCommand('look');
                 gameActions.sendMove({ from: prevLoc, to: nextLoc });
                 await joinInstance(nextLoc, currentInstance, currentRtcConfig);
@@ -310,11 +457,15 @@ export async function handleCommand(cmd) {
             const loc = localPlayer.location;
             const m = (id) => (loc === id ? '[YOU]' : ' [ ] ');
             log(`\n--- WORLD MAP ---`, '#aaa');
-            log(`      ${m('tavern')}--${m('market')}`, '#aaa');
-            log(`         |`, '#aaa');
-            log(`      ${m('hallway')}--${m('forest_edge')}--${m('ruins')}`, '#aaa');
-            log(`         |          |`, '#aaa');
-            log(`      ${m('cellar')}     ${m('cave')}`, '#aaa');
+            log(`                                ${m('mountain_pass')}`, '#aaa');
+            log(`                                     |`, '#aaa');
+            log(`${m('throne_room')}-${m('dungeon_cell')}-${m('catacombs')}-${m('ruins_descent')}-${m('ruins')}-${m('forest_edge')}-${m('forest_depths')}-${m('lake_shore')}`, '#aaa');
+            log(`                                     |          |          |`, '#aaa');
+            log(`                               ${m('tavern')}  ${m('cave')}    ${m('bandit_camp')}`, '#aaa');
+            log(`                               |`, '#aaa');
+            log(`                          ${m('hallway')}--${m('market')}`, '#aaa');
+            log(`                               |`, '#aaa');
+            log(`                          ${m('cellar')}`, '#aaa');
             log(`-----------------\n`, '#aaa');
             break;
         }
@@ -325,24 +476,23 @@ export async function handleCommand(cmd) {
             const amount = parseInt(args[2]);
 
             if (sub === 'deposit') {
-                if (isNaN(amount) || amount <= 0) { log(`Usage: /bank deposit <amount>`); break; }
+                if (isNaN(amount) || amount <= 0) break;
                 if (localPlayer.gold < amount) { log(`You don't have that much gold on you.`); break; }
                 localPlayer.gold -= amount;
                 localPlayer.bankedGold += amount;
-                log(`[Bank] Deposited ${amount} Gold. (Balance: ${localPlayer.bankedGold})`, '#ff0');
+                log(`[Bank] Deposited ${amount} Gold.`);
                 saveLocalState();
             } else if (sub === 'withdraw') {
-                if (isNaN(amount) || amount <= 0) { log(`Usage: /bank withdraw <amount>`); break; }
+                if (isNaN(amount) || amount <= 0) break;
                 if (localPlayer.bankedGold < amount) { log(`You don't have that much in the bank.`); break; }
                 localPlayer.bankedGold -= amount;
                 localPlayer.gold += amount;
-                log(`[Bank] Withdrew ${amount} Gold. (Wallet: ${localPlayer.gold})`, '#ff0');
+                log(`[Bank] Withdrew ${amount} Gold.`);
                 saveLocalState();
             } else {
                 log(`\n--- THE CELLAR BANK ---`, '#ffa500');
                 log(`Your Wallet: ${localPlayer.gold} Gold`);
                 log(`Bank Balance: ${localPlayer.bankedGold} Gold`);
-                log(`Usage: /bank deposit <amt> | /bank withdraw <amt>`, '#aaa');
             }
             break;
         }
@@ -355,9 +505,9 @@ export async function handleCommand(cmd) {
 
         case 'say': {
             const text = args.slice(1).join(' ').trim();
-            if (!text) { log(`Usage: /say <message>`); break; }
+            if (!text) break;
             gameActions.sendEmote({ room: localPlayer.location, text: `says: "${text}"` });
-            log(`[Chat] You say: "${text}"`);
+            log(`[Chat] You say: "${escapeHtml(text)}"`);
             break;
         }
 
@@ -395,13 +545,12 @@ export async function handleCommand(cmd) {
             log(`\n[Talk] ${npc.name}: "${dialogue}"`, '#0ff');
 
             if (npc.role === 'shop') {
-                log(`[System] Type /buy to see what's for sale.`, '#aaa');
+                // Remove type buy hint
             } else if (npc.role === 'quest' && npc.questId) {
                 const q = QUESTS[npc.questId];
                 const playerQuest = localPlayer.quests[npc.questId];
                 if (!playerQuest) {
                     log(`[Quest] ${npc.name}: "I have a task for you. ${q.description}"`, '#ff0');
-                    log(`[System] Type /quest accept ${npc.questId} to take this task.`, '#aaa');
                 } else if (playerQuest.completed) {
                     log(`[Quest] ${npc.name}: "Thank you for your help earlier."`, '#0ff');
                 } else {
@@ -437,7 +586,7 @@ export async function handleCommand(cmd) {
             
             localPlayer.gold -= item.price;
             localPlayer.inventory.push(itemId);
-            log(`[System] You bought ${item.name} for ${item.price} Gold.`, '#ff0');
+            log(`[System] You bought ${nameColor(item.name, item.color)} for ${item.price} Gold.`, '#ff0');
             saveLocalState(true);
             break;
         }
@@ -460,7 +609,7 @@ export async function handleCommand(cmd) {
             const sellPrice = Math.floor(item.price * 0.5);
             localPlayer.gold += sellPrice;
             localPlayer.inventory.splice(invIdx, 1);
-            log(`[System] You sold ${item.name} for ${sellPrice} Gold.`, '#ff0');
+            log(`[System] You sold ${nameColor(item.name, item.color)} for ${sellPrice} Gold.`, '#ff0');
             saveLocalState(true);
             break;
         }
@@ -481,7 +630,7 @@ export async function handleCommand(cmd) {
             }
 
             if (sub === 'accept') {
-                if (!id || !QUESTS[id]) { log(`Usage: /quest accept <quest_id>`); break; }
+                if (!id || !QUESTS[id]) break;
                 const npcs = getNPCsAt(localPlayer.location);
                 const questGiver = npcs.find(nid => NPCS[nid].questId === id);
                 if (!questGiver) { log(`Nobody here can give you that quest.`); break; }
@@ -515,18 +664,101 @@ export async function handleCommand(cmd) {
                     log(`LEVEL UP! You are now level ${localPlayer.level}! ✨`, '#ff0');
                 }
 
-                saveLocalState();
+                saveLocalState(true);
                 break;
             }
             break;
         }
 
+        case 'addxp': {
+            const amt = parseInt(args[1]) || 100;
+            localPlayer.xp += amt;
+            localPlayer.level = xpToLevel(localPlayer.xp);
+            log(`[Dev] Added ${amt} XP. Level is now ${localPlayer.level}.`);
+            saveLocalState(true);
+            break;
+        }
+
+        case 'addgold': {
+            const amt = parseInt(args[1]) || 1000;
+            localPlayer.gold += amt;
+            log(`[Dev] Added ${amt} Gold.`);
+            saveLocalState(true);
+            break;
+        }
+
+        case 'spawnitem': {
+            const id = args[1];
+            if (!ITEMS[id]) { log(`[Dev] Unknown item: ${id}`); break; }
+            localPlayer.inventory.push(id);
+            log(`[Dev] Spawned ${nameColor(ITEMS[id].name, ITEMS[id].color)}.`);
+            saveLocalState(true);
+            break;
+        }
+
+        case 'trade': {
+            const sub = args[1]?.toLowerCase();
+            if (!sub) break;
+            
+            if (sub === 'offer') {
+                if (!pendingTrade) break;
+                const type = args[2]?.toLowerCase();
+                const val = args[3];
+                if (type === 'gold') {
+                    const amt = parseInt(val);
+                    if (amt <= localPlayer.gold) pendingTrade.myOffer.gold = amt;
+                } else if (type === 'item') {
+                    if (localPlayer.inventory.includes(val)) {
+                        if (!pendingTrade.myOffer.items.includes(val)) pendingTrade.myOffer.items.push(val);
+                    }
+                }
+                gameActions.sendTradeOffer({ fromName: localPlayer.name, offer: pendingTrade.myOffer }, pendingTrade.partnerId);
+                break;
+            }
+
+            if (sub === 'commit') {
+                if (!pendingTrade) break;
+                const commit = { gold: pendingTrade.myOffer.gold, items: pendingTrade.myOffer.items, ts: Date.now() };
+                signMessage(JSON.stringify(commit), playerKeys.privateKey).then(sig => {
+                    pendingTrade.signatures.me = sig;
+                    gameActions.sendTradeCommit({ ...commit, signature: sig }, pendingTrade.partnerId);
+                });
+                break;
+            }
+
+            if (sub === 'cancel') {
+                setPendingTrade(null);
+                log(`Trade cancelled.`);
+                break;
+            }
+
+            // trade <partnerId>
+            const partnerId = sub;
+            const partner = players.get(partnerId);
+            if (!partner) { log(`Player not found.`); break; }
+            if (partner.location !== localPlayer.location) { log(`${partner.name} is not here.`); break; }
+
+            setPendingTrade({
+                partnerId,
+                partnerName: partner.name || partnerId,
+                partnerOffer: { gold: 0, items: [] },
+                myOffer: { gold: 0, items: [] },
+                ts: Date.now(),
+                signatures: { me: null, partner: null }
+            });
+            log(`[Trade] Initiating trade with ${partner.name}...`, '#ff0');
+            gameActions.sendTradeOffer({ fromName: localPlayer.name, offer: { gold: 0, items: [] } }, partnerId);
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('trade-initiated'));
+            break;
+        }
+
         default:
-            log(`Unknown command: ${command}. Type /help.`);
+            log(`Unknown command: ${command}.`);
     }
 }
 
 export async function startStateChannel(targetId, targetName, day) {
+    if (activeChannels.has(targetId)) return; // Duel already in progress with this peer
     const timeoutId = setTimeout(() => {
         if (activeChannels.has(targetId)) {
             log(`[DUEL] Combat with ${targetName} timed out.`, '#555');
@@ -582,7 +814,7 @@ export async function resolveRound(targetId) {
         const opBonus = levelBonus(opponent?.level || 1);
         const opDef = (opponent?.defense ?? DEFAULT_PLAYER_STATS.defense) + opBonus.defense;
 
-        const dmg = resolveAttack(myAtk, opDef, rng);
+        const dmg = resolveAttack(myAtk, opDef, rng).damage;
 
         const commit = { round, dmg, day: chan.day };
         const signature = await signMessage(JSON.stringify(commit), playerKeys.privateKey);

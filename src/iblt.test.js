@@ -71,6 +71,24 @@ describe('IBLT (Invertible Bloom Lookup Table)', () => {
         const data = ibkle_test_extract(iblt);
         expect(data.keySum.some(k => k !== 0n)).toBe(true);
     });
+
+    test('Double-inserting the same key causes decode to fail (not silently corrupt)', () => {
+        const iblt = new IBLT();
+        iblt.insert('user1');
+        iblt.insert('user1'); // second insert cancels keySum to 0
+        const { success } = iblt.decode();
+        // A double-inserted key leaves non-zero count cells that can't be peeled,
+        // so decode must fail rather than silently return wrong results.
+        expect(success).toBe(false);
+    });
+
+    test('Empty IBLT decodes successfully with empty sets', () => {
+        const iblt = new IBLT();
+        const { added, removed, success } = iblt.decode();
+        expect(success).toBe(true);
+        expect(added).toHaveLength(0);
+        expect(removed).toHaveLength(0);
+    });
 });
 
 function ibkle_test_extract(iblt) {

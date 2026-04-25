@@ -22,9 +22,10 @@ describe('Network Protocol Integration', () => {
         // Catches bug: getShardName was used in main.js but not imported — any consumer
         // test that imports and calls it would surface a missing-export error immediately.
         test('getShardName produces correct shard room identifier', () => {
-            expect(getShardName('tavern', 1)).toBe('tavern-1');
-            expect(getShardName('cellar', 3)).toBe('cellar-3');
-            expect(getShardName('forest_edge', 10)).toBe('forest_edge-10');
+            const epoch = Math.floor(Date.now() / 900000);
+            expect(getShardName('tavern', 1)).toBe(`hearthwick-tavern-v1-1-${epoch}`);
+            expect(getShardName('cellar', 3)).toBe(`hearthwick-cellar-v1-3-${epoch}`);
+            expect(getShardName('forest_edge', 10)).toBe(`hearthwick-forest_edge-v1-10-${epoch}`);
         });
 
         test('INSTANCE_CAP is exported and equals 50', () => {
@@ -232,10 +233,13 @@ describe('Network Protocol Integration', () => {
 
     describe('Binary Packet Chaining', () => {
         test('Move packets survive round-trip', () => {
-            const buf = packMove('cellar', 'hallway');
+            const move = { from: 'cellar', to: 'hallway', x: 5, y: 5, ts: 123, signature: btoa('m'.repeat(64)) };
+            const buf = packMove(move);
             const data = unpackMove(buf);
             expect(data.from).toBe('cellar');
             expect(data.to).toBe('hallway');
+            expect(data.x).toBe(5);
+            expect(data.y).toBe(5);
         });
 
         test('Presence packets survive round-trip with all fields intact', () => {
@@ -269,7 +273,7 @@ describe('Network Protocol Integration', () => {
             const dmgA = resolveAttack(10, 5, seededRNG(seed));
             const dmgB = resolveAttack(10, 5, seededRNG(seed));
 
-            expect(dmgA).toBe(dmgB);
+            expect(dmgA).toEqual(dmgB);
         });
 
         // Catches bug: PvP used DEFAULT_PLAYER_STATS.defense as opponent defense fallback
@@ -281,11 +285,11 @@ describe('Network Protocol Integration', () => {
             const defaultDef = DEFAULT_PLAYER_STATS.defense;
             const customDef = defaultDef + 5;
 
-            const dmgVsDefault = resolveAttack(atk, defaultDef + levelBonus(1).defense, seededRNG(seed));
-            const dmgVsCustom  = resolveAttack(atk, customDef  + levelBonus(1).defense, seededRNG(seed));
+            const resVsDefault = resolveAttack(atk, defaultDef + levelBonus(1).defense, seededRNG(seed));
+            const resVsCustom  = resolveAttack(atk, customDef  + levelBonus(1).defense, seededRNG(seed));
 
-            expect(dmgVsDefault).not.toBe(dmgVsCustom);
-            expect(dmgVsDefault).toBeGreaterThan(dmgVsCustom); // higher defense = less damage
+            expect(resVsDefault).not.toEqual(resVsCustom);
+            expect(resVsDefault.damage).toBeGreaterThan(resVsCustom.damage); // higher defense = less damage
         });
 
         test('Combat results differ for different round seeds', () => {

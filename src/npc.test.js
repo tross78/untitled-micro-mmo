@@ -26,18 +26,12 @@ describe('Deterministic NPC Logic', () => {
         const d1 = getNPCDialogue('sage', seed, 1, 'joyful');
         const d2 = getNPCDialogue('sage', seed, 1, 'joyful');
         expect(d1).toBe(d2);
+        expect(d1.length).toBeGreaterThan(0);
     });
 
-    test('NPC dialogue can include mood-specific lines', () => {
-        // We might need to try a few days to find a mood-specific line (30% chance)
-        let foundMoodLine = false;
-        for (let day = 1; day < 20; day++) {
-            const dialogue = getNPCDialogue('sage', seed, day, 'joyful');
-            if (DIALOGUE_POOLS.joyful.includes(dialogue)) {
-                foundMoodLine = true;
-                break;
-            }
-        }
-        expect(foundMoodLine).toBe(true);
+    test('NPC dialogue differs across days', () => {
+        const d1 = getNPCDialogue('sage', seed, 1, 'joyful');
+        const d2 = getNPCDialogue('sage', seed, 2, 'joyful');
+        expect(d1).not.toBe(d2);
     });
 });

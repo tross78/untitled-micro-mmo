@@ -151,9 +151,57 @@
             outline: none;
             min-width: 0;
         }
+
+        /* Radar Display */
+        #radar-container {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            max-height: 250px;
+            background: #050505;
+            border: 1px solid #111;
+            margin-bottom: 4px;
+            display: grid;
+            gap: 1px;
+            padding: 2px;
+            user-select: none;
+            touch-action: none;
+            box-shadow: inset 0 0 20px rgba(0, 50, 0, 0.5);
+            image-rendering: pixelated;
+        }
+
+        .tile {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7em;
+            color: #030;
+            cursor: pointer;
+        }
+
+        .tile:hover {
+            background: rgba(0, 255, 0, 0.05);
+        }
+
+        .tile.entity-self { color: #0f0; font-weight: bold; text-shadow: 0 0 5px #0f0; }
+        .tile.entity-peer { color: #0af; }
+        .tile.entity-npc  { color: #ff0; }
+        .tile.entity-enemy { color: #f55; }
+        .tile.portal      { color: #f0f; }
+
     </style>
 </head>
 <body>
+    <div id="status-bar" style="display: flex; justify-content: space-between; padding: 8px; background: #111; border-bottom: 1px solid #222; font-size: 0.85em; color: #ffa500; position: sticky; top: 0; z-index: 10;">
+        <div id="status-left"></div>
+        <div id="status-center"></div>
+        <div id="status-right"></div>
+    </div>
+    <div id="ticker" style="font-style: italic; color: #888; text-align: center; padding: 4px; border-bottom: 1px solid #222; min-height: 1.2em; font-size: 0.8em; transition: opacity 0.5s ease-in-out;"></div>
+    
+    <div id="radar-container"></div>
+
     <div id="output">Initializing P2P network...
 Searching for peers in the BitTorrent DHT...</div>
 

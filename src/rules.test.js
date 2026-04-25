@@ -165,22 +165,27 @@ describe('Combat determinism', () => {
     test('resolveAttack is deterministic for same seed', () => {
         const rng1 = seededRNG(123);
         const rng2 = seededRNG(123);
-        expect(resolveAttack(10, 3, rng1)).toBe(resolveAttack(10, 3, rng2));
+        expect(resolveAttack(10, 3, rng1)).toEqual(resolveAttack(10, 3, rng2));
     });
 
-    test('resolveAttack output is a positive integer', () => {
-        for (let seed = 0; seed < 20; seed++) {
+    test('resolveAttack output is a positive integer or zero on dodge', () => {
+        for (let seed = 0; seed < 50; seed++) {
             const rng = seededRNG(seed);
-            const dmg = resolveAttack(10, 3, rng);
-            expect(dmg).toBeGreaterThan(0);
-            expect(Number.isInteger(dmg)).toBe(true);
+            const res = resolveAttack(10, 3, rng);
+            expect(res.damage).toBeGreaterThanOrEqual(0);
+            expect(Number.isInteger(res.damage)).toBe(true);
+            if (!res.isDodge) expect(res.damage).toBeGreaterThan(0);
         }
     });
 
-    test('high defense does not reduce damage below 1', () => {
-        const rng = seededRNG(1);
-        expect(resolveAttack(5, 100, rng)).toBeGreaterThanOrEqual(1);
-        expect(resolveAttack(10, 10, rng)).toBeGreaterThanOrEqual(1);
+    test('high defense does not reduce damage below 1 (unless dodge)', () => {
+        for (let seed = 1; seed < 20; seed++) {
+            const rng = seededRNG(seed);
+            const res = resolveAttack(5, 100, rng);
+            if (!res.isDodge) {
+                expect(res.damage).toBeGreaterThanOrEqual(1);
+            }
+        }
     });
 
     test('rollLoot is deterministic for same seed', () => {

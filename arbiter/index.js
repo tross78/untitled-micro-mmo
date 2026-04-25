@@ -17,11 +17,11 @@ async function startArbiter() {
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
     const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
-    const { deriveWorldState } = await import('../src/rules.js');
+    const { deriveWorldState, world, validateMove } = await import('../src/rules.js');
     const dotenv = await import('dotenv');
 
     dotenv.config({ path: new URL('.env', import.meta.url).pathname });
-    const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY;
+    const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY?.trim();
     const GH_GIST_TOKEN = process.env.GH_GIST_TOKEN;
     const GH_GIST_ID = process.env.GH_GIST_ID;
 
@@ -146,50 +146,51 @@ async function startArbiter() {
 
         getFraud(async (data) => {
             try {
-                const { rollup: rollupData, witness } = data;
+                // Support two types of fraud proofs:
+                // 1. Rollup Mismatch (existing)
+                // 2. Illegal Action (e.g. signed movement teleport)
+                
+                const { type, proof, witness } = data;
+                const { id: witnessId, signature: witnessSig, publicKey: witnessKey } = witness;
+
+                if (type === 'illegal_move') {
+                    const { peerId, move, signature, publicKey: cheaterKey } = proof;
+                    // move = { from, to, x, y, ts }
+                    if (!await verifyMessage(JSON.stringify(move), signature, cheaterKey)) return;
+                    
+                    const isValid = Object.values(world[move.from]?.exits || {}).includes(move.to);
+                    if (!isValid && move.from !== move.to) {
+                        console.log(`[Arbiter] MOVEMENT FRAUD PROVEN against ${String(cheaterKey).slice(0, 8)}`);
+                        banPeer(cheaterKey);
+                    }
+                    return;
+                }
+
+                // --- Existing Rollup Fraud Logic ---
+                const { rollup: rollupData } = data;
+                if (!rollupData) return;
                 const { rollup, signature, publicKey: proposerKey } = rollupData;
-                const { id, presence, signature: witnessSig, publicKey: witnessKey } = witness;
-
-                // 1. Verify the Proposer's signature on the disputed rollup
-                if (!await verifyMessage(JSON.stringify(rollup), signature, proposerKey)) return;
-
-                // 2. Verify the witness's signed presence — presence must reference the disputed rollup root
-                //    to prevent replay of old witness signatures against new proposers
-                if (presence.disputedRoot !== rollup.root) {
-                    console.warn(`[Arbiter] Fraud Proof rejected: witness not tied to this rollup`);
-                    return;
-                }
-                if (!await verifyMessage(JSON.stringify(presence), witnessSig, witnessKey)) return;
-
-                // 3. Verify witnessKey matches the ph in the presence packet
-                const { hashStr: _hashStr } = await import('../src/rules.js');
-                const expectedPh = (_hashStr(witnessKey) >>> 0).toString(16).padStart(8, '0');
-                if (presence.ph !== expectedPh) {
-                    console.warn(`[Arbiter] Fraud Proof rejected: key/ph mismatch for witness ${id}`);
-                    return;
-                }
-
-                // 4. Accumulate distinct fraud reports; ban after threshold
-                if (!fraudCounts.has(proposerKey)) fraudCounts.set(proposerKey, new Set());
-                fraudCounts.get(proposerKey).add(witnessKey);
-                const count = fraudCounts.get(proposerKey).size;
-                console.log(`[Arbiter][${name}] Fraud report ${count}/${FRAUD_BAN_THRESHOLD} against ${String(proposerKey).slice(0, 8)}`);
-
+...
                 if (count >= FRAUD_BAN_THRESHOLD) {
                     console.log(`[FRAUD PROVEN] Banning proposer ${String(proposerKey).slice(0, 8)}`);
-                    bans.add(proposerKey);
-                    fraudCounts.delete(proposerKey);
-                    worldState.bans = Array.from(bans);
-                    schedulePersist();
-                    const banState = { type: 'ban', target: proposerKey };
-                    const banMsg = JSON.stringify(banState);
-                    const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
-                    torrent.sendState({ state: banMsg, signature: banSig });
+                    banPeer(proposerKey);
                 }
             } catch (e) {
                 console.warn(`[Arbiter][${name}] Fraud handler error:`, e.message);
             }
         });
+
+        const banPeer = async (pubKey) => {
+            if (bans.has(pubKey)) return;
+            bans.add(pubKey);
+            worldState.bans = Array.from(bans);
+            schedulePersist();
+            const banState = { type: 'ban', target: pubKey };
+            const banMsg = JSON.stringify(banState);
+            const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
+            torrent.sendState({ state: banMsg, signature: banSig });
+            console.log(`[Arbiter] Peer banned: ${String(pubKey).slice(0, 8)}`);
+        };
 
         r.onPeerJoin(peerId => {
             console.log(`[Arbiter][${name}] Peer joined: ${peerId}`);
@@ -235,14 +236,22 @@ async function startArbiter() {
 
     }
 
+    const getBansHash = () => {
+        const str = Array.from(bans).sort().join(',');
+        const hash = crypto.createHash('sha256').update(str).digest('hex').slice(0, 8);
+        return hash;
+    };
+
     async function broadcastState() {
-        const stateStr = JSON.stringify(worldState);
+        const bansHash = getBansHash();
+        const stateToSend = { ...worldState, bans: bansHash, bansCount: bans.size };
+        const stateStr = JSON.stringify(stateToSend);
         const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
         const packet = { state: stateStr, signature };
         lastBroadcastPacket = packet;
         torrent.sendState(packet);
         publishBeacon(packet).catch(() => {});
-        console.log(`[Arbiter] Broadcasted state for Day ${worldState.day}`);
+        console.log(`[Arbiter] Broadcasted state (Bans: ${bans.size}, Hash: ${bansHash})`);
     }
 
     console.log('[Arbiter] Started.');
@@ -256,6 +265,7 @@ async function startArbiter() {
         };
         fraudCounts.clear();
         lastRollupTime.clear();
+        bans.clear();
         schedulePersist();
         await broadcastState();
         console.log(`[Arbiter] World reset. New seed: ${worldState.world_seed}`);
@@ -279,11 +289,21 @@ async function startArbiter() {
         broadcastState().catch(e => console.error('[Arbiter] Day tick broadcast failed:', e.message, e.code));
     }
 
-    // Drift-corrected day tick: catches up all missed days if arbiter was offline
+    // Drift-corrected day tick: catches up all missed days if arbiter was offline.
+    // Catch-up days advance state silently (no broadcast) to avoid firing N sign operations
+    // and flooding clients when restarting after extended downtime.
     const scheduleTick = () => {
-        // Catch up any days missed during downtime before scheduling the next real tick
+        let catchUpCount = 0;
         while (worldState.last_tick + 86400000 <= Date.now()) {
-            advanceDay();
+            worldState.last_tick += 86400000;
+            worldState.day++;
+            catchUpCount++;
+        }
+        if (catchUpCount > 0) {
+            schedulePersist();
+            const derived = deriveWorldState(worldState.world_seed, worldState.day);
+            console.log(`[Arbiter] Caught up ${catchUpCount} day(s). Now Day ${worldState.day} — ${derived.season}, mood: ${derived.mood}`);
+            broadcastState().catch(e => console.error('[Arbiter] Catch-up broadcast failed:', e.message));
         }
         const delay = (worldState.last_tick + 86400000) - Date.now();
         setTimeout(() => { advanceDay(); scheduleTick(); }, delay);
@@ -313,6 +333,9 @@ async function startArbiter() {
                 bans: bans.size,
                 uptime: Math.floor(process.uptime()),
             }));
+        } else if (req.url === '/bans') {
+            res.writeHead(200, cors);
+            res.end(JSON.stringify(Array.from(bans)));
         } else if (req.url === '/state') {
             if (lastBroadcastPacket) {
                 res.writeHead(200, cors);

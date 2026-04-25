@@ -7,6 +7,8 @@ export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
 export const ARBITER_URL = '';
 // Set this to the ID of a Gist you want to use for discovery (leave empty if not used)
 export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
+// GitHub username that owns the Gist above
+export const GH_GIST_USERNAME = 'tross78';
 
 // Derived from MASTER_PUBLIC_KEY so this room is unique to your Pi instance.
 // Strip non-alphanumeric chars — base64 contains + and / which can break Trystero's room hashing.
@@ -17,7 +19,9 @@ export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
     'wss://tracker.files.fm:7073/announce',
     'wss://tracker.gbitt.info:443/announce',
-    'wss://tracker.open-internet.nl:443/announce'
+    'wss://tracker.open-internet.nl:443/announce',
+    'wss://tracker.btorrent.xyz',
+    'wss://tracker.fastcast.nz'
 ];
 
 // Expanded STUN list for better browser-to-browser NAT traversal.

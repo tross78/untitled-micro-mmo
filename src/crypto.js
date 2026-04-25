@@ -46,6 +46,7 @@ export async function exportKey(key) {
  * Never pass a `ph` hash string (8-char hex) — it is NOT a key and will throw.
  */
 export async function importKey(base64, type) {
+    if (!base64 || typeof base64 !== 'string') throw new Error('importKey: invalid key — received ' + typeof base64);
     if (!isNode) {
         const binary = atob(base64);
         const bytes = new Uint8Array(binary.length);

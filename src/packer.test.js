@@ -1,16 +1,26 @@
-import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer.js';
+import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit, packActionLog, unpackActionLog } from './packer.js';
 
 describe('Binary Packer', () => {
     test('Move packet encodes/decodes correctly', () => {
-        const from = 'tavern';
-        const to = 'market';
-        const packed = packMove(from, to);
+        const move = {
+            from: 'tavern',
+            to: 'market',
+            x: 10,
+            y: 12,
+            ts: 1619184000000,
+            signature: btoa('m'.repeat(64))
+        };
+        const packed = packMove(move);
         expect(packed).toBeInstanceOf(Uint8Array);
-        expect(packed).toHaveLength(2);
+        expect(packed).toHaveLength(74);
         
         const unpacked = unpackMove(packed);
-        expect(unpacked.from).toBe(from);
-        expect(unpacked.to).toBe(to);
+        expect(unpacked.from).toBe(move.from);
+        expect(unpacked.to).toBe(move.to);
+        expect(unpacked.x).toBe(move.x);
+        expect(unpacked.y).toBe(move.y);
+        expect(unpacked.ts).toBe(move.ts);
+        expect(unpacked.signature).toBe(move.signature);
     });
 
     test('Emote packet encodes/decodes correctly', () => {
@@ -36,13 +46,15 @@ describe('Binary Packer', () => {
             ph: 'abcdef12',
             level: 5,
             xp: 1000,
+            x: 7,
+            y: 8,
             ts: 1619184000000,
-            signature: btoa('a'.repeat(64)) // 64-byte fake signature
+            signature: btoa('a'.repeat(64))
         };
         
         const packed = packPresence(presence);
         expect(packed).toBeInstanceOf(Uint8Array);
-        expect(packed).toHaveLength(96);
+        expect(packed).toHaveLength(98);
         
         const unpacked = unpackPresence(packed);
         expect(unpacked.name).toBe('Tyson');
@@ -50,6 +62,8 @@ describe('Binary Packer', () => {
         expect(unpacked.ph).toBe('abcdef12');
         expect(unpacked.level).toBe(5);
         expect(unpacked.xp).toBe(1000);
+        expect(unpacked.x).toBe(7);
+        expect(unpacked.y).toBe(8);
         expect(unpacked.ts).toBe(presence.ts);
         expect(unpacked.signature).toBe(presence.signature);
     });
@@ -92,13 +106,13 @@ describe('Binary Packer', () => {
     test('Presence packet byte layout matches documented offsets', () => {
         const presence = {
             name: 'AB', location: 'cellar', ph: 'ff000000', level: 7,
-            xp: 500, ts: 1700000000000, signature: btoa('s'.repeat(64)),
+            xp: 500, x: 2, y: 3, ts: 1700000000000, signature: btoa('s'.repeat(64)),
         };
         const packed = packPresence(presence);
         const view = new DataView(packed.buffer);
         expect(view.getUint8(16)).toBe(0); // cellar is index 0 in ROOM_MAP
         expect(view.getUint8(21)).toBe(7); // level at byte 21
-        expect(packed).toHaveLength(96);
+        expect(packed).toHaveLength(98);
     });
 
     test('DuelCommit packet encodes/decodes correctly', () => {
@@ -118,6 +132,38 @@ describe('Binary Packer', () => {
         expect(unpacked.dmg).toBe(commit.dmg);
         expect(unpacked.day).toBe(commit.day);
         expect(signature).toBe(commit.signature);
+    });
+
+    test('Unknown room index in move packet falls back to cellar', () => {
+        const buf = new Uint8Array(74);
+        buf[0] = 255;
+        buf[1] = 255;
+        const sig = btoa('z'.repeat(64));
+        const sigBytes = Uint8Array.from(atob(sig), c => c.charCodeAt(0));
+        buf.set(sigBytes, 10); // Offset shift for x/y
+
+        const unpacked = unpackMove(buf);
+        expect(unpacked.from).toBe('cellar');
+        expect(unpacked.to).toBe('cellar');
+    });
+
+    test('Unknown room index in presence packet falls back to cellar', () => {
+        const packed = new Uint8Array(98);
+        const view = new DataView(packed.buffer);
+        view.setUint8(16, 255); // unknown location index
+        const unpacked = unpackPresence(packed);
+        expect(unpacked.location).toBe('cellar');
+    });
+
+    test('Unknown enemy index in action log packet falls back to null', () => {
+        const buf = new Uint8Array(72);
+        buf[5] = 255; // unknown enemy index
+        // Signature must be valid base64 — fill with printable chars
+        const sig = btoa('a'.repeat(64));
+        const sigBytes = Uint8Array.from(atob(sig), c => c.charCodeAt(0));
+        buf.set(sigBytes, 8);
+        const unpacked = unpackActionLog(buf);
+        expect(unpacked.target).toBeNull();
     });
 
     // Catches bug: DuelCommit comment said 77 bytes but buffer was 70. Verify the layout

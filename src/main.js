@@ -1,26 +1,27 @@
 import { selfId } from '@trystero-p2p/torrent';
 import { 
     worldState, players, localPlayer, hasSyncedWithArbiter, 
-    TAB_CHANNEL, loadLocalState, pruneStale, saveLocalState
+    TAB_CHANNEL, loadLocalState, pruneStale, saveLocalState, pendingTrade, setPendingTrade
 } from './store.js';
-import { log, printStatus, renderActionButtons } from './ui.js';
+import { log, printStatus, renderActionButtons, startTicker, renderRadar } from './ui.js';
 import { 
     initIdentity, arbiterPublicKey, myEntry 
 } from './identity.js';
 import { 
     initNetworking, gameActions, lastValidStatePacket, updateSimulation, joinInstance, currentInstance, currentRtcConfig
 } from './networking.js';
-import { 
-    handleCommand, getPlayerName, getTag, startStateChannel, resolveRound
+import {
+    handleCommand, getPlayerName, getTag, startStateChannel, resolveRound, escapeHtml
 } from './commands.js';
-import { verifyMessage } from './crypto.js';
+import { verifyMessage, importKey } from './crypto.js';
+import { EventBus } from './events.js';
 import { getSuggestions } from './autocomplete.js';
 import { initAds, showBanner } from './ads.js';
 import { 
     world, ITEMS, GAME_NAME, NPCS, QUESTS, ENEMIES
 } from './data.js';
-import { 
-    GH_GIST_ID, ARBITER_URL 
+import {
+    GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL
 } from './constants.js';
 import { getNPCLocation } from './rules.js';
 
@@ -28,17 +29,61 @@ const input = document.getElementById('input');
 const suggestionsEl = document.getElementById('suggestions');
 const output = document.getElementById('output');
 
-const HEARTBEAT_MS = 30000;
+const HEARTBEAT_MS = 120000;
 
 /**
  * Global UI refresh trigger. Call this whenever state changes.
  */
 const triggerUIRefresh = () => {
-    renderActionButtons({
-        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS
-    }, (cmd) => {
+    const ctx = {
+        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players
+    };
+    renderActionButtons(ctx, (cmd) => {
         log(`> ${cmd}`, '#555');
         handleCommand(cmd).then(triggerUIRefresh);
+    });
+    renderRadar(ctx, (tx, ty) => {
+        // Pathfinding / Micro-movement (Manhattan step)
+        const loc = world[localPlayer.location];
+        if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
+        
+        // Find next step towards target
+        const dx = tx - localPlayer.x;
+        const dy = ty - localPlayer.y;
+        if (dx === 0 && dy === 0) return;
+
+        // Move only 1 tile at a time
+        const stepX = dx !== 0 ? (dx > 0 ? 1 : -1) : 0;
+        const stepY = stepX === 0 && dy !== 0 ? (dy > 0 ? 1 : -1) : 0;
+        
+        const nextX = localPlayer.x + stepX;
+        const nextY = localPlayer.y + stepY;
+
+        localPlayer.x = nextX;
+        localPlayer.y = nextY;
+        saveLocalState();
+        triggerUIRefresh();
+
+        // Broadcast micro-movement
+        gameActions.sendMove({ from: localPlayer.location, to: localPlayer.location, x: nextX, y: nextY });
+        
+        // Check for portal hit
+        const portal = (loc.portals || []).find(p => p.x === nextX && p.y === nextY);
+        if (portal) {
+            log(`[System] Stepping into the portal to ${world[portal.dest].name}...`, '#f0f');
+            const prevLoc = localPlayer.location;
+            localPlayer.location = portal.dest;
+            localPlayer.x = portal.destX ?? 5;
+            localPlayer.y = portal.destY ?? 5;
+            saveLocalState();
+            
+            myEntry().then(entry => {
+                if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
+            });
+            handleCommand('look');
+            gameActions.sendMove({ from: prevLoc, to: portal.dest, x: localPlayer.x, y: localPlayer.y });
+            joinInstance(portal.dest, currentInstance, currentRtcConfig).then(triggerUIRefresh);
+        }
     });
 };
 
@@ -70,9 +115,9 @@ const start = async () => {
         };
 
         // Gist Discovery
-        if (GH_GIST_ID && !hasSyncedWithArbiter) {
-            const directUrl = `https://gist.githubusercontent.com/tross78/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`;
-            fetch(directUrl)
+        if (GH_GIST_ID && GH_GIST_USERNAME && !hasSyncedWithArbiter) {
+            const directUrl = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`;
+            fetch(directUrl, { signal: AbortSignal.timeout(5000) })
                 .then(r => r.ok ? r.json() : Promise.reject('Direct fail'))
                 .then(packet => processBeacon(packet, 'GitHub Gist (Direct)'))
                 .catch(() => {
@@ -100,6 +145,7 @@ const start = async () => {
         }
 
         await initNetworking();
+        startTicker(worldState);
 
         // Heartbeat for presence
         setInterval(async () => {
@@ -109,7 +155,7 @@ const start = async () => {
             }
         }, HEARTBEAT_MS);
         
-        const PRESENCE_TTL = 90000;
+        const PRESENCE_TTL = 300000;
         setInterval(() => {
             pruneStale(PRESENCE_TTL);
             triggerUIRefresh();
@@ -163,6 +209,101 @@ function setupNetworkEvents() {
         resolveRound(targetId).then(triggerUIRefresh);
     });
 
+    let tradeTimeout = null;
+    const startTradeTimeout = () => {
+        clearTimeout(tradeTimeout);
+        tradeTimeout = setTimeout(() => {
+            if (pendingTrade) {
+                log(`[Trade] Session timed out.`, '#555');
+                setPendingTrade(null);
+                triggerUIRefresh();
+            }
+        }, 30000);
+    };
+
+    window.addEventListener('trade-offer-received', (e) => {
+        const { partnerId, partnerName, offer } = e.detail;
+        if (!pendingTrade || pendingTrade.partnerId !== partnerId) {
+            setPendingTrade({
+                partnerId,
+                partnerName,
+                partnerOffer: offer,
+                myOffer: { gold: 0, items: [] },
+                ts: Date.now(),
+                signatures: { me: null, partner: null }
+            });
+        } else {
+            pendingTrade.partnerOffer = offer;
+        }
+        startTradeTimeout();
+        triggerUIRefresh();
+    });
+
+    window.addEventListener('trade-accept-received', (e) => {
+        const { partnerId, offer } = e.detail;
+        if (pendingTrade && pendingTrade.partnerId === partnerId) {
+            pendingTrade.partnerOffer = offer;
+            startTradeTimeout();
+            triggerUIRefresh();
+        }
+    });
+
+    window.addEventListener('trade-commit-received', async (e) => {
+        const { partnerId, commit } = e.detail;
+        if (pendingTrade && pendingTrade.partnerId === partnerId) {
+            const entry = players.get(partnerId);
+            if (!entry?.publicKey) return;
+
+            try {
+                const pubKey = await importKey(entry.publicKey, 'public');
+                const sigData = JSON.stringify({ gold: commit.gold, items: commit.items, ts: commit.ts });
+                if (await verifyMessage(sigData, commit.signature, pubKey)) {
+                    pendingTrade.signatures.partner = commit.signature;
+                    pendingTrade.partnerOffer = { gold: commit.gold, items: commit.items };
+                    
+                    // Auto-finalize if both signed
+                    if (pendingTrade.signatures.me) finalizeTrade();
+                    else startTradeTimeout();
+                }
+            } catch (err) { console.error('[Trade] Verification fail:', err); }
+            triggerUIRefresh();
+        }
+    });
+
+    const finalizeTrade = () => {
+        if (!pendingTrade) return;
+        const pt = pendingTrade;
+        log(`\n[Trade] TRADE FINALIZED! 🤝`, '#0f0');
+        
+        // 1. Give my stuff
+        localPlayer.gold -= pt.myOffer.gold;
+        pt.myOffer.items.forEach(id => {
+            const idx = localPlayer.inventory.indexOf(id);
+            if (idx !== -1) localPlayer.inventory.splice(idx, 1);
+        });
+
+        // 2. Get their stuff
+        localPlayer.gold += pt.partnerOffer.gold;
+        localPlayer.inventory.push(...pt.partnerOffer.items);
+
+        // 3. Broadcast to shard for shadow updates
+        const delta = {
+            [selfId]: { gives_gold: pt.myOffer.gold, gives_items: pt.myOffer.items, gets_gold: pt.partnerOffer.gold, gets_items: pt.partnerOffer.items },
+            [pt.partnerId]: { gives_gold: pt.partnerOffer.gold, gives_items: pt.partnerOffer.items, gets_gold: pt.myOffer.gold, gets_items: pt.myOffer.items }
+        };
+        gameActions.sendTradeFinal({ peerA: selfId, peerB: pt.partnerId, delta });
+
+        setPendingTrade(null);
+        saveLocalState(true);
+        triggerUIRefresh();
+    };
+
+    window.addEventListener('trade-initiated', startTradeTimeout);
+
+    window.addEventListener('monster-damaged', () => {
+        triggerUIRefresh();
+    });
+
     window.addEventListener('player-move', (e) => {
         const { peerId, data } = e.detail;
         const name = getPlayerName(peerId);
@@ -179,7 +320,7 @@ function setupNetworkEvents() {
 
     window.addEventListener('player-emote', (e) => {
         const { peerId, data } = e.detail;
-        log(`[System] ${getPlayerName(peerId)} ${data.text}`, '#aaa');
+        log(`[System] ${getPlayerName(peerId)} ${escapeHtml(data.text)}`, '#aaa');
     });
 
     window.addEventListener('player-leave', (e) => {
