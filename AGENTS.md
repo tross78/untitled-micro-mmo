@@ -76,6 +76,12 @@ A serverless P2P browser MMO. Trystero (WebTorrent/WebRTC) for transport, Ed2551
 - Fixed NPC dialogue "flicker" via per-day deterministic stability.
 - Documented 50k scaling roadmap in `scaling-50k-architecture.md`.
 
+### Phase 4.7: Input Refinement (COMPLETE)
+- Implemented dynamic, context-aware **Action Buttons** (A Dark Room style).
+- Buttons automatically update based on room exits, enemies, NPCs, and current state.
+- Refined the command parser to be case-insensitive and make the leading `/` optional.
+- Maintained legacy CLI text input and chip suggestions for chat and power users.
+
 ### Phase 5: The "Commissioner" (LLM) — TODO
 - `llama.cpp` + RWKV7-0.4B on Pi (ARMv6 build)
 - "Nightly Cron" bash script

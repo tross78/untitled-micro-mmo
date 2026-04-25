@@ -42,7 +42,12 @@ export const saveLocalState = () => {
 };
 
 export async function handleCommand(cmd) {
-    const args = cmd.split(' ');
+    const raw = cmd.trim();
+    if (!raw) return;
+    
+    // Support both "/move north" and "move north"
+    const cleanCmd = raw.startsWith('/') ? raw.slice(1) : raw;
+    const args = cleanCmd.split(/\s+/);
     const command = args[0].toLowerCase();
 
     switch (command) {
@@ -516,53 +521,82 @@ export async function startStateChannel(targetId, targetName, day) {
         theirHistory: [],
         timeoutId,
     });
-    await resolveRound(targetId);
+    
+    // Only the leader (smaller selfId) starts the first round automatically
+    // The other peer will trigger resolveRound when they receive the first commit.
+    if (selfId < targetId) {
+        await resolveRound(targetId);
+    }
 }
 
 export async function resolveRound(targetId) {
     const chan = activeChannels.get(targetId);
     if (!chan) return;
 
-    // If they are ahead, we need to catch up. 
-    // If we are ahead or equal, we only proceed if we haven't reached the cap.
-    if (chan.myHistory.length >= chan.theirHistory.length && chan.round >= 3) return;
+    const myLen = chan.myHistory.length;
+    const theirLen = chan.theirHistory.length;
 
-    chan.round++;
-    const seed = hashStr(selfId + targetId + chan.day + chan.round);
-    const rng = seededRNG(seed);
-    
-    const myBonus = levelBonus(localPlayer.level);
-    const myAtk = localPlayer.attack + myBonus.attack;
-    
-    const opponent = getPlayerEntry(targetId);
-    const opBonus = levelBonus(opponent?.level || 1);
-    const opDef = (opponent?.defense ?? DEFAULT_PLAYER_STATS.defense) + opBonus.defense;
-
-    const dmg = resolveAttack(myAtk, opDef, rng);
-
-    const commit = { round: chan.round, dmg, day: chan.day };
-    const signature = await signMessage(JSON.stringify(commit), playerKeys.privateKey);
-    chan.myHistory.push(commit);
-    
-    gameActions.sendDuelCommit({ commit, signature }, targetId);
-
-    if (chan.round >= 3) {
-        let totalMyDmg = chan.myHistory.reduce((a, b) => a + b.dmg, 0);
-        let totalTheirDmg = chan.theirHistory.reduce((a, b) => a + b.dmg, 0);
-        
-        log(`\n--- DUEL RESULT vs ${chan.opponentName} ---`, '#ff0');
-        log(`You dealt: ${totalMyDmg} | Opponent dealt: ${totalTheirDmg}`, '#aaa');
-        
-        if (totalMyDmg > totalTheirDmg) {
-            log(`You WIN! (+10 XP)`, '#0f0');
-            localPlayer.xp += 10;
-        } else if (totalMyDmg < totalTheirDmg) {
-            log(`You LOSE.`, '#f55');
-        } else {
-            log(`It's a DRAW.`, '#aaa');
-        }
-        clearTimeout(chan.timeoutId);
-        activeChannels.delete(targetId);
-        saveLocalState();
+    // 1. Check for finalization
+    if (myLen === 3 && theirLen === 3) {
+        finishDuel(targetId);
+        return;
     }
+
+    // 2. Determine if we should send a commit
+    let shouldSend = false;
+    if (myLen < theirLen && myLen < 3) {
+        shouldSend = true; // Catch up
+    } else if (myLen === theirLen && myLen < 3 && selfId < targetId) {
+        shouldSend = true; // Leader initiates next round
+    }
+
+    if (shouldSend) {
+        const round = myLen + 1;
+        const seed = hashStr(selfId + targetId + chan.day + round);
+        const rng = seededRNG(seed);
+        
+        const myBonus = levelBonus(localPlayer.level);
+        const myAtk = localPlayer.attack + myBonus.attack;
+        
+        const opponent = getPlayerEntry(targetId);
+        const opBonus = levelBonus(opponent?.level || 1);
+        const opDef = (opponent?.defense ?? DEFAULT_PLAYER_STATS.defense) + opBonus.defense;
+
+        const dmg = resolveAttack(myAtk, opDef, rng);
+
+        const commit = { round, dmg, day: chan.day };
+        const signature = await signMessage(JSON.stringify(commit), playerKeys.privateKey);
+        
+        chan.myHistory.push(commit);
+        gameActions.sendDuelCommit({ commit, signature }, targetId);
+
+        // Re-check if this send completed the duel
+        if (chan.myHistory.length === 3 && chan.theirHistory.length === 3) {
+            finishDuel(targetId);
+        }
+    }
+}
+
+function finishDuel(targetId) {
+    const chan = activeChannels.get(targetId);
+    if (!chan) return;
+
+    let totalMyDmg = chan.myHistory.reduce((a, b) => a + b.dmg, 0);
+    let totalTheirDmg = chan.theirHistory.reduce((a, b) => a + b.dmg, 0);
+    
+    log(`\n--- DUEL RESULT vs ${chan.opponentName} ---`, '#ff0');
+    log(`You dealt: ${totalMyDmg} | Opponent dealt: ${totalTheirDmg}`, '#aaa');
+    
+    if (totalMyDmg > totalTheirDmg) {
+        log(`You WIN! (+10 XP) 🏆`, '#0f0');
+        localPlayer.xp += 10;
+        saveLocalState(true);
+    } else if (totalMyDmg < totalTheirDmg) {
+        log(`You LOSE. 💀`, '#f55');
+    } else {
+        log(`It's a DRAW. 🤝`, '#aaa');
+    }
+    
+    clearTimeout(chan.timeoutId);
+    activeChannels.delete(targetId);
 }

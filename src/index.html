@@ -61,6 +61,36 @@
             overscroll-behavior: contain;
         }
 
+        /* Action Buttons */
+        #action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px 0;
+            border-top: 1px solid #222;
+        }
+
+        .action-btn {
+            background: #111;
+            border: 1px solid #0f0;
+            color: #0f0;
+            font-family: inherit;
+            font-size: 0.85em;
+            padding: 8px 14px;
+            cursor: pointer;
+            border-radius: 4px;
+            user-select: none;
+            touch-action: manipulation;
+            transition: all 0.1s ease;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.2);
+        }
+
+        .action-btn:active {
+            background: #0f0;
+            color: #000;
+            transform: translateY(2px);
+        }
+
         /* Suggestion chips */
         #suggestions {
             display: flex;
@@ -101,6 +131,8 @@
             align-items: center;
             padding: 4px 0;
             border-top: 1px solid #222;
+            /* Respect iPhone home indicator / notch at the bottom */
+            padding-bottom: max(4px, env(safe-area-inset-bottom));
         }
 
         #prompt {
@@ -119,48 +151,6 @@
             outline: none;
             min-width: 0;
         }
-
-        /* Quick-action bar — visible only on touch devices */
-        #quick-actions {
-            display: none;
-            gap: 6px;
-            padding: 6px 0;
-            /* Respect iPhone home indicator / notch at the bottom */
-            padding-bottom: max(6px, env(safe-area-inset-bottom));
-        }
-
-        @media (pointer: coarse) {
-            #quick-actions {
-                display: flex;
-            }
-        }
-
-        .quick-btn {
-            flex: 1;
-            background: #000;
-            border: 1px solid #333;
-            color: #0a0;
-            font-family: inherit;
-            font-size: 0.75em;
-            padding: 9px 2px;
-            cursor: pointer;
-            border-radius: 2px;
-            text-align: center;
-            touch-action: manipulation;
-        }
-
-        .quick-btn:active {
-            background: #0a0;
-            color: #000;
-            border-color: #0f0;
-        }
-
-        /* Safe-area padding for input bar on iPhone notch devices */
-        @supports (padding-bottom: env(safe-area-inset-bottom)) {
-            #input-container {
-                padding-bottom: max(4px, env(safe-area-inset-bottom));
-            }
-        }
     </style>
 </head>
 <body>
@@ -169,6 +159,8 @@ Searching for peers in the BitTorrent DHT...</div>
 
     <div id="banner-ad" style="display:none;"></div>
 
+    <div id="action-buttons"></div>
+
     <div id="suggestions"></div>
 
     <div id="input-container">
@@ -176,13 +168,6 @@ Searching for peers in the BitTorrent DHT...</div>
         <input type="text" id="input" autofocus spellcheck="false" autocomplete="off"
                autocorrect="off" autocapitalize="off" enterkeyhint="send"
                placeholder="type a command or tap below">
-    </div>
-
-    <div id="quick-actions">
-        <button class="quick-btn" data-cmd="look">look</button>
-        <button class="quick-btn" data-cmd="attack">attack</button>
-        <button class="quick-btn" data-cmd="rest">rest</button>
-        <button class="quick-btn" data-cmd="inventory">bag</button>
     </div>
 
     <script src="main.js"></script>

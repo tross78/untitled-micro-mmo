@@ -3,7 +3,7 @@ import {
     worldState, players, localPlayer, hasSyncedWithArbiter, 
     TAB_CHANNEL, loadLocalState, pruneStale, saveLocalState
 } from './store.js';
-import { log, printStatus } from './ui.js';
+import { log, printStatus, renderActionButtons } from './ui.js';
 import { 
     initIdentity, arbiterPublicKey, myEntry 
 } from './identity.js';
@@ -17,7 +17,7 @@ import { verifyMessage } from './crypto.js';
 import { getSuggestions } from './autocomplete.js';
 import { initAds, showBanner } from './ads.js';
 import { 
-    world, ITEMS, GAME_NAME, NPCS, QUESTS
+    world, ITEMS, GAME_NAME, NPCS, QUESTS, ENEMIES
 } from './data.js';
 import { 
     GH_GIST_ID, ARBITER_URL 
@@ -29,6 +29,18 @@ const suggestionsEl = document.getElementById('suggestions');
 const output = document.getElementById('output');
 
 const HEARTBEAT_MS = 30000;
+
+/**
+ * Global UI refresh trigger. Call this whenever state changes.
+ */
+const triggerUIRefresh = () => {
+    renderActionButtons({
+        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES
+    }, (cmd) => {
+        log(`> ${cmd}`, '#555');
+        handleCommand(cmd).then(triggerUIRefresh);
+    });
+};
 
 // --- IDENTITY & P2P BOOTSTRAP ---
 const start = async () => {
@@ -51,6 +63,7 @@ const start = async () => {
                 TAB_CHANNEL.postMessage({ type: 'state', packet });
                 const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
                 updateSimulation(stateObj);
+                triggerUIRefresh();
             } else {
                 console.warn(`[System] Beacon from ${source} failed verification.`);
             }
@@ -97,7 +110,10 @@ const start = async () => {
         }, HEARTBEAT_MS);
         
         const PRESENCE_TTL = 90000;
-        setInterval(() => pruneStale(PRESENCE_TTL), HEARTBEAT_MS);
+        setInterval(() => {
+            pruneStale(PRESENCE_TTL);
+            triggerUIRefresh();
+        }, HEARTBEAT_MS);
 
         log(`\nWelcome to ${GAME_NAME.charAt(0).toUpperCase() + GAME_NAME.slice(1)}.`);
         log(`Your Peer ID: ${selfId}`);
@@ -106,10 +122,12 @@ const start = async () => {
         setTimeout(() => {
             log(`${world[localPlayer.location].name}`);
             log(world[localPlayer.location].description);
+            triggerUIRefresh();
         }, 1000);
 
-        setupUIEvents();
         setupNetworkEvents();
+        setupUIEvents();
+        triggerUIRefresh();
 
     } catch (err) { log(`[FATAL] Engine crash: ${err.message}`, '#f00'); }
 };
@@ -128,6 +146,7 @@ TAB_CHANNEL.onmessage = ({ data }) => {
             if (!valid) return;
             const stateObj = typeof data.packet.state === 'string' ? JSON.parse(data.packet.state) : data.packet.state;
             updateSimulation(stateObj);
+            triggerUIRefresh();
         }).catch(() => {});
     }
 };
@@ -136,12 +155,12 @@ TAB_CHANNEL.onmessage = ({ data }) => {
 function setupNetworkEvents() {
     window.addEventListener('start-duel', (e) => {
         const { targetId, targetName, day } = e.detail;
-        startStateChannel(targetId, targetName, day);
+        startStateChannel(targetId, targetName, day).then(triggerUIRefresh);
     });
 
-    window.addEventListener('resolve-duel-round', (e) => {
+    window.addEventListener('duel-commit-received', (e) => {
         const { targetId } = e.detail;
-        resolveRound(targetId);
+        resolveRound(targetId).then(triggerUIRefresh);
     });
 
     window.addEventListener('player-move', (e) => {
@@ -150,10 +169,11 @@ function setupNetworkEvents() {
         if (data.to === localPlayer.location) {
             const fromDir = Object.entries(world[data.to]?.exits || {}).find(([, dest]) => dest === data.from)?.[0];
             log(`[System] ${name} arrives${fromDir ? ' from the ' + fromDir : ''}.`, '#aaa');
-            handleCommand('look');
+            handleCommand('look').then(triggerUIRefresh);
         } else if (data.from === localPlayer.location) {
             const toDir = Object.entries(world[data.from]?.exits || {}).find(([, dest]) => dest === data.to)?.[0];
             log(`[System] ${name} leaves${toDir ? ' to the ' + toDir : ''}.`, '#aaa');
+            triggerUIRefresh();
         }
     });
 
@@ -166,6 +186,7 @@ function setupNetworkEvents() {
         const { peerId } = e.detail;
         const name = getPlayerName(peerId);
         log(`[Social] ${name} has vanished.`, '#555');
+        triggerUIRefresh();
     });
 }
 
@@ -204,7 +225,7 @@ function setupUIEvents() {
         if (!s) return;
         if (s.immediate) {
             log(`> ${s.fill}`, '#555');
-            handleCommand(s.fill);
+            handleCommand(s.fill).then(triggerUIRefresh);
             input.value = '';
             renderSuggestions([]);
         } else {
@@ -217,7 +238,7 @@ function setupUIEvents() {
     const submitCommand = (raw) => {
         const val = raw.trim();
         if (!val) return;
-        handleCommand(val.startsWith('/') ? val.slice(1) : val);
+        handleCommand(val).then(triggerUIRefresh);
     };
 
     const inputHistory = [];
@@ -262,14 +283,6 @@ function setupUIEvents() {
     input.addEventListener('input', () => {
         historyIdx = -1;
         renderSuggestions(getSuggestions(input.value, getAutoCompleteContext()));
-    });
-
-    document.querySelectorAll('.quick-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const cmd = btn.dataset.cmd;
-            log(`> ${cmd}`, '#555');
-            handleCommand(cmd);
-        });
     });
 
     if (window.visualViewport) {

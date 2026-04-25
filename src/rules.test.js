@@ -5,11 +5,11 @@ import {
     getSeason, getSeasonNumber, rollScarcity,
     getMood, getThreatLevel, deriveWorldState,
     _resetMoodCache,
-} from './rules';
+} from './rules.js';
 
 import {
     world, ENEMIES, ITEMS, SCARCITY_ITEMS, MOOD_INITIAL
-} from './data';
+} from './data.js';
 
 beforeEach(() => _resetMoodCache());
 
