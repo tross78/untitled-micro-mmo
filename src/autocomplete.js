@@ -7,7 +7,7 @@ const TOP_COMMANDS = [
     'look', 'move', 'attack', 'rest', 'stats', 'inventory',
     'use', 'who', 'status', 'wave', 'bow', 'cheer',
     'duel', 'accept', 'decline', 'rename', 'map', 'clear', 'help',
-    'talk', 'buy', 'sell', 'quest', 'bank'
+    'talk', 'buy', 'sell', 'quest', 'bank', 'say'
 ];
 
 // Commands that take no argument — tapping their chip runs them immediately.
@@ -19,20 +19,6 @@ const NO_ARG_COMMANDS = new Set([
 
 /**
  * Returns up to 4 autocomplete suggestions for the current input.
- *
- * @param {string} raw - Current input value (with or without leading /)
- * @param {object} ctx
- * @param {string[]}    ctx.inventory    - Array of item IDs the player is carrying
- * @param {string}      ctx.location     - Current room ID
- * @param {object}      ctx.world        - World map (room definitions with exits)
- * @param {Map}         ctx.players      - Peer map: id -> { name, location, ... }
- * @param {object}      ctx.ITEMS        - Item definitions: id -> { name, type, ... }
- * @param {object}      ctx.NPCS         - NPC definitions
- * @param {object}      ctx.QUESTS       - Quest definitions
- * @param {object}      ctx.worldState   - { seed, day }
- * @param {function}    ctx.getNPCLocation - helper function
- *
- * @returns {{ display: string, fill: string, immediate: boolean }[]}
  */
 export function getSuggestions(raw, ctx) {
     const input = raw.replace(/^\//, '').trimStart().toLowerCase();
@@ -68,6 +54,7 @@ function getArgSuggestions(cmd, arg, ctx) {
         case 'sell':   return getSellSuggestions(arg, ctx);
         case 'quest':  return getQuestSuggestions(arg, ctx);
         case 'bank':   return getBankSuggestions(arg, ctx);
+        case 'say':    return [];
         default:       return [];
     }
 }

@@ -35,7 +35,7 @@ const HEARTBEAT_MS = 30000;
  */
 const triggerUIRefresh = () => {
     renderActionButtons({
-        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES
+        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS
     }, (cmd) => {
         log(`> ${cmd}`, '#555');
         handleCommand(cmd).then(triggerUIRefresh);

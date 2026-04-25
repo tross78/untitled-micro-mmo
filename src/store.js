@@ -20,6 +20,7 @@ export let worldState = {
 };
 
 export const players = new Map(); // id -> {name, location, ph, level, xp, ts, publicKey}
+export const shadowPlayers = new Map(); // id -> {level, xp, inventory, gold, actionIndex}
 
 export let localPlayer = { 
     name: `Peer-${selfId.slice(0, 4)}`, 

@@ -89,19 +89,28 @@ export const ENEMIES = {
     forest_wolf: { name: 'Forest Wolf', hp: 20, attack: 5,  defense: 1, xp: 15, loot: ['wolf_pelt', 'potion'] },
     ruin_shade:  { name: 'Ruin Shade',  hp: 25, attack: 8,  defense: 0, xp: 25, loot: ['old_tome', 'gold', 'potion'] },
     cave_troll:  { name: 'Cave Troll',  hp: 40, attack: 10, defense: 3, xp: 40, loot: ['iron_key', 'gold', 'iron_sword'] },
+    bandit:         { name: 'Bandit',         hp: 35, attack: 12, defense: 2, xp: 50, loot: ['bandit_mask', 'gold', 'potion'] },
+    goblin:         { name: 'Goblin',         hp: 30, attack: 9,  defense: 1, xp: 35, loot: ['gold', 'potion'] },
+    skeleton:       { name: 'Skeleton',       hp: 45, attack: 15, defense: 5, xp: 75, loot: ['old_tome', 'gold'] },
+    wraith:         { name: 'Wraith',         hp: 60, attack: 20, defense: 0, xp: 120, loot: ['old_tome', 'magic_staff'] },
+    mountain_troll: { name: 'Mountain Troll', hp: 100, attack: 25, defense: 10, xp: 250, loot: ['iron_key', 'gold', 'steel_sword'] },
 };
 
 export const ITEMS = {
-    wolf_pelt:  { name: 'Wolf Pelt',     type: 'material', price: 5 },
-    old_tome:   { name: 'Old Tome',      type: 'material', price: 10 },
-    iron_key:   { name: 'Iron Key',      type: 'key',      price: 0 },
-    gold:       { name: 'Gold (5)',       type: 'gold',       amount: 5 },
-    potion:     { name: 'Health Potion', type: 'consumable',  heal: 20, price: 15 },
-    ale:        { name: 'Ale',           type: 'consumable',  heal: 5,  price: 5 },
-    bread:      { name: 'Loaf of Bread', type: 'consumable',  heal: 10, price: 8 },
-    iron_sword: { name: 'Iron Sword',    type: 'weapon',      bonus: 3, price: 50 },
-    wood:       { name: 'Wood Bundle',   type: 'material', price: 2 },
-    iron:       { name: 'Iron Ore',      type: 'material', price: 10 },
+    wolf_pelt:      { name: 'Wolf Pelt',      type: 'material', price: 5 },
+    old_tome:       { name: 'Old Tome',       type: 'material', price: 10 },
+    iron_key:       { name: 'Iron Key',       type: 'key',      price: 0 },
+    gold:           { name: 'Gold (5)',       type: 'gold',       amount: 5 },
+    potion:         { name: 'Health Potion',  type: 'consumable',  heal: 20, price: 15 },
+    ale:            { name: 'Ale',            type: 'consumable',  heal: 5,  price: 5 },
+    bread:          { name: 'Loaf of Bread',  type: 'consumable',  heal: 10, price: 8 },
+    iron_sword:     { name: 'Iron Sword',     type: 'weapon',      bonus: 3, price: 50 },
+    steel_sword:    { name: 'Steel Sword',    type: 'weapon',      bonus: 6, price: 150 },
+    magic_staff:    { name: 'Magic Staff',    type: 'weapon',      bonus: 8, price: 300 },
+    healing_elixir: { name: 'Healing Elixir', type: 'consumable',  heal: 50, price: 40 },
+    bandit_mask:    { name: 'Bandit Mask',    type: 'material',    price: 25 },
+    wood:           { name: 'Wood Bundle',    type: 'material', price: 2 },
+    iron:           { name: 'Iron Ore',       type: 'material', price: 10 },
 };
 
 export const DEFAULT_PLAYER_STATS = {
@@ -114,6 +123,7 @@ export const DEFAULT_PLAYER_STATS = {
     forestFights: 15, // L.O.R.D style daily limit
     combatRound: 0,
     currentEnemy: null,
+    actionIndex: 0,
 };
 
 export const INSTANCE_CAP = 50;
@@ -145,15 +155,63 @@ export const world = {
     },
     forest_edge: {
         name: 'The Forest Edge',
-        description: 'Twisted pines. A wolf watches from the dark. The hallway is west, ruins north, a cave south.',
-        exits: { west: 'hallway', north: 'ruins', south: 'cave' },
+        description: 'Twisted pines. A wolf watches from the dark. The hallway is west, ruins north, cave south, depths east.',
+        exits: { west: 'hallway', north: 'ruins', south: 'cave', east: 'forest_depths' },
         enemy: 'forest_wolf',
+    },
+    forest_depths: {
+        name: 'The Forest Depths',
+        description: 'Ancient trees block the sky. Goblins lurk in the brush. The edge is west, a lake east, a camp north.',
+        exits: { west: 'forest_edge', east: 'lake_shore', north: 'bandit_camp' },
+        enemy: 'goblin',
+    },
+    lake_shore: {
+        name: 'The Lake Shore',
+        description: 'Still water reflects the grey sky. The forest is west, mountains rise to the north.',
+        exits: { west: 'forest_depths', north: 'mountain_pass' },
+        enemy: null,
+    },
+    bandit_camp: {
+        name: 'The Bandit Camp',
+        description: 'Tents and a guttering fire. Bandits watch the trail. The forest is south.',
+        exits: { south: 'forest_depths' },
+        enemy: 'bandit',
+    },
+    mountain_pass: {
+        name: 'The Mountain Pass',
+        description: 'Thin air and treacherous paths. A troll guards the heights. The lake is south.',
+        exits: { south: 'lake_shore' },
+        enemy: 'mountain_troll',
     },
     ruins: {
         name: 'The Old Ruins',
-        description: 'Cold stone and shifting shadows. A shade drifts between the pillars. The forest is south.',
-        exits: { south: 'forest_edge' },
+        description: 'Cold stone and shifting shadows. A shade drifts between the pillars. The forest is south, a descent leads north.',
+        exits: { south: 'forest_edge', north: 'ruins_descent' },
         enemy: 'ruin_shade',
+    },
+    ruins_descent: {
+        name: 'The Ruins Descent',
+        description: 'A crumbling staircase spiraling down into the earth. Ruins are south, catacombs down.',
+        exits: { south: 'ruins', down: 'catacombs' },
+        enemy: 'skeleton',
+    },
+    catacombs: {
+        name: 'The Catacombs',
+        description: 'Endless rows of skulls and dust. A wraith haunts the tombs. Descent is up, a cell north.',
+        exits: { up: 'ruins_descent', north: 'dungeon_cell' },
+        enemy: 'wraith',
+    },
+    dungeon_cell: {
+        name: 'The Dungeon Cell',
+        description: 'Rusty bars and straw. A skeleton rattles in the corner. Catacombs are south, a throne room east.',
+        exits: { south: 'catacombs', east: 'throne_room' },
+        enemy: 'skeleton',
+    },
+    throne_room: {
+        name: 'The Throne Room',
+        description: 'A shattered throne under a mountain of dust. Shadows dance here. The cell is west.',
+        exits: { west: 'dungeon_cell' },
+        enemy: 'wraith',
     },
     cave: {
         name: 'The Dark Cave',

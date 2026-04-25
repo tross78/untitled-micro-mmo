@@ -1,16 +1,17 @@
 import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
-import { getShardName, hashStr, seededRNG, deriveWorldState } from './rules.js';
+import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot } from './rules.js';
 import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS } from './constants.js';
 import { 
     worldState, players, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
-    TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY
+    TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY, shadowPlayers
 } from './store.js';
-import { INSTANCE_CAP } from './data.js';
+import { INSTANCE_CAP, ENEMIES } from './data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
 import { IBLT } from './iblt.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
-    packPresence, unpackPresence, packDuelCommit, unpackDuelCommit 
+    packPresence, unpackPresence, packDuelCommit, unpackDuelCommit,
+    packActionLog, unpackActionLog
 } from './packer.js';
 import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
 import { log, printStatus } from './ui.js';
@@ -23,6 +24,7 @@ export let lastRollupReceivedAt = 0;
 export let lastValidStatePacket = null;
 export let currentInstance = 1;
 export let currentRtcConfig = { iceServers: STUN_SERVERS };
+export let joinTime = Date.now();
 
 const ROLLUP_INTERVAL = 10000;
 const SKETCH_INTERVAL = 30000;
@@ -105,7 +107,7 @@ export const initNetworking = async (rtcConfig) => {
                     TAB_CHANNEL.postMessage({ type: 'state', packet: data });
                     const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
                     updateSimulation(stateObj);
-                    if (isProposer()) gameActions.relayState(data);
+                    if (isProposer() && gameActions.relayState) gameActions.relayState(data);
                 } else {
                     console.warn(`[Sync] Signature INVALID from ${peerId}. Check MASTER_PUBLIC_KEY.`);
                     log(`[Sync] Warning: Received signed state but signature failed verification.`, '#f55');
@@ -154,6 +156,7 @@ export const initNetworking = async (rtcConfig) => {
         if (!hasSyncedWithArbiter && shardPeers === 0) {
             log(`\n[System] Connection sparse. Attempting relay fallback...`, '#555');
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+            if (globalRooms.torrent) globalRooms.torrent.leave();
             await connectGlobal(currentRtcConfig);
             await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         }
@@ -207,6 +210,7 @@ export const isProposer = () => {
 export const joinInstance = async (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
     players.clear();
+    joinTime = Date.now();
 
     const shard = getShardName(location, instanceId);
     console.log(`[P2P] Joining Shard Room: ${shard}`);
@@ -233,11 +237,47 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendDuelChallenge, getDuelChallenge] = r.makeAction('duel_challenge');
         const [sendDuelAccept, getDuelAccept] = r.makeAction('duel_accept');
         const [sendDuelCommit, getDuelCommit] = r.makeAction('duel_commit');
+        const [sendActionLog, getActionLog] = r.makeAction('action_log');
         const [sendSketch, getSketch] = r.makeAction('presence_sketch');
         const [sendRequest, getRequest] = r.makeAction('request_presence');
 
         myEntry().then(entry => {
             if (entry) sendPresenceSingle(packPresence(entry));
+        });
+
+        getActionLog(async (buf, peerId) => {
+            const data = unpackActionLog(buf);
+            const entry = players.get(peerId);
+            if (!entry?.publicKey) return;
+
+            try {
+                const pubKey = await importKey(entry.publicKey, 'public');
+                const sigData = JSON.stringify({ type: data.type, index: data.index, target: data.target, data: data.data });
+                if (!await verifyMessage(sigData, data.signature, pubKey)) return;
+
+                let shadow = shadowPlayers.get(peerId);
+                if (!shadow) {
+                    shadow = { level: 1, xp: 0, inventory: [], gold: 0, actionIndex: -1 };
+                    shadowPlayers.set(peerId, shadow);
+                }
+
+                if (data.index <= shadow.actionIndex) return;
+
+                const actionEntropy = hashStr(worldState.seed + entry.publicKey + data.index);
+                const rng = seededRNG(actionEntropy);
+
+                if (data.type === 'kill') {
+                    const enemyDef = ENEMIES[data.target];
+                    if (enemyDef) {
+                        shadow.xp += enemyDef.xp;
+                        shadow.level = xpToLevel(shadow.xp);
+                        const loot = rollLoot(data.target, rng);
+                        shadow.inventory.push(...loot);
+                        shadow.gold += rng(10);
+                    }
+                }
+                shadow.actionIndex = data.index;
+            } catch (e) { console.error('[Security] ActionLog fail:', e); }
         });
 
         getDuelChallenge((data, peerId) => {
@@ -255,23 +295,34 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getDuelCommit(async (buf, peerId) => {
             const chan = activeChannels.get(peerId);
             if (!chan) return;
-            const { commit, signature } = unpackDuelCommit(buf);
-            const playerEntry = players.get(peerId);
-            if (!playerEntry?.publicKey) {
-                console.warn(`[Duel] Missing public key for ${peerId}. Handshake pending...`);
-                return;
-            }
-            try {
-                const opponentPubKey = await importKey(playerEntry.publicKey, 'public');
-                if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) {
-                    console.error(`[Duel] Signature verification failed for ${peerId}`);
+
+            const processCommit = async (retryCount = 0) => {
+                const playerEntry = players.get(peerId);
+                if (!playerEntry?.publicKey) {
+                    if (retryCount < 5) {
+                        console.log(`[Duel] Waiting for handshake from ${peerId}... (Retry ${retryCount + 1})`);
+                        setTimeout(() => processCommit(retryCount + 1), 1000);
+                    } else {
+                        console.warn(`[Duel] Handshake timeout for ${peerId}.`);
+                    }
                     return;
                 }
-                chan.theirHistory.push(commit);
-                window.dispatchEvent(new CustomEvent('duel-commit-received', { detail: { targetId: peerId } }));
-            } catch (e) {
-                console.error(`[Duel] Error processing commit from ${peerId}:`, e.message);
-            }
+
+                const { commit, signature } = unpackDuelCommit(buf);
+                try {
+                    const opponentPubKey = await importKey(playerEntry.publicKey, 'public');
+                    if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) {
+                        console.error(`[Duel] Signature verification failed for ${peerId}`);
+                        return;
+                    }
+                    chan.theirHistory.push(commit);
+                    window.dispatchEvent(new CustomEvent('duel-commit-received', { detail: { targetId: peerId } }));
+                } catch (e) {
+                    console.error(`[Duel] Error processing commit from ${peerId}:`, e.message);
+                }
+            };
+
+            await processCommit();
         });
 
         getSketch(async (remoteTable, peerId) => {
@@ -316,6 +367,14 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getPresenceSingle(async (buf, peerId) => {
             if (peerId === selfId) return;
             const unpacked = unpackPresence(buf);
+
+            // Security Check: Shadow Validation
+            const shadow = shadowPlayers.get(peerId);
+            if (shadow) {
+                if (unpacked.xp > shadow.xp + 100) return;
+                if (unpacked.level > shadow.level + 1) return;
+            }
+
             const entry = players.get(peerId) || {};
             players.set(peerId, { ...entry, ...unpacked, ts: Date.now() });
         });
@@ -325,6 +384,20 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (id === selfId || !publicKey) continue;
                 try {
                     const unpacked = unpackPresence(presence);
+                    
+                    // Security Check: Shadow Validation
+                    const shadow = shadowPlayers.get(id);
+                    if (shadow) {
+                        if (unpacked.xp > shadow.xp + 100) {
+                            console.warn(`[Security] Rejecting XP jump for ${id}: ${unpacked.xp} > ${shadow.xp}`);
+                            continue;
+                        }
+                        if (unpacked.level > shadow.level + 1) {
+                            console.warn(`[Security] Rejecting Level jump for ${id}: ${unpacked.level} > ${shadow.level}`);
+                            continue;
+                        }
+                    }
+
                     const expectedPh = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
                     if (unpacked.ph !== expectedPh) continue;
                     const { signature, ...sigData } = unpacked;
@@ -427,6 +500,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         ...gameActions,
         sendMove: (data) => r.sendMove(packMove(data.from, data.to)),
         sendEmote: (data) => r.sendEmote(packEmote(data.text)),
+        sendActionLog: (data) => r.sendActionLog(packActionLog(data)),
         sendPresenceSingle: (data, target) => {
             const packed = packPresence(data);
             target ? r.sendPresenceSingle(packed, target) : r.sendPresenceSingle(packed);
