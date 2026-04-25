@@ -7,24 +7,23 @@ A serverless P2P browser MMO. Trystero (WebTorrent/WebRTC) for transport, Ed2551
 
 | File | Purpose |
 |---|---|
-| `src/main.js` | Entry point — calls `start()` from `ui.js` |
-| `src/store.js` | Shared mutable state singleton (`state`) and `selfId` re-export |
-| `src/log.js` | `log(msg, color)` — DOM output helper |
-| `src/identity.js` | `initIdentity()` — key generation/loading, `arbiterPublicKey` setup |
-| `src/world-state.js` | `updateSimulation()`, `loadLocalState()`, `saveLocalState()`, `printStatus()`, `pruneStale()` |
-| `src/networking.js` | `initNetworking()`, `joinInstance()`, `isProposer()`, `buildLeafData()` |
-| `src/combat.js` | `startStateChannel()`, `resolveRound()` — PvP duel state channels |
-| `src/commands.js` | `handleCommand(cmd)` — all slash commands |
-| `src/ui.js` | `start()` — DOM wiring, autocomplete, input events, viewport handling |
-| `src/rules.js` | Pure deterministic simulation (combat, world, sharding). No side effects. |
-| `src/crypto.js` | Universal Ed25519 sign/verify (WebCrypto in browser, `node:crypto` on Pi) |
-| `src/packer.js` | Binary serialization: move (2B), emote (1B), presence (96B), duelCommit (70B) |
-| `src/iblt.js` | Invertible Bloom Lookup Table for O(diff) presence reconciliation |
-| `src/constants.js` | `APP_ID`, tracker/STUN/TURN URLs, `GH_GIST_ID`, `ARBITER_URL` |
-| `src/autocomplete.js` | `getSuggestions(input, context)` — pure, DOM-free autocomplete |
-| `arbiter/index.js` | Pi Zero: state authority, day tick, rollup validation, fraud/ban |
+| `src/main.js` | Main orchestrator — initialization and UI event binding. |
+| `src/rules.js` | Pure deterministic simulation (combat, world, sharding, NPCs). |
+| `src/data.js` | Externalized game data (locations, enemies, NPCs, items, quests). |
+| `src/store.js` | Centralized shared mutable state and persistence. |
+| `src/networking.js` | Trystero P2P logic, shard management, and rollup sync. |
+| `src/commands.js` | Command interpreter and game-loop logic (combat, NPCs, bank). |
+| `src/crypto.js` | Universal Ed25519 sign/verify. |
+| `src/packer.js` | Binary serialization for high-frequency messages. |
+| `src/iblt.js` | Invertible Bloom Lookup Table for set reconciliation. |
+| `src/constants.js` | Identity-derived `APP_ID`, tracker/STUN/TURN URLs. |
+| `src/autocomplete.js` | `getSuggestions(input, context)` — pure autocomplete. |
+| `src/ads.js` | Foundational architecture for optional rewarded ads. |
+| `src/ui.js` | Juiced logging and visual effects (shake, CRT glow). |
+| `arbiter/index.js` | Pi Zero: state authority, day tick, rollup validation, fraud/ban. |
+| `src/*.test.js` | Comprehensive test suite for all modules. |
 
-**Production build:** `npm run build` — esbuild bundles all modules into a single `dist/main.js`. The module split is dev-only.
+**Production build:** `npm run build` — esbuild bundles `src/main.js` into a single `dist/main.js`.
 
 ## Key Implementation Details
 
@@ -32,11 +31,6 @@ A serverless P2P browser MMO. Trystero (WebTorrent/WebRTC) for transport, Ed2551
 - World state is `world_seed` + `day` only (Yjs is gone).
 - All randomness uses `seededRNG(hashStr(...))` (mulberry32 variant). **Never use `Math.random()`.**
 - Integer math only in simulation (no floats in damage/XP).
-
-### Shared State (`src/store.js`)
-All modules that need shared mutable state import `{ state }` from `./store`. The `state` object is a plain singleton — mutate its properties directly (`state.localPlayer.hp -= 5`). Do not reassign `state` itself.
-
-`selfId` (Trystero peer ID) is re-exported from `store.js` for convenience.
 
 ### Universal Cryptography (`src/crypto.js`)
 - **Browser:** `window.crypto.subtle` (WebCrypto). `verifyMessage` requires a `CryptoKey` from `importKey()`.
@@ -57,6 +51,30 @@ All modules that need shared mutable state import `{ state }` from `./store`. Th
 - Mobile layout: `env(safe-area-inset-bottom)`, `position: fixed` input bar
 - Quick-action bar: look / attack / rest / inventory (visible on `pointer: coarse` only)
 - `visualViewport` resize handler for virtual keyboard reflow
+
+### Phase 4.1: Developer Tidy Up & Modularity (COMPLETE)
+- Split the large `src/main.js` monolith into smaller, logical modules.
+- Maintained a compact production build via `esbuild`.
+
+### Phase 4.2: Data Externalization (COMPLETE)
+- Extracted game name, locations, and entities into `src/data.js`.
+
+### Phase 4.3: Gameplay Improvements (COMPLETE)
+- Added NPC system (Barkeep, Merchant, Sage, Guard).
+- Implemented Quests, Daily Fight limits, and a Bank in the Cellar.
+
+### Phase 4.4: Ads Architecture (COMPLETE)
+- Implemented foundational architecture with optional rewarded "visions" via the Bard.
+
+### Phase 4.5: UI/UX Modernization (COMPLETE)
+- "Juiced Retro" aesthetic: CRT glow, fade-in animations, and screen shake on damage.
+- Sparse emoji support for stats and alerts.
+
+### Phase 4.6: Scaling & Regression Audit (COMPLETE)
+- Deep architectural review for 50k player scale.
+- Implemented debounced `saveLocalState` to prevent UI micro-stutters.
+- Fixed NPC dialogue "flicker" via per-day deterministic stability.
+- Documented 50k scaling roadmap in `scaling-50k-architecture.md`.
 
 ### Phase 5: The "Commissioner" (LLM) — TODO
 - `llama.cpp` + RWKV7-0.4B on Pi (ARMv6 build)

@@ -7,13 +7,14 @@ const TOP_COMMANDS = [
     'look', 'move', 'attack', 'rest', 'stats', 'inventory',
     'use', 'who', 'status', 'wave', 'bow', 'cheer',
     'duel', 'accept', 'decline', 'rename', 'map', 'clear', 'help',
+    'talk', 'buy', 'sell', 'quest', 'bank'
 ];
 
 // Commands that take no argument — tapping their chip runs them immediately.
 const NO_ARG_COMMANDS = new Set([
     'look', 'attack', 'rest', 'stats', 'inventory', 'who',
     'status', 'wave', 'bow', 'cheer', 'accept', 'decline',
-    'map', 'clear', 'help',
+    'map', 'clear', 'help', 'quest', 'bank'
 ]);
 
 /**
@@ -26,11 +27,12 @@ const NO_ARG_COMMANDS = new Set([
  * @param {object}      ctx.world        - World map (room definitions with exits)
  * @param {Map}         ctx.players      - Peer map: id -> { name, location, ... }
  * @param {object}      ctx.ITEMS        - Item definitions: id -> { name, type, ... }
+ * @param {object}      ctx.NPCS         - NPC definitions
+ * @param {object}      ctx.QUESTS       - Quest definitions
+ * @param {object}      ctx.worldState   - { seed, day }
+ * @param {function}    ctx.getNPCLocation - helper function
  *
  * @returns {{ display: string, fill: string, immediate: boolean }[]}
- *   display  — text shown on the chip
- *   fill     — value placed in the input on selection
- *   immediate — if true, the command is submitted on tap (no Enter needed)
  */
 export function getSuggestions(raw, ctx) {
     const input = raw.replace(/^\//, '').trimStart().toLowerCase();
@@ -61,6 +63,11 @@ function getArgSuggestions(cmd, arg, ctx) {
         case 'use':    return getItemSuggestions(arg, ctx);
         case 'move':   return getMoveSuggestions(arg, ctx);
         case 'duel':   return getPlayerSuggestions(arg, ctx);
+        case 'talk':   return getNPCSuggestions(arg, ctx);
+        case 'buy':    return getShopSuggestions(arg, ctx);
+        case 'sell':   return getSellSuggestions(arg, ctx);
+        case 'quest':  return getQuestSuggestions(arg, ctx);
+        case 'bank':   return getBankSuggestions(arg, ctx);
         default:       return [];
     }
 }
@@ -88,7 +95,7 @@ function getMoveSuggestions(arg, { location, world }) {
         .map(dir => ({
             display: dir,
             fill: 'move ' + dir,
-            immediate: true,  // one tap = move, no Enter needed
+            immediate: true,
         }));
 }
 
@@ -106,4 +113,71 @@ function getPlayerSuggestions(arg, { players }) {
         }
     }
     return results;
+}
+
+function getNPCSuggestions(arg, { location, NPCS, worldState, getNPCLocation }) {
+    if (!getNPCLocation || !NPCS) return [];
+    const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === location);
+    return localNpcs
+        .map(id => ({ id, name: NPCS[id].name }))
+        .filter(({ name }) => name.toLowerCase().startsWith(arg))
+        .slice(0, 4)
+        .map(({ name }) => ({
+            display: name,
+            fill: 'talk ' + name.toLowerCase(),
+            immediate: true,
+        }));
+}
+
+function getShopSuggestions(arg, { location, NPCS, worldState, getNPCLocation, ITEMS }) {
+    if (!getNPCLocation || !NPCS) return [];
+    const shopId = Object.keys(NPCS).find(id => 
+        NPCS[id].role === 'shop' && getNPCLocation(id, worldState.seed, worldState.day) === location
+    );
+    if (!shopId) return [];
+    
+    return NPCS[shopId].shop
+        .map(id => ({ id, name: ITEMS[id]?.name || id }))
+        .filter(({ name }) => name.toLowerCase().startsWith(arg))
+        .slice(0, 4)
+        .map(({ name }) => ({
+            display: name,
+            fill: 'buy ' + name.toLowerCase(),
+            immediate: false,
+        }));
+}
+
+function getSellSuggestions(arg, { inventory, ITEMS }) {
+    const invItems = Array.from(new Set(inventory));
+    return invItems
+        .map(id => ({ id, name: ITEMS[id]?.name || id }))
+        .filter(({ name }) => name.toLowerCase().startsWith(arg))
+        .slice(0, 4)
+        .map(({ name }) => ({
+            display: name,
+            fill: 'sell ' + name.toLowerCase(),
+            immediate: false,
+        }));
+}
+
+function getQuestSuggestions(arg) {
+    const subs = ['list', 'accept', 'complete'];
+    return subs
+        .filter(s => s.startsWith(arg))
+        .map(s => ({
+            display: s,
+            fill: 'quest ' + s,
+            immediate: s === 'list',
+        }));
+}
+
+function getBankSuggestions(arg) {
+    const subs = ['deposit', 'withdraw'];
+    return subs
+        .filter(s => s.startsWith(arg))
+        .map(s => ({
+            display: s,
+            fill: 'bank ' + s,
+            immediate: false,
+        }));
 }

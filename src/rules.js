@@ -3,6 +3,12 @@
  * Pure deterministic, integer-only logic.
  */
 
+import {
+    SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL,
+    ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, INSTANCE_CAP, world,
+    NPCS, DIALOGUE_POOLS, QUESTS
+} from './data';
+
 export function seededRNG(seed) {
     let state = seed | 0;
     return function(max = 4294967296) {
@@ -26,9 +32,6 @@ export function hashStr(str) {
 
 // --- SEASON ---
 
-export const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
-export const SEASON_LENGTH = 30; // days per season
-
 export function getSeason(day) {
     return SEASONS[(Math.floor((Math.max(1, day) - 1) / SEASON_LENGTH) | 0) % 4];
 }
@@ -38,12 +41,6 @@ export function getSeasonNumber(day) {
 }
 
 // --- MOOD ---
-
-export const moodMarkov = {
-    'fearful': { fearful: 70, weary: 20, joyful: 10 },
-    'weary':   { fearful: 20, weary: 60, joyful: 20 },
-    'joyful':  { fearful: 10, weary: 20, joyful: 70 }
-};
 
 export function nextMood(currentMood, rng) {
     const roll = rng(100);
@@ -58,8 +55,6 @@ export function nextMood(currentMood, rng) {
 
 // --- MARKET SCARCITY ---
 
-export const SCARCITY_ITEMS = ['wheat', 'medicine', 'wood', 'iron', 'bread', 'cloth'];
-
 export function rollScarcity(rng, season) {
     const count = rng(3); // 0, 1, or 2 scarce items
     const pool = [...SCARCITY_ITEMS];
@@ -72,8 +67,6 @@ export function rollScarcity(rng, season) {
 }
 
 // --- SIMULATION: WORLD AS PURE FUNCTION ---
-
-export const MOOD_INITIAL = 'weary';
 
 // Per-seed mood sequences: extend lazily, never recompute. ~6 bytes/day retained.
 const _moodSeqs = new Map();
@@ -106,21 +99,6 @@ export function deriveWorldState(worldSeed, day) {
 
 // --- COMBAT ---
 
-export const ENEMIES = {
-    forest_wolf: { name: 'Forest Wolf', hp: 20, attack: 5,  defense: 1, xp: 15, loot: ['wolf_pelt', 'potion'] },
-    ruin_shade:  { name: 'Ruin Shade',  hp: 25, attack: 8,  defense: 0, xp: 25, loot: ['old_tome', 'gold', 'potion'] },
-    cave_troll:  { name: 'Cave Troll',  hp: 40, attack: 10, defense: 3, xp: 40, loot: ['iron_key', 'gold', 'iron_sword'] },
-};
-
-export const ITEMS = {
-    wolf_pelt:  { name: 'Wolf Pelt',     type: 'material' },
-    old_tome:   { name: 'Old Tome',      type: 'material' },
-    iron_key:   { name: 'Iron Key',      type: 'key' },
-    gold:       { name: 'Gold (5)',       type: 'gold',       amount: 5 },
-    potion:     { name: 'Health Potion', type: 'consumable',  heal: 20 },
-    iron_sword: { name: 'Iron Sword',    type: 'weapon',      bonus: 3 },
-};
-
 // Integer-only damage roll: 1 to 2*base, minimum 1
 export function resolveAttack(attackStat, defenseStat, rng) {
     const base = Math.max(1, attackStat - defenseStat);
@@ -145,68 +123,34 @@ export function levelBonus(level) {
     };
 }
 
-export const DEFAULT_PLAYER_STATS = {
-    hp: 50, maxHp: 50,
-    attack: 10, defense: 3,
-    xp: 0, level: 1,
-    gold: 0,
-    inventory: [],
-    combatRound: 0,
-    currentEnemy: null,
-};
-
 // --- SCALING & SHARDING ---
-export const INSTANCE_CAP = 50;
 // appId in joinTorrent config handles swarm isolation; room name just needs to be unique within the app.
 export const getShardName = (loc, inst) => `${loc}-${inst}`;
 
 // --- WORLD DATA ---
 
-export const world = {
-    cellar: {
-        name: 'The Cellar',
-        description: 'A damp cellar. Crates line the walls. A door leads north.',
-        exits: { north: 'hallway' },
-        enemy: null,
-    },
-    hallway: {
-        name: 'The Hallway',
-        description: 'A narrow passage. The cellar is south, the tavern north, the forest east.',
-        exits: { south: 'cellar', north: 'tavern', east: 'forest_edge' },
-        enemy: null,
-    },
-    tavern: {
-        name: 'The Rusty Flagon',
-        description: 'Smoke and low voices. The market is east, the hallway south.',
-        exits: { south: 'hallway', east: 'market' },
-        enemy: null,
-    },
-    market: {
-        name: 'The Market Square',
-        description: 'Stalls and haggling. The tavern is west.',
-        exits: { west: 'tavern' },
-        enemy: null,
-    },
-    forest_edge: {
-        name: 'The Forest Edge',
-        description: 'Twisted pines. A wolf watches from the dark. The hallway is west, ruins north, a cave south.',
-        exits: { west: 'hallway', north: 'ruins', south: 'cave' },
-        enemy: 'forest_wolf',
-    },
-    ruins: {
-        name: 'The Old Ruins',
-        description: 'Cold stone and shifting shadows. A shade drifts between the pillars. The forest is south.',
-        exits: { south: 'forest_edge' },
-        enemy: 'ruin_shade',
-    },
-    cave: {
-        name: 'The Dark Cave',
-        description: 'Low ceilings, dripping water. A cave troll blocks the passage. The forest is north.',
-        exits: { north: 'forest_edge' },
-        enemy: 'cave_troll',
-    },
-};
-
 export function validateMove(currentLocation, direction) {
     return world[currentLocation]?.exits[direction] || null;
+}
+
+export function getNPCLocation(npcId, worldSeed, day) {
+    const npc = NPCS[npcId];
+    if (!npc) return null;
+    if (!npc.patrol) return npc.home;
+    const rng = seededRNG(hashStr(worldSeed + npcId + day));
+    const patrolArray = Array.isArray(npc.patrol) ? [npc.home, ...npc.patrol] : [npc.home];
+    return patrolArray[rng(patrolArray.length)];
+}
+
+export function getNPCDialogue(npcId, worldSeed, day, mood) {
+    const npc = NPCS[npcId];
+    if (!npc) return "";
+    const rng = seededRNG(hashStr(worldSeed + npcId + day + 'dialogue'));
+    const moodPool = DIALOGUE_POOLS[mood] || [];
+    // NPC either has a mood-specific line for today or uses their base dialogue.
+    // This choice is now stable for the entire day.
+    if (rng(100) < 40 && moodPool.length > 0) {
+        return moodPool[rng(moodPool.length)];
+    }
+    return npc.baseDialogue;
 }

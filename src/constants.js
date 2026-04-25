@@ -1,3 +1,5 @@
+import { GAME_NAME } from './data';
+
 export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
 
 // Set this to the trycloudflare.com URL printed by `cloudflared tunnel --url http://localhost:3001`
@@ -8,7 +10,7 @@ export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
 
 // Derived from MASTER_PUBLIC_KEY so this room is unique to your Pi instance.
 // Strip non-alphanumeric chars — base64 contains + and / which can break Trystero's room hashing.
-export const APP_ID = 'hearthwick-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+export const APP_ID = GAME_NAME + '-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
 // Stable high-uptime trackers (WebTorrent-compatible)
 export const TORRENT_TRACKERS = [

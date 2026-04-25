@@ -1,6 +1,7 @@
 import { IBLT } from './iblt';
 import { packMove, unpackMove, packPresence, unpackPresence } from './packer';
-import { getShardName, INSTANCE_CAP, hashStr, seededRNG, resolveAttack, DEFAULT_PLAYER_STATS, levelBonus } from './rules';
+import { getShardName, hashStr, seededRNG, resolveAttack, levelBonus } from './rules';
+import { DEFAULT_PLAYER_STATS, INSTANCE_CAP } from './data';
 
 const ROLLUP_INTERVAL = 10000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;

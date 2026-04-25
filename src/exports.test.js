@@ -1,4 +1,8 @@
 /**
+ * @jest-environment jsdom
+ */
+
+/**
  * Export smoke tests.
  * Verifies that every function/constant used across the codebase is actually exported
  * from its source module. A missing export here = a ReferenceError at runtime.
@@ -6,16 +10,33 @@
  * If you add a new export that other files depend on, add it here.
  */
 
+import { jest } from '@jest/globals';
+
+global.BroadcastChannel = jest.fn().mockImplementation(() => ({
+    postMessage: jest.fn(),
+    onmessage: jest.fn(),
+    close: jest.fn(),
+}));
+
+jest.mock('@trystero-p2p/torrent', () => ({
+    joinRoom: jest.fn(),
+    selfId: 'test-peer-id'
+}));
+
 import {
     // Simulation
-    world, validateMove, hashStr, seededRNG,
-    ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
+    validateMove, hashStr, seededRNG,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
     deriveWorldState,
-    getSeason, getSeasonNumber, SEASONS, SEASON_LENGTH,
-    // Scaling — these were missing from main.js imports and caused a ReferenceError
-    getShardName, INSTANCE_CAP,
+    getSeason, getSeasonNumber,
+    // Scaling
+    getShardName,
 } from './rules';
+
+import {
+    world, ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
+    SEASONS, SEASON_LENGTH, INSTANCE_CAP
+} from './data';
 
 import {
     verifyMessage, generateKeyPair, importKey, exportKey,
@@ -30,6 +51,10 @@ import {
     packPresence, unpackPresence,
     packDuelCommit, unpackDuelCommit,
 } from './packer';
+
+import {
+    initAds, showBanner, hideBanner, showRewardedAd
+} from './ads';
 
 describe('Module Exports — Smoke Tests', () => {
     describe('rules.js', () => {
@@ -109,6 +134,15 @@ describe('Module Exports — Smoke Tests', () => {
             expect(typeof unpackPresence).toBe('function');
             expect(typeof packDuelCommit).toBe('function');
             expect(typeof unpackDuelCommit).toBe('function');
+        });
+    });
+
+    describe('ads.js', () => {
+        test('all ad functions are exported', () => {
+            expect(typeof initAds).toBe('function');
+            expect(typeof showBanner).toBe('function');
+            expect(typeof hideBanner).toBe('function');
+            expect(typeof showRewardedAd).toBe('function');
         });
     });
 
