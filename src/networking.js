@@ -1,19 +1,19 @@
 import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
-import { getShardName, hashStr, seededRNG, deriveWorldState } from './rules';
-import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS } from './constants';
+import { getShardName, hashStr, seededRNG, deriveWorldState } from './rules.js';
+import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS } from './constants.js';
 import { 
     worldState, players, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
     TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY
-} from './store';
-import { INSTANCE_CAP } from './data';
-import { verifyMessage, signMessage, exportKey, importKey } from './crypto';
-import { IBLT } from './iblt';
+} from './store.js';
+import { INSTANCE_CAP } from './data.js';
+import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
+import { IBLT } from './iblt.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, unpackPresence, packDuelCommit, unpackDuelCommit 
-} from './packer';
-import { arbiterPublicKey, playerKeys, myEntry } from './identity';
-import { log, printStatus } from './ui';
+} from './packer.js';
+import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
+import { log, printStatus } from './ui.js';
 
 export let gameActions = {};
 export let rooms = { torrent: null };
@@ -166,7 +166,7 @@ export const initNetworking = async (rtcConfig) => {
         if (!isProposer()) return;
         const leafData = buildLeafData();
 
-        const { createMerkleRoot } = await import('./crypto');
+        const { createMerkleRoot } = await import('./crypto.js');
         const root = await createMerkleRoot(leafData);
         if (!root) return;
 
@@ -338,7 +338,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (Date.now() - joinTime < 3000) return;
 
             const leafData = buildLeafData();
-            const { createMerkleRoot } = await import('./crypto');
+            const { createMerkleRoot } = await import('./crypto.js');
             const ourRoot = await createMerkleRoot(leafData);
 
             if (ourRoot !== rollup.root) {

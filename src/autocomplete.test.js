@@ -1,4 +1,4 @@
-import { getSuggestions } from './autocomplete';
+import { getSuggestions } from './autocomplete.js';
 
 const ITEMS = {
     potion:     { name: 'Potion',     type: 'consumable', heal: 20 },

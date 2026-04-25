@@ -31,30 +31,30 @@ import {
     getSeason, getSeasonNumber,
     // Scaling
     getShardName,
-} from './rules';
+} from './rules.js';
 
 import {
     world, ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
     SEASONS, SEASON_LENGTH, INSTANCE_CAP
-} from './data';
+} from './data.js';
 
 import {
     verifyMessage, generateKeyPair, importKey, exportKey,
     signMessage, computeHash, createMerkleRoot,
-} from './crypto';
+} from './crypto.js';
 
-import { IBLT } from './iblt';
+import { IBLT } from './iblt.js';
 
 import {
     packMove, unpackMove,
     packEmote, unpackEmote,
     packPresence, unpackPresence,
     packDuelCommit, unpackDuelCommit,
-} from './packer';
+} from './packer.js';
 
 import {
     initAds, showBanner, hideBanner, showRewardedAd
-} from './ads';
+} from './ads.js';
 
 describe('Module Exports — Smoke Tests', () => {
     describe('rules.js', () => {

@@ -1,4 +1,4 @@
-import { worldState } from './store';
+import { worldState } from './store.js';
 
 const output = document.getElementById('output');
 

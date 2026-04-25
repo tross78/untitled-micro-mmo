@@ -3,9 +3,9 @@
  * Acts as a wrapper for future real ad network integrations (AdSense, AdMob, etc.)
  */
 
-import { ENABLE_ADS } from './data';
-import { log } from './ui';
-import { seededRNG, hashStr } from './rules';
+import { ENABLE_ADS } from './data.js';
+import { log } from './ui.js';
+import { seededRNG, hashStr } from './rules.js';
 
 let initialized = false;
 
