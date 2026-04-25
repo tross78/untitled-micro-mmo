@@ -262,6 +262,9 @@ export const isProposer = () => {
 export const joinInstance = async (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
     players.clear();
+    shardEnemies.delete(location);
+    // Clear phantom combat state — the shard is fresh, no enemy is confirmed alive yet
+    localPlayer.currentEnemy = null;
     joinTime = Date.now();
 
     const shard = getShardName(location, instanceId);

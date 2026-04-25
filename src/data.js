@@ -227,8 +227,8 @@ export const world = {
             { x: 5, y: 0, dest: 'tavern', destX: 5, destY: 8 },
             { x: 10, y: 5, dest: 'forest_edge', destX: 1, destY: 5 },
         ],
-        staticEntities: [{ id: 'guard', x: 2, y: 5 }],
-        scenery: [{ x: 4, y: 4, label: 'P' }, { x: 6, y: 4, label: 'P' }], // Pillars
+        staticEntities: [{ id: 'guard', x: 2, y: 2 }],
+        scenery: [{ x: 4, y: 4, label: 'P' }, { x: 6, y: 4, label: 'P' }],
         enemy: null,
     },
     tavern: {
@@ -241,11 +241,11 @@ export const world = {
             { x: 11, y: 5, dest: 'market', destX: 1, destY: 5 },
         ],
         staticEntities: [
-            { id: 'barkeep', x: 6, y: 2 },
+            { id: 'barkeep', x: 10, y: 2 },
             { id: 'bard', x: 2, y: 2 }
         ],
         scenery: [
-            { x: 4, y: 4, label: 'T' }, { x: 8, y: 4, label: 'T' }, // Tables
+            { x: 4, y: 4, label: 'T' }, { x: 8, y: 4, label: 'T' },
             { x: 4, y: 6, label: 'T' }, { x: 8, y: 6, label: 'T' }
         ],
         enemy: null,
@@ -258,9 +258,9 @@ export const world = {
         portals: [{ x: 0, y: 7, dest: 'tavern', destX: 10, destY: 5 }],
         staticEntities: [{ id: 'merchant', x: 8, y: 8 }],
         scenery: [
-            { x: 5, y: 5, label: 'S' }, { x: 11, y: 5, label: 'S' }, // Stalls
+            { x: 5, y: 5, label: 'S' }, { x: 11, y: 5, label: 'S' },
             { x: 5, y: 11, label: 'S' }, { x: 11, y: 11, label: 'S' },
-            { x: 8, y: 2, label: 'F' } // Fountain
+            { x: 8, y: 2, label: 'F' }
         ],
         enemy: null,
     },
@@ -277,7 +277,7 @@ export const world = {
         ],
         staticEntities: [],
         scenery: [
-            { x: 3, y: 3, label: 't' }, { x: 15, y: 4, label: 't' }, // Trees
+            { x: 3, y: 3, label: 't' }, { x: 15, y: 4, label: 't' },
             { x: 5, y: 16, label: 't' }, { x: 17, y: 14, label: 't' }
         ],
         enemy: 'forest_wolf',
@@ -294,6 +294,10 @@ export const world = {
             { x: 12, y: 0, dest: 'bandit_camp', destX: 10, destY: 18 },
         ],
         staticEntities: [],
+        scenery: [
+            { x: 5, y: 5, label: 't' }, { x: 18, y: 6, label: 't' },
+            { x: 10, y: 15, label: 't' }, { x: 22, y: 20, label: 't' }
+        ],
         enemy: 'goblin',
         enemyX: 15, enemyY: 15
     },
@@ -307,6 +311,7 @@ export const world = {
             { x: 10, y: 0, dest: 'mountain_pass', destX: 10, destY: 18 },
         ],
         staticEntities: [],
+        scenery: [{ x: 5, y: 5, label: 'w' }, { x: 6, y: 5, label: 'w' }],
         enemy: null,
     },
     bandit_camp: {
@@ -316,7 +321,9 @@ export const world = {
         exits: { south: 'forest_depths' },
         portals: [{ x: 7, y: 14, dest: 'forest_depths', destX: 12, destY: 1 }],
         staticEntities: [],
+        scenery: [{ x: 7, y: 7, label: 'F' }], // Fire
         enemy: 'bandit',
+        enemyX: 10, enemyY: 5
     },
     mountain_pass: {
         name: 'The Mountain Pass',
@@ -325,7 +332,9 @@ export const world = {
         exits: { south: 'lake_shore' },
         portals: [{ x: 10, y: 29, dest: 'lake_shore', destX: 10, destY: 1 }],
         staticEntities: [],
+        scenery: [{ x: 5, y: 10, label: 'R' }, { x: 15, y: 20, label: 'R' }], // Rocks
         enemy: 'mountain_troll',
+        enemyX: 10, enemyY: 10
     },
     ruins: {
         name: 'The Old Ruins',
@@ -337,7 +346,9 @@ export const world = {
             { x: 10, y: 0, dest: 'ruins_descent', destX: 5, destY: 8 },
         ],
         staticEntities: [{ id: 'sage', x: 10, y: 10 }],
+        scenery: [{ x: 5, y: 5, label: 'P' }, { x: 15, y: 15, label: 'P' }],
         enemy: 'ruin_shade',
+        enemyX: 5, enemyY: 10
     },
     ruins_descent: {
         name: 'The Ruins Descent',
@@ -349,7 +360,9 @@ export const world = {
             { x: 5, y: 0, dest: 'catacombs', destX: 5, destY: 13, type: 'down' },
         ],
         staticEntities: [],
+        scenery: [{ x: 2, y: 5, label: 'S' }],
         enemy: 'skeleton',
+        enemyX: 8, enemyY: 5
     },
     catacombs: {
         name: 'The Catacombs',
@@ -361,7 +374,9 @@ export const world = {
             { x: 7, y: 0, dest: 'dungeon_cell', destX: 5, destY: 8 },
         ],
         staticEntities: [],
+        scenery: [{ x: 3, y: 3, label: 'X' }, { x: 12, y: 12, label: 'X' }], // Tombs
         enemy: 'wraith',
+        enemyX: 7, enemyY: 7
     },
     dungeon_cell: {
         name: 'The Dungeon Cell',
@@ -373,7 +388,9 @@ export const world = {
             { x: 9, y: 5, dest: 'throne_room', destX: 1, destY: 5 },
         ],
         staticEntities: [],
+        scenery: [{ x: 1, y: 1, label: '#' }],
         enemy: 'skeleton',
+        enemyX: 5, enemyY: 5
     },
     throne_room: {
         name: 'The Throne Room',
@@ -382,7 +399,9 @@ export const world = {
         exits: { west: 'dungeon_cell' },
         portals: [{ x: 0, y: 7, dest: 'dungeon_cell', destX: 8, destY: 5 }],
         staticEntities: [],
+        scenery: [{ x: 7, y: 2, label: 'H' }], // Throne
         enemy: 'wraith',
+        enemyX: 7, enemyY: 10
     },
     cave: {
         name: 'The Dark Cave',
@@ -391,6 +410,8 @@ export const world = {
         exits: { north: 'forest_edge' },
         portals: [{ x: 6, y: 0, dest: 'forest_edge', destX: 10, destY: 18 }],
         staticEntities: [],
+        scenery: [{ x: 3, y: 3, label: '*' }], // Stalactite
         enemy: 'cave_troll',
+        enemyX: 6, enemyY: 6
     },
 };

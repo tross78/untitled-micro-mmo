@@ -215,6 +215,33 @@ async function startArbiter() {
     };
     scheduleTick();
 
+    // Periodic cleanup to prevent unbounded map growth
+    setInterval(() => {
+        const cutoff = Date.now() - ROLLUP_INTERVAL * 10;
+        for (const [key, ts] of lastRollupTime) {
+            if (ts < cutoff) {
+                lastRollupTime.delete(key);
+                fraudCounts.delete(key);
+            }
+        }
+    }, 3600000);
+
+    // Reset handler: SIGUSR2 or IPC message
+    const doReset = async () => {
+        worldState.world_seed = randomSeed();
+        worldState.day = 1;
+        worldState.last_tick = Date.now();
+        worldState.bans = [];
+        fraudCounts.clear();
+        lastRollupTime.clear();
+        bans.clear();
+        schedulePersist();
+        await broadcastState();
+        console.log(`[Arbiter] World reset. New seed: ${worldState.world_seed}`);
+    };
+    process.on('SIGUSR2', doReset);
+    process.on('message', (msg) => { if ((msg?.data ?? msg) === 'reset') doReset(); });
+
     const healthServer = createServer((req, res) => {
         const cors = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
         if (req.url === '/health') {
@@ -236,8 +263,36 @@ async function startArbiter() {
     setTimeout(() => broadcastState().catch(() => {}), 5000);
 }
 
+const SURVIVABLE_CODES = new Set([
+    'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENETUNREACH',
+    'EHOSTUNREACH', 'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT'
+]);
+const SURVIVABLE_MSGS = ['unsupported', 'DECODER', 'SSL', 'certificate', 'server response',
+    'socket hang up', 'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH',
+    'ENETUNREACH', 'EAI_AGAIN', 'ENOTFOUND', 'Unexpected server response'];
+
+function isSurvivable(err) {
+    if (SURVIVABLE_CODES.has(err?.code)) return true;
+    const msg = String(err?.message || err || '');
+    return SURVIVABLE_MSGS.some(m => msg.includes(m));
+}
+
 process.on('uncaughtException', (err) => {
-    console.error('[Arbiter] Uncaught Exception:', err.message);
+    if (isSurvivable(err)) {
+        console.warn('[Arbiter] Network error (non-fatal):', err.message);
+        return;
+    }
+    console.error('[Arbiter] Uncaught Exception:', err.message, err.stack);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+    if (isSurvivable(reason)) {
+        console.warn('[Arbiter] Network rejection (non-fatal):', reason?.message || reason);
+        return;
+    }
+    console.error('[Arbiter] Unhandled Rejection:', reason?.message ?? reason);
+    process.exit(1);
 });
 
 startArbiter().catch(err => {

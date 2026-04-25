@@ -1,7 +1,7 @@
 import { selfId } from '@trystero-p2p/torrent';
 import { 
-    worldState, players, localPlayer, hasSyncedWithArbiter, 
-    TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade
+    worldState, players, localPlayer, hasSyncedWithArbiter,
+    TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade, shardEnemies
 } from './store.js';
 import { saveLocalState } from './persistence.js';
 import { log, printStatus, renderActionButtons, startTicker, renderRadar } from './ui.js';
@@ -37,7 +37,7 @@ const HEARTBEAT_MS = 120000;
  */
 const triggerUIRefresh = () => {
     const ctx = {
-        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players
+        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
     };
     renderActionButtons(ctx, (cmd) => {
         log(`> ${cmd}`, '#555');
