@@ -37,6 +37,58 @@ export const triggerShake = () => {
     }, 200);
 };
 
+const actionButtonsEl = document.getElementById('action-buttons');
+
+/**
+ * Renders context-aware action buttons for quick mobile play.
+ */
+export const renderActionButtons = (ctx, onAction) => {
+    if (!actionButtonsEl) return;
+    actionButtonsEl.innerHTML = '';
+    
+    const { localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES } = ctx;
+    const loc = world[localPlayer.location];
+    if (!loc) return;
+
+    const addButton = (label, cmd) => {
+        const btn = document.createElement('button');
+        btn.className = 'action-btn';
+        btn.textContent = label;
+        btn.addEventListener('click', () => onAction(cmd));
+        actionButtonsEl.appendChild(btn);
+    };
+
+    // 1. Exploration
+    addButton('Look 👁️', 'look');
+    Object.keys(loc.exits).forEach(dir => {
+        const dirEmoji = { north: '⬆️', south: '⬇️', east: '➡️', west: '⬅️' }[dir] || '';
+        addButton(`${dir.charAt(0).toUpperCase() + dir.slice(1)} ${dirEmoji}`, `move ${dir}`);
+    });
+
+    // 2. Combat
+    if (loc.enemy) {
+        const enemyName = ENEMIES[loc.enemy]?.name || 'Enemy';
+        addButton(`Attack ${enemyName} ⚔️`, 'attack');
+    }
+    
+    // 3. Social / NPCs
+    const npcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
+    npcs.forEach(id => {
+        const npc = NPCS[id];
+        addButton(`Talk ${npc.name} 💬`, `talk ${id}`);
+        if (npc.role === 'shop') addButton(`Shop 💰`, 'buy');
+    });
+
+    // 4. Recovery
+    if (!localPlayer.currentEnemy) {
+        addButton('Rest 💤', 'rest');
+    }
+
+    // 5. Utility
+    addButton('Inv 🎒', 'inventory');
+    addButton('Stats 📊', 'stats');
+};
+
 export const printStatus = () => {
     log(`\n--- WORLD STATUS ---`, '#ffa500');
     log(`Season: ${worldState.season.toUpperCase()} ${worldState.seasonNumber} 🍂`, '#ffa500');

@@ -257,12 +257,20 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (!chan) return;
             const { commit, signature } = unpackDuelCommit(buf);
             const playerEntry = players.get(peerId);
-            if (!playerEntry?.publicKey) return;
-            const opponentPubKey = await importKey(playerEntry.publicKey, 'public');
-            if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) return;
-            chan.theirHistory.push(commit);
-            if (chan.myHistory.length < chan.theirHistory.length) {
-                window.dispatchEvent(new CustomEvent('resolve-duel-round', { detail: { targetId: peerId } }));
+            if (!playerEntry?.publicKey) {
+                console.warn(`[Duel] Missing public key for ${peerId}. Handshake pending...`);
+                return;
+            }
+            try {
+                const opponentPubKey = await importKey(playerEntry.publicKey, 'public');
+                if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) {
+                    console.error(`[Duel] Signature verification failed for ${peerId}`);
+                    return;
+                }
+                chan.theirHistory.push(commit);
+                window.dispatchEvent(new CustomEvent('duel-commit-received', { detail: { targetId: peerId } }));
+            } catch (e) {
+                console.error(`[Duel] Error processing commit from ${peerId}:`, e.message);
             }
         });
 
