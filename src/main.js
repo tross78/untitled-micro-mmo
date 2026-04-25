@@ -65,8 +65,8 @@ const triggerUIRefresh = () => {
         saveLocalState(localPlayer);
         triggerUIRefresh();
 
-        // Broadcast micro-movement
-        gameActions.sendMove({ from: localPlayer.location, to: localPlayer.location, x: nextX, y: nextY });
+        // Broadcast micro-movement (guard: gameActions not yet populated until joinInstance completes)
+        if (gameActions.sendMove) gameActions.sendMove({ from: localPlayer.location, to: localPlayer.location, x: nextX, y: nextY });
         
         // Check for portal hit
         const portal = (loc.portals || []).find(p => p.x === nextX && p.y === nextY);
@@ -82,7 +82,7 @@ const triggerUIRefresh = () => {
                 if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
             });
             handleCommand('look');
-            gameActions.sendMove({ from: prevLoc, to: portal.dest, x: localPlayer.x, y: localPlayer.y });
+            if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: portal.dest, x: localPlayer.x, y: localPlayer.y });
             joinInstance(portal.dest, currentInstance, currentRtcConfig).then(triggerUIRefresh);
         }
     });

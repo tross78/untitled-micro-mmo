@@ -470,9 +470,9 @@ export const renderRadar = (ctx, onTileClick) => {
         }
     });
 
-    // 5. Peers (alive only)
+    // 5. Peers (hp not broadcast, so treat absence as alive)
     players.forEach((p, id) => {
-        if (p.location === localPlayer.location && p.x !== undefined && p.hp > 0) {
+        if (p.location === localPlayer.location && p.x !== undefined && p.hp !== 0) {
             if (p.x < loc.width && p.y < loc.height) {
                 grid[p.y][p.x] = { type: 'peer', label: 'P' };
             }

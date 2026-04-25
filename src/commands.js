@@ -20,7 +20,7 @@ import {
     gameActions, joinInstance, globalRooms, rooms, 
     currentInstance, currentRtcConfig 
 } from './networking.js';
-import { playerKeys, arbiterPublicKey } from './identity.js';
+import { playerKeys, arbiterPublicKey, myEntry } from './identity.js';
 import { showRewardedAd } from './ads.js';
 
 export const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -254,7 +254,7 @@ export async function handleCommand(cmd) {
                 let msg = `You hit ${eName} for ${playerRes.damage}.`;
                 if (playerRes.isCrit) msg = `<b>CRITICAL HIT!</b> ` + msg;
                 sharedEnemy.hp -= playerRes.damage;
-                gameActions.sendMonsterDmg({ roomId: localPlayer.location, damage: playerRes.damage });
+                if (gameActions.sendMonsterDmg) gameActions.sendMonsterDmg({ roomId: localPlayer.location, damage: playerRes.damage });
                 const eBar = getHealthBar(Math.max(0, sharedEnemy.hp), sharedEnemy.maxHp);
                 log(`${msg} ${eBar}`, '#0f0');
             }
@@ -290,7 +290,7 @@ export async function handleCommand(cmd) {
                     data: 0
                 };
                 signMessage(JSON.stringify(actionData), playerKeys.privateKey).then(sig => {
-                    gameActions.sendActionLog({ ...actionData, signature: sig });
+                    if (gameActions.sendActionLog) gameActions.sendActionLog({ ...actionData, signature: sig });
                 });
 
                 loot.forEach(itemId => {
@@ -326,7 +326,7 @@ export async function handleCommand(cmd) {
                 }
             }
             if (localPlayer.hp <= 0) {
-                handleCommand('die');
+                await handleCommand('die');
             } else {
                 saveLocalState(localPlayer);
             }
@@ -345,7 +345,7 @@ export async function handleCommand(cmd) {
                 const exits = Object.keys(loc.exits);
                 if (exits.length > 0) {
                     const dir = exits[rng(exits.length)];
-                    handleCommand(`move ${dir}`);
+                    await handleCommand(`move ${dir}`);
                 }
             } else {
                 log(`Failed to flee! The enemy gets a free hit.`, '#f55');
@@ -358,7 +358,7 @@ export async function handleCommand(cmd) {
                     localPlayer.hp -= enemyRes.damage;
                     triggerShake();
                     log(`${nameColor(enemyDef.name, enemyDef.color)} hits you for ${enemyRes.damage}!`, '#f55');
-                    if (localPlayer.hp <= 0) handleCommand('die');
+                    if (localPlayer.hp <= 0) await handleCommand('die');
                 }
                 saveLocalState(localPlayer);
             }
@@ -375,7 +375,7 @@ export async function handleCommand(cmd) {
             localPlayer.currentEnemy = null;
             localPlayer.combatRound = 0;
             log(`You wake in the cellar...`, '#aaa');
-            gameActions.sendMove({ from: deathLoc, to: 'cellar' });
+            if (gameActions.sendMove) gameActions.sendMove({ from: deathLoc, to: 'cellar' });
             joinInstance('cellar', currentInstance, currentRtcConfig).then(() => handleCommand('look'));
             saveLocalState(localPlayer, true);
             break;
@@ -462,7 +462,7 @@ export async function handleCommand(cmd) {
                 });
 
                 handleCommand('look');
-                gameActions.sendMove({ from: prevLoc, to: nextLocId, x: localPlayer.x, y: localPlayer.y });
+                if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: nextLocId, x: localPlayer.x, y: localPlayer.y });
                 await joinInstance(nextLocId, currentInstance, currentRtcConfig);
             } else log(`You can't go that way.`);
             break;
