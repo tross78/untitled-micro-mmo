@@ -21,7 +21,6 @@ import {
 import { playerKeys, arbiterPublicKey } from './identity.js';
 import { showRewardedAd } from './ads.js';
 
-export const pidHash = (playerId) => playerId ? (hashStr(playerId) >>> 0).toString(16).padStart(8, '0') : null;
 export const getTag = (ph) => ph ? ph.slice(0, 4) : '????';
 export const getPlayerEntry = (id) => players.get(id);
 
@@ -86,8 +85,9 @@ export async function handleCommand(cmd) {
             const targetName = args.slice(1).join(' ').toLowerCase();
             if (!targetName) { log(`Usage: /duel <name>`); break; }
             const ids = Array.from(players.keys());
-            const targetId = ids.find(id => getPlayerName(id).toLowerCase() === targetName)
-                          ?? ids.find(id => getPlayerName(id).toLowerCase().includes(targetName));
+            const getNameOnly = (id) => (getPlayerEntry(id)?.name || '').toLowerCase();
+            const targetId = ids.find(id => getNameOnly(id) === targetName)
+                          ?? ids.find(id => getNameOnly(id).includes(targetName));
             if (!targetId) { log(`Player not found.`); break; }
             log(`[DUEL] Challenging ${getPlayerName(targetId)}...`, '#ff0');
             gameActions.sendDuelChallenge({ target: targetId, fromName: localPlayer.name });
@@ -199,6 +199,19 @@ export async function handleCommand(cmd) {
                 const loot = rollLoot(loc.enemy, rng);
                 localPlayer.xp += enemyDef.xp;
                 const newLevel = xpToLevel(localPlayer.xp);
+
+                // Security: Broadcast Action Log
+                localPlayer.actionIndex++;
+                const actionData = {
+                    type: 'kill',
+                    index: localPlayer.actionIndex,
+                    target: loc.enemy,
+                    data: 0
+                };
+                signMessage(JSON.stringify(actionData), playerKeys.privateKey).then(sig => {
+                    gameActions.sendActionLog({ ...actionData, signature: sig });
+                });
+
                 loot.forEach(itemId => {
                     if (ITEMS[itemId]?.type === 'gold') localPlayer.gold += ITEMS[itemId].amount;
                     else localPlayer.inventory.push(itemId);
@@ -340,6 +353,14 @@ export async function handleCommand(cmd) {
             break;
         }
 
+        case 'say': {
+            const text = args.slice(1).join(' ').trim();
+            if (!text) { log(`Usage: /say <message>`); break; }
+            gameActions.sendEmote({ room: localPlayer.location, text: `says: "${text}"` });
+            log(`[Chat] You say: "${text}"`);
+            break;
+        }
+
         case 'wave':
         case 'bow':
         case 'cheer': {
@@ -429,12 +450,12 @@ export async function handleCommand(cmd) {
 
             if (!query) { log(`Usage: /sell <item name>`); break; }
 
-            const invIdx = localPlayer.inventory.findIndex(id => ITEMS[id].name.toLowerCase() === query || id === query);
+            const invIdx = localPlayer.inventory.findIndex(id => (ITEMS[id]?.name || id).toLowerCase() === query || id === query);
             if (invIdx === -1) { log(`You don't have that.`); break; }
 
             const itemId = localPlayer.inventory[invIdx];
             const item = ITEMS[itemId];
-            if (item.price === 0) { log(`They aren't interested in that.`); break; }
+            if (!item || item.type === 'gold' || item.price === 0) { log(`They aren't interested in that.`); break; }
 
             const sellPrice = Math.floor(item.price * 0.5);
             localPlayer.gold += sellPrice;
@@ -492,7 +513,6 @@ export async function handleCommand(cmd) {
                 if (newLevel > localPlayer.level) {
                     localPlayer.level = newLevel;
                     log(`LEVEL UP! You are now level ${localPlayer.level}! ✨`, '#ff0');
-                    saveLocalState(true);
                 }
 
                 saveLocalState();
@@ -590,7 +610,7 @@ function finishDuel(targetId) {
     if (totalMyDmg > totalTheirDmg) {
         log(`You WIN! (+10 XP) 🏆`, '#0f0');
         localPlayer.xp += 10;
-        saveLocalState(true);
+        saveLocalState();
     } else if (totalMyDmg < totalTheirDmg) {
         log(`You LOSE. 💀`, '#f55');
     } else {

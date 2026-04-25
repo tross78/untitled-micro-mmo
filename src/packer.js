@@ -3,8 +3,18 @@
  * Compact Uint8Array serialization for high-frequency messages.
  */
 
-const ROOM_MAP = ['cellar', 'hallway', 'tavern', 'market', 'forest_edge', 'ruins', 'cave'];
+const ROOM_MAP = [
+    'cellar', 'hallway', 'tavern', 'market', 
+    'forest_edge', 'forest_depths', 'lake_shore', 'bandit_camp', 'mountain_pass',
+    'ruins', 'ruins_descent', 'catacombs', 'dungeon_cell', 'throne_room',
+    'cave'
+];
 const EMOTE_MAP = ['waves hello.', 'bows respectfully.', 'cheers loudly!'];
+const ENEMY_MAP = [
+    'forest_wolf', 'ruin_shade', 'cave_troll', 'bandit', 
+    'goblin', 'skeleton', 'wraith', 'mountain_troll'
+];
+const ACTION_TYPES = ['attack', 'kill', 'loot'];
 
 export const packMove = (from, to) => {
     const buf = new Uint8Array(2);
@@ -123,4 +133,34 @@ export const unpackDuelCommit = (buf) => {
     const day = view.getUint32(2, false);
     const signature = btoa(String.fromCharCode(...buf.subarray(6, 70)));
     return { commit: { round, dmg, day }, signature };
+};
+
+/**
+ * Action Log Packet (Fixed Size: 72 bytes)
+ * [0]     Type (Uint8: 0=attack, 1=kill, 2=loot)
+ * [1-4]   Action Index (Uint32BE)
+ * [5]     Target (Enemy Index)
+ * [6-7]   Data (Uint16BE, e.g. damage dealt or item index)
+ * [8-71]  Signature (64 bytes)
+ */
+export const packActionLog = (a) => {
+    const buf = new Uint8Array(72);
+    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    view.setUint8(0, ACTION_TYPES.indexOf(a.type));
+    view.setUint32(1, a.index, false);
+    view.setUint8(5, ENEMY_MAP.indexOf(a.target));
+    view.setUint16(6, a.data || 0, false);
+    const sigDecoded = Uint8Array.from(atob(a.signature), ch => ch.charCodeAt(0));
+    buf.set(sigDecoded, 8);
+    return buf;
+};
+
+export const unpackActionLog = (buf) => {
+    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const type = ACTION_TYPES[view.getUint8(0)];
+    const index = view.getUint32(1, false);
+    const target = ENEMY_MAP[view.getUint8(5)];
+    const data = view.getUint16(6, false);
+    const signature = btoa(String.fromCharCode(...buf.subarray(8, 72)));
+    return { type, index, target, data, signature };
 };
