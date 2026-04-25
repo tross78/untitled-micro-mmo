@@ -31,6 +31,7 @@ import * as Data from './data.js';
 
 // 2. State & Identity
 import * as Store from './store.js';
+import * as Persistence from './persistence.js';
 import * as Identity from './identity.js';
 
 // 3. Networking & Protocol
@@ -80,8 +81,11 @@ describe('Deep Import/Export Audit', () => {
         test('exports worldState object', () => expect(typeof Store.worldState).toBe('object'));
         test('exports players Map', () => expect(Store.players instanceof Map).toBe(true));
         test('exports localPlayer object', () => expect(typeof Store.localPlayer).toBe('object'));
-        test('exports saveLocalState function', () => expect(typeof Store.saveLocalState).toBe('function'));
         test('exports loadLocalState function', () => expect(typeof Store.loadLocalState).toBe('function'));
+    });
+
+    describe('persistence.js (Storage)', () => {
+        test('exports saveLocalState function', () => expect(typeof Persistence.saveLocalState).toBe('function'));
     });
 
     describe('networking.js (P2P)', () => {
@@ -164,8 +168,6 @@ describe('ESM Compliance (Node.js/Arbiter)', () => {
         
         test(`File ${path.basename(file)} uses .js extensions for all internal imports`, () => {
             const content = fs.readFileSync(file, 'utf8');
-            // Regex to find imports/exports from local paths
-            // matches: import ... from './foo' or import './foo' or export ... from '../bar'
             const internalPathRegex = /(?:import|export).*?from\s+['"](\.\.?\/[^'"]+)['"]/g;
             let match;
             while ((match = internalPathRegex.exec(content)) !== null) {

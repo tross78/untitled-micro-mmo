@@ -91,11 +91,9 @@ export const loadLocalState = (log) => {
             if (typeof localPlayer.combatRound !== 'number' || isNaN(localPlayer.combatRound)) {
                 localPlayer.combatRound = 0;
             }
-            // Migrate old saves that lack buffs field
             if (!localPlayer.buffs || typeof localPlayer.buffs !== 'object') {
                 localPlayer.buffs = { rested: false, activeElixir: null };
             }
-            // Reset location to cellar if the saved location no longer exists in the world map
             if (!world[localPlayer.location]) {
                 localPlayer.location = 'cellar';
             }
@@ -117,27 +115,6 @@ export const loadLocalState = (log) => {
             worldState.scarcity = derived.scarcity;
         } catch (e) { console.error(e); }
     }
-};
-
-let saveTimer = null;
-export const saveLocalState = (immediate = false) => {
-    const persist = () => {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(localPlayer));
-        } catch (e) {
-            console.warn('[System] Storage full — progress not saved:', e.message);
-        }
-    };
-    if (immediate) {
-        clearTimeout(saveTimer);
-        persist();
-        return;
-    }
-    if (saveTimer) return;
-    saveTimer = setTimeout(() => {
-        persist();
-        saveTimer = null;
-    }, 5000);
 };
 
 export const pruneStale = (PRESENCE_TTL) => {

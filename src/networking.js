@@ -679,16 +679,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         return { 
-            sendMove, sendEmote, sendPresenceSingle, sendPresenceBatch, 
+            sendMove, sendEmote, sendMonsterDmg, sendPresenceSingle, sendPresenceBatch, 
             sendRelay, sendRollupLocal, sendSketch, sendRequest, 
-            sendDuelChallenge, sendDuelAccept, sendDuelCommit 
+            sendDuelChallenge, sendDuelAccept, sendDuelCommit,
+            sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal
         };
     };
 
     const r = setupShard(rooms.torrent);
 
-    gameActions = {
-        ...gameActions,
+    Object.assign(gameActions, {
         sendMove: async (data) => {
             const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: Date.now() };
             const signature = await signMessage(JSON.stringify(moveData), playerKeys.privateKey);
@@ -715,5 +715,5 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendTradeFinal: (data) => r.sendTradeFinal(data),
         sendSketch: (data) => r.sendSketch(data),
         sendRequest: (data, target) => r.sendRequest(data, target),
-    };
+    });
 };

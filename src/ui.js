@@ -156,7 +156,10 @@ export const renderActionButtons = (ctx, onAction) => {
             addButton('Bank 🏦', () => uiState = 'bank');
         }
 
-        addButton('Say 🗣️', 'say');
+        addButton('Say 🗣️', () => {
+            const msg = window.prompt("What do you want to say?");
+            if (msg) onAction(`say ${msg}`);
+        });
 
         if (!localPlayer.currentEnemy) {
             addButton('Rest 💤', 'rest');
@@ -330,6 +333,11 @@ export const renderActionButtons = (ctx, onAction) => {
             localStorage.setItem(`${GAME_NAME}_debug`, debug ? 'false' : 'true');
         });
 
+        addButton('Rename Character 👤', () => {
+            const name = window.prompt("Enter new name (max 14 chars):", localPlayer.name);
+            if (name) onAction(`rename ${name}`);
+        });
+        
         addButton('Score 🏆', 'score');
         addButton('Net Status 📡', 'net');
         addButton('Map 🗺️', 'map');
@@ -390,7 +398,7 @@ export const startTicker = (worldState) => {
  */
 export const renderRadar = (ctx, onTileClick) => {
     if (!radarEl) return;
-    const { localPlayer, world, players } = ctx;
+    const { localPlayer, world, players, shardEnemies } = ctx;
     const loc = world[localPlayer.location];
     if (!loc) return;
 
@@ -400,30 +408,49 @@ export const renderRadar = (ctx, onTileClick) => {
 
     const grid = Array.from({ length: loc.height }, () => Array(loc.width).fill(null));
 
-    // 1. Portals
+    // 1. Scenery (Obstacles/Buildings)
+    (loc.scenery || []).forEach(s => {
+        if (s.x < loc.width && s.y < loc.height) {
+            grid[s.y][s.x] = { type: 'scenery', label: s.label || 'B' };
+        }
+    });
+
+    // 2. Portals
     (loc.portals || []).forEach(p => {
         if (p.x < loc.width && p.y < loc.height) {
             grid[p.y][p.x] = { type: 'portal', label: '∏' };
         }
     });
 
-    // 2. NPCs
+    // 3. Shard Enemies (Shared across peers)
+    const sharedEnemy = shardEnemies.get(localPlayer.location);
+    if (sharedEnemy && sharedEnemy.hp > 0 && loc.enemyX !== undefined) {
+        grid[loc.enemyY][loc.enemyX] = { type: 'enemy', label: 'E' };
+    } else if (loc.enemy) {
+        // Fallback for spawning location if not yet engaged
+        const ex = loc.enemyX ?? Math.floor(loc.width / 2);
+        const ey = loc.enemyY ?? Math.floor(loc.height / 2);
+        grid[ey][ex] = { type: 'enemy', label: 'E' };
+    }
+
+    // 4. NPCs
     (loc.staticEntities || []).forEach(e => {
         if (e.x < loc.width && e.y < loc.height) {
             grid[e.y][e.x] = { type: 'npc', label: 'N' };
         }
     });
 
-    // 3. Peers
+    // 5. Peers
     players.forEach((p, id) => {
         if (p.location === localPlayer.location && p.x !== undefined) {
             if (p.x < loc.width && p.y < loc.height) {
+                // If peer is on same tile as portal/npc, don't hide the peer
                 grid[p.y][p.x] = { type: 'peer', label: 'P' };
             }
         }
     });
 
-    // 4. Local Player
+    // 6. Local Player
     if (localPlayer.x < loc.width && localPlayer.y < loc.height) {
         grid[localPlayer.y][localPlayer.x] = { type: 'self', label: '@' };
     }
@@ -437,6 +464,7 @@ export const renderRadar = (ctx, onTileClick) => {
             if (entity) {
                 tile.textContent = entity.label;
                 tile.classList.add(`entity-${entity.type}`);
+                if (entity.type === 'scenery') tile.style.opacity = '0.4';
             } else {
                 tile.textContent = '·';
             }
