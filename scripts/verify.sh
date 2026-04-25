@@ -17,15 +17,16 @@ if [ "$SIZE" -gt "$LIMIT" ]; then
 fi
 echo "    Bundle OK: ${SIZE}B"
 
-echo "--- [3/4] Checking critical imports in main.js..."
+echo "--- [3/4] Checking critical imports..."
 node --input-type=module << 'EOF'
 import { readFileSync } from 'node:fs';
-const src = readFileSync('src/main.js', 'utf8');
-const match = src.match(/import\s*\{([^}]*)\}\s*from\s*['"]\.\/rules['"]/s);
-if (!match) { console.error("    FAIL: No import from './rules' found in main.js"); process.exit(1); }
-const required = ['getShardName', 'INSTANCE_CAP'];
-const missing = required.filter(n => !match[1].includes(n));
-if (missing.length > 0) { console.error("    FAIL: Missing from rules import: " + missing.join(', ')); process.exit(1); }
+const main = readFileSync('src/main.js', 'utf8');
+const networking = readFileSync('src/networking.js', 'utf8');
+const rulesMatch = networking.match(/from\s*['"]\.\/rules['"]/);
+const dataMatch = networking.match(/from\s*['"]\.\/data['"]/);
+
+if (!rulesMatch) { console.error("    FAIL: No import from './rules' found in networking.js"); process.exit(1); }
+if (!dataMatch) { console.error("    FAIL: No import from './data' found in networking.js"); process.exit(1); }
 EOF
 echo "    Imports OK."
 

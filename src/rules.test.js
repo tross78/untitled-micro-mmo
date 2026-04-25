@@ -1,13 +1,15 @@
 import {
-    validateMove, world,
+    validateMove,
     hashStr, seededRNG, nextMood,
     resolveAttack, rollLoot, xpToLevel, levelBonus,
-    ENEMIES, ITEMS,
-    getSeason, getSeasonNumber, rollScarcity, SCARCITY_ITEMS,
+    getSeason, getSeasonNumber, rollScarcity,
     getMood, getThreatLevel, deriveWorldState,
-    MOOD_INITIAL,
     _resetMoodCache,
 } from './rules';
+
+import {
+    world, ENEMIES, ITEMS, SCARCITY_ITEMS, MOOD_INITIAL
+} from './data';
 
 beforeEach(() => _resetMoodCache());
 

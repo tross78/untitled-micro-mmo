@@ -21,10 +21,33 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            /* 100dvh shrinks automatically when the virtual keyboard opens (iOS 15.4+, Chrome 108+).
-               Falls back to 100vh on older browsers. */
             height: 100vh;
             height: 100dvh;
+            text-shadow: 0 0 4px rgba(0, 255, 0, 0.4);
+            overflow: hidden;
+        }
+
+        @keyframes logFadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-line {
+            animation: logFadeIn 0.1s ease-out forwards;
+            margin-bottom: 2px;
+        }
+
+        @keyframes shake {
+            0% { transform: translate(0,0); }
+            20% { transform: translate(-4px, 4px); }
+            40% { transform: translate(-4px, -4px); }
+            60% { transform: translate(4px, 4px); }
+            80% { transform: translate(4px, -4px); }
+            100% { transform: translate(0,0); }
+        }
+
+        .shake {
+            animation: shake 0.2s cubic-bezier(.36,.07,.19,.97) both;
         }
 
         #output {
@@ -32,7 +55,6 @@
             overflow-y: auto;
             white-space: pre-wrap;
             margin-bottom: 8px;
-            /* Without min-height: 0, flex children won't scroll — they expand instead. */
             min-height: 0;
             scrollbar-width: thin;
             scrollbar-color: #0f0 #000;
@@ -59,13 +81,14 @@
             border-radius: 2px;
             user-select: none;
             touch-action: manipulation;
-            transition: background 0.08s, color 0.08s;
+            transition: all 0.1s ease;
         }
 
         .chip:hover,
         .chip.active {
             background: #0f0;
             color: #000;
+            transform: scale(1.05);
         }
 
         .chip.immediate {
@@ -143,6 +166,8 @@
 <body>
     <div id="output">Initializing P2P network...
 Searching for peers in the BitTorrent DHT...</div>
+
+    <div id="banner-ad" style="display:none;"></div>
 
     <div id="suggestions"></div>
 
