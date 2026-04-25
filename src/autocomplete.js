@@ -21,6 +21,7 @@ const NO_ARG_COMMANDS = new Set([
  * Returns up to 4 autocomplete suggestions for the current input.
  */
 export function getSuggestions(raw, ctx) {
+    if (raw == null) return [];
     const input = raw.replace(/^\//, '').trimStart().toLowerCase();
 
     const spaceIdx = input.indexOf(' ');

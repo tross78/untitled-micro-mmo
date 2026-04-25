@@ -46,6 +46,8 @@ export const myEntry = async () => {
         ph: localPlayer.ph, 
         level: localPlayer.level, 
         xp: localPlayer.xp,
+        x: localPlayer.x || 5,
+        y: localPlayer.y || 5,
         ts: Date.now() 
     };
     const signature = await signMessage(JSON.stringify(data), playerKeys.privateKey);

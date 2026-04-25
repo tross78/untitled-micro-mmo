@@ -1,7 +1,64 @@
 /**
- * Hearthwick Binary Packer
- * Compact Uint8Array serialization for high-frequency messages.
+ * Hearthwick Schema-Based Binary Packer
+ * Declarative serialization for high-frequency messages.
  */
+
+class SchemaBuffer {
+    constructor(size) {
+        this.buf = new Uint8Array(size);
+        this.view = new DataView(this.buf.buffer);
+        this.offset = 0;
+    }
+    u8(val) { this.view.setUint8(this.offset++, val); }
+    u16(val) { this.view.setUint16(this.offset, val, false); this.offset += 2; }
+    u32(val) { this.view.setUint32(this.offset, val, false); this.offset += 4; }
+    ts(val) {
+        const t = val || Date.now();
+        this.u16(Math.floor(t / 0x100000000));
+        this.u32(t % 0x100000000);
+    }
+    sig(val) {
+        if (val) {
+            const decoded = Uint8Array.from(atob(val), c => c.charCodeAt(0));
+            this.buf.set(decoded, this.offset);
+        }
+        this.offset += 64;
+    }
+    str(val, len) {
+        const encoder = new TextEncoder();
+        const encoded = encoder.encode(val);
+        this.buf.set(encoded.subarray(0, len), this.offset);
+        this.offset += len;
+    }
+}
+
+class SchemaReader {
+    constructor(buf) {
+        this.buf = buf;
+        this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        this.offset = 0;
+    }
+    u8() { return this.view.getUint8(this.offset++); }
+    u16() { const r = this.view.getUint16(this.offset, false); this.offset += 2; return r; }
+    u32() { const r = this.view.getUint32(this.offset, false); this.offset += 4; return r; }
+    ts() {
+        const high = this.u16();
+        const low = this.u32();
+        return high * 0x100000000 + low;
+    }
+    sig() {
+        const r = btoa(String.fromCharCode(...this.buf.subarray(this.offset, this.offset + 64)));
+        this.offset += 64;
+        return r;
+    }
+    str(len) {
+        let end = this.offset;
+        while (end < this.offset + len && this.buf[end] !== 0) end++;
+        const r = new TextDecoder().decode(this.buf.subarray(this.offset, end));
+        this.offset += len;
+        return r;
+    }
+}
 
 const ROOM_MAP = [
     'cellar', 'hallway', 'tavern', 'market', 
@@ -15,18 +72,34 @@ const ENEMY_MAP = [
     'goblin', 'skeleton', 'wraith', 'mountain_troll'
 ];
 const ACTION_TYPES = ['attack', 'kill', 'loot'];
+const ITEM_MAP = [
+    'wolf_pelt', 'old_tome', 'iron_key', 'gold', 'potion', 'ale', 'bread',
+    'iron_sword', 'steel_sword', 'magic_staff', 'healing_elixir', 'strength_elixir',
+    'bandit_mask', 'wood', 'iron'
+];
 
-export const packMove = (from, to) => {
-    const buf = new Uint8Array(2);
-    buf[0] = ROOM_MAP.indexOf(from);
-    buf[1] = ROOM_MAP.indexOf(to);
-    return buf;
+export const packMove = (m) => {
+    const s = new SchemaBuffer(74);
+    s.u8(ROOM_MAP.indexOf(m.from));
+    s.u8(ROOM_MAP.indexOf(m.to));
+    s.u8(m.x || 0);
+    s.u8(m.y || 0);
+    s.ts(m.ts);
+    s.sig(m.signature);
+    return s.buf;
 };
 
-export const unpackMove = (buf) => ({
-    from: ROOM_MAP[buf[0]],
-    to: ROOM_MAP[buf[1]]
-});
+export const unpackMove = (buf) => {
+    const r = new SchemaReader(buf);
+    return {
+        from: ROOM_MAP[r.u8()] ?? 'cellar',
+        to: ROOM_MAP[r.u8()] ?? 'cellar',
+        x: r.u8(),
+        y: r.u8(),
+        ts: r.ts(),
+        signature: r.sig(),
+    };
+};
 
 export const packEmote = (emoteText) => {
     const idx = EMOTE_MAP.indexOf(emoteText);
@@ -34,133 +107,94 @@ export const packEmote = (emoteText) => {
 };
 
 export const unpackEmote = (buf) => ({
-    text: EMOTE_MAP[buf[0]] || 'gestures vaguely.'
+    text: EMOTE_MAP[buf[0]] ?? 'gestures vaguely.'
 });
 
-/**
- * Presence Packet (Fixed Size: 96 bytes)
- * [0-15]  Name (UTF-8, null-padded, truncated to 16 bytes)
- * [16]    Location (Room Index)
- * [17-20] PH (4 bytes from hex)
- * [21]    Level (Uint8)
- * [22-25] XP (Uint32BE)
- * [26-31] TS (48-bit timestamp)
- * [32-95] Signature (64 bytes)
- */
 export const packPresence = (p) => {
-    const buf = new Uint8Array(96);
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-
-    // Encode then byte-truncate to 16 to avoid overflowing adjacent fields
-    const fullName = new TextEncoder().encode(p.name || '');
-    buf.set(fullName.subarray(0, 16), 0);
-
-    view.setUint8(16, ROOM_MAP.indexOf(p.location));
-
-    // PH (8 hex chars -> 4 bytes); default to zeros if identity not yet set
-    const ph = p.ph || '00000000';
-    for (let i = 0; i < 4; i++) {
-        buf[17 + i] = parseInt(ph.slice(i * 2, i * 2 + 2), 16);
-    }
-
-    view.setUint8(21, p.level);
-    view.setUint32(22, p.xp, false); // big-endian
-
-    // TS (low 48 bits)
-    const ts = p.ts || Date.now();
-    view.setUint16(26, Math.floor(ts / 0x100000000));
-    view.setUint32(28, ts % 0x100000000);
-
-    // Signature (Base64 -> 64 bytes); write zeros if missing (e.g. during boot)
-    if (p.signature) {
-        const sigDecoded = Uint8Array.from(atob(p.signature), c => c.charCodeAt(0));
-        buf.set(sigDecoded, 32);
-    }
-
-    return buf;
+    const s = new SchemaBuffer(98);
+    s.str(p.name || '', 16);
+    s.u8(ROOM_MAP.indexOf(p.location));
+    // Pack PH (4 bytes from 8-char hex)
+    const phHex = (p.ph || '00000000').slice(0, 8);
+    for (let i = 0; i < 4; i++) s.u8(parseInt(phHex.slice(i * 2, i * 2 + 2), 16));
+    s.u8(p.level || 1);
+    s.u32(p.xp || 0);
+    s.u8(p.x || 0);
+    s.u8(p.y || 0);
+    s.ts(p.ts);
+    s.sig(p.signature);
+    return s.buf;
 };
 
 export const unpackPresence = (buf) => {
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-
-    // Name
-    let nameEnd = 0;
-    while (nameEnd < 16 && buf[nameEnd] !== 0) nameEnd++;
-    const name = new TextDecoder().decode(buf.subarray(0, nameEnd));
-
-    const location = ROOM_MAP[view.getUint8(16)];
-
-    // PH
+    const r = new SchemaReader(buf);
+    const name = r.str(16);
+    const location = ROOM_MAP[r.u8()] ?? 'cellar';
     let ph = '';
-    for (let i = 0; i < 4; i++) ph += buf[17 + i].toString(16).padStart(2, '0');
-
-    const level = view.getUint8(21);
-    const xp = view.getUint32(22, false); // big-endian
-
-    // TS
-    const tsHigh = view.getUint16(26);
-    const tsLow = view.getUint32(28);
-    const ts = tsHigh * 0x100000000 + tsLow;
-
-    // Signature
-    const signature = btoa(String.fromCharCode(...buf.subarray(32, 96)));
-
-    return { name, location, ph, level, xp, ts, signature };
+    for (let i = 0; i < 4; i++) ph += r.u8().toString(16).padStart(2, '0');
+    const level = r.u8();
+    const xp = r.u32();
+    const x = r.u8();
+    const y = r.u8();
+    const ts = r.ts();
+    const signature = r.sig();
+    return { name, location, ph, level, xp, x, y, ts, signature };
 };
 
-/**
- * Duel Commit Packet (Fixed Size: 70 bytes)
- * [0]     Round (Uint8)
- * [1]     Damage (Uint8)
- * [2-5]   Day (Uint32BE)
- * [6-69]  Signature (64 bytes)
- */
 export const packDuelCommit = (c) => {
-    const buf = new Uint8Array(70);
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    view.setUint8(0, c.round);
-    view.setUint8(1, c.dmg);
-    view.setUint32(2, c.day, false);
-    const sigDecoded = Uint8Array.from(atob(c.signature), ch => ch.charCodeAt(0));
-    buf.set(sigDecoded, 6);
-    return buf;
+    const s = new SchemaBuffer(70);
+    s.u8(c.round);
+    s.u8(c.dmg);
+    s.u32(c.day);
+    s.sig(c.signature);
+    return s.buf;
 };
 
 export const unpackDuelCommit = (buf) => {
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    const round = view.getUint8(0);
-    const dmg = view.getUint8(1);
-    const day = view.getUint32(2, false);
-    const signature = btoa(String.fromCharCode(...buf.subarray(6, 70)));
-    return { commit: { round, dmg, day }, signature };
+    const r = new SchemaReader(buf);
+    return {
+        commit: { round: r.u8(), dmg: r.u8(), day: r.u32() },
+        signature: r.sig()
+    };
 };
 
-/**
- * Action Log Packet (Fixed Size: 72 bytes)
- * [0]     Type (Uint8: 0=attack, 1=kill, 2=loot)
- * [1-4]   Action Index (Uint32BE)
- * [5]     Target (Enemy Index)
- * [6-7]   Data (Uint16BE, e.g. damage dealt or item index)
- * [8-71]  Signature (64 bytes)
- */
 export const packActionLog = (a) => {
-    const buf = new Uint8Array(72);
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    view.setUint8(0, ACTION_TYPES.indexOf(a.type));
-    view.setUint32(1, a.index, false);
-    view.setUint8(5, ENEMY_MAP.indexOf(a.target));
-    view.setUint16(6, a.data || 0, false);
-    const sigDecoded = Uint8Array.from(atob(a.signature), ch => ch.charCodeAt(0));
-    buf.set(sigDecoded, 8);
-    return buf;
+    const s = new SchemaBuffer(72);
+    s.u8(ACTION_TYPES.indexOf(a.type));
+    s.u32(a.index);
+    s.u8(ENEMY_MAP.indexOf(a.target));
+    s.u16(a.data || 0);
+    s.sig(a.signature);
+    return s.buf;
 };
 
 export const unpackActionLog = (buf) => {
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    const type = ACTION_TYPES[view.getUint8(0)];
-    const index = view.getUint32(1, false);
-    const target = ENEMY_MAP[view.getUint8(5)];
-    const data = view.getUint16(6, false);
-    const signature = btoa(String.fromCharCode(...buf.subarray(8, 72)));
-    return { type, index, target, data, signature };
+    const r = new SchemaReader(buf);
+    return {
+        type: ACTION_TYPES[r.u8()],
+        index: r.u32(),
+        target: ENEMY_MAP[r.u8()] ?? null,
+        data: r.u16(),
+        signature: r.sig()
+    };
+};
+
+export const packTradeCommit = (t) => {
+    const s = new SchemaBuffer(82);
+    s.u32(t.gold);
+    for (let i = 0; i < 8; i++) s.u8(t.items[i] ? ITEM_MAP.indexOf(t.items[i]) : 255);
+    s.ts(t.ts);
+    s.sig(t.signature);
+    return s.buf;
+};
+
+export const unpackTradeCommit = (buf) => {
+    const r = new SchemaReader(buf);
+    const gold = r.u32();
+    const items = [];
+    for (let i = 0; i < 8; i++) {
+        const idx = r.u8();
+        if (idx !== 255) items.push(ITEM_MAP[idx]);
+    }
+    return { gold, items, ts: r.ts(), signature: r.sig() };
 };

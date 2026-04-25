@@ -1,9 +1,10 @@
 import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
-import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot } from './rules.js';
-import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS } from './constants.js';
+import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot, validateMove } from './rules.js';
+import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from './constants.js';
 import { 
-    worldState, players, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
-    TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY, shadowPlayers
+    worldState, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
+    TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY, 
+    players, shadowPlayers, trackPlayer, trackShadowPlayer, bansHash, setBans, bans
 } from './store.js';
 import { INSTANCE_CAP, ENEMIES } from './data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
@@ -11,10 +12,17 @@ import { IBLT } from './iblt.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, unpackPresence, packDuelCommit, unpackDuelCommit,
-    packActionLog, unpackActionLog
+    packActionLog, unpackActionLog, packTradeCommit, unpackTradeCommit
 } from './packer.js';
 import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
 import { log, printStatus } from './ui.js';
+import { GAME_NAME } from './data.js';
+
+const netLog = (msg, color = '#555') => {
+    if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
+        log(`[Net] ${msg}`, color);
+    }
+};
 
 export let gameActions = {};
 export let rooms = { torrent: null };
@@ -34,8 +42,8 @@ const buildLeafData = () => {
     const leaves = Array.from(players.entries())
         .filter(([id]) => id !== selfId)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
-    leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
+        .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}:${p.x || 0}:${p.y || 0}`);
+    leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}:${localPlayer.x || 0}:${localPlayer.y || 0}`);
     leaves.sort();
     return leaves;
 };
@@ -44,6 +52,14 @@ export const updateSimulation = (state) => {
     if (state.type === 'ban') {
         log(`[Arbiter] Proposer banned: ${state.target.slice(0, 8)}`, '#f55');
         return;
+    }
+
+    // Sync Ban List if hash mismatch
+    if (state.bans && state.bans !== bansHash && ARBITER_URL) {
+        fetch(`${ARBITER_URL}/bans`)
+            .then(r => r.ok ? r.json() : [])
+            .then(list => setBans(list, state.bans))
+            .catch(() => {});
     }
 
     const newSeed = state.world_seed;
@@ -68,6 +84,11 @@ export const updateSimulation = (state) => {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
             localPlayer.currentEnemy = null;
             localPlayer.forestFights = 15; // Reset daily fights
+            localPlayer.combatRound = 0;   // Reset round counter so RNG seeds stay small
+            if (localPlayer.buffs) {
+                localPlayer.buffs.rested = false;
+                localPlayer.buffs.activeElixir = null;
+            }
             printStatus();
         }
     }
@@ -82,10 +103,20 @@ export const updateSimulation = (state) => {
 export const initNetworking = async (rtcConfig) => {
     currentRtcConfig = rtcConfig || { iceServers: STUN_SERVERS };
 
+    // Deterministic Tracker Allocation: each peer only uses 2 trackers to reduce global load
+    const myTrackers = [];
+    if (TORRENT_TRACKERS.length > 0) {
+        const seed = parseInt(selfId.slice(0, 8), 16) || 0;
+        const idx1 = seed % TORRENT_TRACKERS.length;
+        const idx2 = (seed + 1) % TORRENT_TRACKERS.length;
+        myTrackers.push(TORRENT_TRACKERS[idx1]);
+        if (idx1 !== idx2) myTrackers.push(TORRENT_TRACKERS[idx2]);
+    }
+
     const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
         
-        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, 'global');
+        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: myTrackers, rtcConfig: config }, 'global');
 
         const [sendRollup] = globalRooms.torrent.makeAction('rollup');
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -96,13 +127,13 @@ export const initNetworking = async (rtcConfig) => {
         gameActions.submitFraudProof = (proof) => sendFraud(proof);
 
         getState(async (data, peerId) => {
-            console.log(`[Sync] Received state from ${peerId}`);
+            netLog(`Received state from ${peerId.slice(0, 8)}`);
             const { state, signature } = data;
             const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
             try {
                 const valid = await verifyMessage(stateStr, signature, arbiterPublicKey);
                 if (valid) {
-                    console.log(`[Sync] Signature valid! Updating simulation.`);
+                    netLog(`Signature valid! Updating simulation.`, '#0f0');
                     lastValidStatePacket = data;
                     TAB_CHANNEL.postMessage({ type: 'state', packet: data });
                     const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
@@ -141,6 +172,21 @@ export const initNetworking = async (rtcConfig) => {
     };
 
     await connectGlobal(currentRtcConfig);
+
+    // Adaptive Silence Watchdog: Leave global room if we have enough peers to reduce tracker load
+    let isSilenced = false;
+    setInterval(async () => {
+        const peerCount = Object.keys(globalRooms.torrent?.getPeers() || {}).length;
+        if (!isSilenced && peerCount >= 5) {
+            netLog('Entering Adaptive Silence (leaving global room)...', '#0af');
+            globalRooms.torrent.leave();
+            isSilenced = true;
+        } else if (isSilenced && players.size < 3) {
+            netLog('Leaving Adaptive Silence (rejoining global room)...', '#0af');
+            await connectGlobal(currentRtcConfig);
+            isSilenced = false;
+        }
+    }, 30000);
 
     // Networking Status Heartbeat
     setInterval(() => {
@@ -187,12 +233,18 @@ export const initNetworking = async (rtcConfig) => {
         gameActions.sendRollupLocal(data);
     }, ROLLUP_INTERVAL);
 
-    setInterval(() => {
-        const iblt = new IBLT();
-        players.forEach((_, id) => iblt.insert(id));
-        iblt.insert(selfId);
-        if (gameActions.sendSketch) gameActions.sendSketch(iblt.serialize());
-    }, SKETCH_INTERVAL);
+    // Dynamic Sketch Intervals: scale with population to prevent chatter storms
+    const scheduleNextSketch = () => {
+        const delay = 30000 + (players.size * 5000);
+        setTimeout(() => {
+            const iblt = new IBLT();
+            players.forEach((_, id) => iblt.insert(id));
+            iblt.insert(selfId);
+            if (gameActions.sendSketch) gameActions.sendSketch(iblt.serialize());
+            scheduleNextSketch();
+        }, delay);
+    };
+    scheduleNextSketch();
 };
 
 export const isProposer = () => {
@@ -215,7 +267,18 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     const shard = getShardName(location, instanceId);
     console.log(`[P2P] Joining Shard Room: ${shard}`);
     const config = rtcConfig || currentRtcConfig;
-    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: TORRENT_TRACKERS, rtcConfig: config }, shard);
+
+    // Deterministic Tracker Allocation
+    const myTrackers = [];
+    if (TORRENT_TRACKERS.length > 0) {
+        const seed = parseInt(selfId.slice(0, 8), 16) || 0;
+        const idx1 = seed % TORRENT_TRACKERS.length;
+        const idx2 = (seed + 1) % TORRENT_TRACKERS.length;
+        myTrackers.push(TORRENT_TRACKERS[idx1]);
+        if (idx1 !== idx2) myTrackers.push(TORRENT_TRACKERS[idx2]);
+    }
+
+    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: myTrackers, rtcConfig: config }, shard);
 
     const checkFull = async () => {
         const peerCount = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
@@ -230,6 +293,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     const setupShard = (r) => {
         const [sendMove, getMove] = r.makeAction('move');
         const [sendEmote, getEmote] = r.makeAction('emote');
+        const [sendMonsterDmg, getMonsterDmg] = r.makeAction('monster_damage');
         const [sendPresenceSingle, getPresenceSingle] = r.makeAction('presence_single');
         const [sendPresenceBatch, getPresenceBatch] = r.makeAction('presence_batch');
         const [sendRelay, getRelay] = r.makeAction('world_state_relay');
@@ -238,6 +302,10 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendDuelAccept, getDuelAccept] = r.makeAction('duel_accept');
         const [sendDuelCommit, getDuelCommit] = r.makeAction('duel_commit');
         const [sendActionLog, getActionLog] = r.makeAction('action_log');
+        const [sendTradeOffer, getTradeOffer] = r.makeAction('trade_offer');
+        const [sendTradeAccept, getTradeAccept] = r.makeAction('trade_accept');
+        const [sendTradeCommit, getTradeCommit] = r.makeAction('trade_commit');
+        const [sendTradeFinal, getTradeFinal] = r.makeAction('trade_finalized');
         const [sendSketch, getSketch] = r.makeAction('presence_sketch');
         const [sendRequest, getRequest] = r.makeAction('request_presence');
 
@@ -258,12 +326,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 let shadow = shadowPlayers.get(peerId);
                 if (!shadow) {
                     shadow = { level: 1, xp: 0, inventory: [], gold: 0, actionIndex: -1 };
-                    shadowPlayers.set(peerId, shadow);
                 }
+                trackShadowPlayer(peerId, shadow);
 
                 if (data.index <= shadow.actionIndex) return;
 
-                const actionEntropy = hashStr(worldState.seed + entry.publicKey + data.index);
+                const actionEntropy = hashStr(worldState.seed + '|' + entry.publicKey + '|' + data.index);
                 const rng = seededRNG(actionEntropy);
 
                 if (data.type === 'kill') {
@@ -280,9 +348,37 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             } catch (e) { console.error('[Security] ActionLog fail:', e); }
         });
 
+        getTradeOffer((data, peerId) => {
+            log(`\n[Trade] ${data.fromName} wants to trade!`, '#ff0');
+            window.dispatchEvent(new CustomEvent('trade-offer-received', { detail: { partnerId: peerId, partnerName: data.fromName, offer: data.offer } }));
+        });
+
+        getTradeAccept((data, peerId) => {
+            window.dispatchEvent(new CustomEvent('trade-accept-received', { detail: { partnerId: peerId, offer: data.offer } }));
+        });
+
+        getTradeCommit(async (buf, peerId) => {
+            const data = unpackTradeCommit(buf);
+            window.dispatchEvent(new CustomEvent('trade-commit-received', { detail: { partnerId: peerId, commit: data } }));
+        });
+
+        getTradeFinal((data) => {
+            const { peerA, peerB, delta } = data;
+            [peerA, peerB].forEach(id => {
+                let shadow = shadowPlayers.get(id);
+                if (shadow) {
+                    const d = delta[id];
+                    shadow.gold -= (d.gives_gold || 0);
+                    shadow.gold += (d.gets_gold || 0);
+                    if (d.gives_items) shadow.inventory = shadow.inventory.filter(i => !d.gives_items.includes(i));
+                    if (d.gets_items) shadow.inventory.push(...d.gets_items);
+                }
+            });
+        });
+
         getDuelChallenge((data, peerId) => {
             if (data.target !== selfId) return;
-            log(`\n[DUEL] ${data.fromName} challenges you to a duel! Type /accept or /decline.`, '#ff0');
+            log(`\n[DUEL] ${data.fromName} challenges you to a duel!`, '#ff0');
             setPendingDuel({ challengerId: peerId, challengerName: data.fromName, expiresAt: Date.now() + 60000, day: worldState.day });
         });
 
@@ -333,6 +429,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const diff = IBLT.subtract(localIblt, remoteIblt);
             const { added, removed, success } = diff.decode();
             if (!success) return;
+            // Cap diff size to prevent a malicious zero-IBLT from enumerating all shard players
+            if (added.length > 50 || removed.length > 50) return;
             if (removed.length > 0) sendRequest(removed.map(id => id.toString()), peerId);
             if (added.length > 0) {
                 const response = {};
@@ -366,22 +464,45 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getPresenceSingle(async (buf, peerId) => {
             if (peerId === selfId) return;
+            const entry = players.get(peerId);
+            if (!entry?.publicKey) return;
+
+            // Security: Arbiter Blacklist
+            if (bans.has(entry.publicKey)) {
+                players.delete(peerId);
+                return;
+            }
+
             const unpacked = unpackPresence(buf);
 
-            // Security Check: Shadow Validation
+            // Security: verify ph is derived from the sender's known public key
+            const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
+            if (unpacked.ph !== expectedPh) return;
+
+            // Security: verify Ed25519 signature
+            try {
+                const { signature, ...sigData } = unpacked;
+                const pubKey = await importKey(entry.publicKey, 'public');
+                if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) return;
+            } catch { return; }
+
+            // Security: shadow validation (XP/level sanity)
             const shadow = shadowPlayers.get(peerId);
             if (shadow) {
                 if (unpacked.xp > shadow.xp + 100) return;
                 if (unpacked.level > shadow.level + 1) return;
             }
 
-            const entry = players.get(peerId) || {};
-            players.set(peerId, { ...entry, ...unpacked, ts: Date.now() });
+            trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
         });
 
         getPresenceBatch(async (data) => {
             for (const [id, { presence, publicKey }] of Object.entries(data)) {
                 if (id === selfId || !publicKey) continue;
+
+                // Security: Arbiter Blacklist
+                if (bans.has(publicKey)) continue;
+
                 try {
                     const unpacked = unpackPresence(presence);
                     
@@ -404,7 +525,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     const pubKey = await importKey(publicKey, 'public');
                     if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) continue;
                     const entry = players.get(id) || {};
-                    players.set(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
+                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
                 } catch { }
             }
         });
@@ -450,14 +571,75 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
         });
 
-        getMove((buf, peerId) => {
+        getMove(async (buf, peerId) => {
             const data = unpackMove(buf);
-            window.dispatchEvent(new CustomEvent('player-move', { detail: { peerId, data } }));
+            const entry = players.get(peerId);
+            if (!entry?.publicKey) return;
+
+            try {
+                const pubKey = await importKey(entry.publicKey, 'public');
+                const sigData = JSON.stringify({ from: data.from, to: data.to, ts: data.ts });
+                if (!await verifyMessage(sigData, data.signature, pubKey)) {
+                    console.warn(`[Security] Invalid move signature from ${peerId}`);
+                    return;
+                }
+
+                // Path Validation (from data.js world graph)
+                const isValidRoomJump = Object.values(world[data.from]?.exits || {}).includes(data.to);
+                const isMicroMove = data.from === data.to;
+                
+                // Enforce max 1-tile distance for micro-moves to prevent blinking
+                if (isMicroMove && entry.x !== undefined) {
+                    const dist = Math.abs(data.x - entry.x) + Math.abs(data.y - entry.y);
+                    if (dist > 1) {
+                        console.warn(`[Security] Illegal micro-move jump by ${peerId}: dist=${dist}`);
+                        return;
+                    }
+                }
+
+                if (!isValidRoomJump && !isMicroMove) {
+                    console.warn(`[Security] Illegal teleport attempt by ${peerId}: ${data.from} -> ${data.to}`);
+                    
+                    // Submit Fraud Proof to Arbiter
+                    if (gameActions.submitFraudProof) {
+                        gameActions.submitFraudProof({
+                            type: 'illegal_move',
+                            proof: {
+                                peerId,
+                                move: { from: data.from, to: data.to, x: data.x, y: data.y, ts: data.ts },
+                                signature: data.signature,
+                                publicKey: entry.publicKey
+                            },
+                            witness: {
+                                id: selfId,
+                                signature: await signMessage(JSON.stringify({ disputedPeer: peerId, disputedTs: data.ts }), playerKeys.privateKey),
+                                publicKey: await exportKey(playerKeys.publicKey)
+                            }
+                        });
+                    }
+                    return;
+                }
+
+                // Update peer coordinates locally
+                trackPlayer(peerId, { ...entry, location: data.to, x: data.x, y: data.y, ts: Date.now() });
+
+                window.dispatchEvent(new CustomEvent('player-move', { detail: { peerId, data } }));
+            } catch (e) { console.error('[Security] Move validation fail:', e); }
         });
 
         getEmote((buf, peerId) => {
             const data = unpackEmote(buf);
             window.dispatchEvent(new CustomEvent('player-emote', { detail: { peerId, data } }));
+        });
+
+        getMonsterDmg((data) => {
+            const { roomId, damage } = data;
+            const state = shardEnemies.get(roomId);
+            if (state) {
+                state.hp = Math.max(0, state.hp - damage);
+                state.lastUpdate = Date.now();
+                window.dispatchEvent(new CustomEvent('monster-damaged', { detail: { roomId, damage } }));
+            }
         });
 
         const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
@@ -475,9 +657,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         getIdentity(({ publicKey }, peerId) => {
+            // Security: Arbiter Blacklist
+            if (bans.has(publicKey)) return;
+
             const entry = players.get(peerId) || {};
             const isNew = !entry.publicKey;
-            players.set(peerId, { ...entry, publicKey, ts: Date.now() });
+            trackPlayer(peerId, { ...entry, publicKey, ts: Date.now() });
             if (isNew) log(`[Social] Peer ${peerId.slice(0,4)} entered the world.`, '#aaa');
         });
 
@@ -485,6 +670,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             window.dispatchEvent(new CustomEvent('player-leave', { detail: { peerId } }));
             knownPeers.delete(peerId);
             players.delete(peerId);
+            shadowPlayers.delete(peerId);
+            const chan = activeChannels.get(peerId);
+            if (chan) {
+                clearTimeout(chan.timeoutId);
+                activeChannels.delete(peerId);
+            }
         });
 
         return { 
@@ -498,8 +689,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
     gameActions = {
         ...gameActions,
-        sendMove: (data) => r.sendMove(packMove(data.from, data.to)),
+        sendMove: async (data) => {
+            const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: Date.now() };
+            const signature = await signMessage(JSON.stringify(moveData), playerKeys.privateKey);
+            r.sendMove(packMove({ ...moveData, signature }));
+        },
         sendEmote: (data) => r.sendEmote(packEmote(data.text)),
+        sendMonsterDmg: (data) => r.sendMonsterDmg(data),
         sendActionLog: (data) => r.sendActionLog(packActionLog(data)),
         sendPresenceSingle: (data, target) => {
             const packed = packPresence(data);
@@ -513,6 +709,10 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendDuelChallenge: (data) => r.sendDuelChallenge(data),
         sendDuelAccept: (data) => r.sendDuelAccept(data),
         sendDuelCommit: (data, target) => r.sendDuelCommit(packDuelCommit({ ...data.commit, signature: data.signature }), target),
+        sendTradeOffer: (data, target) => r.sendTradeOffer(data, target),
+        sendTradeAccept: (data, target) => r.sendTradeAccept(data, target),
+        sendTradeCommit: (data, target) => r.sendTradeCommit(packTradeCommit(data), target),
+        sendTradeFinal: (data) => r.sendTradeFinal(data),
         sendSketch: (data) => r.sendSketch(data),
         sendRequest: (data, target) => r.sendRequest(data, target),
     };
