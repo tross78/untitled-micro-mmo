@@ -1,4 +1,4 @@
-import { IBLT } from './iblt';
+import { IBLT } from './iblt.js';
 
 describe('IBLT (Invertible Bloom Lookup Table)', () => {
     test('Can reconcile small set differences', () => {

@@ -1,6 +1,6 @@
 import { selfId } from '@trystero-p2p/torrent';
-import { DEFAULT_PLAYER_STATS, GAME_NAME } from './data';
-import { deriveWorldState } from './rules';
+import { DEFAULT_PLAYER_STATS, GAME_NAME } from './data.js';
+import { deriveWorldState } from './rules.js';
 
 export const WORLD_STATE_KEY = `${GAME_NAME}_worldstate_v1`;
 export const STORAGE_KEY = `${GAME_NAME}_state_v5`;

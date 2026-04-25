@@ -2,24 +2,24 @@ import { selfId } from '@trystero-p2p/torrent';
 import { 
     worldState, players, localPlayer, pendingDuel, setPendingDuel, 
     activeChannels, STORAGE_KEY, hasSyncedWithArbiter 
-} from './store';
-import { log, printStatus, triggerShake } from './ui';
+} from './store.js';
+import { log, printStatus, triggerShake } from './ui.js';
 import { 
     world, ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, GAME_NAME,
     NPCS, QUESTS, ENABLE_ADS
-} from './data';
+} from './data.js';
 import { 
     hashStr, seededRNG, levelBonus, resolveAttack, 
     rollLoot, xpToLevel, validateMove, getShardName,
     getNPCLocation, getNPCDialogue
-} from './rules';
-import { signMessage, verifyMessage, importKey } from './crypto';
+} from './rules.js';
+import { signMessage, verifyMessage, importKey } from './crypto.js';
 import { 
     gameActions, joinInstance, globalRooms, rooms, 
     currentInstance, currentRtcConfig 
-} from './networking';
-import { playerKeys, arbiterPublicKey } from './identity';
-import { showRewardedAd } from './ads';
+} from './networking.js';
+import { playerKeys, arbiterPublicKey } from './identity.js';
+import { showRewardedAd } from './ads.js';
 
 export const pidHash = (playerId) => playerId ? (hashStr(playerId) >>> 0).toString(16).padStart(8, '0') : null;
 export const getTag = (ph) => ph ? ph.slice(0, 4) : '????';
@@ -522,6 +522,10 @@ export async function startStateChannel(targetId, targetName, day) {
 export async function resolveRound(targetId) {
     const chan = activeChannels.get(targetId);
     if (!chan) return;
+
+    // If they are ahead, we need to catch up. 
+    // If we are ahead or equal, we only proceed if we haven't reached the cap.
+    if (chan.myHistory.length >= chan.theirHistory.length && chan.round >= 3) return;
 
     chan.round++;
     const seed = hashStr(selfId + targetId + chan.day + chan.round);

@@ -7,7 +7,7 @@ import {
     SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL,
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, INSTANCE_CAP, world,
     NPCS, DIALOGUE_POOLS, QUESTS
-} from './data';
+} from './data.js';
 
 export function seededRNG(seed) {
     let state = seed | 0;

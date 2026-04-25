@@ -22,11 +22,11 @@ node --input-type=module << 'EOF'
 import { readFileSync } from 'node:fs';
 const main = readFileSync('src/main.js', 'utf8');
 const networking = readFileSync('src/networking.js', 'utf8');
-const rulesMatch = networking.match(/from\s*['"]\.\/rules['"]/);
-const dataMatch = networking.match(/from\s*['"]\.\/data['"]/);
+const rulesMatch = networking.match(/from\s*['"]\.\/rules\.js['"]/);
+const dataMatch = networking.match(/from\s*['"]\.\/data\.js['"]/);
 
-if (!rulesMatch) { console.error("    FAIL: No import from './rules' found in networking.js"); process.exit(1); }
-if (!dataMatch) { console.error("    FAIL: No import from './data' found in networking.js"); process.exit(1); }
+if (!rulesMatch) { console.error("    FAIL: No import from './rules.js' found in networking.js"); process.exit(1); }
+if (!dataMatch) { console.error("    FAIL: No import from './data.js' found in networking.js"); process.exit(1); }
 EOF
 echo "    Imports OK."
 

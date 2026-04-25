@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { signMessage, verifyMessage, createMerkleRoot } from './crypto';
-import { hashStr } from './rules';
+import { signMessage, verifyMessage, createMerkleRoot } from './crypto.js';
+import { hashStr } from './rules.js';
 
 const ROLLUP_INTERVAL = 10000;
 const FRAUD_BAN_THRESHOLD = 3;

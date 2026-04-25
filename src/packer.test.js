@@ -1,4 +1,4 @@
-import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer';
+import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit } from './packer.js';
 
 describe('Binary Packer', () => {
     test('Move packet encodes/decodes correctly', () => {

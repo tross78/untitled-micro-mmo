@@ -1,8 +1,8 @@
-import { importKey, generateKeyPair, exportKey, signMessage } from './crypto';
-import { MASTER_PUBLIC_KEY } from './constants';
-import { localPlayer } from './store';
-import { hashStr } from './rules';
-import { GAME_NAME } from './data';
+import { importKey, generateKeyPair, exportKey, signMessage } from './crypto.js';
+import { MASTER_PUBLIC_KEY } from './constants.js';
+import { localPlayer } from './store.js';
+import { hashStr } from './rules.js';
+import { GAME_NAME } from './data.js';
 
 export let playerKeys = null;
 export let arbiterPublicKey = null;

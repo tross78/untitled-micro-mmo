@@ -2,27 +2,27 @@ import { selfId } from '@trystero-p2p/torrent';
 import { 
     worldState, players, localPlayer, hasSyncedWithArbiter, 
     TAB_CHANNEL, loadLocalState, pruneStale, saveLocalState
-} from './store';
-import { log, printStatus } from './ui';
+} from './store.js';
+import { log, printStatus } from './ui.js';
 import { 
     initIdentity, arbiterPublicKey, myEntry 
-} from './identity';
+} from './identity.js';
 import { 
     initNetworking, gameActions, lastValidStatePacket, updateSimulation, joinInstance, currentInstance, currentRtcConfig
-} from './networking';
+} from './networking.js';
 import { 
     handleCommand, getPlayerName, getTag, startStateChannel, resolveRound
-} from './commands';
-import { verifyMessage } from './crypto';
-import { getSuggestions } from './autocomplete';
-import { initAds, showBanner } from './ads';
+} from './commands.js';
+import { verifyMessage } from './crypto.js';
+import { getSuggestions } from './autocomplete.js';
+import { initAds, showBanner } from './ads.js';
 import { 
     world, ITEMS, GAME_NAME, NPCS, QUESTS
-} from './data';
+} from './data.js';
 import { 
     GH_GIST_ID, ARBITER_URL 
-} from './constants';
-import { getNPCLocation } from './rules';
+} from './constants.js';
+import { getNPCLocation } from './rules.js';
 
 const input = document.getElementById('input');
 const suggestionsEl = document.getElementById('suggestions');
