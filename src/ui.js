@@ -86,7 +86,7 @@ export const renderActionButtons = (ctx, onAction) => {
     if (!actionButtonsEl) return;
     actionButtonsEl.innerHTML = '';
     
-    const { localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS } = ctx;
+    const { localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, shardEnemies } = ctx;
     const loc = world[localPlayer.location];
     if (!loc) return;
 
@@ -131,10 +131,16 @@ export const renderActionButtons = (ctx, onAction) => {
         
         if (loc.enemy) {
             const enemyDef = ENEMIES[loc.enemy];
-            const label = (localPlayer.currentEnemy && localPlayer.currentEnemy.hp > 0) 
-                ? `Strike ${enemyDef.name} ⚔️` 
-                : `Attack ${enemyDef.name} ⚔️`;
-            addButton(label, 'attack');
+            const sharedEnemy = shardEnemies?.get(localPlayer.location);
+            const enemyAlive = sharedEnemy && sharedEnemy.hp > 0;
+            const enemyDead = sharedEnemy && sharedEnemy.hp <= 0;
+            // Hide attack button entirely if enemy is dead and player has no fights left
+            if (!(enemyDead && localPlayer.forestFights <= 0)) {
+                const label = (localPlayer.currentEnemy && localPlayer.currentEnemy.hp > 0)
+                    ? `Strike ${enemyDef.name} ⚔️`
+                    : `Attack ${enemyDef.name} ⚔️`;
+                addButton(label, 'attack');
+            }
             if (localPlayer.currentEnemy) {
                 addButton('Flee 🏃', 'flee');
             }
@@ -144,7 +150,9 @@ export const renderActionButtons = (ctx, onAction) => {
             addButton('Use 🎒', () => uiState = 'use');
         }
 
-        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
+        const localNpcs = worldState.seed
+            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
+            : [];
         if (localNpcs.length > 0) {
             addButton('Talk 💬', () => uiState = 'talk');
             if (localNpcs.some(id => NPCS[id].role === 'shop')) {
@@ -253,14 +261,18 @@ export const renderActionButtons = (ctx, onAction) => {
         addButton('Back ⬅️', () => uiState = 'root');
 
     } else if (uiState === 'talk') {
-        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
+        const localNpcs = worldState.seed
+            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
+            : [];
         localNpcs.forEach(id => {
             addButton(`${NPCS[id].name}`, `talk ${id}`);
         });
         addButton('Back ⬅️', () => uiState = 'root');
 
     } else if (uiState === 'buy') {
-        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
+        const localNpcs = worldState.seed
+            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
+            : [];
         const shopNpc = localNpcs.find(id => NPCS[id].role === 'shop');
         if (shopNpc && NPCS[shopNpc].shop) {
             NPCS[shopNpc].shop.forEach(itemId => {
@@ -294,7 +306,9 @@ export const renderActionButtons = (ctx, onAction) => {
 
     } else if (uiState === 'quests') {
         const active = Object.entries(localPlayer.quests).filter(([, q]) => !q.completed);
-        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
+        const localNpcs = worldState.seed
+            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
+            : [];
         
         // 1. Quests available to Accept here
         localNpcs.forEach(nid => {
@@ -398,7 +412,7 @@ export const startTicker = (worldState) => {
  */
 export const renderRadar = (ctx, onTileClick) => {
     if (!radarEl) return;
-    const { localPlayer, world, players, shardEnemies } = ctx;
+    const { localPlayer, world, players, shardEnemies, NPCS, getNPCLocation, worldState } = ctx;
     const loc = world[localPlayer.location];
     if (!loc) return;
 
@@ -422,35 +436,50 @@ export const renderRadar = (ctx, onTileClick) => {
         }
     });
 
-    // 3. Shard Enemies (Shared across peers)
+    // 3. Shard Enemies
     const sharedEnemy = shardEnemies.get(localPlayer.location);
-    if (sharedEnemy && sharedEnemy.hp > 0 && loc.enemyX !== undefined) {
-        grid[loc.enemyY][loc.enemyX] = { type: 'enemy', label: 'E' };
-    } else if (loc.enemy) {
-        // Fallback for spawning location if not yet engaged
+    if ((sharedEnemy && sharedEnemy.hp > 0) || (loc.enemy && !sharedEnemy)) {
         const ex = loc.enemyX ?? Math.floor(loc.width / 2);
         const ey = loc.enemyY ?? Math.floor(loc.height / 2);
-        grid[ey][ex] = { type: 'enemy', label: 'E' };
+        if (ex < loc.width && ey < loc.height) {
+            grid[ey][ex] = { type: 'enemy', label: 'E' };
+        }
     }
 
-    // 4. NPCs
-    (loc.staticEntities || []).forEach(e => {
-        if (e.x < loc.width && e.y < loc.height) {
-            grid[e.y][e.x] = { type: 'npc', label: 'N' };
+    // 4. NPCs (Static + Patrolling) — skip if seed not yet synced from arbiter
+    if (worldState.seed) Object.keys(NPCS).forEach(id => {
+        const npcLoc = getNPCLocation(id, worldState.seed, worldState.day);
+        if (npcLoc === localPlayer.location) {
+            // Find static coords if they exist
+            const staticNpc = (loc.staticEntities || []).find(e => e.id === id);
+            let nx, ny;
+            if (staticNpc) {
+                nx = staticNpc.x;
+                ny = staticNpc.y;
+            } else {
+                // Deterministic patrol position based on ID string
+                const hash = hashStr(id + localPlayer.location);
+                const wRange = Math.max(1, loc.width - 2);
+                const hRange = Math.max(1, loc.height - 2);
+                nx = (hash % wRange) + 1;
+                ny = ((hash >> 4) % hRange) + 1;
+            }
+            if (nx < loc.width && ny < loc.height) {
+                grid[ny][nx] = { type: 'npc', label: 'N' };
+            }
         }
     });
 
-    // 5. Peers
+    // 5. Peers (alive only)
     players.forEach((p, id) => {
-        if (p.location === localPlayer.location && p.x !== undefined) {
+        if (p.location === localPlayer.location && p.x !== undefined && p.hp > 0) {
             if (p.x < loc.width && p.y < loc.height) {
-                // If peer is on same tile as portal/npc, don't hide the peer
                 grid[p.y][p.x] = { type: 'peer', label: 'P' };
             }
         }
     });
 
-    // 6. Local Player
+    // 6. Local Player (Always Top Layer)
     if (localPlayer.x < loc.width && localPlayer.y < loc.height) {
         grid[localPlayer.y][localPlayer.x] = { type: 'self', label: '@' };
     }

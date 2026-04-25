@@ -228,7 +228,11 @@ export async function handleCommand(cmd) {
                 localPlayer.forestFights--;
                 sharedEnemy = { type: loc.enemy, hp: scaledHP, maxHp: scaledHP };
                 shardEnemies.set(localPlayer.location, sharedEnemy);
+                localPlayer.currentEnemy = sharedEnemy;
                 log(`\nA ${nameColor(enemyDef.name, enemyDef.color)} snarls and lunges!`, '#f55');
+            } else {
+                // Joining an in-progress fight in this shard
+                localPlayer.currentEnemy = sharedEnemy;
             }
 
             const combatSeed = hashStr(worldState.seed + worldState.day + selfId + localPlayer.combatRound);
@@ -271,9 +275,10 @@ export async function handleCommand(cmd) {
             }
 
             if (sharedEnemy.hp <= 0) {
+                localPlayer.currentEnemy = null;
                 const loot = rollLoot(loc.enemy, rng);
                 localPlayer.xp += enemyDef.xp;
-                localPlayer.combatRound = 0; // Reset per fight so seeds stay bounded
+                localPlayer.combatRound = 0;
                 const newLevel = xpToLevel(localPlayer.xp);
 
                 // Security: Broadcast Action Log
@@ -428,14 +433,23 @@ export async function handleCommand(cmd) {
 
         case 'move': {
             const dir = args[1];
-            const nextLoc = validateMove(localPlayer.location, dir);
-            if (nextLoc) {
-                if (localPlayer.currentEnemy) { log(`You can't flee!`); break; }
+            const loc = world[localPlayer.location];
+            const nextLocId = validateMove(localPlayer.location, dir);
+
+            if (nextLocId) {
+                if (localPlayer.currentEnemy) { log(`You can't move while in combat!`); break; }
+
+                // Spatial Transition logic
+                const portal = (loc.portals || []).find(p => p.dir === dir || (p.dest === nextLocId));
                 const prevLoc = localPlayer.location;
-                localPlayer.location = nextLoc;
+
+                localPlayer.location = nextLocId;
+                localPlayer.x = portal?.destX ?? 5;
+                localPlayer.y = portal?.destY ?? 5;
+
                 saveLocalState(localPlayer);
                 log(`You move ${dir}.`);
-                
+
                 // Cancel active trade on move
                 if (pendingTrade) {
                     setPendingTrade(null);
@@ -448,12 +462,11 @@ export async function handleCommand(cmd) {
                 });
 
                 handleCommand('look');
-                gameActions.sendMove({ from: prevLoc, to: nextLoc });
-                await joinInstance(nextLoc, currentInstance, currentRtcConfig);
+                gameActions.sendMove({ from: prevLoc, to: nextLocId, x: localPlayer.x, y: localPlayer.y });
+                await joinInstance(nextLocId, currentInstance, currentRtcConfig);
             } else log(`You can't go that way.`);
             break;
         }
-
         case 'map': {
             const loc = localPlayer.location;
             const m = (id) => (loc === id ? '[YOU]' : ' [ ] ');
