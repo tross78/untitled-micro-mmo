@@ -3,8 +3,8 @@ import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot
 import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from './constants.js';
 import { 
     worldState, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
-    TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY, 
-    players, shadowPlayers, trackPlayer, trackShadowPlayer, bansHash, setBans, bans
+    TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY,
+    players, shadowPlayers, shardEnemies, trackPlayer, trackShadowPlayer, bansHash, setBans, bans
 } from './store.js';
 import { INSTANCE_CAP, ENEMIES } from './data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
