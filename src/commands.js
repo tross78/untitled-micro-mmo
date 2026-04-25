@@ -3,6 +3,7 @@ import {
     worldState, players, localPlayer, pendingDuel, setPendingDuel,
     activeChannels, hasSyncedWithArbiter, pendingTrade, setPendingTrade, shardEnemies
 } from './store.js';
+import { saveLocalState } from './persistence.js';
 
 import { log, printStatus, triggerShake, getHealthBar } from './ui.js';
 import { 
@@ -316,13 +317,13 @@ export async function handleCommand(cmd) {
                         if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
                     });
 
-                    saveLocalState(true);
+                    saveLocalState(localPlayer, true);
                 }
             }
             if (localPlayer.hp <= 0) {
                 handleCommand('die');
             } else {
-                saveLocalState();
+                saveLocalState(localPlayer);
             }
             break;
         }
@@ -354,7 +355,7 @@ export async function handleCommand(cmd) {
                     log(`${nameColor(enemyDef.name, enemyDef.color)} hits you for ${enemyRes.damage}!`, '#f55');
                     if (localPlayer.hp <= 0) handleCommand('die');
                 }
-                saveLocalState();
+                saveLocalState(localPlayer);
             }
             break;
         }
@@ -371,7 +372,7 @@ export async function handleCommand(cmd) {
             log(`You wake in the cellar...`, '#aaa');
             gameActions.sendMove({ from: deathLoc, to: 'cellar' });
             joinInstance('cellar', currentInstance, currentRtcConfig).then(() => handleCommand('look'));
-            saveLocalState(true);
+            saveLocalState(localPlayer, true);
             break;
         }
 
@@ -388,7 +389,7 @@ export async function handleCommand(cmd) {
                 localPlayer.buffs.rested = true;
                 log(`The comfort of the Tavern makes you feel <b>Well Rested</b>! (+5 Max HP today)`, '#0af');
             }
-            saveLocalState();
+            saveLocalState(localPlayer);
             break;
         }
 
@@ -404,13 +405,13 @@ export async function handleCommand(cmd) {
                 localPlayer.hp = Math.min(cap, localPlayer.hp + item.heal);
                 localPlayer.inventory.splice(idx, 1);
                 log(`You use the ${nameColor(item.name, item.color)} and recover ${item.heal} HP.`, '#0f0');
-                saveLocalState();
+                saveLocalState(localPlayer);
             } else if (item?.type === 'buff') {
                 if (!localPlayer.buffs) localPlayer.buffs = { rested: false, activeElixir: null };
                 localPlayer.buffs.activeElixir = itemId;
                 localPlayer.inventory.splice(idx, 1);
                 log(`You drink the ${nameColor(item.name, item.color)}. You feel much stronger! (+${item.atkBonus} ATK today)`, '#fa0');
-                saveLocalState();
+                saveLocalState(localPlayer);
             } else log(`You can't use that.`);
             break;
         }
@@ -420,7 +421,7 @@ export async function handleCommand(cmd) {
             if (!newName) { log(`Usage: /rename <name>`); break; }
             if (newName.length > 14) { log(`Name too long (max 14 characters).`); break; }
             localPlayer.name = newName;
-            saveLocalState();
+            saveLocalState(localPlayer);
             log(`[System] You are now known as ${newName}`);
             break;
         }
@@ -432,7 +433,7 @@ export async function handleCommand(cmd) {
                 if (localPlayer.currentEnemy) { log(`You can't flee!`); break; }
                 const prevLoc = localPlayer.location;
                 localPlayer.location = nextLoc;
-                saveLocalState();
+                saveLocalState(localPlayer);
                 log(`You move ${dir}.`);
                 
                 // Cancel active trade on move
@@ -481,14 +482,14 @@ export async function handleCommand(cmd) {
                 localPlayer.gold -= amount;
                 localPlayer.bankedGold += amount;
                 log(`[Bank] Deposited ${amount} Gold.`);
-                saveLocalState();
+                saveLocalState(localPlayer);
             } else if (sub === 'withdraw') {
                 if (isNaN(amount) || amount <= 0) break;
                 if (localPlayer.bankedGold < amount) { log(`You don't have that much in the bank.`); break; }
                 localPlayer.bankedGold -= amount;
                 localPlayer.gold += amount;
                 log(`[Bank] Withdrew ${amount} Gold.`);
-                saveLocalState();
+                saveLocalState(localPlayer);
             } else {
                 log(`\n--- THE CELLAR BANK ---`, '#ffa500');
                 log(`Your Wallet: ${localPlayer.gold} Gold`);
@@ -527,7 +528,7 @@ export async function handleCommand(cmd) {
             showRewardedAd(() => {
                 localPlayer.forestFights += 5;
                 log(`[Reward] You feel a surge of energy! (+5 Daily Fights)`, '#0f0');
-                saveLocalState();
+                saveLocalState(localPlayer);
             }, (err) => {
                 log(`[System] ${err}`, '#f55');
             });
@@ -587,7 +588,7 @@ export async function handleCommand(cmd) {
             localPlayer.gold -= item.price;
             localPlayer.inventory.push(itemId);
             log(`[System] You bought ${nameColor(item.name, item.color)} for ${item.price} Gold.`, '#ff0');
-            saveLocalState(true);
+            saveLocalState(localPlayer, true);
             break;
         }
 
@@ -610,7 +611,7 @@ export async function handleCommand(cmd) {
             localPlayer.gold += sellPrice;
             localPlayer.inventory.splice(invIdx, 1);
             log(`[System] You sold ${nameColor(item.name, item.color)} for ${sellPrice} Gold.`, '#ff0');
-            saveLocalState(true);
+            saveLocalState(localPlayer, true);
             break;
         }
 
@@ -638,7 +639,7 @@ export async function handleCommand(cmd) {
                 if (localPlayer.quests[id]) { log(`You already have that quest.`); break; }
                 localPlayer.quests[id] = { progress: 0, completed: false };
                 log(`[Quest] Accepted: ${QUESTS[id].name}`, '#ff0');
-                saveLocalState();
+                saveLocalState(localPlayer);
                 break;
             }
 
@@ -664,7 +665,7 @@ export async function handleCommand(cmd) {
                     log(`LEVEL UP! You are now level ${localPlayer.level}! ✨`, '#ff0');
                 }
 
-                saveLocalState(true);
+                saveLocalState(localPlayer, true);
                 break;
             }
             break;
@@ -675,7 +676,7 @@ export async function handleCommand(cmd) {
             localPlayer.xp += amt;
             localPlayer.level = xpToLevel(localPlayer.xp);
             log(`[Dev] Added ${amt} XP. Level is now ${localPlayer.level}.`);
-            saveLocalState(true);
+            saveLocalState(localPlayer, true);
             break;
         }
 
@@ -683,7 +684,7 @@ export async function handleCommand(cmd) {
             const amt = parseInt(args[1]) || 1000;
             localPlayer.gold += amt;
             log(`[Dev] Added ${amt} Gold.`);
-            saveLocalState(true);
+            saveLocalState(localPlayer, true);
             break;
         }
 
@@ -692,7 +693,7 @@ export async function handleCommand(cmd) {
             if (!ITEMS[id]) { log(`[Dev] Unknown item: ${id}`); break; }
             localPlayer.inventory.push(id);
             log(`[Dev] Spawned ${nameColor(ITEMS[id].name, ITEMS[id].color)}.`);
-            saveLocalState(true);
+            saveLocalState(localPlayer, true);
             break;
         }
 
@@ -842,7 +843,7 @@ function finishDuel(targetId) {
     if (totalMyDmg > totalTheirDmg) {
         log(`You WIN! (+10 XP) 🏆`, '#0f0');
         localPlayer.xp += 10;
-        saveLocalState();
+        saveLocalState(localPlayer);
     } else if (totalMyDmg < totalTheirDmg) {
         log(`You LOSE. 💀`, '#f55');
     } else {

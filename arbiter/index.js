@@ -1,13 +1,13 @@
-import { webcrypto } from 'node:crypto';
+import crypto, { webcrypto } from 'node:crypto';
 import { createServer } from 'node:http';
-import { lookup } from 'node:dns/promises';
 import WebSocket from 'ws';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
-if (!globalThis.crypto) globalThis.crypto = webcrypto;
-if (!globalThis.WebSocket) globalThis.WebSocket = WebSocket;
+// Polyfills
+if (typeof global.crypto === 'undefined') global.crypto = webcrypto;
+if (typeof global.WebSocket === 'undefined') global.WebSocket = WebSocket;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, 'world_state.json');
@@ -17,7 +17,7 @@ async function startArbiter() {
     const { RTCPeerConnection } = await import('werift');
     const { signMessage, verifyMessage } = await import('../src/crypto.js');
     const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
-    const { deriveWorldState, world, validateMove } = await import('../src/rules.js');
+    const { deriveWorldState, world } = await import('../src/rules.js');
     const dotenv = await import('dotenv');
 
     dotenv.config({ path: new URL('.env', import.meta.url).pathname });
@@ -31,37 +31,31 @@ async function startArbiter() {
     }
 
     const randomSeed = () =>
-        'h3arthw1ck-' + crypto.getRandomValues(new Uint32Array(2))
-            .reduce((s, v) => s + v.toString(16).padStart(8, '0'), '');
+        'h3arthw1ck-' + crypto.randomBytes(8).toString('hex');
 
     // --- STATE ---
     let worldState = {
         world_seed: randomSeed(),
         day: 1,
-        last_tick: Date.now()
+        last_tick: Date.now(),
+        bans: []
     };
 
     if (existsSync(STATE_FILE)) {
         try {
-            const bin = readFileSync(STATE_FILE, 'utf8');
-            worldState = JSON.parse(bin);
+            worldState = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
             console.log('[Arbiter] Loaded persisted world state.');
         } catch (e) {
-            console.warn('[Arbiter] Failed to load state file, starting fresh:', e.message);
+            console.warn('[Arbiter] Failed to load state file:', e.message);
         }
     }
 
-    // Persist state to disk, debounced
-    let persistTimer = null;
     const schedulePersist = () => {
-        clearTimeout(persistTimer);
-        persistTimer = setTimeout(() => {
-            try {
-                writeFileSync(STATE_FILE, JSON.stringify(worldState));
-            } catch (e) {
-                console.warn('[Arbiter] Failed to persist state:', e.message);
-            }
-        }, 2000);
+        try {
+            writeFileSync(STATE_FILE, JSON.stringify(worldState));
+        } catch (e) {
+            console.warn('[Arbiter] Failed to persist state:', e.message);
+        }
     };
 
     // --- NETWORKING ---
@@ -71,34 +65,15 @@ async function startArbiter() {
         rtcConfig: { iceServers: ICE_SERVERS },
     };
 
-    const reachableTrackers = (await Promise.all(
-        TORRENT_TRACKERS.map(async url => {
-            try {
-                const host = new URL(url).hostname;
-                const { address } = await lookup(host);
-                return address === '0.0.0.0' ? null : url;
-            } catch {
-                return null;
-            }
-        })
-    )).filter(Boolean);
-
-    if (reachableTrackers.length === 0) {
-        console.warn('[Arbiter] All trackers failed DNS preflight — falling back to full list.');
-        reachableTrackers.push(...TORRENT_TRACKERS);
-    }
-    console.log(`[Arbiter] Using trackers: ${reachableTrackers.join(', ')}`);
-
-    // Use a unique room name to avoid collisions with other Trystero apps
-    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: reachableTrackers }, 'global');
+    // Use all trackers, sharded by the client logic already implemented
+    const torrentRoom = joinTorrent({ ...baseConfig, trackerUrls: TORRENT_TRACKERS }, 'global');
 
     const ROLLUP_INTERVAL = 10000;
     const FRAUD_BAN_THRESHOLD = 3;
 
-    // --- ROLLUPS & FRAUD ---
-    const lastRollups = new Map(); // shard -> {root, proposer, timestamp}
-    const lastRollupTime = new Map(); // publicKey -> timestamp (rate limiting)
-    const fraudCounts = new Map(); // proposerKey -> Set of claimant publicKeys
+    const lastRollups = new Map();
+    const lastRollupTime = new Map();
+    const fraudCounts = new Map();
     const bans = new Set(worldState.bans || []);
 
     const setupArbiterRoom = (r, name) => {
@@ -109,75 +84,60 @@ async function startArbiter() {
 
         getRequestState(async (_, peerId) => {
             console.log(`[Arbiter][${name}] State requested by ${peerId}`);
-            try {
-                // Reuse the last broadcast packet if available to avoid re-signing on every request
-                if (lastBroadcastPacket) {
-                    setTimeout(() => sendState(lastBroadcastPacket, [peerId]), 500);
-                } else {
-                    const stateStr = JSON.stringify(worldState);
-                    const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
-                    setTimeout(() => sendState({ state: stateStr, signature }, [peerId]), 500);
-                }
-            } catch (e) {
-                console.warn(`[Arbiter][${name}] Failed to respond to state request:`, e.message);
+            if (lastBroadcastPacket) {
+                setTimeout(() => sendState(lastBroadcastPacket, [peerId]), 500);
+            } else {
+                const stateStr = JSON.stringify(worldState);
+                const signature = await signMessage(stateStr, MASTER_SECRET_KEY);
+                setTimeout(() => sendState({ state: stateStr, signature }, [peerId]), 500);
             }
         });
 
         getRollup(async (data) => {
-            try {
-                const { rollup, signature, publicKey } = data;
-                if (bans.has(publicKey)) return;
+            const { rollup, signature, publicKey } = data;
+            if (bans.has(publicKey)) return;
+            const last = lastRollupTime.get(publicKey) || 0;
+            if (Date.now() - last < ROLLUP_INTERVAL * 0.8) return;
+            lastRollupTime.set(publicKey, Date.now());
 
-                // Rate-limit: one accepted rollup per proposer per interval
-                const last = lastRollupTime.get(publicKey) || 0;
-                if (Date.now() - last < ROLLUP_INTERVAL * 0.8) return;
-                lastRollupTime.set(publicKey, Date.now());
-
-                if (!await verifyMessage(JSON.stringify(rollup), signature, publicKey)) {
-                    console.warn(`[Arbiter][${name}] Invalid rollup signature from ${String(publicKey).slice(0, 8)}`);
-                    return;
-                }
-                console.log(`[Arbiter][${name}] Rollup received for ${rollup.shard}: Root ${rollup.root.slice(0, 8)}`);
+            if (await verifyMessage(JSON.stringify(rollup), signature, publicKey)) {
+                console.log(`[Arbiter][${name}] Rollup: ${rollup.shard}`);
                 lastRollups.set(rollup.shard, { ...rollup, proposer: publicKey });
-            } catch (e) {
-                console.warn(`[Arbiter][${name}] Rollup handler error:`, e.message);
             }
         });
 
         getFraud(async (data) => {
             try {
-                // Support two types of fraud proofs:
-                // 1. Rollup Mismatch (existing)
-                // 2. Illegal Action (e.g. signed movement teleport)
-                
-                const { type, proof, witness } = data;
-                const { id: witnessId, signature: witnessSig, publicKey: witnessKey } = witness;
+                const { type, proof, witness, rollup: rollupData } = data;
+                const { signature: witnessSig, publicKey: witnessKey } = witness;
 
                 if (type === 'illegal_move') {
-                    const { peerId, move, signature, publicKey: cheaterKey } = proof;
-                    // move = { from, to, x, y, ts }
+                    const { move, signature, publicKey: cheaterKey } = proof;
                     if (!await verifyMessage(JSON.stringify(move), signature, cheaterKey)) return;
-                    
                     const isValid = Object.values(world[move.from]?.exits || {}).includes(move.to);
                     if (!isValid && move.from !== move.to) {
-                        console.log(`[Arbiter] MOVEMENT FRAUD PROVEN against ${String(cheaterKey).slice(0, 8)}`);
+                        console.log(`[Arbiter] MOVEMENT FRAUD: ${String(cheaterKey).slice(0, 8)}`);
                         banPeer(cheaterKey);
                     }
                     return;
                 }
 
-                // --- Existing Rollup Fraud Logic ---
-                const { rollup: rollupData } = data;
                 if (!rollupData) return;
                 const { rollup, signature, publicKey: proposerKey } = rollupData;
-...
-                if (count >= FRAUD_BAN_THRESHOLD) {
-                    console.log(`[FRAUD PROVEN] Banning proposer ${String(proposerKey).slice(0, 8)}`);
+                const { presence, signature: witnessPresenceSig } = witness;
+
+                if (!await verifyMessage(JSON.stringify(rollup), signature, proposerKey)) return;
+                if (presence.disputedRoot !== rollup.root) return;
+                if (!await verifyMessage(JSON.stringify(presence), witnessPresenceSig, witnessKey)) return;
+
+                if (!fraudCounts.has(proposerKey)) fraudCounts.set(proposerKey, new Set());
+                fraudCounts.get(proposerKey).add(witnessKey);
+                
+                if (fraudCounts.get(proposerKey).size >= FRAUD_BAN_THRESHOLD) {
+                    console.log(`[Arbiter] Proposer Banned: ${String(proposerKey).slice(0, 8)}`);
                     banPeer(proposerKey);
                 }
-            } catch (e) {
-                console.warn(`[Arbiter][${name}] Fraud handler error:`, e.message);
-            }
+            } catch (e) { console.warn(`[Arbiter] Fraud handler error:`, e.message); }
         });
 
         const banPeer = async (pubKey) => {
@@ -189,57 +149,38 @@ async function startArbiter() {
             const banMsg = JSON.stringify(banState);
             const banSig = await signMessage(banMsg, MASTER_SECRET_KEY);
             torrent.sendState({ state: banMsg, signature: banSig });
-            console.log(`[Arbiter] Peer banned: ${String(pubKey).slice(0, 8)}`);
         };
 
         r.onPeerJoin(peerId => {
-            console.log(`[Arbiter][${name}] Peer joined: ${peerId}`);
-            // Send only to the new peer — broadcastState() would spam all existing peers
-            if (lastBroadcastPacket) {
-                setTimeout(() => sendState(lastBroadcastPacket, [peerId]), 500);
-            }
+            if (lastBroadcastPacket) setTimeout(() => sendState(lastBroadcastPacket, [peerId]), 500);
         });
 
         return { sendState };
     };
 
     const torrent = setupArbiterRoom(torrentRoom, 'Torrent');
-
     let lastBroadcastPacket = null;
 
     async function publishBeacon(packet) {
-        const payload = JSON.stringify({
-            peerId: selfId,
-            ...packet
-        });
-
-        // 1. GitHub Gist Beacon (CDN-style speed)
-        if (GH_GIST_TOKEN && GH_GIST_ID) {
-            try {
-                await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Authorization': `token ${GH_GIST_TOKEN}`,
-                        'Content-Type': 'application/json',
-                        'User-Agent': 'Hearthwick-Arbiter'
-                    },
-                    body: JSON.stringify({
-                        description: `Hearthwick Discovery: Day ${worldState.day}`,
-                        files: { 'mmo_arbiter_discovery.json': { content: payload } }
-                    })
-                });
-                console.log('[Arbiter] Gist beacon updated.');
-            } catch (e) {
-                console.warn('[Arbiter] Gist beacon failed:', e.message);
-            }
-        }
-
+        if (!GH_GIST_TOKEN || !GH_GIST_ID) return;
+        try {
+            await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `token ${GH_GIST_TOKEN}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Hearthwick-Arbiter'
+                },
+                body: JSON.stringify({
+                    files: { 'mmo_arbiter_discovery.json': { content: JSON.stringify({ peerId: selfId, ...packet }) } }
+                })
+            });
+        } catch (e) { console.warn('[Arbiter] Gist failed:', e.message); }
     }
 
     const getBansHash = () => {
         const str = Array.from(bans).sort().join(',');
-        const hash = crypto.createHash('sha256').update(str).digest('hex').slice(0, 8);
-        return hash;
+        return crypto.createHash('sha256').update(str).digest('hex').slice(0, 8);
     };
 
     async function broadcastState() {
@@ -251,167 +192,55 @@ async function startArbiter() {
         lastBroadcastPacket = packet;
         torrent.sendState(packet);
         publishBeacon(packet).catch(() => {});
-        console.log(`[Arbiter] Broadcasted state (Bans: ${bans.size}, Hash: ${bansHash})`);
+        console.log(`[Arbiter] Broadcast (Bans: ${bans.size}, Hash: ${bansHash})`);
     }
 
     console.log('[Arbiter] Started.');
 
-    // --- RESET ---
-    const doReset = async () => {
-        worldState = {
-            world_seed: randomSeed(),
-            day: 1,
-            last_tick: Date.now()
-        };
-        fraudCounts.clear();
-        lastRollupTime.clear();
-        bans.clear();
-        schedulePersist();
-        await broadcastState();
-        console.log(`[Arbiter] World reset. New seed: ${worldState.world_seed}`);
-    };
-
-    process.on('message', (msg) => {
-        const cmd = msg?.data ?? msg;
-        if (cmd === 'reset') doReset();
-    });
-    process.on('SIGUSR2', doReset);
-
-    // --- DAY TICK ---
     function advanceDay() {
-        // Advance last_tick by exactly one day period (not wall-clock) to avoid drift accumulation
         worldState.last_tick += 86400000;
         worldState.day++;
         schedulePersist();
-
-        const derived = deriveWorldState(worldState.world_seed, worldState.day);
-        console.log(`[Arbiter] Day ${worldState.day} — ${derived.season}, mood: ${derived.mood}, threat: ${derived.threatLevel}`);
-        broadcastState().catch(e => console.error('[Arbiter] Day tick broadcast failed:', e.message, e.code));
+        broadcastState().catch(() => {});
     }
 
-    // Drift-corrected day tick: catches up all missed days if arbiter was offline.
-    // Catch-up days advance state silently (no broadcast) to avoid firing N sign operations
-    // and flooding clients when restarting after extended downtime.
     const scheduleTick = () => {
-        let catchUpCount = 0;
         while (worldState.last_tick + 86400000 <= Date.now()) {
             worldState.last_tick += 86400000;
             worldState.day++;
-            catchUpCount++;
         }
-        if (catchUpCount > 0) {
-            schedulePersist();
-            const derived = deriveWorldState(worldState.world_seed, worldState.day);
-            console.log(`[Arbiter] Caught up ${catchUpCount} day(s). Now Day ${worldState.day} — ${derived.season}, mood: ${derived.mood}`);
-            broadcastState().catch(e => console.error('[Arbiter] Catch-up broadcast failed:', e.message));
-        }
+        schedulePersist();
         const delay = (worldState.last_tick + 86400000) - Date.now();
         setTimeout(() => { advanceDay(); scheduleTick(); }, delay);
     };
     scheduleTick();
 
-    // Periodic cleanup of rate-limit and fraud maps to prevent unbounded growth on Pi Zero
-    setInterval(() => {
-        const cutoff = Date.now() - ROLLUP_INTERVAL * 10;
-        for (const [key, ts] of lastRollupTime) {
-            if (ts < cutoff) lastRollupTime.delete(key);
-        }
-        // Stale fraud counts (proposer hasn't been seen in >10 intervals) are dropped
-        for (const [key] of fraudCounts) {
-            if (!lastRollupTime.has(key)) fraudCounts.delete(key);
-        }
-    }, 3600000);
-
-    // Health endpoint for Pi debugging
     const healthServer = createServer((req, res) => {
         const cors = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
         if (req.url === '/health') {
             res.writeHead(200, cors);
-            res.end(JSON.stringify({
-                day: worldState.day,
-                seed: worldState.world_seed.slice(0, 12),
-                bans: bans.size,
-                uptime: Math.floor(process.uptime()),
-            }));
+            res.end(JSON.stringify({ day: worldState.day, bans: bans.size, uptime: Math.floor(process.uptime()) }));
         } else if (req.url === '/bans') {
             res.writeHead(200, cors);
             res.end(JSON.stringify(Array.from(bans)));
-        } else if (req.url === '/state') {
-            if (lastBroadcastPacket) {
-                res.writeHead(200, cors);
-                res.end(JSON.stringify(lastBroadcastPacket));
-            } else {
-                res.writeHead(503, cors);
-                res.end(JSON.stringify({ error: 'not ready' }));
-            }
+        } else if (req.url === '/state' && lastBroadcastPacket) {
+            res.writeHead(200, cors);
+            res.end(JSON.stringify(lastBroadcastPacket));
         } else {
             res.writeHead(404);
             res.end();
         }
     });
-    healthServer.listen(3001, '127.0.0.1', () =>
-        console.log('[Arbiter] Health: http://127.0.0.1:3001/health')
-    );
+    healthServer.listen(3001, '127.0.0.1');
 
-    // Initial broadcast on startup
-    setTimeout(() => broadcastState().catch(e => console.error('[Arbiter] Broadcast failed:', e.message, e.code)), 5000);
-}
-
-const SURVIVABLE_MESSAGES = [
-    'unsupported',
-    'DECODER',
-    'SSL',
-    'certificate',
-    'server response',
-    'socket hang up',
-    'ECONNRESET',
-    'ETIMEDOUT',
-    'ECONNREFUSED',
-    'EHOSTUNREACH',
-    'ENETUNREACH',
-    'EAI_AGAIN',
-    'ENOTFOUND',
-    'Unexpected server response'
-];
-
-const SURVIVABLE_CODES = new Set([
-    'ECONNREFUSED',
-    'ECONNRESET',
-    'ETIMEDOUT',
-    'ENETUNREACH',
-    'EHOSTUNREACH',
-    'EAI_AGAIN',
-    'ENOTFOUND',
-    'UND_ERR_CONNECT_TIMEOUT'
-]);
-
-function isSurvivable(err) {
-    const msg = String(err?.message || err || '');
-    const code = err?.code;
-    if (SURVIVABLE_CODES.has(code)) return true;
-    if (SURVIVABLE_MESSAGES.some(m => msg.includes(m))) return true;
-    return false;
+    setTimeout(() => broadcastState().catch(() => {}), 5000);
 }
 
 process.on('uncaughtException', (err) => {
-    if (isSurvivable(err)) {
-        console.warn('[Arbiter] Network error (non-fatal):', err.message || err);
-        return;
-    }
-    console.error('[Arbiter] Uncaught Exception:', err.message || err, err.stack);
-    process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-    if (isSurvivable(reason)) {
-        console.warn('[Arbiter] Network rejection (non-fatal):', reason?.message || reason);
-        return;
-    }
-    console.error('[Arbiter] Unhandled Rejection:', reason?.message ?? reason, 'code:', reason?.code, 'stack:', reason?.stack);
-    process.exit(1);
+    console.error('[Arbiter] Uncaught Exception:', err.message);
 });
 
 startArbiter().catch(err => {
-    console.error('[Arbiter] Failed to start:', err);
+    console.error('[Arbiter] Fatal Start Error:', err.message);
     process.exit(1);
 });

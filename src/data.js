@@ -214,6 +214,7 @@ export const world = {
         exits: { north: 'hallway' },
         portals: [{ x: 5, y: 0, dest: 'hallway', destX: 5, destY: 8 }],
         staticEntities: [],
+        scenery: [{ x: 2, y: 2, label: 'C' }, { x: 8, y: 7, label: 'C' }, { x: 1, y: 8, label: 'C' }],
         enemy: null,
     },
     hallway: {
@@ -227,6 +228,7 @@ export const world = {
             { x: 10, y: 5, dest: 'forest_edge', destX: 1, destY: 5 },
         ],
         staticEntities: [{ id: 'guard', x: 2, y: 5 }],
+        scenery: [{ x: 4, y: 4, label: 'P' }, { x: 6, y: 4, label: 'P' }], // Pillars
         enemy: null,
     },
     tavern: {
@@ -242,6 +244,10 @@ export const world = {
             { id: 'barkeep', x: 6, y: 2 },
             { id: 'bard', x: 2, y: 2 }
         ],
+        scenery: [
+            { x: 4, y: 4, label: 'T' }, { x: 8, y: 4, label: 'T' }, // Tables
+            { x: 4, y: 6, label: 'T' }, { x: 8, y: 6, label: 'T' }
+        ],
         enemy: null,
     },
     market: {
@@ -251,6 +257,11 @@ export const world = {
         exits: { west: 'tavern' },
         portals: [{ x: 0, y: 7, dest: 'tavern', destX: 10, destY: 5 }],
         staticEntities: [{ id: 'merchant', x: 8, y: 8 }],
+        scenery: [
+            { x: 5, y: 5, label: 'S' }, { x: 11, y: 5, label: 'S' }, // Stalls
+            { x: 5, y: 11, label: 'S' }, { x: 11, y: 11, label: 'S' },
+            { x: 8, y: 2, label: 'F' } // Fountain
+        ],
         enemy: null,
     },
     forest_edge: {
@@ -265,7 +276,12 @@ export const world = {
             { x: 19, y: 10, dest: 'forest_depths', destX: 1, destY: 10 },
         ],
         staticEntities: [],
+        scenery: [
+            { x: 3, y: 3, label: 't' }, { x: 15, y: 4, label: 't' }, // Trees
+            { x: 5, y: 16, label: 't' }, { x: 17, y: 14, label: 't' }
+        ],
         enemy: 'forest_wolf',
+        enemyX: 12, enemyY: 5
     },
     forest_depths: {
         name: 'The Forest Depths',
@@ -279,6 +295,7 @@ export const world = {
         ],
         staticEntities: [],
         enemy: 'goblin',
+        enemyX: 15, enemyY: 15
     },
     lake_shore: {
         name: 'The Lake Shore',

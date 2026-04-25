@@ -8,6 +8,8 @@ import {
     ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, INSTANCE_CAP, world,
     NPCS, DIALOGUE_POOLS, QUESTS, CORPORA, GAME_NAME
 } from './data.js';
+
+export { world };
 import { generateSentence } from './markov.js';
 
 export function seededRNG(seed) {

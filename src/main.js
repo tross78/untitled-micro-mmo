@@ -1,8 +1,9 @@
 import { selfId } from '@trystero-p2p/torrent';
 import { 
     worldState, players, localPlayer, hasSyncedWithArbiter, 
-    TAB_CHANNEL, loadLocalState, pruneStale, saveLocalState, pendingTrade, setPendingTrade
+    TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade
 } from './store.js';
+import { saveLocalState } from './persistence.js';
 import { log, printStatus, renderActionButtons, startTicker, renderRadar } from './ui.js';
 import { 
     initIdentity, arbiterPublicKey, myEntry 
@@ -61,7 +62,7 @@ const triggerUIRefresh = () => {
 
         localPlayer.x = nextX;
         localPlayer.y = nextY;
-        saveLocalState();
+        saveLocalState(localPlayer);
         triggerUIRefresh();
 
         // Broadcast micro-movement
@@ -75,7 +76,7 @@ const triggerUIRefresh = () => {
             localPlayer.location = portal.dest;
             localPlayer.x = portal.destX ?? 5;
             localPlayer.y = portal.destY ?? 5;
-            saveLocalState();
+            saveLocalState(localPlayer);
             
             myEntry().then(entry => {
                 if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
@@ -248,28 +249,6 @@ function setupNetworkEvents() {
         }
     });
 
-    window.addEventListener('trade-commit-received', async (e) => {
-        const { partnerId, commit } = e.detail;
-        if (pendingTrade && pendingTrade.partnerId === partnerId) {
-            const entry = players.get(partnerId);
-            if (!entry?.publicKey) return;
-
-            try {
-                const pubKey = await importKey(entry.publicKey, 'public');
-                const sigData = JSON.stringify({ gold: commit.gold, items: commit.items, ts: commit.ts });
-                if (await verifyMessage(sigData, commit.signature, pubKey)) {
-                    pendingTrade.signatures.partner = commit.signature;
-                    pendingTrade.partnerOffer = { gold: commit.gold, items: commit.items };
-                    
-                    // Auto-finalize if both signed
-                    if (pendingTrade.signatures.me) finalizeTrade();
-                    else startTradeTimeout();
-                }
-            } catch (err) { console.error('[Trade] Verification fail:', err); }
-            triggerUIRefresh();
-        }
-    });
-
     const finalizeTrade = () => {
         if (!pendingTrade) return;
         const pt = pendingTrade;
@@ -294,9 +273,31 @@ function setupNetworkEvents() {
         gameActions.sendTradeFinal({ peerA: selfId, peerB: pt.partnerId, delta });
 
         setPendingTrade(null);
-        saveLocalState(true);
+        saveLocalState(localPlayer, true);
         triggerUIRefresh();
     };
+
+    window.addEventListener('trade-commit-received', async (e) => {
+        const { partnerId, commit } = e.detail;
+        if (pendingTrade && pendingTrade.partnerId === partnerId) {
+            const entry = players.get(partnerId);
+            if (!entry?.publicKey) return;
+
+            try {
+                const pubKey = await importKey(entry.publicKey, 'public');
+                const sigData = JSON.stringify({ gold: commit.gold, items: commit.items, ts: commit.ts });
+                if (await verifyMessage(sigData, commit.signature, pubKey)) {
+                    pendingTrade.signatures.partner = commit.signature;
+                    pendingTrade.partnerOffer = { gold: commit.gold, items: commit.items };
+                    
+                    // Auto-finalize if both signed
+                    if (pendingTrade.signatures.me) finalizeTrade();
+                    else startTradeTimeout();
+                }
+            } catch (err) { console.error('[Trade] Verification fail:', err); }
+            triggerUIRefresh();
+        }
+    });
 
     window.addEventListener('trade-initiated', startTradeTimeout);
 
@@ -307,6 +308,13 @@ function setupNetworkEvents() {
     window.addEventListener('player-move', (e) => {
         const { peerId, data } = e.detail;
         const name = getPlayerName(peerId);
+        
+        // If it's just a 1-tile step in the same room, just refresh the UI (Radar)
+        if (data.from === data.to) {
+            triggerUIRefresh();
+            return;
+        }
+
         if (data.to === localPlayer.location) {
             const fromDir = Object.entries(world[data.to]?.exits || {}).find(([, dest]) => dest === data.from)?.[0];
             log(`[System] ${name} arrives${fromDir ? ' from the ' + fromDir : ''}.`, '#aaa');
