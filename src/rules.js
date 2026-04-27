@@ -92,6 +92,12 @@ export function getMood(worldSeed, day) {
     return seq[day - 1] ?? MOOD_INITIAL;
 }
 
+export function getTimeOfDay() {
+    const hour = (Date.now() / 3600000) % 24;
+    if (hour >= 6 && hour < 20) return 'day';
+    return 'night';
+}
+
 export function getThreatLevel(day) {
     return Math.min(5, Math.floor(day / 7));
 }
@@ -99,21 +105,37 @@ export function getThreatLevel(day) {
 export function deriveWorldState(worldSeed, day) {
     const rng = seededRNG(hashStr(worldSeed + day + 'daytick'));
     const season = getSeason(day);
+    const threatLevel = getThreatLevel(day);
+    
+    // World Events
+    let event = null;
+    if (threatLevel >= 5) {
+        event = { type: 'wandering_boss', target: 'mountain_troll' };
+    } else if (rng(100) < 10) {
+        event = { type: 'market_surplus' };
+    }
+    
+    // Weather
+    const weatherRoll = rng(100);
+    const weather = weatherRoll < 70 ? 'clear' : weatherRoll < 90 ? 'storm' : 'fog';
+    
     return {
         seed: worldSeed,
         day,
         season,
         seasonNumber: getSeasonNumber(day),
         mood: getMood(worldSeed, day),
-        threatLevel: getThreatLevel(day),
+        threatLevel,
         scarcity: rollScarcity(rng, season),
+        event,
+        weather
     };
 }
 
 // --- COMBAT ---
 
 // Integer-only damage roll: handles critical hits and dodges
-export function resolveAttack(attackStat, defenseStat, rng) {
+export function resolveAttack(attackStat, defenseStat, rng, isNight = false) {
     const isDodge = rng(100) < 7;
     if (isDodge) return { damage: 0, isCrit: false, isDodge: true };
 
@@ -121,6 +143,9 @@ export function resolveAttack(attackStat, defenseStat, rng) {
     const base = Math.max(1, attackStat - defenseStat);
     let damage = (rng(base * 2) + 1) | 0;
     if (isCrit) damage *= 2;
+    
+    // Night bonus for monsters (if passed correctly)
+    if (isNight) damage = Math.floor(damage * 1.2);
     
     return { damage, isCrit, isDodge: false };
 }

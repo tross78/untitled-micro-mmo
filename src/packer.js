@@ -75,7 +75,13 @@ const ACTION_TYPES = ['attack', 'kill', 'loot'];
 const ITEM_MAP = [
     'wolf_pelt', 'old_tome', 'iron_key', 'gold', 'potion', 'ale', 'bread',
     'iron_sword', 'steel_sword', 'magic_staff', 'healing_elixir', 'strength_elixir',
-    'bandit_mask', 'wood', 'iron'
+    'bandit_mask', 'wood', 'iron', 'leather_armor', 'iron_armor', 'warm_cloak'
+];
+const QUEST_MAP = [
+    'find_tavern', 'wolf_hunt', 'bandit_sweep', 'cave_troll_bounty',
+    'ruins_survey', 'tome_collection', 'catacomb_delve', 'wraith_banish',
+    'gather_wood', 'iron_supply', 'craft_sword', 'market_recovery',
+    'tavern_regular', 'courier_run', 'mountain_trial'
 ];
 
 export const packMove = (m) => {
@@ -111,7 +117,7 @@ export const unpackEmote = (buf) => ({
 });
 
 export const packPresence = (p) => {
-    const s = new SchemaBuffer(98);
+    const s = new SchemaBuffer(160); // Increased size
     s.str(p.name || '', 16);
     s.u8(ROOM_MAP.indexOf(p.location));
     // Pack PH (4 bytes from 8-char hex)
@@ -121,6 +127,19 @@ export const packPresence = (p) => {
     s.u32(p.xp || 0);
     s.u8(p.x || 0);
     s.u8(p.y || 0);
+    s.u32(p.gold || 0);
+    // Inventory (max 16 items)
+    const inv = (p.inventory || []).slice(0, 16);
+    s.u8(inv.length);
+    for (let i = 0; i < 16; i++) s.u8(inv[i] ? ITEM_MAP.indexOf(inv[i]) : 255);
+    // Quests (max 8 active)
+    const activeQuests = Object.entries(p.quests || {}).filter(([, q]) => !q.completed).slice(0, 8);
+    s.u8(activeQuests.length);
+    for (let i = 0; i < 8; i++) {
+        const [id, data] = activeQuests[i] || [null, { progress: 0 }];
+        s.u8(id ? QUEST_MAP.indexOf(id) : 255);
+        s.u8(data.progress || 0);
+    }
     s.ts(p.ts);
     s.sig(p.signature);
     return s.buf;
@@ -136,9 +155,25 @@ export const unpackPresence = (buf) => {
     const xp = r.u32();
     const x = r.u8();
     const y = r.u8();
+    const gold = r.u32();
+    const invLen = r.u8();
+    const inventory = [];
+    for (let i = 0; i < 16; i++) {
+        const idx = r.u8();
+        if (i < invLen && idx !== 255) inventory.push(ITEM_MAP[idx]);
+    }
+    const qLen = r.u8();
+    const quests = {};
+    for (let i = 0; i < 8; i++) {
+        const idx = r.u8();
+        const progress = r.u8();
+        if (i < qLen && idx !== 255) {
+            quests[QUEST_MAP[idx]] = { progress, completed: false };
+        }
+    }
     const ts = r.ts();
     const signature = r.sig();
-    return { name, location, ph, level, xp, x, y, ts, signature };
+    return { name, location, ph, level, xp, x, y, gold, inventory, quests, ts, signature };
 };
 
 export const packDuelCommit = (c) => {

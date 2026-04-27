@@ -9,28 +9,30 @@ const mockSubtle = {
     digest: jest.fn(),
 };
 
-// Define globals needed for the browser path
-global.window = {
-    crypto: {
-        subtle: mockSubtle
-    }
-};
-global.atob = (b64) => Buffer.from(b64, 'base64').toString('binary');
-global.btoa = (str) => Buffer.from(str, 'binary').toString('base64');
-
-import { generateKeyPair, exportKey, importKey, signMessage, verifyMessage, computeHash, isNode, setNode } from './crypto.js';
+import { generateKeyPair, exportKey, importKey, signMessage, verifyMessage, computeHash, setNode, isNode } from './crypto.js';
 
 describe('Crypto Browser Path Mocked Tests', () => {
+    let originalCrypto;
+
     beforeAll(() => {
         setNode(false);
-        // Define globals needed for the browser path
-        global.window = {
-            crypto: {
-                subtle: mockSubtle
-            }
-        };
+        originalCrypto = window.crypto;
+        // Use a simpler assignment for the mock
+        Object.defineProperty(window, 'crypto', {
+            value: { subtle: mockSubtle },
+            configurable: true
+        });
+        
         global.atob = (b64) => Buffer.from(b64, 'base64').toString('binary');
         global.btoa = (str) => Buffer.from(str, 'binary').toString('base64');
+    });
+
+    afterAll(() => {
+        setNode(true);
+        Object.defineProperty(window, 'crypto', {
+            value: originalCrypto,
+            configurable: true
+        });
     });
 
     beforeEach(() => {

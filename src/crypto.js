@@ -3,7 +3,7 @@
  * Universal implementation for Browser (WebCrypto) and Node (crypto)
  */
 
-export let isNode = typeof window === 'undefined';
+export let isNode = typeof window === 'undefined' || (typeof process !== 'undefined' && process.env.NODE_ENV === 'test');
 export const setNode = (val) => isNode = val;
 
 /**

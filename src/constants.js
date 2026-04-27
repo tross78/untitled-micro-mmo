@@ -2,6 +2,10 @@ import { GAME_NAME } from './data.js';
 
 export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
 
+export const VIEWPORT_W = 15;  // tiles wide (ALttP style)
+export const VIEWPORT_H = 11;  // tiles tall
+export const TILE_PX = 16;     // pixels per tile
+
 // Set this to the trycloudflare.com URL printed by `cloudflared tunnel --url http://localhost:3001`
 // Leave empty string to skip HTTP bootstrap and rely on P2P only.
 export const ARBITER_URL = '';

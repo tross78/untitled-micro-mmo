@@ -548,6 +548,61 @@ describe('Two-peer world state convergence', () => {
     });
 });
 
+// --- Time of Day ---
+
+describe('getTimeOfDay', () => {
+    test('returns "day" during daylight hours (6-19)', () => {
+        // Mock Date.now to 12:00 PM
+        const noon = new Date('2026-04-27T12:00:00Z').getTime();
+        jest.spyOn(Date, 'now').mockReturnValue(noon);
+        const { getTimeOfDay } = require('./rules.js');
+        expect(getTimeOfDay()).toBe('day');
+        Date.now.mockRestore();
+    });
+
+    test('returns "night" during night hours (20-5)', () => {
+        // Mock Date.now to 10:00 PM
+        const night = new Date('2026-04-27T22:00:00Z').getTime();
+        jest.spyOn(Date, 'now').mockReturnValue(night);
+        const { getTimeOfDay } = require('./rules.js');
+        expect(getTimeOfDay()).toBe('night');
+        Date.now.mockRestore();
+    });
+});
+
+// --- deriveWorldState (Events/Weather) ---
+
+describe('deriveWorldState (Phase 7.5 Features)', () => {
+    const seed = 'event-test-seed';
+
+    test('includes weather state', () => {
+        const state = deriveWorldState(seed, 1);
+        expect(['clear', 'storm', 'fog']).toContain(state.weather);
+    });
+
+    test('weather is deterministic', () => {
+        expect(deriveWorldState(seed, 5).weather).toBe(deriveWorldState(seed, 5).weather);
+    });
+
+    test('includes world events when threat level is high', () => {
+        // Threat level 5 starts at day 35
+        const state = deriveWorldState(seed, 35);
+        expect(state.event).toEqual({ type: 'wandering_boss', target: 'mountain_troll' });
+    });
+
+    test('occasionally includes market surplus on lower threat days', () => {
+        // We might need to find a day that triggers the 10% chance
+        let foundSurplus = false;
+        for (let d = 1; d < 35; d++) {
+            if (deriveWorldState(seed, d).event?.type === 'market_surplus') {
+                foundSurplus = true;
+                break;
+            }
+        }
+        expect(foundSurplus).toBe(true);
+    });
+});
+
 // --- PvP determinism ---
 
 describe('PvP seed determinism', () => {

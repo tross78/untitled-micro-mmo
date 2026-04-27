@@ -2,7 +2,8 @@ import { worldState, players } from './store.js';
 import { levelBonus, seededRNG, hashStr } from './rules.js';
 import { GAME_NAME, CORPORA } from './data.js';
 import { generateSentence } from './markov.js';
-import { EventBus } from './events.js';
+import { ACTION, inputManager } from './input.js';
+import { bus } from './eventbus.js';
 
 const output = document.getElementById('output');
 const radarEl = document.getElementById('radar-container');
@@ -52,7 +53,7 @@ const _injectLog = (msg, color = '#0f0') => {
 };
 
 export const log = (msg, color = '#0f0') => {
-    EventBus.emit('log', { msg, color });
+    bus.emit('log', { msg, color });
 };
 
 /**
@@ -79,6 +80,10 @@ const actionButtonsEl = document.getElementById('action-buttons');
 let uiState = 'root'; // 'root', 'move', 'use', 'talk', 'buy', 'settings'
 let _lastAction = null;
 
+window.addEventListener('ui-back', () => {
+    uiState = 'root';
+});
+
 /**
  * Renders context-aware action buttons for quick mobile play.
  */
@@ -97,8 +102,19 @@ export const renderActionButtons = (ctx, onAction) => {
     if (statusLeft && statusCenter && statusRight) {
         const bonus = (typeof levelBonus === 'function') ? levelBonus(localPlayer.level) : { maxHp: (localPlayer.level-1)*10 };
         const maxHp = localPlayer.maxHp + (bonus.maxHp || 0) + (localPlayer.buffs?.rested ? 5 : 0);
-        statusLeft.textContent = `Lvl ${localPlayer.level} HP: ${localPlayer.hp}/${maxHp}`;
-        statusCenter.textContent = `${loc.name}`;
+        const hpPct = localPlayer.hp / maxHp;
+        const hpColor = hpPct < 0.25 ? '#f55' : hpPct < 0.5 ? '#fa0' : '#0f0';
+        statusLeft.innerHTML = `Lvl ${localPlayer.level} <span style="color:${hpColor}">HP ${localPlayer.hp}/${maxHp}</span>`;
+
+        const eqWepId = localPlayer.equipped?.weapon;
+        const eqArmId = localPlayer.equipped?.armor;
+        const ITEM_DATA = ctx.ITEMS;
+        const wepTag = eqWepId && ITEM_DATA[eqWepId] ? ` ⚔️${ITEM_DATA[eqWepId].name}` : '';
+        const armTag = eqArmId && ITEM_DATA[eqArmId] ? ` 🛡️${ITEM_DATA[eqArmId].name}` : '';
+        const poisoned = localPlayer.statusEffects?.find(s => s.id === 'poisoned') ? ' ☠️' : '';
+        const rested = localPlayer.statusEffects?.find(s => s.id === 'well_rested') ? ' 😴' : '';
+        statusCenter.textContent = `${loc.name}${wepTag}${armTag}${poisoned}${rested}`;
+
         statusRight.textContent = `${localPlayer.gold}g`;
     }
 
@@ -123,11 +139,11 @@ export const renderActionButtons = (ctx, onAction) => {
     if (uiState === 'root') {
         // Action Memory
         if (_lastAction === 'attack' && loc.enemy && localPlayer.currentEnemy) {
-            addButton('Attack Again ⚔️', 'attack');
+            addButton('Attack Again ⚔️', ACTION.ATTACK);
         }
 
         // 'Look' and 'Stats' removed - info is in status bar or log
-        addButton('Move 🧭', () => uiState = 'move');
+        addButton('Move 🧭', () => { uiState = 'move'; renderActionButtons(ctx, onAction); });
         
         if (loc.enemy) {
             const enemyDef = ENEMIES[loc.enemy];
@@ -139,7 +155,7 @@ export const renderActionButtons = (ctx, onAction) => {
                 const label = (localPlayer.currentEnemy && localPlayer.currentEnemy.hp > 0)
                     ? `Strike ${enemyDef.name} ⚔️`
                     : `Attack ${enemyDef.name} ⚔️`;
-                addButton(label, 'attack');
+                addButton(label, ACTION.ATTACK);
             }
             if (localPlayer.currentEnemy) {
                 addButton('Flee 🏃', 'flee');
@@ -148,6 +164,9 @@ export const renderActionButtons = (ctx, onAction) => {
 
         if (localPlayer.inventory.length > 0) {
             addButton('Use 🎒', () => uiState = 'use');
+            if (localPlayer.inventory.some(id => ITEMS[id] && (ITEMS[id].type === 'weapon' || ITEMS[id].type === 'armor'))) {
+                addButton('Equip ⚔️', () => uiState = 'equip');
+            }
         }
 
         const localNpcs = worldState.seed
@@ -157,6 +176,9 @@ export const renderActionButtons = (ctx, onAction) => {
             addButton('Talk 💬', () => uiState = 'talk');
             if (localNpcs.some(id => NPCS[id].role === 'shop')) {
                 addButton('Buy 💰', () => uiState = 'buy');
+                if (localPlayer.inventory.some(id => ITEMS[id] && ITEMS[id].type !== 'gold' && ITEMS[id].price > 0)) {
+                    addButton('Sell 💵', () => uiState = 'sell');
+                }
             }
         }
 
@@ -194,7 +216,7 @@ export const renderActionButtons = (ctx, onAction) => {
                 uiState = 'trade_session';
             });
         });
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'trade_session') {
         const { pendingTrade } = ctx;
@@ -243,9 +265,10 @@ export const renderActionButtons = (ctx, onAction) => {
     } else if (uiState === 'move') {
         Object.keys(loc.exits).forEach(dir => {
             const dirEmoji = { north: '⬆️', south: '⬇️', east: '➡️', west: '⬅️', up: '⤴️', down: '⤵️' }[dir] || '➡️';
-            addButton(`${dir.charAt(0).toUpperCase() + dir.slice(1)} ${dirEmoji}`, `move ${dir}`);
+            const actionMap = { north: ACTION.MOVE_N, south: ACTION.MOVE_S, east: ACTION.MOVE_E, west: ACTION.MOVE_W };
+            addButton(`${dir.charAt(0).toUpperCase() + dir.slice(1)} ${dirEmoji}`, actionMap[dir] || `move ${dir}`);
         });
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'use') {
         const uniqueItems = Array.from(new Set(localPlayer.inventory));
@@ -258,7 +281,21 @@ export const renderActionButtons = (ctx, onAction) => {
                 addButton(label, `use ${item.name.toLowerCase()}`);
             }
         });
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
+
+    } else if (uiState === 'equip') {
+        const gear = localPlayer.inventory.filter(id => ITEMS[id] && (ITEMS[id].type === 'weapon' || ITEMS[id].type === 'armor'));
+        const seen = new Set();
+        gear.forEach(id => {
+            if (seen.has(id)) return;
+            seen.add(id);
+            const item = ITEMS[id];
+            const slot = item.type === 'weapon' ? 'weapon' : 'armor';
+            const isEquipped = localPlayer.equipped[slot] === id;
+            const label = `${item.name} (+${item.bonus})${isEquipped ? ' ✅' : ''}`;
+            if (!isEquipped) addButton(label, `equip ${item.name.toLowerCase()}`);
+        });
+        addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'talk') {
         const localNpcs = worldState.seed
@@ -267,7 +304,7 @@ export const renderActionButtons = (ctx, onAction) => {
         localNpcs.forEach(id => {
             addButton(`${NPCS[id].name}`, `talk ${id}`);
         });
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'buy') {
         const localNpcs = worldState.seed
@@ -285,12 +322,30 @@ export const renderActionButtons = (ctx, onAction) => {
                 }
             });
         }
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
+
+    } else if (uiState === 'sell') {
+        const localNpcs = worldState.seed
+            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
+            : [];
+        const shopNpc = localNpcs.find(id => NPCS[id].role === 'shop');
+        if (shopNpc) {
+            const sellable = localPlayer.inventory.filter(id => ITEMS[id] && ITEMS[id].type !== 'gold' && ITEMS[id].price > 0);
+            const seen = new Set();
+            sellable.forEach(id => {
+                if (seen.has(id)) return;
+                seen.add(id);
+                const item = ITEMS[id];
+                const price = Math.floor(item.price * 0.4);
+                addButton(`${item.name} (${price}g)`, `sell ${item.name.toLowerCase()}`);
+            });
+        }
+        addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'bank') {
         addButton('Deposit 📥', () => uiState = 'bank_deposit');
         addButton('Withdraw 📤', () => uiState = 'bank_withdraw');
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'bank_deposit') {
         if (localPlayer.gold >= 10) addButton('10 Gold', 'bank deposit 10');
@@ -309,27 +364,39 @@ export const renderActionButtons = (ctx, onAction) => {
         const localNpcs = worldState.seed
             ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
             : [];
-        
-        // 1. Quests available to Accept here
-        localNpcs.forEach(nid => {
-            const qid = NPCS[nid].questId;
-            if (qid && !localPlayer.quests[qid]) {
-                addButton(`Accept ${QUESTS[qid].name}`, `quest accept ${qid}`);
-            }
+
+        // 1. Quests available to Accept here (from NPCs present, checking giver + prerequisite)
+        Object.values(QUESTS).forEach(q => {
+            if (localPlayer.quests[q.id]) return; // already accepted
+            if (!localNpcs.includes(q.giver)) return; // giver not here
+            const prereqOk = !q.prerequisite || localPlayer.quests[q.prerequisite]?.completed;
+            if (prereqOk) addButton(`Accept: ${q.name} 📋`, `quest accept ${q.id}`);
         });
 
-        // 2. Active Quests (Complete if possible)
-        active.forEach(([qid, data]) => {
+        // 2. Active Quests — completable ones first
+        const completable = active.filter(([qid, data]) => {
             const qDef = QUESTS[qid];
-            const canComplete = data.progress >= qDef.count && localNpcs.some(nid => NPCS[nid].questId === qid);
-            const label = canComplete ? `Complete ${qDef.name} ✅` : `${qDef.name} (${data.progress}/${qDef.count})`;
-            addButton(label, canComplete ? `quest complete ${qid}` : 'quest list');
+            const count = qDef?.objective?.count || 1;
+            return data.progress >= count && (qDef.receiver === null || localNpcs.includes(qDef.receiver));
+        });
+        completable.forEach(([qid]) => {
+            const qDef = QUESTS[qid];
+            addButton(`Complete: ${qDef.name} ✅`, `quest complete ${qid}`);
         });
 
-        if (active.length === 0 && !localNpcs.some(nid => NPCS[nid].questId && !localPlayer.quests[NPCS[nid].questId])) {
-            addButton('No Quests Available', () => uiState = 'root');
+        // 3. In-progress quests
+        const inProgress = active.filter(([qid]) => !completable.find(([cid]) => cid === qid));
+        inProgress.forEach(([qid, data]) => {
+            const qDef = QUESTS[qid];
+            if (!qDef) return;
+            const count = qDef.objective?.count || 1;
+            addButton(`${qDef.name} (${data.progress}/${count})`, 'quest list');
+        });
+
+        if (active.length === 0 && completable.length === 0) {
+            addButton('No active quests', () => uiState = 'root');
         }
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'settings') {
         const inputContainer = document.getElementById('input-container');
@@ -355,7 +422,7 @@ export const renderActionButtons = (ctx, onAction) => {
         addButton('Score 🏆', 'score');
         addButton('Net Status 📡', 'net');
         addButton('Map 🗺️', 'map');
-        addButton('Back ⬅️', () => uiState = 'root');
+        addButton('Back ⬅️', ACTION.CANCEL);
     }
 };
 
@@ -410,7 +477,7 @@ export const startTicker = (worldState) => {
 /**
  * Renders the 2D Spatial Radar.
  */
-export const renderRadar = (ctx, onTileClick) => {
+export const drawRadar = (ctx, onTileClick) => {
     if (!radarEl) return;
     const { localPlayer, world, players, shardEnemies, NPCS, getNPCLocation, worldState } = ctx;
     const loc = world[localPlayer.location];
@@ -504,4 +571,58 @@ export const renderRadar = (ctx, onTileClick) => {
 };
 
 // --- EVENT SUBSCRIPTIONS ---
-EventBus.on('log', ({ msg, color }) => _injectLog(msg, color));
+bus.on('log', ({ msg, color }) => _injectLog(msg, color));
+
+bus.on('combat:hit', ({ attacker, target, damage, crit, targetHP, targetMaxHP }) => {
+    let msg = crit ? `<b>CRITICAL HIT!</b> ${attacker} hit ${target} for ${damage}.` : `${attacker} hit ${target} for ${damage}.`;
+    if (targetHP !== undefined) {
+        msg += ` ${getHealthBar(targetHP, targetMaxHP)}`;
+    }
+    _injectLog(msg, attacker === 'You' ? '#0f0' : '#f55');
+});
+
+bus.on('combat:miss', ({ attacker, target }) => {
+    _injectLog(`${attacker} missed ${target}.`, '#aaa');
+});
+
+bus.on('combat:dodge', ({ attacker, target }) => {
+    _injectLog(`${target} dodged ${attacker}'s attack!`, '#0af');
+});
+
+bus.on('combat:death', ({ entity, loot }) => {
+    _injectLog(`${entity} has been defeated!`, '#ff0');
+});
+
+bus.on('player:move', ({ from, to, direction }) => {
+    // Phase 7.5: log line if needed, but usually handleCommand('move') already logs
+});
+
+bus.on('player:levelup', ({ level }) => {
+    _injectLog(`LEVEL UP! You are now level ${level}! ✨`, '#ff0');
+});
+
+bus.on('npc:speak', ({ npcName, text }) => {
+    _injectLog(`[Talk] ${npcName}: "${text}"`, '#0ff');
+});
+
+bus.on('item:pickup', ({ item }) => {
+    _injectLog(`You picked up ${item.name}.`, '#ff0');
+});
+
+bus.on('quest:progress', ({ name, current, total }) => {
+    _injectLog(`[Quest] ${name} progress: ${current}/${total}`, '#ff0');
+});
+
+bus.on('quest:complete', ({ name, rewards }) => {
+    _injectLog(`[Quest] COMPLETED: ${name}!`, '#0f0');
+    _injectLog(`[Quest] Reward: ${rewards.xp} XP, ${rewards.gold} Gold`, '#ff0');
+});
+
+bus.on('chat:say', ({ name, text }) => {
+    _injectLog(`[Chat] ${name}: "${text}"`, '#fff');
+});
+
+bus.on('world:timeOfDay', ({ day, timeOfDay }) => {
+    const label = timeOfDay === 'night' ? 'Night falls' : 'Dawn breaks';
+    _injectLog(`[World] ${label} — Day ${day}.`, '#0af');
+});

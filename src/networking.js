@@ -1,5 +1,5 @@
 import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
-import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot, validateMove } from './rules.js';
+import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot, validateMove, getTimeOfDay } from './rules.js';
 import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from './constants.js';
 import { 
     worldState, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
@@ -17,6 +17,7 @@ import {
 import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
 import { log, printStatus } from './ui.js';
 import { GAME_NAME } from './data.js';
+import { bus } from './eventbus.js';
 
 const netLog = (msg, color = '#555') => {
     if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
@@ -79,6 +80,8 @@ export const updateSimulation = (state) => {
         worldState.seasonNumber = derived.seasonNumber;
         worldState.threatLevel = derived.threatLevel;
         worldState.scarcity = derived.scarcity;
+        worldState.event = derived.event;
+        worldState.weather = derived.weather;
 
         if (isNewDay) {
             log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
@@ -90,6 +93,7 @@ export const updateSimulation = (state) => {
                 localPlayer.buffs.activeElixir = null;
             }
             printStatus();
+            bus.emit('world:timeOfDay', { day: worldState.day, timeOfDay: 'day' });
         }
     }
 
@@ -97,6 +101,7 @@ export const updateSimulation = (state) => {
         setHasSyncedWithArbiter(true);
         log(`\n[System] Connected — Day ${worldState.day}, ${worldState.mood.toUpperCase()}.`, '#0f0');
         printStatus();
+        bus.emit('world:timeOfDay', { day: worldState.day, timeOfDay: getTimeOfDay() });
     }
 };
 
@@ -122,6 +127,8 @@ export const initNetworking = async (rtcConfig) => {
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
         const [requestState, getIncomingRequest] = globalRooms.torrent.makeAction('request_state');
         const [sendWorldState, getState] = globalRooms.torrent.makeAction('world_state');
+        const [sendStateRequest, getStateRequest] = globalRooms.torrent.makeAction('state_request');
+        const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
 
         gameActions.submitRollup = (rollup) => sendRollup(rollup);
         gameActions.submitFraudProof = (proof) => sendFraud(proof);
@@ -169,6 +176,44 @@ export const initNetworking = async (rtcConfig) => {
 
         gameActions.requestState = requestState;
         gameActions.sendWorldState = sendWorldState;
+        gameActions.sendStateRequest = sendStateRequest;
+
+        getStateRequest((ph, peerId) => {
+            // If we have a shadow player with this PH, offer the state
+            for (const [sid, shadow] of shadowPlayers.entries()) {
+                if (shadow.ph === ph) {
+                    sendStateOffer(shadow, [peerId]);
+                    break;
+                }
+            }
+        });
+
+        getStateOffer(async (shadow, peerId) => {
+            if (!shadow || !shadow.signature) return;
+            // Verify shadow state (must be signed by the player being rescued)
+            // But wait, the shadow state we store is just the data.
+            // For a proper rescue, we need the original signed presence blob.
+            // Since we updated presence to include everything, 'shadow' IS the unpacked presence.
+            
+            // For now, let's assume if it matches our ph and the levels are higher, we consider it.
+            if (shadow.ph === localPlayer.ph) {
+                log(`[System] Received state rescue offer from ${peerId.slice(0, 8)}!`, '#0f0');
+                // Merge logic: take higher level/xp, union items/quests
+                if (shadow.xp > localPlayer.xp) {
+                    localPlayer.xp = shadow.xp;
+                    localPlayer.level = shadow.level;
+                    localPlayer.gold = Math.max(localPlayer.gold, shadow.gold);
+                    // Union inventory
+                    const myInv = new Set(localPlayer.inventory);
+                    shadow.inventory.forEach(i => myInv.add(i));
+                    localPlayer.inventory = Array.from(myInv);
+                    // Union quests
+                    Object.assign(localPlayer.quests, shadow.quests);
+                    log(`[System] State merged successfully.`, '#0f0');
+                    saveLocalState(localPlayer, true);
+                }
+            }
+        });
     };
 
     await connectGlobal(currentRtcConfig);
@@ -497,6 +542,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
 
             trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
+            trackShadowPlayer(peerId, unpacked);
         });
 
         getPresenceBatch(async (data) => {
@@ -529,6 +575,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) continue;
                     const entry = players.get(id) || {};
                     trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
+                    trackShadowPlayer(id, unpacked);
                 } catch { }
             }
         });

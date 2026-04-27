@@ -48,6 +48,10 @@ export const myEntry = async () => {
         xp: localPlayer.xp,
         x: localPlayer.x || 5,
         y: localPlayer.y || 5,
+        gold: localPlayer.gold || 0,
+        inventory: localPlayer.inventory || [],
+        quests: localPlayer.quests || {},
+        equipped: localPlayer.equipped || { weapon: null, armor: null },
         ts: Date.now() 
     };
     const signature = await signMessage(JSON.stringify(data), playerKeys.privateKey);

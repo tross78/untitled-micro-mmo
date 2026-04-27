@@ -38,8 +38,18 @@ export const setBans = (list, hash) => {
 };
 
 export const trackShadowPlayer = (id, data) => {
-    if (shadowPlayers.has(id)) shadowPlayers.delete(id);
-    shadowPlayers.set(id, data);
+    // data is the unpacked presence
+    const shadow = { 
+        ph: data.ph,
+        level: data.level, 
+        xp: data.xp, 
+        inventory: data.inventory || [], 
+        gold: data.gold || 0,
+        quests: data.quests || {},
+        signature: data.signature,
+        ts: Date.now()
+    };
+    shadowPlayers.set(id, shadow);
     if (shadowPlayers.size > PEER_LIMIT) {
         const first = shadowPlayers.keys().next().value;
         shadowPlayers.delete(first);
@@ -58,6 +68,10 @@ export const trackPlayer = (id, data) => {
 export let localPlayer = { 
     name: `Peer-${selfId.slice(0, 4)}`, 
     location: 'cellar', 
+    direction: 'south',
+    animState: 'idle',
+    statusEffects: [],
+    equipped: { weapon: null, armor: null },
     ...DEFAULT_PLAYER_STATS 
 };
 
@@ -81,12 +95,13 @@ export function setPendingTrade(val) {
     pendingTrade = val;
 }
 
+import { loadState } from './persistence.js';
+// ...
 // --- PERSISTENCE HELPERS ---
-export const loadLocalState = (log) => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+export const loadLocalState = async (log) => {
+    const data = await loadState();
+    if (data) {
         try {
-            const data = JSON.parse(saved);
             Object.assign(localPlayer, data);
             if (typeof localPlayer.combatRound !== 'number' || isNaN(localPlayer.combatRound)) {
                 localPlayer.combatRound = 0;
@@ -94,6 +109,10 @@ export const loadLocalState = (log) => {
             if (!localPlayer.buffs || typeof localPlayer.buffs !== 'object') {
                 localPlayer.buffs = { rested: false, activeElixir: null };
             }
+            if (!localPlayer.direction) localPlayer.direction = 'south';
+            if (!localPlayer.animState) localPlayer.animState = 'idle';
+            if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
+            if (!localPlayer.equipped) localPlayer.equipped = { weapon: null, armor: null };
             if (!world[localPlayer.location]) {
                 localPlayer.location = 'cellar';
             }
@@ -101,6 +120,7 @@ export const loadLocalState = (log) => {
         } catch (e) { console.error(e); }
     }
     const cachedWorld = localStorage.getItem(WORLD_STATE_KEY);
+    // ...
     if (cachedWorld) {
         try {
             const { seed, day, lastTick } = JSON.parse(cachedWorld);

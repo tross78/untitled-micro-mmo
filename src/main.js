@@ -4,7 +4,11 @@ import {
     TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade, shardEnemies
 } from './store.js';
 import { saveLocalState } from './persistence.js';
-import { log, printStatus, renderActionButtons, startTicker, renderRadar } from './ui.js';
+import { log, printStatus, renderActionButtons, startTicker } from './ui.js';
+import { renderWorld } from './renderer.js';
+import { 
+    playHit, playCrit, playLevelUp, playPickup, playPortal, playDeath 
+} from './audio.js';
 import { 
     initIdentity, arbiterPublicKey, myEntry 
 } from './identity.js';
@@ -12,10 +16,11 @@ import {
     initNetworking, gameActions, lastValidStatePacket, updateSimulation, joinInstance, currentInstance, currentRtcConfig
 } from './networking.js';
 import {
-    handleCommand, getPlayerName, getTag, startStateChannel, resolveRound, escapeHtml
+    handleCommand, getPlayerName, getTag, startStateChannel, resolveRound, escapeHtml, grantItem
 } from './commands.js';
 import { verifyMessage, importKey } from './crypto.js';
-import { EventBus } from './events.js';
+import { bus } from './eventbus.js';
+import { inputManager, ACTION } from './input.js';
 import { getSuggestions } from './autocomplete.js';
 import { initAds, showBanner } from './ads.js';
 import { 
@@ -39,11 +44,16 @@ const triggerUIRefresh = () => {
     const ctx = {
         localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
     };
-    renderActionButtons(ctx, (cmd) => {
-        log(`> ${cmd}`, '#555');
-        handleCommand(cmd).then(triggerUIRefresh);
+    renderActionButtons(ctx, (cmdOrAction) => {
+        if (typeof cmdOrAction === 'string') {
+            log(`> ${cmdOrAction}`, '#555');
+            handleCommand(cmdOrAction).then(triggerUIRefresh);
+        } else {
+            // It's an ACTION constant
+            bus.emit('input:action', { action: cmdOrAction, type: 'down' });
+        }
     });
-    renderRadar(ctx, (tx, ty) => {
+    renderWorld(ctx, (tx, ty) => {
         // Pathfinding / Micro-movement (Manhattan step)
         const loc = world[localPlayer.location];
         if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
@@ -83,6 +93,7 @@ const triggerUIRefresh = () => {
             });
             handleCommand('look');
             if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: portal.dest, x: localPlayer.x, y: localPlayer.y });
+            bus.emit('player:move', { from: prevLoc, to: portal.dest, portal: true });
             joinInstance(portal.dest, currentInstance, currentRtcConfig).then(triggerUIRefresh);
         }
     });
@@ -92,12 +103,61 @@ const triggerUIRefresh = () => {
 const start = async () => {
     try {
         await initIdentity(log);
-        loadLocalState(log);
+        await loadLocalState(log);
         initAds();
         showBanner();
+        inputManager.init();
+
+        bus.on('combat:hit', ({ attacker, crit }) => {
+            if (crit) playCrit();
+            else playHit();
+        });
+        bus.on('combat:death', ({ entity }) => {
+            if (entity === 'You') playDeath();
+            else playPickup(); // Victory sound?
+        });
+        bus.on('player:levelup', () => playLevelUp());
+        bus.on('item:pickup', () => playPickup());
+        bus.on('player:move', ({ to, from, portal }) => {
+            if (to !== from && portal) playPortal();
+        });
+
+        bus.on('input:action', ({ action, type }) => {
+            if (type !== 'down') return;
+            
+            let cmd = null;
+            switch (action) {
+                case ACTION.MOVE_N: cmd = 'move north'; break;
+                case ACTION.MOVE_S: cmd = 'move south'; break;
+                case ACTION.MOVE_E: cmd = 'move east'; break;
+                case ACTION.MOVE_W: cmd = 'move west'; break;
+                case ACTION.ATTACK: cmd = 'attack'; break;
+                case ACTION.INTERACT: cmd = 'interact'; break;
+                case ACTION.INVENTORY: cmd = 'inventory'; break;
+                case ACTION.CANCEL: cmd = 'back'; break;
+                case ACTION.CONFIRM: cmd = 'confirm'; break;
+                case ACTION.MENU: cmd = 'status'; break;
+            }
+            if (cmd) {
+                if (cmd === 'back') {
+                    window.dispatchEvent(new CustomEvent('ui-back'));
+                    triggerUIRefresh();
+                } else {
+                    handleCommand(cmd).then(triggerUIRefresh);
+                }
+            }
+        });
 
         // Ask other open tabs for state before touching the network
         TAB_CHANNEL.postMessage({ type: 'request_state' });
+
+        // P2P State Rescue
+        setTimeout(() => {
+            if (localPlayer.xp === 0 && gameActions.sendStateRequest) {
+                log(`[System] Local state empty. Requesting rescue from peers...`, '#aaa');
+                gameActions.sendStateRequest(localPlayer.ph);
+            }
+        }, 5000);
 
         const processBeacon = async (packet, source) => {
             if (!packet || hasSyncedWithArbiter) return;
@@ -263,7 +323,7 @@ function setupNetworkEvents() {
 
         // 2. Get their stuff
         localPlayer.gold += pt.partnerOffer.gold;
-        localPlayer.inventory.push(...pt.partnerOffer.items);
+        pt.partnerOffer.items.forEach(id => grantItem(id));
 
         // 3. Broadcast to shard for shadow updates
         const delta = {

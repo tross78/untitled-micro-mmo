@@ -215,4 +215,4 @@ const slot \= Math.floor(Date.now() / ROLLUP\_INTERVAL) % all.length;
 * Ban persistence: worldState.bans \= Array.from(bans) written before every schedulePersist().  
 * Peer join: sends state only to the new peer (sendState(packet, \[peerId\])), not a full broadcast.  
 * Maps lastRollupTime and fraudCounts are purged hourly to prevent unbounded growth on Pi Zero.  
-* doReset() clears fraudCounts and lastRollupTime.
+* doReset() clears fraudCounts and lastRollupTime. 

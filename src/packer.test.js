@@ -54,7 +54,7 @@ describe('Binary Packer', () => {
         
         const packed = packPresence(presence);
         expect(packed).toBeInstanceOf(Uint8Array);
-        expect(packed).toHaveLength(98);
+        expect(packed).toHaveLength(160);
         
         const unpacked = unpackPresence(packed);
         expect(unpacked.name).toBe('Tyson');
@@ -112,7 +112,7 @@ describe('Binary Packer', () => {
         const view = new DataView(packed.buffer);
         expect(view.getUint8(16)).toBe(0); // cellar is index 0 in ROOM_MAP
         expect(view.getUint8(21)).toBe(7); // level at byte 21
-        expect(packed).toHaveLength(98);
+        expect(packed).toHaveLength(160);
     });
 
     test('DuelCommit packet encodes/decodes correctly', () => {
