@@ -190,28 +190,28 @@ export const handleCommand = async (cmd) => {
             if (npcs.length > 0) {
                 await handleCommand(`talk ${npcs[0]}`);
             } else {
-                const portal = (loc.portals || []).find(p => p.x === localPlayer.x && p.y === localPlayer.y);
-                if (portal) {
-                    log(`[System] Stepping into the portal to ${world[portal.dest].name}...`, '#f0f');
+                const exit = ( loc.exitTiles || []).find(p => p.x === localPlayer.x && p.y === localPlayer.y);
+                if (exit) {
+                    log(`[System] Stepping through the exit to ${world[exit.dest].name}...`, '#f0f');
                     const prevLoc = localPlayer.location;
-                    localPlayer.location = portal.dest;
-                    localPlayer.x = portal.destX ?? 5;
-                    localPlayer.y = portal.destY ?? 5;
+                    localPlayer.location = exit.dest;
+                    localPlayer.x = exit.destX ?? 5;
+                    localPlayer.y = exit.destY ?? 5;
                     saveLocalState(localPlayer);
                     
                     myEntry().then(entry => {
                         if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
                     });
                     handleCommand('look');
-                    if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: portal.dest, x: localPlayer.x, y: localPlayer.y });
-                    bus.emit('player:move', { from: prevLoc, to: portal.dest, portal: true });
-                    await joinInstance(portal.dest, currentInstance, currentRtcConfig);
+                    if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: exit.dest, x: localPlayer.x, y: localPlayer.y });
+                    bus.emit('player:move', { from: prevLoc, to: exit.dest });
+                    await joinInstance(exit.dest, currentInstance, currentRtcConfig);
 
                     // Explore Quest Progress
                     Object.keys(localPlayer.quests).forEach(qid => {
                         const q = QUESTS[qid];
                         const pq = localPlayer.quests[qid];
-                        if (q && !pq.completed && q.type === 'explore' && q.objective.target === portal.dest) {
+                        if (q && !pq.completed && q.type === 'explore' && q.objective.target === exit.dest) {
                             pq.progress = Math.min(q.objective.count || 1, pq.progress + 1);
                             bus.emit('quest:progress', { name: q.name, current: pq.progress, total: q.objective.count || 1 });
                             if (pq.progress >= (q.objective.count || 1) && q.receiver === null) {
@@ -540,7 +540,7 @@ export const handleCommand = async (cmd) => {
             localPlayer.x = 5;
             localPlayer.y = 5;
             bus.emit('combat:death', { entity: 'You' });
-            bus.emit('player:move', { from: deathLoc, to: 'cellar', portal: false });
+            bus.emit('player:move', { from: deathLoc, to: 'cellar' });
             log(`You awaken in the cellar, battered and bruised...`, '#aaa');
             if (gameActions.sendMove) gameActions.sendMove({ from: deathLoc, to: 'cellar', x: 5, y: 5 });
             joinInstance('cellar', currentInstance, currentRtcConfig).then(() => handleCommand('look'));
@@ -624,12 +624,12 @@ export const handleCommand = async (cmd) => {
                 if (localPlayer.currentEnemy) { log(`You can't move while in combat!`); break; }
 
                 // Spatial Transition logic
-                const portal = (loc.portals || []).find(p => p.dir === dir || (p.dest === nextLocId));
+                const exit = ( loc.exitTiles || []).find(p => p.dir === dir || (p.dest === nextLocId));
                 const prevLoc = localPlayer.location;
 
                 localPlayer.location = nextLocId;
-                localPlayer.x = portal?.destX ?? 5;
-                localPlayer.y = portal?.destY ?? 5;
+                localPlayer.x = exit?.destX ?? 5;
+                localPlayer.y = exit?.destY ?? 5;
 
                 saveLocalState(localPlayer);
                 log(`You move ${dir}.`);
@@ -647,7 +647,7 @@ export const handleCommand = async (cmd) => {
 
                 handleCommand('look');
                 if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: nextLocId, x: localPlayer.x, y: localPlayer.y });
-                bus.emit('player:move', { from: prevLoc, to: nextLocId, portal: true });
+                bus.emit('player:move', { from: prevLoc, to: nextLocId });
                 await joinInstance(nextLocId, currentInstance, currentRtcConfig);
 
                 // Explore Quest Progress
@@ -1076,7 +1076,7 @@ export const handleCommand = async (cmd) => {
             });
             log(`[Trade] Initiating trade with ${partner.name}...`, '#ff0');
             gameActions.sendTradeOffer({ fromName: localPlayer.name, offer: { gold: 0, items: [] } }, partnerId);
-            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('trade-initiated'));
+            bus.emit('trade:initiated', {});
             break;
         }
 

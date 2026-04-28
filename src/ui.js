@@ -80,7 +80,7 @@ const actionButtonsEl = document.getElementById('action-buttons');
 let uiState = 'root'; // 'root', 'move', 'use', 'talk', 'buy', 'settings'
 let _lastAction = null;
 
-window.addEventListener('ui-back', () => {
+bus.on('ui:back', () => {
     uiState = 'root';
 });
 
@@ -497,9 +497,9 @@ export const drawRadar = (ctx, onTileClick) => {
     });
 
     // 2. Portals
-    (loc.portals || []).forEach(p => {
+    ( loc.exitTiles || []).forEach(p => {
         if (p.x < loc.width && p.y < loc.height) {
-            grid[p.y][p.x] = { type: 'portal', label: '∏' };
+            grid[p.y][p.x] = { type: 'exit', label: '▸' };
         }
     });
 

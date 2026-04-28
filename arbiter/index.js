@@ -5,6 +5,18 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
+// Suppress tracker/STUN network noise that libraries emit directly to stderr.
+// These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
+const NOISE_PATTERNS = ['ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH',
+    'EHOSTUNREACH', 'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT',
+    'socket hang up', 'Unexpected server response', 'SSL', 'certificate'];
+const _origConsoleError = console.error.bind(console);
+console.error = (...args) => {
+    const msg = String(args[0] ?? '');
+    if (NOISE_PATTERNS.some(p => msg.includes(p))) { console.warn('[Arbiter] Network noise (non-fatal):', msg.slice(0, 120)); return; }
+    _origConsoleError(...args);
+};
+
 // Polyfills
 if (typeof global.crypto === 'undefined') global.crypto = webcrypto;
 if (typeof global.WebSocket === 'undefined') global.WebSocket = WebSocket;
@@ -166,6 +178,7 @@ async function startArbiter() {
         try {
             await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
                 method: 'PATCH',
+                signal: AbortSignal.timeout(8000),
                 headers: {
                     'Authorization': `token ${GH_GIST_TOKEN}`,
                     'Content-Type': 'application/json',

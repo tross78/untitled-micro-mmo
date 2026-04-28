@@ -5,9 +5,9 @@ import {
 } from './store.js';
 import { saveLocalState } from './persistence.js';
 import { log, printStatus, renderActionButtons, startTicker } from './ui.js';
-import { renderWorld } from './renderer.js';
+import { renderWorld, toggleDevRadar } from './renderer.js';
 import { 
-    playHit, playCrit, playLevelUp, playPickup, playPortal, playDeath 
+    playHit, playCrit, playLevelUp, playPickup, playExit, playDeath 
 } from './audio.js';
 import { 
     initIdentity, arbiterPublicKey, myEntry 
@@ -40,62 +40,87 @@ const HEARTBEAT_MS = 120000;
 /**
  * Global UI refresh trigger. Call this whenever state changes.
  */
+// Move the player one tile in (stepX, stepY). If the step exits the zone boundary,
+// auto-transition to the adjacent room via the matching exit entry point.
+const stepPlayer = async (stepX, stepY) => {
+    const loc = world[localPlayer.location];
+    const nextX = localPlayer.x + stepX;
+    const nextY = localPlayer.y + stepY;
+
+    const outOfBounds = nextX < 0 || nextX >= loc.width || nextY < 0 || nextY >= loc.height;
+
+    if (!outOfBounds) {
+        localPlayer.x = nextX;
+        localPlayer.y = nextY;
+        saveLocalState(localPlayer);
+        if (gameActions.sendMove) gameActions.sendMove({ from: localPlayer.location, to: localPlayer.location, x: nextX, y: nextY });
+
+        // Exit tile check (interior doorways)
+        const exit = ( loc.exitTiles || []).find(p => p.x === nextX && p.y === nextY);
+        if (exit) {
+            const prevLoc = localPlayer.location;
+            localPlayer.location = exit.dest;
+            localPlayer.x = exit.destX ?? 5;
+            localPlayer.y = exit.destY ?? 5;
+            saveLocalState(localPlayer);
+            myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
+            handleCommand('look');
+            if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: exit.dest, x: localPlayer.x, y: localPlayer.y });
+            bus.emit('player:move', { from: prevLoc, to: exit.dest });
+            joinInstance(exit.dest, currentInstance, currentRtcConfig).then(triggerUIRefresh);
+            return;
+        }
+        triggerUIRefresh();
+        return;
+    }
+
+    // Out of bounds — find the exit direction and transition
+    const dirMap = [
+        { sx: 0, sy: -1, dir: 'north' }, { sx: 0, sy: 1, dir: 'south' },
+        { sx: -1, sy: 0, dir: 'west' },  { sx: 1, sy: 0, dir: 'east' },
+        { sx: 0, sy: -1, dir: 'up' },    { sx: 0, sy: 1, dir: 'down' },
+    ];
+    const match = dirMap.find(d => d.sx === stepX && d.sy === stepY);
+    const destId = match && loc.exits?.[match.dir];
+    if (!destId || !world[destId]) return; // no exit, treat as wall
+
+    // Use the exit that leads to destId for the entry position
+    const entryExit = ( loc.exitTiles || []).find(p => p.dest === destId);
+    const prevLoc = localPlayer.location;
+    localPlayer.location = destId;
+    localPlayer.x = entryExit?.destX ?? Math.floor(world[destId].width / 2);
+    localPlayer.y = entryExit?.destY ?? Math.floor(world[destId].height / 2);
+    saveLocalState(localPlayer);
+    myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
+    handleCommand('look');
+    if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: destId, x: localPlayer.x, y: localPlayer.y });
+    bus.emit('player:move', { from: prevLoc, to: destId });
+    joinInstance(destId, currentInstance, currentRtcConfig).then(triggerUIRefresh);
+};
+
 const triggerUIRefresh = () => {
     const ctx = {
         localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
     };
+    const ACTION_VALUES = new Set(Object.values(ACTION));
     renderActionButtons(ctx, (cmdOrAction) => {
-        if (typeof cmdOrAction === 'string') {
+        if (ACTION_VALUES.has(cmdOrAction)) {
+            bus.emit('input:action', { action: cmdOrAction, type: 'down' });
+        } else {
             log(`> ${cmdOrAction}`, '#555');
             handleCommand(cmdOrAction).then(triggerUIRefresh);
-        } else {
-            // It's an ACTION constant
-            bus.emit('input:action', { action: cmdOrAction, type: 'down' });
         }
     });
     renderWorld(ctx, (tx, ty) => {
-        // Pathfinding / Micro-movement (Manhattan step)
+        // Radar click: one Manhattan step toward the clicked tile
         const loc = world[localPlayer.location];
         if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
-        
-        // Find next step towards target
         const dx = tx - localPlayer.x;
         const dy = ty - localPlayer.y;
         if (dx === 0 && dy === 0) return;
-
-        // Move only 1 tile at a time
         const stepX = dx !== 0 ? (dx > 0 ? 1 : -1) : 0;
         const stepY = stepX === 0 && dy !== 0 ? (dy > 0 ? 1 : -1) : 0;
-        
-        const nextX = localPlayer.x + stepX;
-        const nextY = localPlayer.y + stepY;
-
-        localPlayer.x = nextX;
-        localPlayer.y = nextY;
-        saveLocalState(localPlayer);
-        triggerUIRefresh();
-
-        // Broadcast micro-movement (guard: gameActions not yet populated until joinInstance completes)
-        if (gameActions.sendMove) gameActions.sendMove({ from: localPlayer.location, to: localPlayer.location, x: nextX, y: nextY });
-        
-        // Check for portal hit
-        const portal = (loc.portals || []).find(p => p.x === nextX && p.y === nextY);
-        if (portal) {
-            log(`[System] Stepping into the portal to ${world[portal.dest].name}...`, '#f0f');
-            const prevLoc = localPlayer.location;
-            localPlayer.location = portal.dest;
-            localPlayer.x = portal.destX ?? 5;
-            localPlayer.y = portal.destY ?? 5;
-            saveLocalState(localPlayer);
-            
-            myEntry().then(entry => {
-                if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
-            });
-            handleCommand('look');
-            if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: portal.dest, x: localPlayer.x, y: localPlayer.y });
-            bus.emit('player:move', { from: prevLoc, to: portal.dest, portal: true });
-            joinInstance(portal.dest, currentInstance, currentRtcConfig).then(triggerUIRefresh);
-        }
+        stepPlayer(stepX, stepY);
     });
 };
 
@@ -118,19 +143,22 @@ const start = async () => {
         });
         bus.on('player:levelup', () => playLevelUp());
         bus.on('item:pickup', () => playPickup());
-        bus.on('player:move', ({ to, from, portal }) => {
-            if (to !== from && portal) playPortal();
+        bus.on('player:move', ({ to, from }) => {
+            if (to !== from) playExit();
         });
 
         bus.on('input:action', ({ action, type }) => {
             if (type !== 'down') return;
-            
+
+            // Movement: tile-by-tile via stepPlayer, not room-jump commands
+            const STEP = {
+                [ACTION.MOVE_N]: [0, -1], [ACTION.MOVE_S]: [0, 1],
+                [ACTION.MOVE_E]: [1, 0],  [ACTION.MOVE_W]: [-1, 0],
+            };
+            if (STEP[action]) { stepPlayer(...STEP[action]); return; }
+
             let cmd = null;
             switch (action) {
-                case ACTION.MOVE_N: cmd = 'move north'; break;
-                case ACTION.MOVE_S: cmd = 'move south'; break;
-                case ACTION.MOVE_E: cmd = 'move east'; break;
-                case ACTION.MOVE_W: cmd = 'move west'; break;
                 case ACTION.ATTACK: cmd = 'attack'; break;
                 case ACTION.INTERACT: cmd = 'interact'; break;
                 case ACTION.INVENTORY: cmd = 'inventory'; break;
@@ -140,7 +168,7 @@ const start = async () => {
             }
             if (cmd) {
                 if (cmd === 'back') {
-                    window.dispatchEvent(new CustomEvent('ui-back'));
+                    bus.emit('ui:back', {});
                     triggerUIRefresh();
                 } else {
                     handleCommand(cmd).then(triggerUIRefresh);
@@ -260,13 +288,11 @@ TAB_CHANNEL.onmessage = ({ data }) => {
 
 // --- NETWORK EVENT LISTENERS ---
 function setupNetworkEvents() {
-    window.addEventListener('start-duel', (e) => {
-        const { targetId, targetName, day } = e.detail;
+    bus.on('duel:start', ({ targetId, targetName, day }) => {
         startStateChannel(targetId, targetName, day).then(triggerUIRefresh);
     });
 
-    window.addEventListener('duel-commit-received', (e) => {
-        const { targetId } = e.detail;
+    bus.on('duel:commit-received', ({ targetId }) => {
         resolveRound(targetId).then(triggerUIRefresh);
     });
 
@@ -282,8 +308,7 @@ function setupNetworkEvents() {
         }, 30000);
     };
 
-    window.addEventListener('trade-offer-received', (e) => {
-        const { partnerId, partnerName, offer } = e.detail;
+    bus.on('trade:offer-received', ({ partnerId, partnerName, offer }) => {
         if (!pendingTrade || pendingTrade.partnerId !== partnerId) {
             setPendingTrade({
                 partnerId,
@@ -300,8 +325,7 @@ function setupNetworkEvents() {
         triggerUIRefresh();
     });
 
-    window.addEventListener('trade-accept-received', (e) => {
-        const { partnerId, offer } = e.detail;
+    bus.on('trade:accept-received', ({ partnerId, offer }) => {
         if (pendingTrade && pendingTrade.partnerId === partnerId) {
             pendingTrade.partnerOffer = offer;
             startTradeTimeout();
@@ -337,8 +361,7 @@ function setupNetworkEvents() {
         triggerUIRefresh();
     };
 
-    window.addEventListener('trade-commit-received', async (e) => {
-        const { partnerId, commit } = e.detail;
+    bus.on('trade:commit-received', async ({ partnerId, commit }) => {
         if (pendingTrade && pendingTrade.partnerId === partnerId) {
             const entry = players.get(partnerId);
             if (!entry?.publicKey) return;
@@ -359,14 +382,13 @@ function setupNetworkEvents() {
         }
     });
 
-    window.addEventListener('trade-initiated', startTradeTimeout);
+    bus.on('trade:initiated', startTradeTimeout);
 
-    window.addEventListener('monster-damaged', () => {
+    bus.on('monster:damaged', () => {
         triggerUIRefresh();
     });
 
-    window.addEventListener('player-move', (e) => {
-        const { peerId, data } = e.detail;
+    bus.on('peer:move', ({ peerId, data }) => {
         const name = getPlayerName(peerId);
         
         // If it's just a 1-tile step in the same room, just refresh the UI (Radar)
@@ -386,13 +408,11 @@ function setupNetworkEvents() {
         }
     });
 
-    window.addEventListener('player-emote', (e) => {
-        const { peerId, data } = e.detail;
+    bus.on('peer:emote', ({ peerId, data }) => {
         log(`[System] ${getPlayerName(peerId)} ${escapeHtml(data.text)}`, '#aaa');
     });
 
-    window.addEventListener('player-leave', (e) => {
-        const { peerId } = e.detail;
+    bus.on('peer:leave', ({ peerId }) => {
         const name = getPlayerName(peerId);
         log(`[Social] ${name} has vanished.`, '#555');
         triggerUIRefresh();
@@ -492,6 +512,15 @@ function setupUIEvents() {
     input.addEventListener('input', () => {
         historyIdx = -1;
         renderSuggestions(getSuggestions(input.value, getAutoCompleteContext()));
+    });
+
+    // ~ toggles the text debug console
+    const debugConsole = document.getElementById('debug-console');
+    window.addEventListener('keydown', (e) => {
+        if (e.key === '~' && !e.target.matches('input,textarea')) {
+            const visible = debugConsole.style.display !== 'none';
+            debugConsole.style.display = visible ? 'none' : 'flex';
+        }
     });
 
     if (window.visualViewport) {

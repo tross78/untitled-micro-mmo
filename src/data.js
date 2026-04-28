@@ -307,7 +307,7 @@ export const world = {
         description: 'A damp cellar. Crates line the walls. A door leads north.',
         width: 10, height: 10,
         exits: { north: 'hallway' },
-        portals: [{ x: 5, y: 0, dest: 'hallway', destX: 5, destY: 8 }],
+        exitTiles: [{ x: 5, y: 0, dest: 'hallway', destX: 5, destY: 8 }],
         staticEntities: [],
         scenery: [{ x: 2, y: 2, label: 'C' }, { x: 8, y: 7, label: 'C' }, { x: 1, y: 8, label: 'C' }],
         enemy: null,
@@ -317,7 +317,7 @@ export const world = {
         description: 'A narrow passage. The cellar is south, the tavern north, the forest east.',
         width: 11, height: 10,
         exits: { south: 'cellar', north: 'tavern', east: 'forest_edge' },
-        portals: [
+        exitTiles: [
             { x: 5, y: 9, dest: 'cellar', destX: 5, destY: 1 },
             { x: 5, y: 0, dest: 'tavern', destX: 5, destY: 8 },
             { x: 10, y: 5, dest: 'forest_edge', destX: 1, destY: 5 },
@@ -331,7 +331,7 @@ export const world = {
         description: 'Smoke and low voices. The market is east, the hallway south.',
         width: 12, height: 10,
         exits: { south: 'hallway', east: 'market' },
-        portals: [
+        exitTiles: [
             { x: 5, y: 9, dest: 'hallway', destX: 5, destY: 1 },
             { x: 11, y: 5, dest: 'market', destX: 1, destY: 5 },
         ],
@@ -350,7 +350,7 @@ export const world = {
         description: 'Stalls and haggling. The tavern is west.',
         width: 15, height: 15,
         exits: { west: 'tavern' },
-        portals: [{ x: 0, y: 7, dest: 'tavern', destX: 10, destY: 5 }],
+        exitTiles: [{ x: 0, y: 7, dest: 'tavern', destX: 10, destY: 5 }],
         staticEntities: [{ id: 'merchant', x: 8, y: 8 }],
         scenery: [
             { x: 5, y: 5, label: 'S' }, { x: 11, y: 5, label: 'S' },
@@ -364,7 +364,7 @@ export const world = {
         description: 'Twisted pines. A wolf watches from the dark. The hallway is west, ruins north, cave south, depths east.',
         width: 20, height: 20,
         exits: { west: 'hallway', north: 'ruins', south: 'cave', east: 'forest_depths' },
-        portals: [
+        exitTiles: [
             { x: 0, y: 10, dest: 'hallway', destX: 9, destY: 5 },
             { x: 10, y: 0, dest: 'ruins', destX: 10, destY: 18 },
             { x: 10, y: 19, dest: 'cave', destX: 5, destY: 1 },
@@ -383,7 +383,7 @@ export const world = {
         description: 'Ancient trees block the sky. Goblins lurk in the brush. The edge is west, a lake east, a camp north.',
         width: 25, height: 25,
         exits: { west: 'forest_edge', east: 'lake_shore', north: 'bandit_camp' },
-        portals: [
+        exitTiles: [
             { x: 0, y: 12, dest: 'forest_edge', destX: 18, destY: 10 },
             { x: 24, y: 12, dest: 'lake_shore', destX: 1, destY: 10 },
             { x: 12, y: 0, dest: 'bandit_camp', destX: 10, destY: 18 },
@@ -401,7 +401,7 @@ export const world = {
         description: 'Still water reflects the grey sky. The forest is west, mountains rise to the north.',
         width: 20, height: 20,
         exits: { west: 'forest_depths', north: 'mountain_pass' },
-        portals: [
+        exitTiles: [
             { x: 0, y: 10, dest: 'forest_depths', destX: 23, destY: 12 },
             { x: 10, y: 0, dest: 'mountain_pass', destX: 10, destY: 18 },
         ],
@@ -414,7 +414,7 @@ export const world = {
         description: 'Tents and a guttering fire. Bandits watch the trail. The forest is south.',
         width: 15, height: 15,
         exits: { south: 'forest_depths' },
-        portals: [{ x: 7, y: 14, dest: 'forest_depths', destX: 12, destY: 1 }],
+        exitTiles: [{ x: 7, y: 14, dest: 'forest_depths', destX: 12, destY: 1 }],
         staticEntities: [],
         scenery: [{ x: 7, y: 7, label: 'F' }], // Fire
         enemy: 'bandit',
@@ -425,7 +425,7 @@ export const world = {
         description: 'Thin air and treacherous paths. A troll guards the heights. The lake is south.',
         width: 20, height: 30,
         exits: { south: 'lake_shore' },
-        portals: [{ x: 10, y: 29, dest: 'lake_shore', destX: 10, destY: 1 }],
+        exitTiles: [{ x: 10, y: 29, dest: 'lake_shore', destX: 10, destY: 1 }],
         staticEntities: [],
         scenery: [{ x: 5, y: 10, label: 'R' }, { x: 15, y: 20, label: 'R' }], // Rocks
         enemy: 'mountain_troll',
@@ -436,7 +436,7 @@ export const world = {
         description: 'Cold stone and shifting shadows. A shade drifts between the pillars. The forest is south, a descent leads north.',
         width: 20, height: 20,
         exits: { south: 'forest_edge', north: 'ruins_descent' },
-        portals: [
+        exitTiles: [
             { x: 10, y: 19, dest: 'forest_edge', destX: 10, destY: 1 },
             { x: 10, y: 0, dest: 'ruins_descent', destX: 5, destY: 8 },
         ],
@@ -450,7 +450,7 @@ export const world = {
         description: 'A crumbling staircase spiraling down into the earth. Ruins are south, catacombs down.',
         width: 10, height: 10,
         exits: { south: 'ruins', down: 'catacombs' },
-        portals: [
+        exitTiles: [
             { x: 5, y: 9, dest: 'ruins', destX: 10, destY: 1 },
             { x: 5, y: 0, dest: 'catacombs', destX: 5, destY: 13, type: 'down' },
         ],
@@ -464,7 +464,7 @@ export const world = {
         description: 'Endless rows of skulls and dust. A wraith haunts the tombs. Descent is up, a cell north.',
         width: 15, height: 15,
         exits: { up: 'ruins_descent', north: 'dungeon_cell' },
-        portals: [
+        exitTiles: [
             { x: 7, y: 14, dest: 'ruins_descent', destX: 5, destY: 1, type: 'up' },
             { x: 7, y: 0, dest: 'dungeon_cell', destX: 5, destY: 8 },
         ],
@@ -478,7 +478,7 @@ export const world = {
         description: 'Rusty bars and straw. A skeleton rattles in the corner. Catacombs are south, a throne room east.',
         width: 10, height: 10,
         exits: { south: 'catacombs', east: 'throne_room' },
-        portals: [
+        exitTiles: [
             { x: 5, y: 9, dest: 'catacombs', destX: 7, destY: 1 },
             { x: 9, y: 5, dest: 'throne_room', destX: 1, destY: 5 },
         ],
@@ -492,7 +492,7 @@ export const world = {
         description: 'A shattered throne under a mountain of dust. Shadows dance here. The cell is west.',
         width: 15, height: 15,
         exits: { west: 'dungeon_cell' },
-        portals: [{ x: 0, y: 7, dest: 'dungeon_cell', destX: 8, destY: 5 }],
+        exitTiles: [{ x: 0, y: 7, dest: 'dungeon_cell', destX: 8, destY: 5 }],
         staticEntities: [],
         scenery: [{ x: 7, y: 2, label: 'H' }], // Throne
         enemy: 'wraith',
@@ -503,7 +503,7 @@ export const world = {
         description: 'Low ceilings, dripping water. A cave troll blocks the passage. The forest is north.',
         width: 12, height: 12,
         exits: { north: 'forest_edge' },
-        portals: [{ x: 6, y: 0, dest: 'forest_edge', destX: 10, destY: 18 }],
+        exitTiles: [{ x: 6, y: 0, dest: 'forest_edge', destX: 10, destY: 18 }],
         staticEntities: [],
         scenery: [{ x: 3, y: 3, label: '*' }], // Stalactite
         enemy: 'cave_troll',

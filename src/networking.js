@@ -398,16 +398,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getTradeOffer((data, peerId) => {
             log(`\n[Trade] ${data.fromName} wants to trade!`, '#ff0');
-            window.dispatchEvent(new CustomEvent('trade-offer-received', { detail: { partnerId: peerId, partnerName: data.fromName, offer: data.offer } }));
+            bus.emit('trade:offer-received', { partnerId: peerId, partnerName: data.fromName, offer: data.offer });
         });
 
         getTradeAccept((data, peerId) => {
-            window.dispatchEvent(new CustomEvent('trade-accept-received', { detail: { partnerId: peerId, offer: data.offer } }));
+            bus.emit('trade:accept-received', { partnerId: peerId, offer: data.offer });
         });
 
         getTradeCommit(async (buf, peerId) => {
             const data = unpackTradeCommit(buf);
-            window.dispatchEvent(new CustomEvent('trade-commit-received', { detail: { partnerId: peerId, commit: data } }));
+            bus.emit('trade:commit-received', { partnerId: peerId, commit: data });
         });
 
         getTradeFinal((data) => {
@@ -433,7 +433,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getDuelAccept(async (data, peerId) => {
             if (data.target !== selfId) return;
             log(`\n[DUEL] ${data.fromName} accepted your challenge! Initiating combat...`, '#0f0');
-            window.dispatchEvent(new CustomEvent('start-duel', { detail: { targetId: peerId, targetName: data.fromName, day: worldState.day } }));
+            bus.emit('duel:start', { targetId: peerId, targetName: data.fromName, day: worldState.day });
         });
 
         getDuelCommit(async (buf, peerId) => {
@@ -460,7 +460,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                         return;
                     }
                     chan.theirHistory.push(commit);
-                    window.dispatchEvent(new CustomEvent('duel-commit-received', { detail: { targetId: peerId } }));
+                    bus.emit('duel:commit-received', { targetId: peerId });
                 } catch (e) {
                     console.error(`[Duel] Error processing commit from ${peerId}:`, e.message);
                 }
@@ -673,13 +673,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 // Update peer coordinates locally
                 trackPlayer(peerId, { ...entry, location: data.to, x: data.x, y: data.y, ts: Date.now() });
 
-                window.dispatchEvent(new CustomEvent('player-move', { detail: { peerId, data } }));
+                bus.emit('peer:move', { peerId, data });
             } catch (e) { console.error('[Security] Move validation fail:', e); }
         });
 
         getEmote((buf, peerId) => {
             const data = unpackEmote(buf);
-            window.dispatchEvent(new CustomEvent('player-emote', { detail: { peerId, data } }));
+            bus.emit('peer:emote', { peerId, data });
         });
 
         getMonsterDmg((data) => {
@@ -688,7 +688,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (state) {
                 state.hp = Math.max(0, state.hp - damage);
                 state.lastUpdate = Date.now();
-                window.dispatchEvent(new CustomEvent('monster-damaged', { detail: { roomId, damage } }));
+                bus.emit('monster:damaged', { roomId, damage });
             }
         });
 
@@ -717,7 +717,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         r.onPeerLeave(peerId => {
-            window.dispatchEvent(new CustomEvent('player-leave', { detail: { peerId } }));
+            bus.emit('peer:leave', { peerId });
             knownPeers.delete(peerId);
             players.delete(peerId);
             shadowPlayers.delete(peerId);
