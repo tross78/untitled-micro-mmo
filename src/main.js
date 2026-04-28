@@ -7,7 +7,7 @@ import { saveLocalState } from './persistence.js';
 import { log, printStatus, renderActionButtons, startTicker } from './ui.js';
 import { renderWorld, toggleDevRadar } from './renderer.js';
 import { 
-    playHit, playCrit, playLevelUp, playPickup, playExit, playDeath 
+    playHit, playCrit, playLevelUp, playPickup, playPortal as playExit, playDeath
 } from './audio.js';
 import { 
     initIdentity, arbiterPublicKey, myEntry 

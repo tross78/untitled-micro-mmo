@@ -466,9 +466,9 @@ export const handleCommand = async (cmd) => {
                 Object.keys(localPlayer.quests).forEach(qid => {
                     const q = QUESTS[qid];
                     const pq = localPlayer.quests[qid];
-                    if (!pq.completed && q.target === loc.enemy) {
-                        pq.progress = Math.min(q.count, pq.progress + 1);
-                        bus.emit('quest:progress', { name: q.name, current: pq.progress, total: q.count });
+                    if (!pq.completed && q.type === 'kill' && q.objective.target === loc.enemy) {
+                        pq.progress = Math.min(q.objective.count, pq.progress + 1);
+                        bus.emit('quest:progress', { name: q.name, current: pq.progress, total: q.objective.count });
                     }
                 });
 
@@ -551,7 +551,7 @@ export const handleCommand = async (cmd) => {
         case 'rest': {
             if (localPlayer.currentEnemy) { log(`You can't rest mid-combat!`); break; }
             const bonus = levelBonus(localPlayer.level);
-            const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.statusEffects.find(s => s.id === 'well_rested') ? 5 : 0);
+            const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.statusEffects?.find(s => s.id === 'well_rested') ? 5 : 0);
             const healed = Math.max(0, Math.min(10, cap - localPlayer.hp));
             localPlayer.hp += healed;
             

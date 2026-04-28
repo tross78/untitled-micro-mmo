@@ -163,7 +163,7 @@ export const renderActionButtons = (ctx, onAction) => {
         }
 
         if (localPlayer.inventory.length > 0) {
-            addButton('Use 🎒', () => uiState = 'use');
+            addButton('Use 🎒', () => { uiState = 'use'; renderActionButtons(ctx, onAction); });
             if (localPlayer.inventory.some(id => ITEMS[id] && (ITEMS[id].type === 'weapon' || ITEMS[id].type === 'armor'))) {
                 addButton('Equip ⚔️', () => uiState = 'equip');
             }
