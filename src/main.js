@@ -78,10 +78,10 @@ const stepPlayer = async (stepX, stepY) => {
             myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
             if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: exit.dest, x: localPlayer.x, y: localPlayer.y });
             bus.emit('player:move', { from: prevLoc, to: exit.dest });
-            joinInstance(exit.dest, currentInstance, currentRtcConfig).then(triggerUIRefresh);
+            joinInstance(exit.dest, currentInstance, currentRtcConfig).then(triggerLogicalRefresh);
             return;
         }
-        triggerUIRefresh();
+        triggerLogicalRefresh();
         return;
     }
 
@@ -105,39 +105,22 @@ const stepPlayer = async (stepX, stepY) => {
     myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
     if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: destId, x: localPlayer.x, y: localPlayer.y });
     bus.emit('player:move', { from: prevLoc, to: destId });
-    joinInstance(destId, currentInstance, currentRtcConfig).then(triggerUIRefresh);
+    joinInstance(destId, currentInstance, currentRtcConfig).then(triggerLogicalRefresh);
 };
 
-let _refreshTimer = null;
-const triggerUIRefresh = () => {
-    if (_refreshTimer) return;
-    _refreshTimer = setTimeout(() => {
-        _refreshTimer = null;
+let _vRefreshTimer = null;
+const triggerVisualRefresh = () => {
+    if (_vRefreshTimer) return;
+    _vRefreshTimer = requestAnimationFrame(() => {
+        _vRefreshTimer = null;
         const ctx = {
             localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
         };
-        const ACTION_VALUES = new Set(Object.values(ACTION));
-        renderActionButtons(ctx, (cmdOrAction) => {
-            if (ACTION_VALUES.has(cmdOrAction)) {
-                bus.emit('input:action', { action: cmdOrAction, type: 'down' });
-            } else {
-                handleCommand(cmdOrAction).then(triggerUIRefresh);
-            }
-        });
         renderWorld(ctx, (tx, ty, entity) => {
             const loc = world[localPlayer.location];
             if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
-
-            // Clicking an NPC → talk; clicking enemy → attack; otherwise → move toward
-            if (entity?.type === 'npc') {
-                handleCommand(`talk ${entity.id}`).then(triggerUIRefresh);
-                return;
-            }
-            if (entity?.type === 'enemy') {
-                handleCommand('attack').then(triggerUIRefresh);
-                return;
-            }
-
+            if (entity?.type === 'npc') { handleCommand(`talk ${entity.id}`).then(triggerLogicalRefresh); return; }
+            if (entity?.type === 'enemy') { handleCommand('attack').then(triggerLogicalRefresh); return; }
             const dx = tx - localPlayer.x;
             const dy = ty - localPlayer.y;
             if (dx === 0 && dy === 0) return;
@@ -145,6 +128,26 @@ const triggerUIRefresh = () => {
             const stepY = stepX === 0 && dy !== 0 ? (dy > 0 ? 1 : -1) : 0;
             stepPlayer(stepX, stepY);
         });
+    });
+};
+
+let _lRefreshTimer = null;
+const triggerLogicalRefresh = () => {
+    if (_lRefreshTimer) return;
+    _lRefreshTimer = setTimeout(() => {
+        _lRefreshTimer = null;
+        const ctx = {
+            localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
+        };
+        renderActionButtons(ctx, (cmdOrAction) => {
+            const ACTION_VALUES = new Set(Object.values(ACTION));
+            if (ACTION_VALUES.has(cmdOrAction)) {
+                bus.emit('input:action', { action: cmdOrAction, type: 'down' });
+            } else {
+                handleCommand(cmdOrAction).then(triggerLogicalRefresh);
+            }
+        });
+        triggerVisualRefresh();
     }, 50);
 };
 
@@ -157,7 +160,8 @@ const start = async () => {
         showBanner();
         inputManager.init();
 
-        setRefreshCallback(triggerUIRefresh);
+        setVisualRefreshCallback(triggerVisualRefresh);
+        setLogicalRefreshCallback(triggerLogicalRefresh);
 
         bus.on('combat:hit', ({ attacker, crit }) => {
             if (crit) playCrit(); else playHit();
@@ -231,9 +235,9 @@ const start = async () => {
             if (cmd) {
                 if (cmd === 'back') {
                     bus.emit('ui:back', {});
-                    triggerUIRefresh();
+                    triggerLogicalRefresh();
                 } else {
-                    handleCommand(cmd).then(triggerUIRefresh);
+                    handleCommand(cmd).then(triggerLogicalRefresh);
                 }
             }
         });
@@ -259,7 +263,7 @@ const start = async () => {
                 TAB_CHANNEL.postMessage({ type: 'state', packet });
                 const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
                 updateSimulation(stateObj);
-                triggerUIRefresh();
+                triggerLogicalRefresh();
             } else {
                 console.warn(`[System] Beacon from ${source} failed verification.`);
             }
@@ -309,7 +313,7 @@ const start = async () => {
         const PRESENCE_TTL = 300000;
         setInterval(() => {
             pruneStale(PRESENCE_TTL);
-            triggerUIRefresh();
+            triggerLogicalRefresh();
         }, HEARTBEAT_MS);
 
         log(`\nWelcome to ${GAME_NAME.charAt(0).toUpperCase() + GAME_NAME.slice(1)}.`);
@@ -319,12 +323,12 @@ const start = async () => {
         setTimeout(() => {
             log(`${world[localPlayer.location].name}`);
             log(world[localPlayer.location].description);
-            triggerUIRefresh();
+            triggerLogicalRefresh();
         }, 1000);
 
         setupNetworkEvents();
         setupUIEvents();
-        triggerUIRefresh();
+        triggerLogicalRefresh();
 
     } catch (err) { log(`[FATAL] Engine crash: ${err.message}`, '#f00'); }
 };
@@ -343,7 +347,7 @@ TAB_CHANNEL.onmessage = ({ data }) => {
             if (!valid) return;
             const stateObj = typeof data.packet.state === 'string' ? JSON.parse(data.packet.state) : data.packet.state;
             updateSimulation(stateObj);
-            triggerUIRefresh();
+            triggerLogicalRefresh();
         }).catch(() => {});
     }
 };
@@ -351,11 +355,11 @@ TAB_CHANNEL.onmessage = ({ data }) => {
 // --- NETWORK EVENT LISTENERS ---
 function setupNetworkEvents() {
     bus.on('duel:start', ({ targetId, targetName, day }) => {
-        startStateChannel(targetId, targetName, day).then(triggerUIRefresh);
+        startStateChannel(targetId, targetName, day).then(triggerLogicalRefresh);
     });
 
     bus.on('duel:commit-received', ({ targetId }) => {
-        resolveRound(targetId).then(triggerUIRefresh);
+        resolveRound(targetId).then(triggerLogicalRefresh);
     });
 
     let tradeTimeout = null;
@@ -365,7 +369,7 @@ function setupNetworkEvents() {
             if (pendingTrade) {
                 log(`[Trade] Session timed out.`, '#555');
                 setPendingTrade(null);
-                triggerUIRefresh();
+                triggerLogicalRefresh();
             }
         }, 30000);
     };
@@ -384,14 +388,14 @@ function setupNetworkEvents() {
             pendingTrade.partnerOffer = offer;
         }
         startTradeTimeout();
-        triggerUIRefresh();
+        triggerLogicalRefresh();
     });
 
     bus.on('trade:accept-received', ({ partnerId, offer }) => {
         if (pendingTrade && pendingTrade.partnerId === partnerId) {
             pendingTrade.partnerOffer = offer;
             startTradeTimeout();
-            triggerUIRefresh();
+            triggerLogicalRefresh();
         }
     });
 
@@ -420,7 +424,7 @@ function setupNetworkEvents() {
 
         setPendingTrade(null);
         saveLocalState(localPlayer, true);
-        triggerUIRefresh();
+        triggerLogicalRefresh();
     };
 
     bus.on('trade:commit-received', async ({ partnerId, commit }) => {
@@ -440,14 +444,14 @@ function setupNetworkEvents() {
                     else startTradeTimeout();
                 }
             } catch (err) { console.error('[Trade] Verification fail:', err); }
-            triggerUIRefresh();
+            triggerLogicalRefresh();
         }
     });
 
     bus.on('trade:initiated', startTradeTimeout);
 
     bus.on('monster:damaged', () => {
-        triggerUIRefresh();
+        triggerLogicalRefresh();
     });
 
         bus.on('quest:progress', ({ name, current, total }) => {
@@ -462,18 +466,18 @@ function setupNetworkEvents() {
             
             // If it's just a 1-tile step in the same room, just refresh the UI (Radar)
             if (data.from === data.to) {
-                triggerUIRefresh();
+                triggerLogicalRefresh();
                 return;
             }
 
             if (data.to === localPlayer.location) {
                 const fromDir = Object.entries(world[data.to]?.exits || {}).find(([, dest]) => dest === data.from)?.[0];
                 showToast(`${name} arrives${fromDir ? ' from ' + fromDir : ''}`);
-                triggerUIRefresh();
+                triggerLogicalRefresh();
             } else if (data.from === localPlayer.location) {
                 const toDir = Object.entries(world[data.from]?.exits || {}).find(([, dest]) => dest === data.to)?.[0];
                 showToast(`${name} leaves${toDir ? ' to ' + toDir : ''}`);
-                triggerUIRefresh();
+                triggerLogicalRefresh();
             }
         });
 
@@ -484,7 +488,7 @@ function setupNetworkEvents() {
     bus.on('peer:leave', ({ peerId }) => {
         const name = getPlayerName(peerId);
         showToast(`${name} vanished`);
-        triggerUIRefresh();
+        triggerLogicalRefresh();
     });
 }
 
@@ -522,7 +526,7 @@ function setupUIEvents() {
         const s = currentSuggestions[idx];
         if (!s) return;
         if (s.immediate) {
-            handleCommand(s.fill).then(triggerUIRefresh);
+            handleCommand(s.fill).then(triggerLogicalRefresh);
             input.value = '';
             renderSuggestions([]);
         } else {
@@ -535,7 +539,7 @@ function setupUIEvents() {
     const submitCommand = (raw) => {
         const val = raw.trim();
         if (!val) return;
-        handleCommand(val).then(triggerUIRefresh);
+        handleCommand(val).then(triggerLogicalRefresh);
     };
 
     const inputHistory = [];

@@ -203,6 +203,9 @@ export function renderWorld(state, onTileClick) {
 
     // --- EXITS ---
     ( loc.exitTiles || []).forEach(p => {
+        // Portal bleed fix: clip to room bounds
+        if (p.x < 0 || p.x >= loc.width || p.y < 0 || p.y >= loc.height) return;
+
         const sx = p.x - camX;
         const sy = p.y - camY;
         if (sx < -1 || sx >= VIEWPORT_W || sy < -1 || sy >= VIEWPORT_H) return;
@@ -432,25 +435,27 @@ let _hitFlash = 0;         // timestamp when flash expires
 let _toasts   = [];        // [{ text, expires }]
 let _floatingTexts = [];   // [{ x, y, text, color, expires, startY }]
 let _tickerText = '';
-let _triggerRefresh = null; // injected by main.js
+let _triggerVisualRefresh = null;
+let _triggerLogicalRefresh = null;
 
-export function setRefreshCallback(fn) { _triggerRefresh = fn; }
+export function setVisualRefreshCallback(fn) { _triggerVisualRefresh = fn; }
+export function setLogicalRefreshCallback(fn) { _triggerLogicalRefresh = fn; }
 
 function scheduleRedraw(ms) {
-    if (_triggerRefresh) setTimeout(_triggerRefresh, ms);
+    if (_triggerVisualRefresh) setTimeout(_triggerVisualRefresh, ms);
 }
 
 // ─── Public overlay API ───────────────────────────────────────────────────────
 
 export function setTicker(text) {
     _tickerText = text;
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 
 export function showFloatingText(x, y, text, color = '#fff') {
     _floatingTexts.push({ x, y, text, color, expires: Date.now() + 1000, startY: y });
     scheduleRedraw(1100);
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 
 export function showToast(message) {
@@ -458,31 +463,31 @@ export function showToast(message) {
     _toasts.push({ text: message, expires });
     if (_toasts.length > 3) _toasts.shift();
     scheduleRedraw(2600);
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 
 export function showRoomBanner(roomName) {
     _banner = { text: roomName, expires: Date.now() + 2000 };
     scheduleRedraw(2100);
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 
 export function showItemFanfare(itemName) {
     _fanfare = { text: `You got\n${itemName}!`, expires: Date.now() + 1500 };
     scheduleRedraw(1600);
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 
 export function showLevelUp(level) {
     _fanfare = { text: `⬆ Level ${level}!`, expires: Date.now() + 2000 };
     scheduleRedraw(2100);
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 
 export function triggerHitFlash() {
     _hitFlash = Date.now() + 200;
     scheduleRedraw(250);
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 
 export function showDialogue(npcName, text) {
@@ -509,18 +514,20 @@ export function showDialogue(npcName, text) {
     }
     if (!pages.length) return; // don't open dialogue with no text
     _dialogue = { name: npcName, pages, page: 0 };
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
+    if (_triggerLogicalRefresh) _triggerLogicalRefresh();
 }
 
 export function advanceDialogue() {
     if (!_dialogue) return false;
     if (_dialogue.page < _dialogue.pages.length - 1) {
         _dialogue.page++;
-        if (_triggerRefresh) _triggerRefresh();
+        if (_triggerVisualRefresh) _triggerVisualRefresh();
         return true; // still open
     }
     _dialogue = null;
-    if (_triggerRefresh) _triggerRefresh();
+    if (_triggerVisualRefresh) _triggerVisualRefresh();
+    if (_triggerLogicalRefresh) _triggerLogicalRefresh();
     return false; // closed
 }
 
