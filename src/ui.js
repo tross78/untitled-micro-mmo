@@ -466,24 +466,16 @@ export const printStatus = () => {
 /**
  * Starts the ambient lore ticker.
  */
-export const startTicker = (worldState) => {
-    const tickerEl = document.getElementById('ticker');
-    if (!tickerEl) return;
-
+export const startTicker = (worldState, onTick) => {
     const updateTicker = () => {
         if (!worldState.seed) return;
         
-        tickerEl.style.opacity = '0';
+        // Seeded by seed + current 30s interval for stability
+        const interval = Math.floor(Date.now() / 30000);
+        const rng = seededRNG(hashStr(worldState.seed + interval + 'ticker'));
+        const msg = generateSentence(CORPORA.ticker, rng);
         
-        setTimeout(() => {
-            // Seeded by seed + current 30s interval for stability
-            const interval = Math.floor(Date.now() / 30000);
-            const rng = seededRNG(hashStr(worldState.seed + interval + 'ticker'));
-            const msg = generateSentence(CORPORA.ticker, rng);
-            
-            tickerEl.textContent = msg;
-            tickerEl.style.opacity = '1';
-        }, 500);
+        if (onTick) onTick(msg);
     };
 
     updateTicker();

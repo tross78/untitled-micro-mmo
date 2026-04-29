@@ -47,6 +47,26 @@ describe('Movement', () => {
             }
         }
     });
+
+    test('all exitTile destX/destY are within the destination room bounds', () => {
+        // Regression: forest_depths → bandit_camp had destY:18 in a 15-tall room,
+        // spawning the player out of bounds and making them invisible.
+        for (const roomId in world) {
+            const room = world[roomId];
+            for (const tile of (room.exitTiles || [])) {
+                const dest = world[tile.dest];
+                expect(dest).toBeDefined();
+                if (tile.destX !== undefined) {
+                    expect(tile.destX).toBeGreaterThanOrEqual(0);
+                    expect(tile.destX).toBeLessThan(dest.width);
+                }
+                if (tile.destY !== undefined) {
+                    expect(tile.destY).toBeGreaterThanOrEqual(0);
+                    expect(tile.destY).toBeLessThan(dest.height);
+                }
+            }
+        }
+    });
 });
 
 // --- Determinism ---

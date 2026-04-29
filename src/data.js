@@ -386,7 +386,7 @@ export const world = {
         exitTiles: [
             { x: 0, y: 12, dest: 'forest_edge', destX: 18, destY: 10 },
             { x: 24, y: 12, dest: 'lake_shore', destX: 1, destY: 10 },
-            { x: 12, y: 0, dest: 'bandit_camp', destX: 10, destY: 18 },
+            { x: 12, y: 0, dest: 'bandit_camp', destX: 10, destY: 13 },
         ],
         staticEntities: [],
         scenery: [

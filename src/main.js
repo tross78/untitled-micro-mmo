@@ -5,7 +5,12 @@ import {
 } from './store.js';
 import { saveLocalState } from './persistence.js';
 import { log, printStatus, renderActionButtons, startTicker } from './ui.js';
-import { renderWorld, toggleDevRadar } from './renderer.js';
+import {
+    renderWorld, toggleDevRadar, setRefreshCallback,
+    showDialogue, advanceDialogue, isDialogueOpen,
+    showToast, showRoomBanner, showItemFanfare, showLevelUp, triggerHitFlash,
+    showFloatingText, setTicker
+} from './renderer.js';
 import { 
     playHit, playCrit, playLevelUp, playPickup, playPortal as playExit, playDeath
 } from './audio.js';
@@ -64,7 +69,6 @@ const stepPlayer = async (stepX, stepY) => {
             localPlayer.y = exit.destY ?? 5;
             saveLocalState(localPlayer);
             myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
-            handleCommand('look');
             if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: exit.dest, x: localPlayer.x, y: localPlayer.y });
             bus.emit('player:move', { from: prevLoc, to: exit.dest });
             joinInstance(exit.dest, currentInstance, currentRtcConfig).then(triggerUIRefresh);
@@ -92,7 +96,6 @@ const stepPlayer = async (stepX, stepY) => {
     localPlayer.y = entryExit?.destY ?? Math.floor(world[destId].height / 2);
     saveLocalState(localPlayer);
     myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
-    handleCommand('look');
     if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: destId, x: localPlayer.x, y: localPlayer.y });
     bus.emit('player:move', { from: prevLoc, to: destId });
     joinInstance(destId, currentInstance, currentRtcConfig).then(triggerUIRefresh);
@@ -107,7 +110,6 @@ const triggerUIRefresh = () => {
         if (ACTION_VALUES.has(cmdOrAction)) {
             bus.emit('input:action', { action: cmdOrAction, type: 'down' });
         } else {
-            log(`> ${cmdOrAction}`, '#555');
             handleCommand(cmdOrAction).then(triggerUIRefresh);
         }
     });
@@ -143,18 +145,50 @@ const start = async () => {
         showBanner();
         inputManager.init();
 
+        setRefreshCallback(triggerUIRefresh);
+
         bus.on('combat:hit', ({ attacker, crit }) => {
-            if (crit) playCrit();
-            else playHit();
+            if (crit) playCrit(); else playHit();
+            triggerHitFlash();
+        });
+        bus.on('combat:dodge', ({ target }) => {
+            if (target === 'You') {
+                const loc = world[localPlayer.location];
+                showFloatingText(localPlayer.x, localPlayer.y, 'DODGE', '#0fa');
+            } else {
+                const loc = world[localPlayer.location];
+                const ex = loc.enemyX ?? Math.floor(loc.width / 2);
+                const ey = loc.enemyY ?? Math.floor(loc.height / 2);
+                showFloatingText(ex, ey, 'MISS', '#fff');
+            }
+        });
+        bus.on('combat:miss', () => {
+            const loc = world[localPlayer.location];
+            const ex = loc.enemyX ?? Math.floor(loc.width / 2);
+            const ey = loc.enemyY ?? Math.floor(loc.height / 2);
+            showFloatingText(ex, ey, 'MISS', '#fff');
         });
         bus.on('combat:death', ({ entity }) => {
             if (entity === 'You') playDeath();
-            else playPickup(); // Victory sound?
+            else playPickup();
         });
-        bus.on('player:levelup', () => playLevelUp());
-        bus.on('item:pickup', () => playPickup());
+        bus.on('player:levelup', ({ level }) => {
+            playLevelUp();
+            showLevelUp(level);
+        });
+        bus.on('item:pickup', ({ item }) => {
+            playPickup();
+            if (item?.name) showItemFanfare(item.name);
+        });
         bus.on('player:move', ({ to, from }) => {
-            if (to !== from) playExit();
+            if (to !== from) {
+                playExit();
+                const roomName = world[to]?.name;
+                if (roomName) showRoomBanner(roomName);
+            }
+        });
+        bus.on('npc:speak', ({ npcName, text }) => {
+            showDialogue(npcName, text);
         });
 
         bus.on('input:action', ({ action, type }) => {
@@ -244,7 +278,7 @@ const start = async () => {
         }
 
         await initNetworking();
-        startTicker(worldState);
+        startTicker(worldState, setTicker);
 
         // Heartbeat for presence
         setInterval(async () => {
@@ -398,33 +432,40 @@ function setupNetworkEvents() {
         triggerUIRefresh();
     });
 
-    bus.on('peer:move', ({ peerId, data }) => {
-        const name = getPlayerName(peerId);
-        
-        // If it's just a 1-tile step in the same room, just refresh the UI (Radar)
-        if (data.from === data.to) {
-            triggerUIRefresh();
-            return;
-        }
+        bus.on('quest:progress', ({ name, current, total }) => {
+            showToast(`${name}: ${current}/${total}`);
+        });
+        bus.on('quest:complete', ({ name }) => {
+            showToast(`COMPLETED: ${name}! ✨`);
+        });
 
-        if (data.to === localPlayer.location) {
-            const fromDir = Object.entries(world[data.to]?.exits || {}).find(([, dest]) => dest === data.from)?.[0];
-            log(`[System] ${name} arrives${fromDir ? ' from the ' + fromDir : ''}.`, '#aaa');
-            handleCommand('look').then(triggerUIRefresh);
-        } else if (data.from === localPlayer.location) {
-            const toDir = Object.entries(world[data.from]?.exits || {}).find(([, dest]) => dest === data.to)?.[0];
-            log(`[System] ${name} leaves${toDir ? ' to the ' + toDir : ''}.`, '#aaa');
-            triggerUIRefresh();
-        }
-    });
+        bus.on('peer:move', ({ peerId, data }) => {
+            const name = getPlayerName(peerId);
+            
+            // If it's just a 1-tile step in the same room, just refresh the UI (Radar)
+            if (data.from === data.to) {
+                triggerUIRefresh();
+                return;
+            }
+
+            if (data.to === localPlayer.location) {
+                const fromDir = Object.entries(world[data.to]?.exits || {}).find(([, dest]) => dest === data.from)?.[0];
+                showToast(`${name} arrives${fromDir ? ' from ' + fromDir : ''}`);
+                triggerUIRefresh();
+            } else if (data.from === localPlayer.location) {
+                const toDir = Object.entries(world[data.from]?.exits || {}).find(([, dest]) => dest === data.to)?.[0];
+                showToast(`${name} leaves${toDir ? ' to ' + toDir : ''}`);
+                triggerUIRefresh();
+            }
+        });
 
     bus.on('peer:emote', ({ peerId, data }) => {
-        log(`[System] ${getPlayerName(peerId)} ${escapeHtml(data.text)}`, '#aaa');
+        showToast(`${getPlayerName(peerId)} ${data.text}`);
     });
 
     bus.on('peer:leave', ({ peerId }) => {
         const name = getPlayerName(peerId);
-        log(`[Social] ${name} has vanished.`, '#555');
+        showToast(`${name} vanished`);
         triggerUIRefresh();
     });
 }
@@ -463,7 +504,6 @@ function setupUIEvents() {
         const s = currentSuggestions[idx];
         if (!s) return;
         if (s.immediate) {
-            log(`> ${s.fill}`, '#555');
             handleCommand(s.fill).then(triggerUIRefresh);
             input.value = '';
             renderSuggestions([]);
@@ -524,9 +564,14 @@ function setupUIEvents() {
         renderSuggestions(getSuggestions(input.value, getAutoCompleteContext()));
     });
 
-    // ~ toggles the text debug console
+    // Space/Enter advances dialogue if open; ~ toggles debug console
     const debugConsole = document.getElementById('debug-console');
     window.addEventListener('keydown', (e) => {
+        if ((e.key === ' ' || e.key === 'Enter') && isDialogueOpen() && !e.target.matches('input,textarea')) {
+            e.preventDefault();
+            advanceDialogue();
+            return;
+        }
         if (e.key === '~' && !e.target.matches('input,textarea')) {
             const visible = debugConsole.style.display !== 'none';
             debugConsole.style.display = visible ? 'none' : 'flex';
