@@ -59,8 +59,10 @@ function initCanvas() {
 
     _canvas = document.createElement('canvas');
     _canvas.id = 'game-canvas';
-    _canvas.width = CW * _dpr;
-    _canvas.height = CH * _dpr;
+    // Use logical dimensions for the canvas element internal size
+    // High-DPI is handled by CSS aspect-ratio and image-rendering
+    _canvas.width = CW;
+    _canvas.height = CH;
     _canvas.style.cssText = `
         display:block; width:100%; max-width:${CW}px; max-height:45vh; aspect-ratio:${CW}/${CH};
         image-rendering:pixelated; image-rendering:crisp-edges; margin: 0 auto;
@@ -68,7 +70,6 @@ function initCanvas() {
     `;
 
     const ctx = _canvas.getContext('2d');
-    ctx.scale(_dpr, _dpr);
     ctx.imageSmoothingEnabled = false;
 
     if (_radarEl) _radarEl.insertAdjacentElement('beforebegin', _canvas);
@@ -155,6 +156,7 @@ function getTileLayer(ctx, loc, camX, camY, tileType) {
 
     const off = new OffscreenCanvas(CW + S, CH + S);
     const octx = off.getContext('2d');
+    octx.imageSmoothingEnabled = false;
     
     for (let ty = 0; ty <= VIEWPORT_H; ty++) {
         for (let tx = 0; tx <= VIEWPORT_W; tx++) {
