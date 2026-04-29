@@ -159,23 +159,48 @@ export const updateSimulation = (state) => {
     }
 };
 
-export const initNetworking = async (rtcConfig) => {
-    currentRtcConfig = rtcConfig || { iceServers: STUN_SERVERS };
-
-    // Deterministic Tracker Allocation: each peer only uses 2 trackers to reduce global load
-    const myTrackers = [];
+// Deterministic tracker selection — same 2 trackers every time for this peer ID.
+const getMyTrackers = () => {
+    const out = [];
     if (TORRENT_TRACKERS.length > 0) {
         const seed = parseInt(selfId.slice(0, 8), 16) || 0;
         const idx1 = seed % TORRENT_TRACKERS.length;
         const idx2 = (seed + 1) % TORRENT_TRACKERS.length;
-        myTrackers.push(TORRENT_TRACKERS[idx1]);
-        if (idx1 !== idx2) myTrackers.push(TORRENT_TRACKERS[idx2]);
+        out.push(TORRENT_TRACKERS[idx1]);
+        if (idx1 !== idx2) out.push(TORRENT_TRACKERS[idx2]);
     }
+    return out;
+};
+
+// Pre-join cache: destination shard name → { room, timeout }
+// Populated by preJoinShard() when the player walks near a portal.
+const preJoinCache = new Map();
+
+// Start connecting to a destination shard room before the player actually enters it.
+// The room object is cached; joinInstance() will promote it to the active room.
+export const preJoinShard = (location, instanceId) => {
+    const shard = getShardName(location, instanceId ?? currentInstance);
+    const currentShard = getShardName(localPlayer.location, currentInstance);
+    if (shard === currentShard || preJoinCache.has(shard)) return;
+    netLog(`[Pre-join] Starting early connect to ${shard}`);
+    const room = joinTorrent(
+        { appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: currentRtcConfig },
+        shard
+    );
+    const timeout = setTimeout(() => {
+        room.leave();
+        preJoinCache.delete(shard);
+    }, 30000);
+    preJoinCache.set(shard, { room, timeout });
+};
+
+export const initNetworking = async (rtcConfig) => {
+    currentRtcConfig = rtcConfig || { iceServers: STUN_SERVERS };
 
     const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
-        
-        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: myTrackers, rtcConfig: config }, 'global');
+
+        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: config }, 'global');
 
         const [sendRollup] = globalRooms.torrent.makeAction('rollup');
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -367,17 +392,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     console.log(`[P2P] Joining Shard Room: ${shard}`);
     const config = rtcConfig || currentRtcConfig;
 
-    // Deterministic Tracker Allocation
-    const myTrackers = [];
-    if (TORRENT_TRACKERS.length > 0) {
-        const seed = parseInt(selfId.slice(0, 8), 16) || 0;
-        const idx1 = seed % TORRENT_TRACKERS.length;
-        const idx2 = (seed + 1) % TORRENT_TRACKERS.length;
-        myTrackers.push(TORRENT_TRACKERS[idx1]);
-        if (idx1 !== idx2) myTrackers.push(TORRENT_TRACKERS[idx2]);
+    // Promote a pre-joined room if we started connecting early (zero ICE latency).
+    const preJoined = preJoinCache.get(shard);
+    if (preJoined) {
+        clearTimeout(preJoined.timeout);
+        preJoinCache.delete(shard);
+        rooms.torrent = preJoined.room;
+        netLog(`[Pre-join] Promoted pre-joined room for ${shard}`);
+    } else {
+        rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: config }, shard);
     }
-
-    rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: myTrackers, rtcConfig: config }, shard);
 
     const checkFull = async () => {
         const peerCount = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
@@ -483,9 +507,15 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         // --- action handlers ---
 
-        myEntry().then(entry => {
+        // Broadcast presence once identity is ready. If playerKeys aren't loaded yet,
+        // poll until they are — the onPeerJoin handshake will handle newly-connecting peers,
+        // but this covers peers already in the room when we join.
+        const broadcastWhenReady = async () => {
+            if (!playerKeys) { setTimeout(broadcastWhenReady, 200); return; }
+            const entry = await myEntry();
             if (entry) plumSend(packPresence(entry));
-        });
+        };
+        broadcastWhenReady();
 
         getAnnounce(async ({ msgId }, peerId) => {
             if (hpv.hasSeen(msgId)) return;
@@ -790,11 +820,18 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
 
             const handshake = async () => {
-                if (!knownPeers.has(peerId) || players.get(peerId)?.publicKey) return;
-                sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
-                const entry = await myEntry();
-                if (entry && gameActions.sendPresenceSingle) {
-                    gameActions.sendPresenceSingle(entry, [peerId]);
+                if (!knownPeers.has(peerId)) return;
+                if (players.get(peerId)?.publicKey) return;
+                // Guard: identity keys may not be ready yet (async init). Retry shortly.
+                if (!playerKeys) { setTimeout(handshake, 500); return; }
+                try {
+                    sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
+                    const entry = await myEntry();
+                    if (entry && gameActions.sendPresenceSingle) {
+                        gameActions.sendPresenceSingle(entry, [peerId]);
+                    }
+                } catch (e) {
+                    console.warn('[P2P] Handshake error:', e.message);
                 }
                 setTimeout(handshake, 3000);
             };

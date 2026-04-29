@@ -17,8 +17,8 @@ import {
 import { 
     initIdentity, arbiterPublicKey, myEntry 
 } from './identity.js';
-import { 
-    initNetworking, gameActions, lastValidStatePacket, updateSimulation, joinInstance, currentInstance, currentRtcConfig
+import {
+    initNetworking, gameActions, lastValidStatePacket, updateSimulation, joinInstance, currentInstance, currentRtcConfig, preJoinShard
 } from './networking.js';
 import {
     handleCommand, getPlayerName, getTag, startStateChannel, resolveRound, escapeHtml, grantItem
@@ -58,6 +58,18 @@ const stepPlayer = async (stepX, stepY) => {
     const loc = world[localPlayer.location];
     const nextX = localPlayer.x + stepX;
     const nextY = localPlayer.y + stepY;
+
+    // Predictive pre-join: start WebRTC negotiation for adjacent rooms while the player
+    // is still walking toward them, so the connection is ready when they arrive.
+    const px = localPlayer.x, py = localPlayer.y;
+    for (const tile of (loc.exitTiles || [])) {
+        if (Math.abs(tile.x - px) + Math.abs(tile.y - py) <= 2) preJoinShard(tile.dest);
+    }
+    const exits = loc.exits || {};
+    if (px <= 1 && exits.west) preJoinShard(exits.west);
+    if (px >= loc.width - 2 && exits.east) preJoinShard(exits.east);
+    if (py <= 1 && exits.north) preJoinShard(exits.north);
+    if (py >= loc.height - 2 && exits.south) preJoinShard(exits.south);
 
     const outOfBounds = nextX < 0 || nextX >= loc.width || nextY < 0 || nextY >= loc.height;
 
@@ -154,8 +166,8 @@ const triggerLogicalRefresh = () => {
 // --- IDENTITY & P2P BOOTSTRAP ---
 const start = async () => {
     try {
-        await initIdentity(log);
-        await loadLocalState(log);
+        // Run identity key import and state loading in parallel — they're independent.
+        await Promise.all([initIdentity(log), loadLocalState(log)]);
         initAds();
         showBanner();
         inputManager.init();
@@ -299,6 +311,8 @@ const start = async () => {
                 .catch(() => {});
         }
 
+        // Identity keys are ready (Promise.all above completed), so the first onPeerJoin
+        // handshake fires signed immediately — no polling delay for playerKeys.
         await initNetworking();
         startTicker(worldState, setTicker);
 
