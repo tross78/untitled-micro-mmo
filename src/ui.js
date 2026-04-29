@@ -164,10 +164,16 @@ export const renderActionButtons = (ctx, onAction) => {
         }
 
         if (localPlayer.inventory.length > 0) {
-            addButton('Use 🎒', () => { uiState = 'use'; renderActionButtons(ctx, onAction); });
+            addButton('Inventory 🎒', ACTION.INVENTORY);
+            addButton('Use 🧪', () => { uiState = 'use'; renderActionButtons(ctx, onAction); });
             if (localPlayer.inventory.some(id => ITEMS[id] && (ITEMS[id].type === 'weapon' || ITEMS[id].type === 'armor'))) {
                 addButton('Equip ⚔️', () => uiState = 'equip');
             }
+        }
+
+        const sharedEnemy = shardEnemies?.get(localPlayer.location);
+        if (sharedEnemy && sharedEnemy.hp <= 0 && sharedEnemy.loot && sharedEnemy.loot.length > 0) {
+            addButton('Pickup 📦', ACTION.INTERACT);
         }
 
         const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);

@@ -193,8 +193,8 @@ export function renderWorld(state, onTileClick) {
 
     // Camera: follows player draw position for smoothness
     const dPlayer = getDrawPos('self', localPlayer.x, localPlayer.y, localPlayer.location);
-    const camX = Math.max(0, Math.min(loc.width  - VIEWPORT_W, dPlayer.x - Math.floor(VIEWPORT_W / 2)));
-    const camY = Math.max(0, Math.min(loc.height - VIEWPORT_H, dPlayer.y - Math.floor(VIEWPORT_H / 2)));
+    const camX = loc.width <= VIEWPORT_W ? -(VIEWPORT_W - loc.width) / 2 : Math.max(0, Math.min(loc.width - VIEWPORT_W, dPlayer.x - Math.floor(VIEWPORT_W / 2)));
+    const camY = loc.height <= VIEWPORT_H ? -(VIEWPORT_H - loc.height) / 2 : Math.max(0, Math.min(loc.height - VIEWPORT_H, dPlayer.y - Math.floor(VIEWPORT_H / 2)));
 
     // --- TILES ---
     const offsetX = (camX - Math.floor(camX)) * S;
@@ -418,9 +418,6 @@ export function renderWorld(state, onTileClick) {
             onTileClick(tx, ty, { type: 'enemy' });
         } else {
             onTileClick(tx, ty, null);
-            // Autofocus input on non-entity clicks
-            const input = document.getElementById('input');
-            if (input) input.focus();
         }
     };
 }
@@ -527,7 +524,9 @@ export function advanceDialogue() {
     return false; // closed
 }
 
-export function isDialogueOpen() { return _dialogue !== null; }
+export function isDialogueOpen() { 
+    return _dialogue !== null && !!_dialogue.pages && !!_dialogue.pages.length; 
+}
 
 // stubs for future phases
 export function showSpeechBubble(entityId, text) {}

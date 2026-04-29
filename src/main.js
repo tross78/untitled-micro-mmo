@@ -48,6 +48,13 @@ const HEARTBEAT_MS = 120000;
 // Move the player one tile in (stepX, stepY). If the step exits the zone boundary,
 // auto-transition to the adjacent room via the matching exit entry point.
 const stepPlayer = async (stepX, stepY) => {
+    // Combat Guard: check shard state to see if enemy is still alive
+    if (localPlayer.currentEnemy) {
+        const shared = shardEnemies.get(localPlayer.location);
+        if (shared && shared.hp > 0) return; // Block move
+        localPlayer.currentEnemy = null; // Clear if dead
+    }
+
     const loc = world[localPlayer.location];
     const nextX = localPlayer.x + stepX;
     const nextY = localPlayer.y + stepY;
@@ -574,8 +581,8 @@ function setupUIEvents() {
     const debugConsole = document.getElementById('debug-console');
     window.addEventListener('keydown', (e) => {
         const inInput = e.target.matches('input,textarea');
-        if ((e.key === ' ' || e.key === 'Enter') && isDialogueOpen()) {
-            // Dialogue takes precedence over input if open
+        if ((e.key === ' ' || e.key === 'Enter') && isDialogueOpen() && !inInput) {
+            // Dialogue takes precedence over world but NOT debug console
             e.preventDefault();
             advanceDialogue();
             return;

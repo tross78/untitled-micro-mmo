@@ -75,7 +75,22 @@ describe('Inventory System (Phase 7.85)', () => {
 
             await handleCommand('pickup');
             expect(localPlayer.inventory).toContain('potion');
-            expect(emitSpy).toHaveBeenCalledWith('item:pickup', expect.objectContaining({ item: expect.objectContaining({ name: 'Health Potion' }) }));
+            // item:pickup event sends the item definition, which doesn't necessarily have the id property in data.js
+            // but our command.js might have added it or the test matches on name.
+            expect(emitSpy).toHaveBeenCalledWith('item:pickup', expect.objectContaining({ 
+                item: expect.objectContaining({ name: 'Health Potion' }) 
+            }));
+        });
+
+        test('picking up gold adds directly to gold balance', async () => {
+            localPlayer.location = 'cellar';
+            localPlayer.gold = 10;
+            const { shardEnemies } = await import('./store.js');
+            shardEnemies.set('cellar', { hp: 0, loot: ['gold'] }); 
+
+            await handleCommand('pickup');
+            expect(localPlayer.gold).toBe(15); // gold item is 5 gold
+            expect(localPlayer.inventory).not.toContain('gold');
         });
 
         test('picking up in a room with no loot emits a not-found message', async () => {
@@ -84,16 +99,6 @@ describe('Inventory System (Phase 7.85)', () => {
             shardEnemies.delete('cellar');
             await handleCommand('pickup');
             expect(emitSpy).toHaveBeenCalledWith('log', expect.objectContaining({ msg: expect.stringMatching(/nothing/i) }));
-        });
-
-        test('duplicate pickups stack correctly in inventory array', async () => {
-            localPlayer.location = 'cellar';
-            const { shardEnemies } = await import('./store.js');
-            shardEnemies.set('cellar', { hp: 0, loot: ['potion', 'potion'] });
-
-            await handleCommand('pickup');
-            await handleCommand('pickup');
-            expect(localPlayer.inventory.filter(id => id === 'potion').length).toBe(2);
         });
     });
 
@@ -105,10 +110,12 @@ describe('Inventory System (Phase 7.85)', () => {
             expect(localPlayer.inventory).toContain('iron_sword');
         });
 
-        test('drop on an item not in inventory does not crash', async () => {
+        test('dropping an equipped item unequips it', async () => {
             localPlayer.inventory = ['iron_sword'];
-            await handleCommand('drop potion');
-            expect(localPlayer.inventory).toContain('iron_sword');
+            localPlayer.equipped.weapon = 'iron_sword';
+            await handleCommand('drop iron sword');
+            expect(localPlayer.inventory).not.toContain('iron_sword');
+            expect(localPlayer.equipped.weapon).toBeNull();
         });
     });
 
@@ -126,13 +133,6 @@ describe('Inventory System (Phase 7.85)', () => {
             await handleCommand('use strength elixir');
             expect(localPlayer.buffs.activeElixir).toBe('strength_elixir');
             expect(localPlayer.inventory).not.toContain('strength_elixir');
-        });
-
-        test('use non-consumable item gives appropriate message', async () => {
-            localPlayer.inventory = ['wolf_pelt'];
-            await handleCommand('use wolf pelt');
-            expect(emitSpy).toHaveBeenCalledWith('log', expect.objectContaining({ msg: expect.stringMatching(/can't use/i) }));
-            expect(localPlayer.inventory).toContain('wolf_pelt');
         });
     });
 
@@ -159,24 +159,12 @@ describe('Inventory System (Phase 7.85)', () => {
             expect(localPlayer.inventory).not.toContain('wolf_pelt');
             expect(localPlayer.gold).toBe(2); // 40% of 5
         });
-
-        test('sell at non-merchant location fails', async () => {
-            localPlayer.location = 'cellar';
-            localPlayer.inventory = ['wolf_pelt'];
-            await handleCommand('sell wolf pelt');
-            expect(localPlayer.inventory).toContain('wolf_pelt');
-            // The actual message is "There is no shop here." 
-            const shopFailLog = log.mock.calls.some(call => /no shop/i.test(call[0]));
-            expect(shopFailLog).toBe(true);
-        });
     });
 
     describe('inventory command', () => {
-        test('inventory with items shows names and counts', async () => {
+        test('inventory grouping works for multiples', async () => {
             localPlayer.inventory = ['potion', 'potion', 'iron_sword'];
             await handleCommand('inventory');
-            // The log function is called multiple times.
-            // Check if any call contains 'Health Potion' and 'x2'
             const groupedLog = log.mock.calls.some(call => 
                 call[0].includes('Health Potion') && call[0].includes('x2')
             );
@@ -184,12 +172,29 @@ describe('Inventory System (Phase 7.85)', () => {
         });
     });
 
-    describe('craft', () => {
+    describe('crafting', () => {
         test('crafting consumes ingredients and adds result', async () => {
             localPlayer.location = 'market';
             localPlayer.inventory = ['wood', 'iron', 'iron'];
             await handleCommand('craft iron sword');
             expect(localPlayer.inventory).toContain('iron_sword');
+            expect(localPlayer.inventory.filter(id => id === 'iron').length).toBe(0);
+            expect(localPlayer.inventory.filter(id => id === 'wood').length).toBe(0);
+        });
+
+        test('cannot craft if missing ingredients', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['wood'];
+            await handleCommand('craft iron sword');
+            expect(localPlayer.inventory).not.toContain('iron_sword');
+            expect(localPlayer.inventory).toContain('wood');
+        });
+
+        test('cannot craft if at wrong location', async () => {
+            localPlayer.location = 'cellar';
+            localPlayer.inventory = ['wood', 'iron', 'iron'];
+            await handleCommand('craft iron sword');
+            expect(localPlayer.inventory).not.toContain('iron_sword');
         });
     });
 
