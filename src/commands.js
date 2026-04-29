@@ -307,22 +307,58 @@ export const handleCommand = async (cmd) => {
                     log(`Equipped: ⚔️ ${wName}  🛡️ ${aName}`, '#0af');
                 }
                 log(`\nInventory:`, '#ffa500');
-                localPlayer.inventory.forEach(id => {
+                
+                // Group items by ID
+                const counts = {};
+                localPlayer.inventory.forEach(id => counts[id] = (counts[id] || 0) + 1);
+
+                Object.entries(counts).forEach(([id, count]) => {
                     const item = ITEMS[id];
-                    if (!item) { log(`  - ${id}`, '#ffa500'); return; }
+                    if (!item) { log(`  - ${id}${count > 1 ? ' x' + count : ''}`, '#ffa500'); return; }
                     let label = `  - ${item.name}`;
-                    if (item.type === 'weapon') {
-                        label += ` (+${item.bonus} ATK)`;
-                        if (id === eqWep) label += ' [EQUIPPED]';
-                    }
-                    if (item.type === 'armor') {
-                        label += ` (+${item.bonus} DEF)`;
-                        if (id === eqArm) label += ' [EQUIPPED]';
-                    }
+                    if (item.type === 'weapon') label += ` (+${item.bonus} ATK)`;
+                    if (item.type === 'armor') label += ` (+${item.bonus} DEF)`;
                     if (item.type === 'consumable') label += ` (+${item.heal} HP)`;
+                    if (id === eqWep || id === eqArm) label += ' [EQUIPPED]';
+                    if (count > 1) label += ` x${count}`;
                     log(label, '#ffa500');
                 });
             }
+            break;
+        }
+
+        case 'get':
+        case 'pickup': {
+            const shardEnemy = shardEnemies.get(localPlayer.location);
+            if (shardEnemy && shardEnemy.hp <= 0 && shardEnemy.loot && shardEnemy.loot.length > 0) {
+                const itemId = shardEnemy.loot.shift();
+                if (ITEMS[itemId]?.type === 'gold') {
+                    localPlayer.gold += ITEMS[itemId].amount;
+                    bus.emit('log', { msg: `You picked up ${ITEMS[itemId].name}.`, color: '#ff0' });
+                } else {
+                    grantItem(itemId);
+                    bus.emit('item:pickup', { item: ITEMS[itemId] || { id: itemId, name: itemId } });
+                    bus.emit('log', { msg: `You picked up a ${ITEMS[itemId]?.name || itemId}.`, color: '#ff0' });
+                }
+                saveLocalState(localPlayer);
+            } else {
+                bus.emit('log', { msg: `Nothing to pick up here.` });
+            }
+            break;
+        }
+
+        case 'drop': {
+            const query = args.slice(1).join(' ').toLowerCase();
+            if (!query) { log(`Usage: /drop <item name>`); break; }
+            const idx = localPlayer.inventory.findIndex(id => id.toLowerCase() === query || (ITEMS[id]?.name || '').toLowerCase() === query);
+            if (idx === -1) { log(`You don't have that.`); break; }
+            const itemId = localPlayer.inventory[idx];
+            localPlayer.inventory.splice(idx, 1);
+            // If dropped equipped item, unequip it
+            if (localPlayer.equipped.weapon === itemId) localPlayer.equipped.weapon = null;
+            if (localPlayer.equipped.armor === itemId) localPlayer.equipped.armor = null;
+            log(`You dropped the ${ITEMS[itemId]?.name || itemId}.`);
+            saveLocalState(localPlayer);
             break;
         }
 
@@ -844,8 +880,8 @@ export const handleCommand = async (cmd) => {
             }
             const query = args.slice(1).join(' ').toLowerCase();
             const npcs = getNPCsAt(localPlayer.location);
-            const shopNpc = npcs.find(id => NPCS[id].role === 'shop');
-            if (!shopNpc) { log(`There is no shop here.`); break; }
+            const shopNpcId = npcs.find(id => NPCS[id].role === 'shop');
+            if (!shopNpcId) { log(`There is no shop here.`); break; }
 
             if (!query) { log(`Usage: /sell <item name>`); break; }
 
@@ -865,7 +901,7 @@ export const handleCommand = async (cmd) => {
             Object.keys(localPlayer.quests).forEach(qid => {
                 const q = QUESTS[qid];
                 const pq = localPlayer.quests[qid];
-                if (q && !pq.completed && q.type === 'deliver' && q.objective.target === shopNpc) {
+                if (q && !pq.completed && q.type === 'deliver' && q.objective.target === shopNpcId) {
                     pq.progress = Math.min(q.objective.count, (pq.progress || 0) + 1);
                     bus.emit('quest:progress', { name: q.name, current: pq.progress, total: q.objective.count });
                 }

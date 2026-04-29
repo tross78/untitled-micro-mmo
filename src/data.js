@@ -40,6 +40,13 @@ export const NPCS = {
         shop: ['iron_sword', 'wood', 'iron'],
         baseDialogue: "Finest wares in the realm, or at least in this square."
     },
+    herbalist: {
+        name: 'Herbalist',
+        home: 'herbalist_hut',
+        role: 'shop',
+        shop: ['potion', 'healing_elixir', 'strength_elixir'],
+        baseDialogue: "The forest provides all we need, if you know where to look."
+    },
     sage: { 
         name: 'Sage', 
         home: 'ruins', 
@@ -50,7 +57,7 @@ export const NPCS = {
     guard: {
         name: 'Guard',
         home: 'hallway',
-        patrol: ['hallway', 'cellar', 'tavern', 'market'],
+        patrol: ['hallway', 'cellar', 'tavern', 'market', 'watchtower'],
         role: 'quest',
         baseDialogue: "Keep the peace, or I'll keep you in the cellar."
     }
@@ -255,6 +262,7 @@ export const ENEMIES = {
     skeleton:       { name: 'Skeleton',       hp: 45, attack: 15, defense: 5, xp: 75, loot: ['old_tome', 'gold'], color: '#0af' },
     wraith:         { name: 'Wraith',         hp: 60, attack: 20, defense: 0, xp: 120, loot: ['old_tome', 'magic_staff'], color: '#f0f' },
     mountain_troll: { name: 'Mountain Troll', hp: 100, attack: 25, defense: 10, xp: 250, loot: ['iron_key', 'gold', 'steel_sword'], color: '#ff0' },
+    crab:           { name: 'Giant Crab',     hp: 30, attack: 7,  defense: 5, xp: 30, loot: ['gold', 'potion'], color: '#fa0' },
 };
 
 export const ITEMS = {
@@ -299,6 +307,7 @@ export const RECIPES = [
     { id: 'iron_sword', name: 'Iron Sword', inputs: { wood: 1, iron: 2 }, output: 'iron_sword', location: 'market' },
     { id: 'steel_sword', name: 'Steel Sword', inputs: { iron: 3, wood: 2 }, output: 'steel_sword', location: 'market' },
     { id: 'leather_armor', name: 'Leather Armor', inputs: { wolf_pelt: 3 }, output: 'leather_armor', location: 'market' },
+    { id: 'flour', name: 'Flour', inputs: { wheat: 2 }, output: 'bread', location: 'mill' },
 ];
 
 export const world = {
@@ -367,10 +376,13 @@ export const world = {
     },
     market: {
         name: 'The Market Square',
-        description: 'Stalls and haggling. The tavern is west.',
+        description: 'Stalls and haggling. The tavern is west, crossroads south.',
         width: 15, height: 15,
-        exits: { west: 'tavern' },
-        exitTiles: [{ x: 0, y: 7, dest: 'tavern', destX: 10, destY: 5 }],
+        exits: { west: 'tavern', south: 'crossroads' },
+        exitTiles: [
+            { x: 0, y: 7, dest: 'tavern', destX: 10, destY: 5 },
+            { x: 7, y: 14, dest: 'crossroads', destX: 5, destY: 1 },
+        ],
         staticEntities: [{ id: 'merchant', x: 8, y: 8 }],
         scenery: [
             { x: 5, y: 5, label: '🏪' }, { x: 11, y: 5, label: '🏪' },
@@ -378,6 +390,53 @@ export const world = {
             { x: 8, y: 2, label: '⛲' }
         ],
         enemy: null,
+    },
+    crossroads: {
+        name: 'The Crossroads',
+        description: 'A hub of activity. Market north, mill west, herbalist south, frozen lake east.',
+        width: 11, height: 11,
+        exits: { north: 'market', west: 'mill', south: 'herbalist_hut', east: 'frozen_lake' },
+        exitTiles: [
+            { x: 5, y: 0, dest: 'market', destX: 7, destY: 13 },
+            { x: 0, y: 5, dest: 'mill', destX: 9, destY: 5 },
+            { x: 5, y: 10, dest: 'herbalist_hut', destX: 4, destY: 1 },
+            { x: 10, y: 5, dest: 'frozen_lake', destX: 1, destY: 5 },
+        ],
+        staticEntities: [],
+        scenery: [{ x: 5, y: 5, label: '🪧' }],
+        enemy: null,
+    },
+    mill: {
+        name: 'The Old Mill',
+        description: 'The smell of ground grain fills the air. Crossroads east.',
+        width: 10, height: 10,
+        exits: { east: 'crossroads' },
+        exitTiles: [{ x: 9, y: 5, dest: 'crossroads', destX: 1, destY: 5 }],
+        staticEntities: [],
+        scenery: [{ x: 5, y: 5, label: '⚙️' }],
+        enemy: null,
+    },
+    herbalist_hut: {
+        name: "Herbalist's Hut",
+        description: 'Dried herbs hang from the ceiling. Crossroads north.',
+        width: 8, height: 8,
+        exits: { north: 'crossroads' },
+        exitTiles: [{ x: 4, y: 0, dest: 'crossroads', destX: 5, destY: 9 }],
+        staticEntities: [{ id: 'herbalist', x: 4, y: 4 }],
+        scenery: [{ x: 2, y: 2, label: '🌿' }],
+        enemy: null,
+    },
+    frozen_lake: {
+        name: 'The Frozen Lake',
+        description: 'A wide expanse of treacherous ice. Crossroads west.',
+        width: 25, height: 10,
+        exits: { west: 'crossroads' },
+        exitTiles: [{ x: 0, y: 5, dest: 'crossroads', destX: 9, destY: 5 }],
+        staticEntities: [],
+        scenery: [{ x: 12, y: 5, label: '❄️' }],
+        tileOverrides: [{ x: 10, y: 5, type: 'water' }], // Ice feel
+        enemy: 'skeleton',
+        enemyX: 15, enemyY: 5
     },
     forest_edge: {
         name: 'The Forest Edge',
@@ -388,7 +447,7 @@ export const world = {
             { x: 0, y: 10, dest: 'hallway', destX: 9, destY: 5 },
             { x: 10, y: 0, dest: 'ruins', destX: 10, destY: 18 },
             { x: 10, y: 19, dest: 'cave', destX: 5, destY: 1 },
-            { x: 19, y: 10, dest: 'forest_depths', destX: 1, destY: 10 },
+            { x: 19, y: 10, dest: 'forest_depths', destX: 1, destY: 12 },
         ],
         staticEntities: [],
         scenery: [
@@ -400,13 +459,14 @@ export const world = {
     },
     forest_depths: {
         name: 'The Forest Depths',
-        description: 'Ancient trees block the sky. Goblins lurk in the brush. The edge is west, a lake east, a camp north.',
+        description: 'Ancient trees block the sky. Goblins lurk in the brush. The edge is west, a lake east, a camp north, cemetery south.',
         width: 25, height: 25,
-        exits: { west: 'forest_edge', east: 'lake_shore', north: 'bandit_camp' },
+        exits: { west: 'forest_edge', east: 'lake_shore', north: 'bandit_camp', south: 'cemetery' },
         exitTiles: [
             { x: 0, y: 12, dest: 'forest_edge', destX: 18, destY: 10 },
             { x: 24, y: 12, dest: 'lake_shore', destX: 1, destY: 10 },
             { x: 12, y: 0, dest: 'bandit_camp', destX: 10, destY: 13 },
+            { x: 12, y: 24, dest: 'cemetery', destX: 10, destY: 1 },
         ],
         staticEntities: [],
         scenery: [
@@ -416,17 +476,72 @@ export const world = {
         enemy: 'goblin',
         enemyX: 15, enemyY: 15
     },
+    cemetery: {
+        name: 'The Ancient Cemetery',
+        description: 'Weathered headstones and a lingering mist. Forest north, catacombs south.',
+        width: 20, height: 20,
+        exits: { north: 'forest_depths', south: 'catacombs' },
+        exitTiles: [
+            { x: 10, y: 0, dest: 'forest_depths', destX: 12, destY: 23 },
+            { x: 10, y: 19, dest: 'catacombs', destX: 7, destY: 2 },
+        ],
+        staticEntities: [],
+        scenery: [{ x: 5, y: 5, label: '🪦' }, { x: 15, y: 15, label: '🪦' }],
+        enemy: 'wraith',
+        nightOnly: true,
+        enemyX: 10, enemyY: 10
+    },
     lake_shore: {
         name: 'The Lake Shore',
-        description: 'Still water reflects the grey sky. The forest is west, mountains rise to the north.',
+        description: 'Still water reflects the grey sky. The forest is west, mountains north, harbour east.',
         width: 20, height: 20,
-        exits: { west: 'forest_depths', north: 'mountain_pass' },
+        exits: { west: 'forest_depths', north: 'mountain_pass', east: 'harbour' },
         exitTiles: [
             { x: 0, y: 10, dest: 'forest_depths', destX: 23, destY: 12 },
-            { x: 10, y: 0, dest: 'mountain_pass', destX: 10, destY: 18 },
+            { x: 10, y: 0, dest: 'mountain_pass', destX: 10, destY: 28 },
+            { x: 19, y: 10, dest: 'harbour', destX: 1, destY: 7 },
         ],
         staticEntities: [],
         scenery: [{ x: 5, y: 5, label: '🌊' }, { x: 6, y: 5, label: '🌊' }],
+        enemy: null,
+    },
+    harbour: {
+        name: 'The Harbour',
+        description: 'Salty air and the creak of timber. Lake west, sea cave south, smuggler den hidden.',
+        width: 15, height: 15,
+        exits: { west: 'lake_shore', south: 'sea_cave', east: 'smuggler_den' },
+        exitTiles: [
+            { x: 0, y: 7, dest: 'lake_shore', destX: 18, destY: 10 },
+            { x: 7, y: 14, dest: 'sea_cave', destX: 6, destY: 1 },
+            { x: 14, y: 7, dest: 'smuggler_den', destX: 1, destY: 4 }
+        ],
+        staticEntities: [{ id: 'merchant', x: 10, y: 5 }], 
+        scenery: [{ x: 5, y: 7, label: '⚓' }],
+        enemy: null,
+    },
+    sea_cave: {
+        name: 'The Sea Cave',
+        description: 'Glistening walls and the sound of waves. Harbour north.',
+        width: 12, height: 12,
+        exits: { north: 'harbour' },
+        exitTiles: [{ x: 6, y: 0, dest: 'harbour', destX: 7, destY: 13 }],
+        staticEntities: [],
+        scenery: [{ x: 3, y: 3, label: '🐚' }],
+        tileOverrides: [
+            { x: 0, y: 0, type: 'water' }, { x: 11, y: 0, type: 'water' },
+            { x: 0, y: 11, type: 'water' }, { x: 11, y: 11, type: 'water' }
+        ],
+        enemy: 'crab',
+        enemyX: 6, enemyY: 6
+    },
+    smuggler_den: {
+        name: "Smuggler's Den",
+        description: 'A hidden cave filled with contraband. Harbour west.',
+        width: 8, height: 8,
+        exits: { west: 'harbour' },
+        exitTiles: [{ x: 0, y: 4, dest: 'harbour', destX: 13, destY: 7 }],
+        staticEntities: [{ id: 'merchant', x: 4, y: 4 }],
+        scenery: [{ x: 2, y: 2, label: '📦' }],
         enemy: null,
     },
     bandit_camp: {
@@ -442,14 +557,27 @@ export const world = {
     },
     mountain_pass: {
         name: 'The Mountain Pass',
-        description: 'Thin air and treacherous paths. A troll guards the heights. The lake is south.',
+        description: 'Thin air and treacherous paths. A troll guards the heights. Lake south, watchtower north.',
         width: 20, height: 30,
-        exits: { south: 'lake_shore' },
-        exitTiles: [{ x: 10, y: 29, dest: 'lake_shore', destX: 10, destY: 1 }],
+        exits: { south: 'lake_shore', north: 'watchtower' },
+        exitTiles: [
+            { x: 10, y: 29, dest: 'lake_shore', destX: 10, destY: 1 },
+            { x: 10, y: 0, dest: 'watchtower', destX: 3, destY: 18 },
+        ],
         staticEntities: [],
         scenery: [{ x: 5, y: 10, label: '🪨' }, { x: 15, y: 20, label: '🪨' }], // Rocks
         enemy: 'mountain_troll',
         enemyX: 10, enemyY: 10
+    },
+    watchtower: {
+        name: 'The Ancient Watchtower',
+        description: 'A tall stone spire overlooking the realm. Pass south.',
+        width: 6, height: 20,
+        exits: { south: 'mountain_pass' },
+        exitTiles: [{ x: 3, y: 19, dest: 'mountain_pass', destX: 10, destY: 1 }],
+        staticEntities: [{ id: 'guard', x: 3, y: 3 }],
+        scenery: [{ x: 3, y: 10, label: '🪜' }],
+        enemy: null,
     },
     ruins: {
         name: 'The Old Ruins',
@@ -481,12 +609,13 @@ export const world = {
     },
     catacombs: {
         name: 'The Catacombs',
-        description: 'Endless rows of skulls and dust. A wraith haunts the tombs. Descent is up, a cell north.',
+        description: 'Endless rows of skulls and dust. A wraith haunts the tombs. Descent up, cell north, cemetery north.',
         width: 15, height: 15,
-        exits: { up: 'ruins_descent', north: 'dungeon_cell' },
+        exits: { up: 'ruins_descent', north: 'dungeon_cell', south: 'cemetery' },
         exitTiles: [
             { x: 7, y: 14, dest: 'ruins_descent', destX: 5, destY: 1, type: 'up' },
             { x: 7, y: 0, dest: 'dungeon_cell', destX: 5, destY: 8 },
+            { x: 7, y: 2, dest: 'cemetery', destX: 10, destY: 18 },
         ],
         staticEntities: [],
         scenery: [{ x: 3, y: 3, label: '☠' }, { x: 12, y: 12, label: '☠' }], // Tombs

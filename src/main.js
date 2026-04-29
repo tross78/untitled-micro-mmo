@@ -573,15 +573,21 @@ function setupUIEvents() {
     // Space/Enter advances dialogue if open; ~ toggles debug console
     const debugConsole = document.getElementById('debug-console');
     window.addEventListener('keydown', (e) => {
-        if ((e.key === ' ' || e.key === 'Enter') && isDialogueOpen() && !e.target.matches('input,textarea')) {
+        const inInput = e.target.matches('input,textarea');
+        if ((e.key === ' ' || e.key === 'Enter') && isDialogueOpen()) {
+            // Dialogue takes precedence over input if open
             e.preventDefault();
             advanceDialogue();
             return;
         }
-        if (e.key === '~' && !e.target.matches('input,textarea')) {
+        if (e.key === '~' && !inInput) {
             const visible = debugConsole.style.display !== 'none';
             debugConsole.style.display = visible ? 'none' : 'flex';
         }
+    });
+
+    bus.on('ui:requestFocus', () => {
+        if (input) input.focus();
     });
 
     if (window.visualViewport) {

@@ -22,6 +22,21 @@ const CH = VIEWPORT_H * S;           // canvas height (528)
 let _canvas = null;
 let _radarEl = null;
 let _devMode = false;                 // backtick toggles this
+let _dpr = 1;
+
+// --- RAF LOOP ---
+let _rafId = null;
+let _lastState = null;
+let _lastCb = null;
+
+function scheduleFrame() {
+    if (_rafId) return;
+    _rafId = requestAnimationFrame(() => {
+        _rafId = null;
+        if (_lastState) renderWorld(_lastState, _lastCb);
+        if (_isAnimating) scheduleFrame();
+    });
+}
 
 // Sprite cache — avoid re-generating per frame
 const _spriteCache = new Map();
@@ -40,16 +55,21 @@ function hashStr(str) {
 function initCanvas() {
     if (_canvas) return;
     _radarEl = document.getElementById('radar-container');
+    _dpr = window.devicePixelRatio || 1;
 
     _canvas = document.createElement('canvas');
     _canvas.id = 'game-canvas';
-    _canvas.width = CW;
-    _canvas.height = CH;
+    _canvas.width = CW * _dpr;
+    _canvas.height = CH * _dpr;
     _canvas.style.cssText = `
-        display:block; width:100%; max-height:45vh;
-        image-rendering:pixelated; image-rendering:crisp-edges;
+        display:block; width:100%; max-width:${CW}px; aspect-ratio:${CW}/${CH};
+        image-rendering:pixelated; image-rendering:crisp-edges; margin: 0 auto;
         cursor:pointer; background:#000; border-bottom:1px solid #111;
     `;
+
+    const ctx = _canvas.getContext('2d');
+    ctx.scale(_dpr, _dpr);
+    ctx.imageSmoothingEnabled = false;
 
     if (_radarEl) _radarEl.insertAdjacentElement('beforebegin', _canvas);
     if (_radarEl) _radarEl.style.display = 'none';
@@ -60,6 +80,10 @@ function initCanvas() {
             toggleDevRadar();
         }
     });
+
+    // Tab blur/focus pause
+    window.addEventListener('blur', () => { if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; } });
+    window.addEventListener('focus', () => { if (_isAnimating) scheduleFrame(); });
 }
 
 export function toggleDevRadar() {
@@ -117,6 +141,39 @@ function npcWanderOffset(id, seed, day) {
     };
 }
 
+// --- TILE CACHE ---
+let _tileCache = null; // { loc: string, camX: number, camY: number, canvas: OffscreenCanvas }
+
+function getTileLayer(ctx, loc, camX, camY, tileType) {
+    const floorX = Math.floor(camX);
+    const floorY = Math.floor(camY);
+    const locKey = loc.name + loc.width + loc.height; // Simple stable key
+    
+    if (_tileCache && _tileCache.loc === locKey && _tileCache.camX === floorX && _tileCache.camY === floorY) {
+        return _tileCache.canvas;
+    }
+
+    const off = new OffscreenCanvas(CW + S, CH + S);
+    const octx = off.getContext('2d');
+    
+    for (let ty = 0; ty <= VIEWPORT_H; ty++) {
+        for (let tx = 0; tx <= VIEWPORT_W; tx++) {
+            const wx = floorX + tx;
+            const wy = floorY + ty;
+            if (wx >= loc.width || wy >= loc.height || wx < 0 || wy < 0) {
+                octx.fillStyle = '#0a0a0a';
+                octx.fillRect(tx * S, ty * S, S, S);
+                continue;
+            }
+            const override = (loc.tileOverrides || []).find(o => o.x === wx && o.y === wy);
+            const seed = hashStr(locKey) ^ (wx * 7919) ^ (wy * 6271);
+            drawTile(octx, override?.type || tileType, tx * S, ty * S, seed, S);
+        }
+    }
+    _tileCache = { loc: locKey, camX: floorX, camY: floorY, canvas: off };
+    return off;
+}
+
 export function renderWorld(state, onTileClick) {
     if (_devMode) {
         drawRadar(state, onTileClick);
@@ -124,6 +181,8 @@ export function renderWorld(state, onTileClick) {
     }
 
     initCanvas();
+    _lastState = state;
+    _lastCb = onTileClick;
     _isAnimating = false; // Reset; helpers will set true if they need another frame
     const ctx = _canvas.getContext('2d');
     const { localPlayer, world, players, shardEnemies, NPCS, getNPCLocation, worldState, ENEMIES } = state;
@@ -138,30 +197,9 @@ export function renderWorld(state, onTileClick) {
     const camY = Math.max(0, Math.min(loc.height - VIEWPORT_H, dPlayer.y - Math.floor(VIEWPORT_H / 2)));
 
     // --- TILES ---
-    const floorCamX = Math.floor(camX);
-    const floorCamY = Math.floor(camY);
-    const offsetX = (camX - floorCamX) * S;
-    const offsetY = (camY - floorCamY) * S;
-
-    for (let ty = 0; ty <= VIEWPORT_H; ty++) {
-        for (let tx = 0; tx <= VIEWPORT_W; tx++) {
-            const wx = floorCamX + tx;
-            const wy = floorCamY + ty;
-            const dx = tx * S - offsetX;
-            const dy = ty * S - offsetY;
-
-            if (wx >= loc.width || wy >= loc.height || wx < 0 || wy < 0) {
-                ctx.fillStyle = '#0a0a0a';
-                ctx.fillRect(dx, dy, S, S);
-                continue;
-            }
-
-            // authored tile overrides
-            const override = (loc.tileOverrides || []).find(o => o.x === wx && o.y === wy);
-            const seed = hashStr(localPlayer.location) ^ (wx * 7919) ^ (wy * 6271);
-            drawTile(ctx, override?.type || tileType, dx, dy, seed, S);
-        }
-    }
+    const offsetX = (camX - Math.floor(camX)) * S;
+    const offsetY = (camY - Math.floor(camY)) * S;
+    ctx.drawImage(getTileLayer(ctx, loc, camX, camY, tileType), -offsetX, -offsetY);
 
     // --- EXITS ---
     ( loc.exitTiles || []).forEach(p => {
@@ -214,7 +252,9 @@ export function renderWorld(state, onTileClick) {
 
     // --- ENEMY ---
     const sharedEnemy = shardEnemies.get(localPlayer.location);
-    const hasEnemy = loc.enemy && (!sharedEnemy || sharedEnemy.hp > 0);
+    const timeOfDay = getTimeOfDay();
+    const locEnemy = loc.enemy && (!loc.nightOnly || timeOfDay === 'night') ? loc.enemy : null;
+    const hasEnemy = locEnemy && (!sharedEnemy || sharedEnemy.hp > 0);
     if (hasEnemy) {
         const lex = loc.enemyX ?? Math.floor(loc.width / 2);
         const ley = loc.enemyY ?? Math.floor(loc.height / 2);
@@ -223,8 +263,8 @@ export function renderWorld(state, onTileClick) {
         const ey = de.y - camY;
 
         if (ex >= -1 && ex < VIEWPORT_W && ey >= -1 && ey < VIEWPORT_H) {
-            const edef = ENEMIES?.[loc.enemy];
-            const sprite = getSprite(hashStr(loc.enemy), 'enemy');
+            const edef = ENEMIES?.[locEnemy];
+            const sprite = getSprite(hashStr(locEnemy), 'enemy');
             
             // Hit Flash: tint red if recently hit
             if (_hitFlash && Date.now() <= _hitFlash) {
@@ -323,7 +363,6 @@ export function renderWorld(state, onTileClick) {
     });
 
     // --- NIGHT OVERLAY ---
-    const timeOfDay = getTimeOfDay();
     if (timeOfDay === 'night') {
         ctx.fillStyle = 'rgba(0, 0, 40, 0.45)';
         ctx.fillRect(0, 0, CW, CH);
@@ -365,6 +404,8 @@ export function renderWorld(state, onTileClick) {
         if (_dialogue) { advanceDialogue(); return; }
 
         const rect = _canvas.getBoundingClientRect();
+        // COMPENSATE FOR CSS SCALING: 
+        // CW/rect.width gives the ratio of logical width to displayed width
         const scaleX = CW / rect.width;
         const scaleY = CH / rect.height;
         const tx = Math.floor((e.clientX - rect.left) * scaleX / S + camX);
@@ -377,6 +418,9 @@ export function renderWorld(state, onTileClick) {
             onTileClick(tx, ty, { type: 'enemy' });
         } else {
             onTileClick(tx, ty, null);
+            // Autofocus input on non-entity clicks
+            const input = document.getElementById('input');
+            if (input) input.focus();
         }
     };
 }
@@ -445,6 +489,8 @@ export function triggerHitFlash() {
 }
 
 export function showDialogue(npcName, text) {
+    if (!text) return; // don't open dialogue with no text
+
     const CHARS_PER_LINE = 38;
     const LINES_PER_PAGE = 3;
     const words = String(text).split(' ');
@@ -464,7 +510,7 @@ export function showDialogue(npcName, text) {
     for (let i = 0; i < lines.length; i += LINES_PER_PAGE) {
         pages.push(lines.slice(i, i + LINES_PER_PAGE));
     }
-    if (!pages.length) pages.push(['']);
+    if (!pages.length) return; // don't open dialogue with no text
     _dialogue = { name: npcName, pages, page: 0 };
     if (_triggerRefresh) _triggerRefresh();
 }
@@ -561,6 +607,11 @@ function drawFloatingTexts(ctx, camX, camY) {
 
 function drawDialogueBox(ctx, npcName) {
     if (!_dialogue) return;
+    // Safety valve: if dialogue is broken, clear it
+    if (!_dialogue.pages || !_dialogue.pages.length || _dialogue.page >= _dialogue.pages.length) {
+        _dialogue = null;
+        return;
+    }
     const BOX_H = Math.floor(CH * 0.28);
     const BOX_Y = CH - BOX_H;
     const PAD = Math.floor(S * 0.4);

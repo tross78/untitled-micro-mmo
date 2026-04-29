@@ -325,9 +325,338 @@ These are small, targeted improvements that reduce Phase 8 scope and make the cu
 
 ---
 
+### **Phase 7.85: Rendering Overhaul, Bug Fixes, World Expansion & Inventory Tests — COMPLETE**
+
+Five problems to fix before Phase 8 begins. The rendering section is the most important — Phase 8 builds directly on top of it.
+
+---
+
+#### **0. Rendering architecture — what Kontra does that we don't**
+
+Our renderer calls `renderWorld()` imperatively on every state change, redraws every pixel every call, runs on a single canvas layer, and ignores device pixel ratio. Here's where Kontra's architecture is strictly better and what we should steal.
+
+**0a. Device pixel ratio (DPR) — we look blurry on Retina displays**
+
+We create the canvas at `720×528` and scale it with CSS `width:100%`. On a Retina screen where `window.devicePixelRatio === 2`, the browser stretches a 720-px buffer to fill a 1440-logical-px element — blurry. Kontra disables image smoothing on init and sizes the buffer at `logical × dpr`.
+
+Fix in `initCanvas()`:
+
+```js
+const dpr = window.devicePixelRatio || 1;
+_canvas.width  = CW * dpr;
+_canvas.height = CH * dpr;
+const ctx = _canvas.getContext('2d');
+ctx.scale(dpr, dpr);          // all draw calls stay in logical pixels
+ctx.imageSmoothingEnabled = false;
+```
+
+CSS stays the same logical size (`max-width:${CW}px`). Store `dpr` as a module-level const so the click handler can compensate: `const scaleX = (CW * dpr) / rect.width` — wait, no: the ctx is already scaled, so click math stays in logical coords. Just make sure `_canvas.getBoundingClientRect()` is divided by the CSS pixel size, not the buffer size.
+
+**0b. RAF loop — lerp does nothing without it**
+
+`getDrawPos()` and `npcWanderOffset()` both set `_isAnimating = true`, but `renderWorld()` is never called again unless a game event triggers it. The lerp is dead. NPCs appear frozen despite the wander math.
+
+Kontra uses a time-accumulator RAF loop that runs while any animation is active. Steal the pattern:
+
+```js
+let _rafId = null;
+let _renderFn = null;   // set by renderWorld to () => renderWorld(lastState, lastCb)
+
+function scheduleFrame() {
+    if (_rafId) return;
+    _rafId = requestAnimationFrame(() => {
+        _rafId = null;
+        _renderFn?.();
+        if (_isAnimating) scheduleFrame();
+    });
+}
+```
+
+Call `scheduleFrame()` at the end of `renderWorld()` whenever `_isAnimating` is true. This gives smooth lerp and NPC wander with no polling — the loop stops automatically when nothing is moving, matching Kontra's battery-friendly self-stopping behavior.
+
+**0c. Tile layer OffscreenCanvas cache — Kontra's dirty-flag pattern**
+
+Right now the tile loop reruns for every single render call, even when the player hasn't moved. Kontra pre-renders each tile layer to an `OffscreenCanvas` and only redraws it when the layer's data changes (dirty flag).
+
+For us the "dirty" event is a room change. Add a tile-layer cache:
+
+```js
+let _tileCache = null;    // { loc: string, camX: number, camY: number, canvas: OffscreenCanvas }
+
+function getTileLayer(loc, camX, camY, ...) {
+    const floorX = Math.floor(camX), floorY = Math.floor(camY);
+    if (_tileCache?.loc === loc.key && _tileCache.camX === floorX && _tileCache.camY === floorY)
+        return _tileCache.canvas;
+
+    const off = new OffscreenCanvas(CW, CH);
+    const octx = off.getContext('2d');
+    // ... draw tile loop onto octx ...
+    _tileCache = { loc: loc.key, camX: floorX, camY: floorY, canvas: off };
+    return off;
+}
+```
+
+Main draw: `ctx.drawImage(getTileLayer(...), 0, 0)` then draw entities on top. This eliminates the `(VIEWPORT_W+1) × (VIEWPORT_H+1)` tile draw loop from every frame — it only fires when the camera moves an integer tile, roughly once per player step, not once per animation frame.
+
+**0d. Tab blur — pause RAF when window loses focus**
+
+Kontra pauses the loop on `window.blur` and resumes on `window.focus`. Without this, the lerp timer `Date.now()` keeps ticking while the tab is hidden, and entities snap to their destination the instant the player returns. Add:
+
+```js
+window.addEventListener('blur',  () => { if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; } });
+window.addEventListener('focus', () => { if (_isAnimating) scheduleFrame(); });
+```
+
+**0e. Aspect ratio CSS fix — the stretching bug**
+
+Replace the canvas `style.cssText` width/height rules:
+
+```js
+_canvas.style.cssText = `
+    display:block;
+    width:100%;
+    max-width:${CW}px;
+    aspect-ratio:${CW}/${CH};
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    margin:0 auto;
+    cursor:pointer;
+    background:#000;
+    border-bottom:1px solid #111;
+`;
+```
+
+`aspect-ratio` keeps the element's height locked to the 720:528 ratio regardless of container width. `max-width:${CW}px` prevents upscaling beyond native resolution at large viewports. Remove `max-height:45vh` — it fights `aspect-ratio` on portrait/short viewports.
+
+---
+
+#### **Summary: rendering work order**
+
+1. DPR fix in `initCanvas()` — one-time, no regressions.
+2. Aspect-ratio CSS fix — one-time.
+3. Tab blur/focus handlers — 4 lines.
+4. RAF loop (`scheduleFrame`, `_renderFn`) — the lerp and NPC wander finally work.
+5. OffscreenCanvas tile cache — performance win, do last (requires 0b to be stable).
+
+All five fit in `renderer.js` with no changes to `main.js` or `commands.js`.
+
+---
+
+---
+
+#### **1. Canvas stretching on wide viewports**
+
+Covered in §0e above — the aspect-ratio CSS fix addresses this. The rendering overhaul in §0 should be implemented first; this issue resolves as part of it.
+
+---
+
+#### **2. Input blocked in some rooms**
+
+**Root cause (suspected).** `_canvas.onclick` is reassigned on every `renderWorld()` call. If `renderWorld()` is called while `_dialogue` is non-null (dialogue open), a new onclick handler is installed that checks `if (_dialogue) { advanceDialogue(); return; }` — so clicks advance dialogue correctly. But the `window.keydown` handler in `main.js` intercepts `Space`/`Enter` only `when isDialogueOpen()` is true. If `_dialogue` gets stuck non-null (e.g., an NPC speak event fires but the text is empty, producing zero pages), `isDialogueOpen()` returns `true` permanently and Space/Enter never reach the text input, making it appear that the room is unresponsive.
+
+Additionally: the text `input` element can lose focus silently when a canvas click fires. If `input.focus()` is not called after a canvas click that doesn't open dialogue, the keyboard is captured by `window.keydown` and typed characters don't appear in the input box.
+
+**Fixes:**
+
+1. In `renderer.js` `showDialogue()`: guard against empty page arrays.
+   ```js
+   export function showDialogue(npcName, text) {
+       const pages = paginateText(ctx, text, ...);
+       if (!pages.length) return; // don't open dialogue with no text
+       _dialogue = { name: npcName, pages, page: 0 };
+   }
+   ```
+
+2. In `renderer.js` canvas click handler, after handling an empty-tile click (no NPC, no enemy), call `input.focus()`. Pass the `input` element reference in at init time, or emit a `ui:requestFocus` bus event that `main.js` handles.
+
+3. Add a safety valve: if `_dialogue` is non-null but `_dialogue.pages` is empty or `_dialogue.page >= _dialogue.pages.length`, force `_dialogue = null` at the top of `drawDialogueBox`.
+
+**Test:** Talk to an NPC, dismiss dialogue, verify keyboard input works in the text box immediately after without clicking it. Repeat in every room type (indoor, outdoor, dungeon).
+
+---
+
+#### **3. World expansion — more rooms, more variety**
+
+**Current state.** `data.js` has 16 rooms. Most follow the same grammar: open tiles, one enemy type, one or two exits. There are no rooms that feel mechanically or visually distinct from each other beyond the name banner.
+
+**Target.** Add 8–10 new rooms that each introduce one thing the world doesn't currently have. Quality over quantity — each new room should have a clear reason to exist in the quest graph or exploration loop.
+
+Suggested new rooms (implement all in `data.js`, wire exits bidirectionally):
+
+| Key | Name | What's new |
+|-----|------|------------|
+| `mill` | Old Mill | Crafting location — `craftable: ['flour','rope']`. No enemy. |
+| `cemetery` | Cemetery | Night-only enemy spawn (`nightOnly: true`). Wraith enemy. Connects to catacombs. |
+| `harbour` | Harbour | Merchant variant selling boat parts. Leads to `sea_cave`. |
+| `sea_cave` | Sea Cave | Underwater feel via `tileOverrides` (water tiles at edges). Crab enemy. |
+| `watchtower` | Watchtower | Tall room (`width:6, height:20`). Guard NPC. Gives scouting lore. |
+| `herbalist_hut` | Herbalist's Hut | Small (`width:8, height:8`). Unique NPC: Herbalist. Sells `herb`, `antidote`. |
+| `frozen_lake` | Frozen Lake | Wide open (`width:25, height:10`). Ice tile type (slippery — step 2 tiles per move). |
+| `throne_room` | Throne Room | Indoor. Boss-tier enemy (King's Guard). Dead-end, high reward. |
+| `smuggler_den` | Smuggler's Den | Secret room, reachable only via hidden exit in `harbour`. Black-market merchant. |
+| `crossroads` | Crossroads | Hub room with exits in all 4 directions. No enemy. Signpost scenery. |
+
+**Implementation notes:**
+- All rooms need `width`, `height`, `description`, `exits` (bidirectional), and `scenery` arrays.
+- `tileOverrides` is Phase 8 prep — define the array even if renderer ignores it now.
+- `nightOnly` enemy spawn: check `getTimeOfDay() === 'night'` before populating `loc.enemy` in `renderWorld`.
+- Every new room needs an `exitTile` entry with `destX`/`destY` within bounds — the `rules.test.js` exit-bounds test will catch violations automatically.
+- Expand the quest graph to reference at least 3 of the new rooms (e.g., herbalist fetch quest, watchtower scouting quest, throne room boss bounty).
+
+---
+
+#### **4. Inventory — comprehensive test coverage**
+
+**Current state.** `commands.test.js` references `inventory` in 7 places, all incidental (setup or single-line assertions inside other tests). There are zero dedicated tests for the inventory subsystem despite it being a core mechanic with multiple code paths:
+
+- `pickup` / `drop` commands
+- `use <item>` (consumables: potion, ale, elixir)
+- `equip <item>` (weapons and armor auto-equip in combat via `getBestGear`)
+- `sell <item>` at merchant
+- Weight/count display in `inventory` command
+- Crafting consuming input items and producing output
+- Quest objective: `fetch` type checking `inventory` contents
+- `rest` command consuming `ale` from inventory
+
+**New test file: `src/inventory.test.js`**
+
+Write a dedicated suite covering at minimum:
+
+```
+describe('inventory system', () => {
+  describe('pickup', () => {
+    - picking up an item in a room with loot adds it to inventory
+    - picking up in a room with no loot emits a not-found message
+    - duplicate pickups stack correctly (same itemId appears twice)
+    - bus emits item:pickup with full item object
+  })
+  describe('drop', () => {
+    - drop removes item from inventory
+    - drop on an item not in inventory does not crash
+  })
+  describe('use', () => {
+    - use potion increases HP (capped at maxHp)
+    - use ale restores fight charges (up to daily max)
+    - use strength_elixir adds statusEffect with duration
+    - use non-consumable item gives appropriate message, does not remove from inventory
+    - use on empty inventory does not crash
+  })
+  describe('equip / getBestGear', () => {
+    - getBestGear selects highest-attack weapon in inventory
+    - getBestGear selects highest-defense armor in inventory
+    - manual equipment overrides auto-equip
+    - empty inventory gives base stats
+  })
+  describe('sell', () => {
+    - sell removes item from inventory and adds gold
+    - sell unknown item does not crash
+    - sell at non-merchant location gives appropriate message
+  })
+  describe('inventory command', () => {
+    - empty inventory prints "pack is empty"
+    - inventory with items shows each item name and count
+    - duplicate items shown as "x2" not listed twice
+  })
+  describe('craft', () => {
+    - crafting consumes ingredient items from inventory
+    - crafted item is added to inventory
+    - attempting craft without ingredients fails with message
+  })
+  describe('fetch quests', () => {
+    - fetch quest progress updates when item is in inventory
+    - fetch quest does not complete until count is met
+  })
+})
+```
+
+All tests use the same `localPlayer` mock pattern established in `commands.test.js` (set `store.localPlayer` directly, call `handleCommand()`). No mocking of the bus — verify side effects via the actual bus listener or by checking `localPlayer.inventory` state post-command.
+
+---
+
+#### **Verification additions for §3 (Static checks)**
+
+After this phase, add to the Post-Implementation Verification Protocol:
+
+**`src/renderer.js`**
+- Canvas element has `aspect-ratio` style set. Verify in devtools that changing viewport width does not distort tile proportions.
+- `showDialogue('', '')` with empty text does not set `_dialogue` non-null (call `isDialogueOpen()` after — must be false).
+
+**`src/data.js`**
+- All new rooms: `exitTile` entries pass the existing bounds test in `rules.test.js`.
+- All new rooms: exit destinations are bidirectional (if room A exits to room B, room B has an exit back to room A or to another room — no orphan destinations).
+
+**`src/inventory.test.js`**
+- Full suite passes with zero skips. Cover all 8 describe blocks listed above.
+
+---
+
 ### **Phase 8: Full Zelda-Style Graphical Client — TODO**
 
 Target feel: ALttP / Link's Awakening. No visible text log during play. All feedback is spatial, animated, and momentary.
+
+**Rendering foundation (from Phase 7.85):**
+Phase 7.85 lands the five rendering fixes (DPR, aspect-ratio, RAF loop, tile cache, tab blur). Phase 8 builds directly on top of that — do not start Phase 8 renderer work until those are complete and stable.
+
+---
+
+**Procedural world freshness — keeping maps consistent across all peers**
+
+The core constraint: `worldState.seed` + `worldState.day` must produce the same world for every peer. This is already true for tile variation (seeded RNG per tile). Phase 8 extends this to room layout.
+
+*The problem.* Currently rooms are static — same `width`, `height`, `exits`, `scenery`, `staticEntities` every day. A player who has seen every room has seen the whole world. There's nothing to rediscover.
+
+*The solution.* **Seasonal layout variation via the day seed.** Rooms stay structurally stable (exits never move — players need to rely on them) but their interior changes on a slow cadence.
+
+```js
+// rules.js — new export
+export function roomDaySeed(roomKey, day) {
+    // Changes every 7 days (one in-game week), same for all peers
+    const week = Math.floor(day / 7);
+    return hashStr(roomKey) ^ (week * 0x9e3779b9);
+}
+```
+
+Use `roomDaySeed` for:
+- **Scenery placement** — scatter barrels, trees, altars within the room bounds (avoid exits). Currently hardcoded in `data.js`; move to a `generateScenery(roomKey, day)` function in `rules.js`.
+- **Loot tile positions** — the tile with a pickup item moves each week. Players who know the room layout from last week still need to search.
+- **Enemy starting position** — already partially seeded; make it fully driven by `roomDaySeed`.
+- **Light sources** — which scenery objects are torches (affect Phase 8's dynamic lighting radius) varies by day.
+
+*What stays fixed.* Exit tile positions never change — they're defined in `data.js` and rooms are navigable day-to-day. Room dimensions never change. NPCs stay at their authored positions (wandering is cosmetic, not layout-changing).
+
+*Procedural dungeon floors.* For the new underground/cave rooms (sea cave, catacombs, etc.) go further — generate the room's `tileOverrides` array from `roomDaySeed`:
+
+```js
+export function generateDungeonOverrides(roomKey, day, width, height) {
+    const rng = seededRNG(roomDaySeed(roomKey, day));
+    const overrides = [];
+    // scatter water/chasm tiles as obstacles (never on exits, never blocking the center)
+    const count = 3 + (rng() * 5 | 0);
+    for (let i = 0; i < count; i++) {
+        overrides.push({ x: 1 + (rng() * (width - 2) | 0), y: 1 + (rng() * (height - 2) | 0), type: 'chasm' });
+    }
+    return overrides;
+}
+```
+
+All peers call this with the same `roomKey` + `day` → same overrides. The room feels different each week. No network traffic required — the seed is the sync mechanism.
+
+*Unexplored room "fog".* When a peer first enters a room in the current week, mark `exploredRooms[roomKey + ':' + week] = true` in IndexedDB. The renderer can draw a subtle fog overlay on tiles outside the player's current sightline radius (e.g., 4 tiles), lifting as they move. This is local-only — it doesn't affect other peers and requires no state sync. It makes large rooms feel like genuine exploration rather than instant reveals.
+
+*Day/season visual theming.* The existing time-of-day tint (`getTimeOfDay()`) already varies by hour. Add a season pass in the tile renderer:
+
+```js
+// renderer.js — applied after the tile layer, before entities
+const season = SEASONS[Math.floor(worldState.day / SEASON_LENGTH) % 4];
+if (season === 'winter') ctx.fillStyle = 'rgba(200,220,255,0.07)';
+if (season === 'autumn') ctx.fillStyle = 'rgba(120,60,0,0.05)';
+// spring/summer: no tint
+if (ctx.fillStyle !== ...) { ctx.fillRect(0, 0, CW, CH); }
+```
+
+This is one overlay pass on the cached tile layer — essentially free.
+
+---
 
 **Sprite system (hybrid designed + procedural):**
 * Character/enemy/NPC sprites are **authored** — palette-indexed pixel arrays defined in `graphics.js`, drawn onto `OffscreenCanvas` at init. No external image files; everything stays in the JS bundle.
