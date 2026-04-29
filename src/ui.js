@@ -169,9 +169,7 @@ export const renderActionButtons = (ctx, onAction) => {
             }
         }
 
-        const localNpcs = worldState.seed
-            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
-            : [];
+        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
         if (localNpcs.length > 0) {
             addButton('Talk 💬', () => uiState = 'talk');
             if (localNpcs.some(id => NPCS[id].role === 'shop')) {
@@ -265,8 +263,7 @@ export const renderActionButtons = (ctx, onAction) => {
     } else if (uiState === 'move') {
         Object.keys(loc.exits).forEach(dir => {
             const dirEmoji = { north: '⬆️', south: '⬇️', east: '➡️', west: '⬅️', up: '⤴️', down: '⤵️' }[dir] || '➡️';
-            const actionMap = { north: ACTION.MOVE_N, south: ACTION.MOVE_S, east: ACTION.MOVE_E, west: ACTION.MOVE_W };
-            addButton(`${dir.charAt(0).toUpperCase() + dir.slice(1)} ${dirEmoji}`, actionMap[dir] || `move ${dir}`);
+            addButton(`${dir.charAt(0).toUpperCase() + dir.slice(1)} ${dirEmoji}`, `move ${dir}`);
         });
         addButton('Back ⬅️', ACTION.CANCEL);
 
@@ -298,18 +295,14 @@ export const renderActionButtons = (ctx, onAction) => {
         addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'talk') {
-        const localNpcs = worldState.seed
-            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
-            : [];
+        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
         localNpcs.forEach(id => {
             addButton(`${NPCS[id].name}`, `talk ${id}`);
         });
         addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'buy') {
-        const localNpcs = worldState.seed
-            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
-            : [];
+        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
         const shopNpc = localNpcs.find(id => NPCS[id].role === 'shop');
         if (shopNpc && NPCS[shopNpc].shop) {
             NPCS[shopNpc].shop.forEach(itemId => {
@@ -325,9 +318,7 @@ export const renderActionButtons = (ctx, onAction) => {
         addButton('Back ⬅️', ACTION.CANCEL);
 
     } else if (uiState === 'sell') {
-        const localNpcs = worldState.seed
-            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
-            : [];
+        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
         const shopNpc = localNpcs.find(id => NPCS[id].role === 'shop');
         if (shopNpc) {
             const sellable = localPlayer.inventory.filter(id => ITEMS[id] && ITEMS[id].type !== 'gold' && ITEMS[id].price > 0);
@@ -361,9 +352,7 @@ export const renderActionButtons = (ctx, onAction) => {
 
     } else if (uiState === 'quests') {
         const active = Object.entries(localPlayer.quests).filter(([, q]) => !q.completed);
-        const localNpcs = worldState.seed
-            ? Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
-            : [];
+        const localNpcs = Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
 
         // 1. Quests available to Accept here (from NPCs present, checking giver + prerequisite)
         Object.values(QUESTS).forEach(q => {

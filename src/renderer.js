@@ -2,6 +2,14 @@ import { drawTile, generateCharacterSprite, zoneTileType } from './graphics.js';
 import { drawRadar } from './ui.js';
 import { VIEWPORT_W, VIEWPORT_H, TILE_PX } from './constants.js';
 
+const ARTICLES = new Set(['the', 'a', 'an']);
+const shortName = (name) => {
+    const words = (name || '').split(' ');
+    const first = words[0].toLowerCase();
+    const label = ARTICLES.has(first) ? words.slice(1).join(' ') : name;
+    return label.slice(0, 10);
+};
+
 // Logical tile size on screen — 3× pixel-art upscale
 const SCALE = 3;
 const S = TILE_PX * SCALE;           // pixels per tile on canvas (48)
@@ -97,7 +105,7 @@ export function renderWorld(state, onTileClick) {
         ctx.font = `bold ${Math.floor(S * 0.3)}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText(destName.split(' ')[0], sx * S + S / 2, sy * S + 1);
+        ctx.fillText(shortName(destName), sx * S + S / 2, sy * S + 1);
     });
 
     // --- SCENERY ---
@@ -115,9 +123,7 @@ export function renderWorld(state, onTileClick) {
     });
 
     // --- STATIC ENTITIES (NPCs) ---
-    const localNpcs = worldState.seed
-        ? Object.keys(NPCS || {}).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location)
-        : [];
+    const localNpcs = Object.keys(NPCS || {}).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
     localNpcs.forEach(id => {
         const npc = NPCS[id];
         const se = (loc.staticEntities || []).find(e => e.id === id);
@@ -131,7 +137,7 @@ export function renderWorld(state, onTileClick) {
         ctx.font = `${Math.floor(S * 0.28)}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(npc.name.split(' ')[0], sx * S + S / 2, sy * S);
+        ctx.fillText(shortName(npc.name), sx * S + S / 2, sy * S);
     });
 
     // --- ENEMY ---
@@ -158,7 +164,7 @@ export function renderWorld(state, onTileClick) {
                 ctx.font = `${Math.floor(S * 0.28)}px monospace`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'bottom';
-                ctx.fillText(edef.name.split(' ')[0], ex * S + S / 2, ey * S);
+                ctx.fillText(shortName(edef.name), ex * S + S / 2, ey * S);
             }
         }
     }
@@ -209,7 +215,7 @@ export function renderWorld(state, onTileClick) {
     ];
     edgeArrows.forEach(({ dir, x, y, label }) => {
         if (!exits[dir]) return;
-        const destName = world[exits[dir]]?.name?.split(' ')[0] || dir;
+        const destName = shortName(world[exits[dir]]?.name || dir);
         ctx.fillStyle = 'rgba(0,255,180,0.7)';
         ctx.font = `bold ${Math.floor(S * 0.5)}px monospace`;
         ctx.textAlign = 'center';
