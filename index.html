@@ -193,18 +193,11 @@
     </style>
 </head>
 <body>
-    <div id="status-bar" style="display: flex; justify-content: space-between; padding: 8px; background: #111; border-bottom: 1px solid #222; font-size: 0.85em; color: #ffa500; position: sticky; top: 0; z-index: 10;">
-        <div id="status-left"></div>
-        <div id="status-center"></div>
-        <div id="status-right"></div>
-    </div>
-    <div id="ticker" style="font-style: italic; color: #888; text-align: center; padding: 4px; border-bottom: 1px solid #222; min-height: 1.2em; font-size: 0.8em; transition: opacity 0.5s ease-in-out;"></div>
-    
     <div id="radar-container"></div>
 
     <div id="action-buttons"></div>
 
-    <div id="debug-console" style="display:flex; flex-direction:column; flex:1 1 0; min-height:0; max-height:35vh; border-top:1px solid #222;">
+    <div id="debug-console" style="display:none; flex-direction:column; flex:1 1 0; min-height:0; max-height:35vh; border-top:1px solid #222;">
         <div id="output" style="flex:1 1 0; overflow-y:auto; min-height:0;">Initializing P2P network...
 Searching for peers in the BitTorrent DHT...</div>
 
