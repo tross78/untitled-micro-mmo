@@ -202,23 +202,23 @@
     
     <div id="radar-container"></div>
 
-    <div id="debug-console" style="display:none; flex-direction:column; flex:1 1 0; min-height:0;">
-        <div id="output">Initializing P2P network...
+    <div id="action-buttons"></div>
+
+    <div id="debug-console" style="display:flex; flex-direction:column; flex:1 1 0; min-height:0; max-height:35vh; border-top:1px solid #222;">
+        <div id="output" style="flex:1 1 0; overflow-y:auto; min-height:0;">Initializing P2P network...
 Searching for peers in the BitTorrent DHT...</div>
 
         <div id="banner-ad" style="display:none;"></div>
 
         <div id="suggestions"></div>
 
-        <div id="input-container" style="display: none;">
+        <div id="input-container" style="display: flex;">
             <span id="prompt">></span>
             <input type="text" id="input" autofocus spellcheck="false" autocomplete="off"
                    autocorrect="off" autocapitalize="off" enterkeyhint="send"
-                   placeholder="type a command or tap below">
+                   placeholder="type a command...">
         </div>
     </div>
-
-    <div id="action-buttons"></div>
 
     <script src="main.js"></script>
 </body>
