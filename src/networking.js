@@ -39,12 +39,15 @@ const ROLLUP_INTERVAL = 10000;
 const SKETCH_INTERVAL = 30000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
 
+// x,y are excluded deliberately — tile position changes every keystroke and would
+// cause false fraud alerts between the 10s rollup interval. Only level, xp, and
+// location (room-level, bounded) belong in the consensus hash.
 const buildLeafData = () => {
     const leaves = Array.from(players.entries())
         .filter(([id]) => id !== selfId)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}:${p.x || 0}:${p.y || 0}`);
-    leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}:${localPlayer.x || 0}:${localPlayer.y || 0}`);
+        .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
+    leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
     leaves.sort();
     return leaves;
 };
@@ -510,14 +513,22 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (Object.keys(response).length > 0) sendPresenceBatch(response, peerId);
         });
 
-        getPresenceSingle(async (buf, peerId) => {
-            if (peerId === selfId) return;
+        // Presence packets that arrive before the peer's public key is known
+        // are queued here (keyed by peerId, one packet max — newest wins).
+        // Replayed via processPresenceSingle once the identity handshake completes.
+        const _pendingPresence = new Map();
+
+        const processPresenceSingle = async (buf, peerId) => {
             const entry = players.get(peerId);
-            if (!entry?.publicKey) return;
+            if (!entry?.publicKey) {
+                _pendingPresence.set(peerId, buf);
+                return;
+            }
 
             // Security: Arbiter Blacklist
             if (bans.has(entry.publicKey)) {
                 players.delete(peerId);
+                _pendingPresence.delete(peerId);
                 return;
             }
 
@@ -543,6 +554,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
             trackShadowPlayer(peerId, unpacked);
+        };
+
+        getPresenceSingle(async (buf, peerId) => {
+            if (peerId === selfId) return;
+            await processPresenceSingle(buf, peerId);
         });
 
         getPresenceBatch(async (data) => {
@@ -714,6 +730,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const isNew = !entry.publicKey;
             trackPlayer(peerId, { ...entry, publicKey, ts: Date.now() });
             if (isNew) log(`[Social] Peer ${peerId.slice(0,4)} entered the world.`, '#aaa');
+
+            // Replay any presence packet that arrived before the key was known
+            const pending = _pendingPresence.get(peerId);
+            if (pending) {
+                _pendingPresence.delete(peerId);
+                processPresenceSingle(pending, peerId);
+            }
         });
 
         r.onPeerLeave(peerId => {
@@ -721,6 +744,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             knownPeers.delete(peerId);
             players.delete(peerId);
             shadowPlayers.delete(peerId);
+            _pendingPresence.delete(peerId);
             const chan = activeChannels.get(peerId);
             if (chan) {
                 clearTimeout(chan.timeoutId);

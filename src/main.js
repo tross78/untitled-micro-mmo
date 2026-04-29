@@ -108,39 +108,44 @@ const stepPlayer = async (stepX, stepY) => {
     joinInstance(destId, currentInstance, currentRtcConfig).then(triggerUIRefresh);
 };
 
+let _refreshTimer = null;
 const triggerUIRefresh = () => {
-    const ctx = {
-        localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
-    };
-    const ACTION_VALUES = new Set(Object.values(ACTION));
-    renderActionButtons(ctx, (cmdOrAction) => {
-        if (ACTION_VALUES.has(cmdOrAction)) {
-            bus.emit('input:action', { action: cmdOrAction, type: 'down' });
-        } else {
-            handleCommand(cmdOrAction).then(triggerUIRefresh);
-        }
-    });
-    renderWorld(ctx, (tx, ty, entity) => {
-        const loc = world[localPlayer.location];
-        if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
+    if (_refreshTimer) return;
+    _refreshTimer = setTimeout(() => {
+        _refreshTimer = null;
+        const ctx = {
+            localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
+        };
+        const ACTION_VALUES = new Set(Object.values(ACTION));
+        renderActionButtons(ctx, (cmdOrAction) => {
+            if (ACTION_VALUES.has(cmdOrAction)) {
+                bus.emit('input:action', { action: cmdOrAction, type: 'down' });
+            } else {
+                handleCommand(cmdOrAction).then(triggerUIRefresh);
+            }
+        });
+        renderWorld(ctx, (tx, ty, entity) => {
+            const loc = world[localPlayer.location];
+            if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
 
-        // Clicking an NPC → talk; clicking enemy → attack; otherwise → move toward
-        if (entity?.type === 'npc') {
-            handleCommand(`talk ${entity.id}`).then(triggerUIRefresh);
-            return;
-        }
-        if (entity?.type === 'enemy') {
-            handleCommand('attack').then(triggerUIRefresh);
-            return;
-        }
+            // Clicking an NPC → talk; clicking enemy → attack; otherwise → move toward
+            if (entity?.type === 'npc') {
+                handleCommand(`talk ${entity.id}`).then(triggerUIRefresh);
+                return;
+            }
+            if (entity?.type === 'enemy') {
+                handleCommand('attack').then(triggerUIRefresh);
+                return;
+            }
 
-        const dx = tx - localPlayer.x;
-        const dy = ty - localPlayer.y;
-        if (dx === 0 && dy === 0) return;
-        const stepX = dx !== 0 ? (dx > 0 ? 1 : -1) : 0;
-        const stepY = stepX === 0 && dy !== 0 ? (dy > 0 ? 1 : -1) : 0;
-        stepPlayer(stepX, stepY);
-    });
+            const dx = tx - localPlayer.x;
+            const dy = ty - localPlayer.y;
+            if (dx === 0 && dy === 0) return;
+            const stepX = dx !== 0 ? (dx > 0 ? 1 : -1) : 0;
+            const stepY = stepX === 0 && dy !== 0 ? (dy > 0 ? 1 : -1) : 0;
+            stepPlayer(stepX, stepY);
+        });
+    }, 50);
 };
 
 // --- IDENTITY & P2P BOOTSTRAP ---

@@ -3,6 +3,8 @@
  * Declarative serialization for high-frequency messages.
  */
 
+import { world } from './data.js';
+
 class SchemaBuffer {
     constructor(size) {
         this.buf = new Uint8Array(size);
@@ -60,12 +62,9 @@ class SchemaReader {
     }
 }
 
-const ROOM_MAP = [
-    'cellar', 'hallway', 'tavern', 'market', 
-    'forest_edge', 'forest_depths', 'lake_shore', 'bandit_camp', 'mountain_pass',
-    'ruins', 'ruins_descent', 'catacombs', 'dungeon_cell', 'throne_room',
-    'cave'
-];
+// Derived from data.js world keys — sorted alphabetically for a stable, self-maintaining index.
+// Any new room added to data.js is automatically included. All peers must use the same sort.
+export const ROOM_MAP = Object.keys(world).sort();
 const EMOTE_MAP = ['waves hello.', 'bows respectfully.', 'cheers loudly!'];
 const ENEMY_MAP = [
     'forest_wolf', 'ruin_shade', 'cave_troll', 'bandit', 

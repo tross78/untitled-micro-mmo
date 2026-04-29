@@ -110,7 +110,7 @@ describe('Binary Packer', () => {
         };
         const packed = packPresence(presence);
         const view = new DataView(packed.buffer);
-        expect(view.getUint8(16)).toBe(0); // cellar is index 0 in ROOM_MAP
+        expect(view.getUint8(16)).toBe(3); // cellar is index 3 in sorted ROOM_MAP
         expect(view.getUint8(21)).toBe(7); // level at byte 21
         expect(packed).toHaveLength(160);
     });

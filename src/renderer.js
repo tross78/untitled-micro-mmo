@@ -62,7 +62,7 @@ function initCanvas() {
     _canvas.width = CW * _dpr;
     _canvas.height = CH * _dpr;
     _canvas.style.cssText = `
-        display:block; width:100%; max-width:${CW}px; aspect-ratio:${CW}/${CH};
+        display:block; width:100%; max-width:${CW}px; max-height:45vh; aspect-ratio:${CW}/${CH};
         image-rendering:pixelated; image-rendering:crisp-edges; margin: 0 auto;
         cursor:pointer; background:#000; border-bottom:1px solid #111;
     `;

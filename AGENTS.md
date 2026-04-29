@@ -590,6 +590,207 @@ After this phase, add to the Post-Implementation Verification Protocol:
 
 ---
 
+### **Phase 7.88: Action Button UI Freeze — FIXED**
+
+**Symptom.** Clicking any action button in the Rusty Flagon (tavern) or Market Square (market) appeared to do nothing. Other rooms worked fine.
+
+**What Gemini tried.** Gemini changed the CSS on `.chip` elements in an attempt to fix it. This was the wrong file — `.chip` elements live inside `#debug-console` which has `display:none`. They are permanently invisible regardless of their CSS; they are autocomplete suggestions for the debug CLI, not the game's action buttons. The visual action buttons use `.action-btn` class in `#action-buttons`, which is a separate element outside the debug console. No CSS change to `.chip` could affect the action buttons.
+
+**Actual root cause.** `uiState` (the UI navigation variable in `src/ui.js`) is module-level and was never reset on room transitions. If a player opened a submenu (e.g. clicked "Buy 💰" in the Market → `uiState = 'buy'`), then navigated to another room, `uiState` remained `'buy'`. In the new room, `renderActionButtons` rendered the buy submenu for the new room's shop NPC. If the new room had no shop NPC, only "Back ⬅️" appeared. If it had a different NPC, the wrong submenu appeared. From the player's perspective: all the normal root-state buttons (Move, Talk, Inventory, etc.) were gone, replaced by a single "Back" button. It looked like "nothing works."
+
+This was worst in the Rusty Flagon and Market because those are NPC-heavy rooms where players spend time navigating submenus, making the stale `uiState` state more likely to persist across a room transition.
+
+**Fix applied.** Added a `bus.on('player:move', ...)` listener in `src/ui.js` that resets `uiState = 'root'` whenever the player changes rooms. One line. All 402 tests pass.
+
+```js
+// src/ui.js — added alongside the existing ui:back handler
+bus.on('player:move', () => {
+    uiState = 'root';
+});
+```
+
+**What was NOT the issue.** The canvas CSS (`aspect-ratio` + `max-height` conflict) and the double `renderActionButtons` call were identified as separate inefficiencies but were not the cause of this specific bug. The NPCS data is clean — all shop NPCs (barkeep, merchant, herbalist) have their `shop` arrays defined.
+
+**Test gap.** There is no test covering `uiState` persistence across room transitions. `src/ui.test.js` does not exist. Add one as part of Phase 7.9 work covering: (a) `uiState` resets to root on `player:move`, (b) `uiState` resets to root on `ui:back`, (c) rendering in 'buy' state with no local shop NPC shows only the Back button and no crash.
+
+---
+
+### **Phase 7.9: P2P Peer Bugs & Networking Test Suite — TODO**
+
+Three distinct bugs identified from same-machine Chrome+Safari testing (two instances, same computer, two peers detected but "Fraud detected" after ~2 minutes and peers invisible to each other).
+
+---
+
+#### **Bug 1 — False fraud detection: position data in the Merkle root**
+
+**Root cause.** `buildLeafData()` in `networking.js` constructs leaves as:
+```js
+`${id}:${p.level}:${p.xp}:${p.location}:${p.x || 0}:${p.y || 0}`
+```
+
+`x` and `y` are included. Position changes on every tile step. The rollup interval is 10 seconds. When Chrome (the proposer this slot) builds its Merkle root at T=10s, it captures Safari's position as cached in its `players` map — say `(3,4)`. Chrome broadcasts this root. Safari receives it and verifies by running its own `buildLeafData()`. Safari's own self-leaf uses its *current* position `(5,2)` (it has been moving). The roots diverge → Safari fires "Fraud detected in instance!" and submits a fraud proof to the Arbiter.
+
+This is a false positive, not actual cheating. Position is high-frequency state that changes faster than the rollup interval. It does not need to be in a consensus hash — what matters for anti-cheat integrity is `level` and `xp` (hard to fake without detection) and `location` (room-level, not tile-level).
+
+**Fix.** Remove `x` and `y` from the leaf string:
+```js
+// networking.js — buildLeafData()
+.map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
+// self leaf:
+leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
+```
+
+`location` (room key) is appropriate: it only changes on room transitions, is bounded, and is meaningful for shard integrity. Tile position within a room is not integrity-critical and should not be in the rollup.
+
+**Regression guard.** Add to `network.test.js`:
+```js
+test('buildLeafData leaves do not include x,y tile coordinates', () => {
+    const leaf = `peer1:5:120:tavern`;  // correct form
+    expect(leaf).not.toMatch(/:\d+:\d+$/);  // no trailing :x:y
+});
+```
+
+---
+
+#### **Bug 2 — Peers invisible: presence dropped before public key arrives**
+
+**Root cause.** On peer join, `onPeerJoin` fires → after 500ms sends `identity_handshake` AND `presence_single` to the new peer simultaneously. On the *receiving* side, `getIdentity` and `getPresenceSingle` are independent async handlers. `getPresenceSingle` begins:
+
+```js
+const entry = players.get(peerId);
+if (!entry?.publicKey) return;  // ← silently dropped
+```
+
+If `getPresenceSingle` fires before `getIdentity` has stored the public key in `players` — which is a race that happens regularly on same-machine WebRTC where message ordering between action channels is not guaranteed — the presence packet is dropped with no retry. The peer is added to `knownPeers` but never to `players` with a valid presence. The renderer's `if (p.location !== localPlayer.location) return` then filters the peer out entirely. From the player's perspective: the UI says "2 peers" (from the knownPeers count) but nobody appears on canvas.
+
+The retry handshake (`setTimeout(handshake, 3000)`) resends identity but does **not** resend presence. So the peer stays invisible until the next periodic presence broadcast (30s+ depending on `players.size`).
+
+**Fix.** Queue presence packets that arrive before the public key is known, and replay them when the key arrives:
+
+```js
+// networking.js — add at module level
+const _pendingPresence = new Map(); // peerId → ArrayBuffer (most recent)
+
+// in getPresenceSingle handler — replace the early return:
+const entry = players.get(peerId);
+if (!entry?.publicKey) {
+    _pendingPresence.set(peerId, buf);  // hold it, don't drop it
+    return;
+}
+
+// in getIdentity handler — after trackPlayer():
+const pending = _pendingPresence.get(peerId);
+if (pending) {
+    _pendingPresence.delete(peerId);
+    // re-dispatch through the same validation path
+    processPresenceSingle(pending, peerId);
+}
+```
+
+Extract the presence validation logic into a `processPresenceSingle(buf, peerId)` function so both the handler and the replay path use identical validation. Cap `_pendingPresence` at one entry per peer (keep most recent only) to avoid unbounded growth.
+
+**Regression guard.** This is hard to unit test without a real WebRTC connection. Add an explicit test for the queuing logic using the extracted `processPresenceSingle` function with a mock `players` map that starts empty.
+
+---
+
+#### **Bug 3 — Peer in wrong room: ROOM_MAP out of sync with data.js**
+
+**Root cause.** `unpackPresence` in `packer.js` decodes location as:
+```js
+const location = ROOM_MAP[r.u8()] ?? 'cellar';
+```
+
+`ROOM_MAP` is a hardcoded index array in `packer.js`. When new rooms are added to `data.js` (as prescribed in Phase 7.85 world expansion), they must also be appended to `ROOM_MAP` in `packer.js` in the same order. If they are not, a peer in a new room encodes an index that decodes to a different room (or falls back to `'cellar'`). The renderer then places the peer in the wrong room, and since you're not in `'cellar'`, you never see them.
+
+This is silent and produces no error — the byte just maps to the wrong string.
+
+**Fix.** Make `ROOM_MAP` derived from `data.js` rather than hardcoded:
+
+```js
+// packer.js
+import { world } from './data.js';
+export const ROOM_MAP = Object.keys(world).sort(); // deterministic order, same for all peers
+```
+
+Sorting alphabetically gives a stable, reproducible index that automatically stays in sync as rooms are added. Both peers must use the same sort — alphabetical is unambiguous. No manual maintenance.
+
+**Verify** that `ROOM_MAP` remains stable across builds by adding a snapshot test in `packer.test.js`:
+```js
+test('ROOM_MAP index for known rooms is stable', () => {
+    expect(ROOM_MAP.indexOf('tavern')).toBe(ROOM_MAP.indexOf('tavern')); // trivial
+    // More importantly: the index for a known room must not change between runs
+    const idx = ROOM_MAP.indexOf('cellar');
+    expect(typeof idx).toBe('number');
+    expect(idx).toBeGreaterThanOrEqual(0);
+});
+```
+
+And add a test that packs and unpacks a presence for every room in `world` and verifies the location round-trips correctly — this catches any new room that isn't indexed.
+
+---
+
+#### **New test file: `src/networking.peer.test.js`**
+
+No tests currently cover peer-to-peer interaction patterns. Add a dedicated suite using a mock `players` Map and a mock `bus`:
+
+```
+describe('Peer presence lifecycle', () => {
+
+  describe('public key race condition', () => {
+    - presence arriving before publicKey is stored → queued to _pendingPresence
+    - identity arriving after → pending presence replayed through full validation
+    - pending presence for banned key → discarded on replay, not applied
+    - _pendingPresence holds at most one packet per peer (newest wins)
+  })
+
+  describe('presence validation', () => {
+    - valid presence packet updates players map
+    - ph mismatch (doesn't match publicKey hash) → rejected, players map unchanged
+    - XP jump > 100 over shadow → rejected
+    - level jump > 1 over shadow → rejected
+    - presence with location not in ROOM_MAP → falls back to 'cellar', does not crash
+    - presence with unknown room index → ROOM_MAP derived from data.js covers all rooms
+  })
+
+  describe('buildLeafData', () => {
+    - leaves are sorted deterministically regardless of players Map insertion order
+    - selfId is excluded from the players entries, added as a separate leaf
+    - leaf format is id:level:xp:location (no x,y)
+    - two peers with identical level/xp/location produce matching roots
+    - two peers where one has moved (x,y differ) still produce matching roots
+    - leaf data changes when a peer changes room (location changes)
+    - leaf data does NOT change when a peer moves within a room (x,y change)
+  })
+
+  describe('fraud detection', () => {
+    - root mismatch triggers fraud proof submission
+    - root match does not trigger fraud proof
+    - joinTime < 3000ms grace: rollup ignored, no fraud proof even if root differs
+    - self-signed rollup (publicKey === myPubKeyB64) is ignored
+  })
+
+  describe('ROOM_MAP round-trip', () => {
+    - packPresence/unpackPresence round-trips location for every room in world
+    - adding a new room to data.js does not break existing room indices (sorted derivation)
+  })
+
+})
+```
+
+All tests in this file run in Node without WebRTC. Mock `signMessage`/`verifyMessage` to return valid/invalid synchronously where needed.
+
+---
+
+#### **Smoke test addition for §5 (Regression smoke-list)**
+
+Add to the existing smoke-list:
+- [ ] Open game in two browser tabs (or Chrome + Safari same machine). Both show "2 peers" or similar within 10 seconds of the second tab loading.
+- [ ] After 2 minutes with both tabs open and one player moving, neither tab shows "Fraud detected".
+- [ ] Player in Tab A is visible as a sprite on canvas in Tab B when both are in the same room.
+- [ ] Player in Tab A moving to a new room disappears from Tab B's canvas within one presence cycle.
+
+---
+
 ### **Phase 8: Full Zelda-Style Graphical Client — TODO**
 
 Target feel: ALttP / Link's Awakening. No visible text log during play. All feedback is spatial, animated, and momentary.
