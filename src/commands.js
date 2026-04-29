@@ -408,6 +408,7 @@ export const handleCommand = async (cmd) => {
                         triggerShake();
                         // 20% chance to poison from ruin_shade
                         if (localPlayer.currentEnemy.type === 'ruin_shade' && rng(100) < 20) {
+                            if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
                             if (!localPlayer.statusEffects.find(s => s.id === 'poisoned')) {
                                 localPlayer.statusEffects.push({ id: 'poisoned', duration: 5 });
                                 bus.emit('combat:status', { entity: 'You', effect: 'poisoned', stacks: 1 });
@@ -419,7 +420,7 @@ export const handleCommand = async (cmd) => {
             }
 
             // Poison tick
-            const poisonEffect = localPlayer.statusEffects.find(s => s.id === 'poisoned');
+            const poisonEffect = localPlayer.statusEffects?.find(s => s.id === 'poisoned');
             if (poisonEffect && sharedEnemy.hp > 0) {
                 const poisonDmg = 1 + (rng(2));
                 localPlayer.hp -= poisonDmg;
@@ -433,7 +434,7 @@ export const handleCommand = async (cmd) => {
 
             if (sharedEnemy.hp <= 0) {
                 // Clear poison on kill (combat over — infection ends)
-                localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== 'poisoned');
+                localPlayer.statusEffects = (localPlayer.statusEffects || []).filter(s => s.id !== 'poisoned');
                 localPlayer.currentEnemy = null;
                 const loot = rollLoot(loc.enemy, rng);
                 localPlayer.xp += enemyDef.xp;
@@ -561,7 +562,8 @@ export const handleCommand = async (cmd) => {
                 : `You rest and recover ${healed} HP.`;
             log(`${restMsg} (HP: ${localPlayer.hp}/${cap})`, '#0f0');
 
-            if (localPlayer.location === 'tavern' && !localPlayer.statusEffects.find(s => s.id === 'well_rested')) {
+            if (localPlayer.location === 'tavern' && !localPlayer.statusEffects?.find(s => s.id === 'well_rested')) {
+                if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
                 localPlayer.statusEffects.push({ id: 'well_rested', duration: 100 }); // "Today"
                 bus.emit('combat:status', { entity: 'You', effect: 'well_rested', stacks: 1 });
                 log(`The comfort of the Tavern makes you feel <b>Well Rested</b>! (+5 Max HP today)`, '#0af');
@@ -739,16 +741,22 @@ export const handleCommand = async (cmd) => {
         }
 
         case 'vision': {
-            if (!ENABLE_ADS) { log(`The world is currently free of strange visions.`); break; }
             if (localPlayer.location !== 'tavern') { log(`Strange visions only appear in the haze of the Tavern.`); break; }
-            
-            showRewardedAd(() => {
-                localPlayer.forestFights += 5;
-                log(`[Reward] You feel a surge of energy! (+5 Daily Fights)`, '#0f0');
+            if ((localPlayer.forestFights ?? 15) > 0) { log(`You don't feel the pull of visions yet — you still have energy to burn.`); break; }
+            if (ENABLE_ADS) {
+                showRewardedAd(() => {
+                    localPlayer.forestFights += 5;
+                    log(`[Vision] You feel a surge of energy! (+5 Daily Fights)`, '#0f0');
+                    saveLocalState(localPlayer);
+                }, (err) => {
+                    log(`[System] ${err}`, '#f55');
+                });
+            } else {
+                // Meditate for a modest fight restoration (no ad required)
+                localPlayer.forestFights += 3;
+                log(`[Vision] The ale and firelight blur into a waking dream... You feel restored. (+3 Daily Fights)`, '#f0f');
                 saveLocalState(localPlayer);
-            }, (err) => {
-                log(`[System] ${err}`, '#f55');
-            });
+            }
             break;
         }
 

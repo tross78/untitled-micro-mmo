@@ -309,7 +309,7 @@ export const world = {
         exits: { north: 'hallway' },
         exitTiles: [{ x: 5, y: 0, dest: 'hallway', destX: 5, destY: 8 }],
         staticEntities: [],
-        scenery: [{ x: 2, y: 2, label: 'C' }, { x: 8, y: 7, label: 'C' }, { x: 1, y: 8, label: 'C' }],
+        scenery: [{ x: 2, y: 2, label: '📦' }, { x: 8, y: 7, label: '📦' }, { x: 1, y: 8, label: '📦' }],
         enemy: null,
     },
     hallway: {
@@ -323,7 +323,7 @@ export const world = {
             { x: 10, y: 5, dest: 'forest_edge', destX: 1, destY: 5 },
         ],
         staticEntities: [{ id: 'guard', x: 2, y: 2 }],
-        scenery: [{ x: 4, y: 4, label: 'P' }, { x: 6, y: 4, label: 'P' }],
+        scenery: [{ x: 4, y: 4, label: '🏛' }, { x: 6, y: 4, label: '🏛' }],
         enemy: null,
     },
     tavern: {
@@ -340,8 +340,8 @@ export const world = {
             { id: 'bard', x: 2, y: 2 }
         ],
         scenery: [
-            { x: 4, y: 4, label: 'T' }, { x: 8, y: 4, label: 'T' },
-            { x: 4, y: 6, label: 'T' }, { x: 8, y: 6, label: 'T' }
+            { x: 4, y: 4, label: '🍺' }, { x: 8, y: 4, label: '🍺' },
+            { x: 4, y: 6, label: '🍺' }, { x: 8, y: 6, label: '🍺' }
         ],
         enemy: null,
     },
@@ -353,9 +353,9 @@ export const world = {
         exitTiles: [{ x: 0, y: 7, dest: 'tavern', destX: 10, destY: 5 }],
         staticEntities: [{ id: 'merchant', x: 8, y: 8 }],
         scenery: [
-            { x: 5, y: 5, label: 'S' }, { x: 11, y: 5, label: 'S' },
-            { x: 5, y: 11, label: 'S' }, { x: 11, y: 11, label: 'S' },
-            { x: 8, y: 2, label: 'F' }
+            { x: 5, y: 5, label: '🏪' }, { x: 11, y: 5, label: '🏪' },
+            { x: 5, y: 11, label: '🏪' }, { x: 11, y: 11, label: '🏪' },
+            { x: 8, y: 2, label: '⛲' }
         ],
         enemy: null,
     },
@@ -372,8 +372,8 @@ export const world = {
         ],
         staticEntities: [],
         scenery: [
-            { x: 3, y: 3, label: 't' }, { x: 15, y: 4, label: 't' },
-            { x: 5, y: 16, label: 't' }, { x: 17, y: 14, label: 't' }
+            { x: 3, y: 3, label: '🌲' }, { x: 15, y: 4, label: '🌲' },
+            { x: 5, y: 16, label: '🌲' }, { x: 17, y: 14, label: '🌲' }
         ],
         enemy: 'forest_wolf',
         enemyX: 12, enemyY: 5
@@ -390,8 +390,8 @@ export const world = {
         ],
         staticEntities: [],
         scenery: [
-            { x: 5, y: 5, label: 't' }, { x: 18, y: 6, label: 't' },
-            { x: 10, y: 15, label: 't' }, { x: 22, y: 20, label: 't' }
+            { x: 5, y: 5, label: '🌲' }, { x: 18, y: 6, label: '🌲' },
+            { x: 10, y: 15, label: '🌲' }, { x: 22, y: 20, label: '🌲' }
         ],
         enemy: 'goblin',
         enemyX: 15, enemyY: 15
@@ -406,7 +406,7 @@ export const world = {
             { x: 10, y: 0, dest: 'mountain_pass', destX: 10, destY: 18 },
         ],
         staticEntities: [],
-        scenery: [{ x: 5, y: 5, label: 'w' }, { x: 6, y: 5, label: 'w' }],
+        scenery: [{ x: 5, y: 5, label: '🌊' }, { x: 6, y: 5, label: '🌊' }],
         enemy: null,
     },
     bandit_camp: {
@@ -416,7 +416,7 @@ export const world = {
         exits: { south: 'forest_depths' },
         exitTiles: [{ x: 7, y: 14, dest: 'forest_depths', destX: 12, destY: 1 }],
         staticEntities: [],
-        scenery: [{ x: 7, y: 7, label: 'F' }], // Fire
+        scenery: [{ x: 7, y: 7, label: '🔥' }], // Fire
         enemy: 'bandit',
         enemyX: 10, enemyY: 5
     },
@@ -427,7 +427,7 @@ export const world = {
         exits: { south: 'lake_shore' },
         exitTiles: [{ x: 10, y: 29, dest: 'lake_shore', destX: 10, destY: 1 }],
         staticEntities: [],
-        scenery: [{ x: 5, y: 10, label: 'R' }, { x: 15, y: 20, label: 'R' }], // Rocks
+        scenery: [{ x: 5, y: 10, label: '🪨' }, { x: 15, y: 20, label: '🪨' }], // Rocks
         enemy: 'mountain_troll',
         enemyX: 10, enemyY: 10
     },
@@ -441,7 +441,7 @@ export const world = {
             { x: 10, y: 0, dest: 'ruins_descent', destX: 5, destY: 8 },
         ],
         staticEntities: [{ id: 'sage', x: 10, y: 10 }],
-        scenery: [{ x: 5, y: 5, label: 'P' }, { x: 15, y: 15, label: 'P' }],
+        scenery: [{ x: 5, y: 5, label: '🏛' }, { x: 15, y: 15, label: '🏛' }],
         enemy: 'ruin_shade',
         enemyX: 5, enemyY: 10
     },
@@ -455,7 +455,7 @@ export const world = {
             { x: 5, y: 0, dest: 'catacombs', destX: 5, destY: 13, type: 'down' },
         ],
         staticEntities: [],
-        scenery: [{ x: 2, y: 5, label: 'S' }],
+        scenery: [{ x: 2, y: 5, label: '🪜' }],
         enemy: 'skeleton',
         enemyX: 8, enemyY: 5
     },
@@ -469,7 +469,7 @@ export const world = {
             { x: 7, y: 0, dest: 'dungeon_cell', destX: 5, destY: 8 },
         ],
         staticEntities: [],
-        scenery: [{ x: 3, y: 3, label: 'X' }, { x: 12, y: 12, label: 'X' }], // Tombs
+        scenery: [{ x: 3, y: 3, label: '☠' }, { x: 12, y: 12, label: '☠' }], // Tombs
         enemy: 'wraith',
         enemyX: 7, enemyY: 7
     },
@@ -483,7 +483,7 @@ export const world = {
             { x: 9, y: 5, dest: 'throne_room', destX: 1, destY: 5 },
         ],
         staticEntities: [],
-        scenery: [{ x: 1, y: 1, label: '#' }],
+        scenery: [{ x: 1, y: 1, label: '⛓' }],
         enemy: 'skeleton',
         enemyX: 5, enemyY: 5
     },
@@ -494,7 +494,7 @@ export const world = {
         exits: { west: 'dungeon_cell' },
         exitTiles: [{ x: 0, y: 7, dest: 'dungeon_cell', destX: 8, destY: 5 }],
         staticEntities: [],
-        scenery: [{ x: 7, y: 2, label: 'H' }], // Throne
+        scenery: [{ x: 7, y: 2, label: '👑' }], // Throne
         enemy: 'wraith',
         enemyX: 7, enemyY: 10
     },
@@ -505,7 +505,7 @@ export const world = {
         exits: { north: 'forest_edge' },
         exitTiles: [{ x: 6, y: 0, dest: 'forest_edge', destX: 10, destY: 18 }],
         staticEntities: [],
-        scenery: [{ x: 3, y: 3, label: '*' }], // Stalactite
+        scenery: [{ x: 3, y: 3, label: '💧' }], // Stalactite
         enemy: 'cave_troll',
         enemyX: 6, enemyY: 6
     },

@@ -38,7 +38,9 @@ jest.mock('./rules.js', () => {
             if (id === 'sage') return 'ruins';
             if (id === 'merchant') return 'market';
             return null;
-        })
+        }),
+        // Pin to daytime so forest_wolf night-restriction doesn't block attack tests
+        getTimeOfDay: jest.fn(() => 'day'),
     };
 });
 
@@ -49,9 +51,10 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         emitSpy = jest.spyOn(bus, 'emit');
         // Reset player state
         Object.assign(localPlayer, {
-            hp: 50, maxHp: 50, gold: 100, inventory: [], quests: {}, 
+            hp: 50, maxHp: 50, gold: 100, inventory: [], quests: {},
             location: 'cellar', x: 5, y: 5, level: 1, xp: 0,
-            statusEffects: [], equipped: { weapon: null, armor: null }
+            statusEffects: [], equipped: { weapon: null, armor: null },
+            currentEnemy: null, forestFights: 15, combatRound: 0,
         });
         worldState.seed = 'test-seed';
         worldState.day = 1;
@@ -160,15 +163,111 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         test('interact command uses portal if no NPC present', async () => {
             localPlayer.location = 'cellar';
             localPlayer.x = 5; localPlayer.y = 0; // At hallway portal
-            
+
             const npcs = Object.keys(NPCS).filter(id => {
                 const loc = require('./rules.js').getNPCLocation(id);
                 return loc === 'cellar';
             });
-            // console.log('NPCS in cellar:', npcs);
-            
+
             await handleCommand('interact');
             expect(localPlayer.location).toBe('hallway');
+        });
+    });
+
+    // --- Regression tests for bugs found in graphical rewrite ---
+
+    describe('Kill Quest Tracking (combat regression)', () => {
+        test('kill quest data uses nested objective path, not flat properties', () => {
+            // Regression: commands.js was reading q.target/q.count (undefined) instead of
+            // q.objective.target/q.objective.count, so kill quest progress never advanced.
+            const q = QUESTS['wolf_hunt'];
+            expect(q.target).toBeUndefined();   // flat path must not exist
+            expect(q.count).toBeUndefined();    // flat path must not exist
+            expect(q.objective.target).toBe('forest_wolf');
+            expect(q.objective.count).toBeGreaterThan(0);
+        });
+
+        test('all kill quests have objective.target and objective.count', () => {
+            const killQuests = Object.values(QUESTS).filter(q => q.type === 'kill');
+            expect(killQuests.length).toBeGreaterThan(0);
+            killQuests.forEach(q => {
+                expect(q.objective?.target).toBeDefined();
+                expect(q.objective?.count).toBeGreaterThan(0);
+                // These flat paths caused the bug — must not exist
+                expect(q.target).toBeUndefined();
+                expect(q.count).toBeUndefined();
+            });
+        });
+
+        test('attack command in enemy location emits a combat event', async () => {
+            localPlayer.location = 'forest_edge';
+            localPlayer.hp = 50;
+            localPlayer.maxHp = 50;
+            localPlayer.forestFights = 5;
+            localPlayer.combatRound = 0;
+            localPlayer.currentEnemy = null;
+            localPlayer.statusEffects = [];
+
+            await handleCommand('attack');
+
+            const allEvents = emitSpy.mock.calls.map(c => c[0]);
+            const hasCombatEvent = allEvents.some(e => e.startsWith('combat:') || e.startsWith('monster:') || e === 'log');
+            expect(hasCombatEvent).toBe(true);
+        });
+    });
+
+    describe('NPC visibility with empty worldState.seed (offline mode)', () => {
+        test('getNPCLocation works with empty seed and returns home for non-patrol NPCs', () => {
+            // This is the offline case: worldState.seed starts as '' before arbiter connects.
+            // Non-patrol NPCs must still appear at their home location.
+            const { getNPCLocation } = jest.requireActual('./rules.js');
+            expect(getNPCLocation('barkeep', '', 0)).toBe('tavern');
+            expect(getNPCLocation('merchant', '', 0)).toBe('market');
+        });
+
+        test('interact finds NPC in room even when worldState.seed is empty string', async () => {
+            // Reproduce the bug: worldState.seed = '' was falsy so NPCs were hidden.
+            // commands.js getNPCsAt does not gate on seed — it must work with seed=''.
+            worldState.seed = '';
+            worldState.day = 0;
+            localPlayer.location = 'hallway';
+            // The mocked getNPCLocation already returns 'hallway' for 'guard' regardless of args.
+            await handleCommand('interact');
+            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Guard' }));
+        });
+    });
+
+    describe('Move command does room-level transition', () => {
+        test('move north from cellar transitions to hallway', async () => {
+            localPlayer.location = 'cellar';
+            localPlayer.x = 5; localPlayer.y = 5;
+            await handleCommand('move north');
+            expect(localPlayer.location).toBe('hallway');
+        });
+
+        test('move to invalid direction logs error and stays put', async () => {
+            const { log } = require('./ui.js');
+            localPlayer.location = 'cellar';
+            await handleCommand('move south'); // no south exit from cellar
+            expect(localPlayer.location).toBe('cellar');
+            expect(log).toHaveBeenCalledWith("You can't go that way.");
+        });
+    });
+
+    describe('Rest command with uninitialized statusEffects', () => {
+        test('rest does not crash when statusEffects is undefined', async () => {
+            localPlayer.location = 'tavern';
+            localPlayer.hp = 30;
+            localPlayer.statusEffects = undefined;
+            // Should not throw — uses optional chaining ?.find()
+            await expect(handleCommand('rest')).resolves.not.toThrow();
+        });
+
+        test('rest does not crash when statusEffects is empty array', async () => {
+            localPlayer.location = 'tavern';
+            localPlayer.hp = 30;
+            localPlayer.statusEffects = [];
+            await expect(handleCommand('rest')).resolves.not.toThrow();
         });
     });
 });

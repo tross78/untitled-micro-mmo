@@ -1,12 +1,14 @@
 import { drawTile, generateCharacterSprite, zoneTileType } from './graphics.js';
 import { drawRadar } from './ui.js';
 import { VIEWPORT_W, VIEWPORT_H, TILE_PX } from './constants.js';
+import { getTimeOfDay } from './rules.js';
 
 const ARTICLES = new Set(['the', 'a', 'an']);
 const shortName = (name) => {
-    const words = (name || '').split(' ');
+    const str = name || '';
+    const words = str.split(' ');
     const first = words[0].toLowerCase();
-    const label = ARTICLES.has(first) ? words.slice(1).join(' ') : name;
+    const label = ARTICLES.has(first) ? words.slice(1).join(' ') : str;
     return label.slice(0, 10);
 };
 
@@ -89,6 +91,14 @@ export function renderWorld(state, onTileClick) {
         for (let tx = 0; tx < VIEWPORT_W; tx++) {
             const wx = camX + tx;
             const wy = camY + ty;
+            if (wx >= loc.width || wy >= loc.height) {
+                // Out-of-bounds: draw void (wall/darkness)
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fillRect(tx * S, ty * S, S, S);
+                ctx.fillStyle = '#111';
+                ctx.fillRect(tx * S + 1, ty * S + 1, S - 2, S - 2);
+                continue;
+            }
             const seed = hashStr(localPlayer.location) ^ (wx * 7919) ^ (wy * 6271);
             drawTile(ctx, tileType, tx * S, ty * S, seed, S);
         }
@@ -226,14 +236,48 @@ export function renderWorld(state, onTileClick) {
         ctx.fillText(destName, x * S + S / 2, dir === 'north' ? y * S + S - 4 : y * S + 4);
     });
 
+    // --- NIGHT OVERLAY ---
+    const timeOfDay = getTimeOfDay();
+    if (timeOfDay === 'night') {
+        ctx.fillStyle = 'rgba(0, 0, 40, 0.45)';
+        ctx.fillRect(0, 0, CW, CH);
+    } else if (timeOfDay === 'dusk' || timeOfDay === 'dawn') {
+        ctx.fillStyle = 'rgba(60, 20, 0, 0.25)';
+        ctx.fillRect(0, 0, CW, CH);
+    }
+
+    // --- TIME OF DAY BADGE ---
+    const timeIcon = { day: '☀️', night: '🌙', dusk: '🌆', dawn: '🌅' }[timeOfDay] || '☀️';
+    ctx.font = `${Math.floor(S * 0.4)}px monospace`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText(timeIcon, CW - 4, 4);
+
     // --- CLICK HANDLER ---
+    // Build a lookup of what's on each tile so clicks can resolve intent
+    const npcTiles = new Map(); // "wx,wy" -> npcId
+    localNpcs.forEach(id => {
+        const se = (loc.staticEntities || []).find(e => e.id === id);
+        if (se) npcTiles.set(`${se.x},${se.y}`, id);
+    });
+    const enemyTileKey = loc.enemy ? `${loc.enemyX ?? Math.floor(loc.width / 2)},${loc.enemyY ?? Math.floor(loc.height / 2)}` : null;
+
     _canvas.onclick = (e) => {
         const rect = _canvas.getBoundingClientRect();
         const scaleX = CW / rect.width;
         const scaleY = CH / rect.height;
         const tx = Math.floor((e.clientX - rect.left) * scaleX / S) + camX;
         const ty = Math.floor((e.clientY - rect.top)  * scaleY / S) + camY;
-        onTileClick(tx, ty);
+
+        const key = `${tx},${ty}`;
+        if (npcTiles.has(key)) {
+            onTileClick(tx, ty, { type: 'npc', id: npcTiles.get(key) });
+        } else if (enemyTileKey && key === enemyTileKey) {
+            onTileClick(tx, ty, { type: 'enemy' });
+        } else {
+            onTileClick(tx, ty, null);
+        }
     };
 }
 

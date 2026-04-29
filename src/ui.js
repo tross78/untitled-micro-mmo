@@ -1,6 +1,6 @@
 import { worldState, players } from './store.js';
 import { levelBonus, seededRNG, hashStr } from './rules.js';
-import { GAME_NAME, CORPORA } from './data.js';
+import { GAME_NAME, CORPORA, RECIPES } from './data.js';
 import { generateSentence } from './markov.js';
 import { ACTION, inputManager } from './input.js';
 import { bus } from './eventbus.js';
@@ -77,7 +77,7 @@ export const triggerShake = () => {
 
 const actionButtonsEl = document.getElementById('action-buttons');
 
-let uiState = 'root'; // 'root', 'move', 'use', 'talk', 'buy', 'settings'
+let uiState = 'root'; // 'root', 'move', 'use', 'equip', 'talk', 'buy', 'sell', 'craft', 'bank', 'bank_deposit', 'bank_withdraw', 'trade_select', 'trade_session', 'trade_offer_gold', 'trade_offer_items', 'quests', 'settings'
 let _lastAction = null;
 
 bus.on('ui:back', () => {
@@ -115,7 +115,8 @@ export const renderActionButtons = (ctx, onAction) => {
         const rested = localPlayer.statusEffects?.find(s => s.id === 'well_rested') ? ' 😴' : '';
         statusCenter.textContent = `${loc.name}${wepTag}${armTag}${poisoned}${rested}`;
 
-        statusRight.textContent = `${localPlayer.gold}g`;
+        const fightsLeft = localPlayer.forestFights ?? 15;
+        statusRight.textContent = `${localPlayer.gold}g  ⚡${fightsLeft}`;
     }
 
     const addButton = (label, action) => {
@@ -184,6 +185,12 @@ export const renderActionButtons = (ctx, onAction) => {
             addButton('Bank 🏦', () => uiState = 'bank');
         }
 
+        // Craft button — show when craftable recipes exist at current location
+        const craftableHere = (RECIPES || []).filter(r => r.location === localPlayer.location);
+        if (craftableHere.length > 0 && !localPlayer.currentEnemy) {
+            addButton('Craft ⚒️', () => { uiState = 'craft'; renderActionButtons(ctx, onAction); });
+        }
+
         addButton('Say 🗣️', () => {
             const msg = window.prompt("What do you want to say?");
             if (msg) onAction(`say ${msg}`);
@@ -193,7 +200,8 @@ export const renderActionButtons = (ctx, onAction) => {
             addButton('Rest 💤', 'rest');
         }
 
-        if (localPlayer.location === 'tavern' && localPlayer.forestFights <= 0) {
+        // Vision: restore daily fights via meditation — no ad gate
+        if (localPlayer.location === 'tavern' && (localPlayer.forestFights ?? 15) <= 0) {
             addButton('Vision 🔮', 'vision');
         }
 
@@ -387,6 +395,14 @@ export const renderActionButtons = (ctx, onAction) => {
         }
         addButton('Back ⬅️', ACTION.CANCEL);
 
+    } else if (uiState === 'craft') {
+        const craftableHere = (RECIPES || []).filter(r => r.location === localPlayer.location);
+        craftableHere.forEach(r => {
+            const inputs = Object.entries(r.inputs).map(([id, n]) => `${n}x ${ctx.ITEMS[id]?.name || id}`).join(', ');
+            addButton(`${ctx.ITEMS[r.output]?.name || r.output} (${inputs})`, `craft ${r.id}`);
+        });
+        addButton('Back ⬅️', ACTION.CANCEL);
+
     } else if (uiState === 'settings') {
         const inputContainer = document.getElementById('input-container');
         const isVisible = inputContainer && inputContainer.style.display !== 'none';
@@ -411,6 +427,17 @@ export const renderActionButtons = (ctx, onAction) => {
         addButton('Score 🏆', 'score');
         addButton('Net Status 📡', 'net');
         addButton('Map 🗺️', 'map');
+        addButton('Keys ⌨️', () => {
+            log(`\n--- Keyboard Shortcuts ---`, '#aaa');
+            log(`WASD / Arrows — Move one tile`, '#aaa');
+            log(`Space / E — Interact (talk / use exit)`, '#aaa');
+            log(`F / Z — Attack`, '#aaa');
+            log(`I / Tab — Inventory`, '#aaa');
+            log(`Escape — Back / Cancel`, '#aaa');
+            log(`\` (backtick) — Toggle radar view`, '#aaa');
+            log(`~ (tilde) — Toggle log panel`, '#aaa');
+            log(`--------------------------\n`, '#aaa');
+        });
         addButton('Back ⬅️', ACTION.CANCEL);
     }
 };
