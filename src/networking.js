@@ -536,7 +536,10 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             // Security: verify ph is derived from the sender's known public key
             const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
-            if (unpacked.ph !== expectedPh) return;
+            if (unpacked.ph !== expectedPh) {
+                console.warn(`[Security] ph mismatch for ${peerId.slice(0,8)}: got ${unpacked.ph}, expected ${expectedPh}`);
+                return;
+            }
 
             // Security: verify Ed25519 signature
             try {
@@ -606,6 +609,10 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (Date.now() - joinTime < 3000) return;
 
             const leafData = buildLeafData();
+            // Skip fraud check when we don't have the same number of peers as the proposer.
+            // Asymmetric peer views (presence not yet exchanged) produce different roots by design.
+            if (leafData.length !== rollup.count) return;
+
             const { createMerkleRoot } = await import('./crypto.js');
             const ourRoot = await createMerkleRoot(leafData);
 
