@@ -6,7 +6,7 @@ import {
     TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY,
     players, shadowPlayers, shardEnemies, trackPlayer, trackShadowPlayer, bansHash, setBans, bans
 } from './store.js';
-import { INSTANCE_CAP, ENEMIES } from './data.js';
+import { INSTANCE_CAP, ENEMIES, world } from './data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
 import { IBLT } from './iblt.js';
 import { 
@@ -599,41 +599,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
         });
 
-        getRollupLocal(async (data) => {
+        getRollupLocal((data) => {
             lastRollupReceivedAt = Date.now();
-            const { rollup, signature, publicKey } = data;
-            const myPubKeyB64 = await exportKey(playerKeys.publicKey);
-            if (publicKey === myPubKeyB64) return;
-            const proposerPubKey = await importKey(publicKey, 'public');
-            if (!await verifyMessage(JSON.stringify(rollup), signature, proposerPubKey)) return;
-            if (Date.now() - joinTime < 3000) return;
-
-            const leafData = buildLeafData();
-            // Skip fraud check when we don't have the same number of peers as the proposer.
-            // Asymmetric peer views (presence not yet exchanged) produce different roots by design.
-            if (leafData.length !== rollup.count) return;
-
-            const { createMerkleRoot } = await import('./crypto.js');
-            const ourRoot = await createMerkleRoot(leafData);
-
-            if (ourRoot !== rollup.root) {
-                log(`[System] Fraud detected in instance! Submitting proof to Arbiter...`, '#f55');
-                const myPresenceData = {
-                    name: localPlayer.name, location: localPlayer.location, ph: localPlayer.ph,
-                    level: localPlayer.level, xp: localPlayer.xp, ts: Date.now(),
-                    disputedRoot: rollup.root,
-                };
-                const witnessSig = await signMessage(JSON.stringify(myPresenceData), playerKeys.privateKey);
-                gameActions.submitFraudProof({
-                    rollup: data,
-                    witness: {
-                        id: selfId,
-                        presence: myPresenceData,
-                        signature: witnessSig,
-                        publicKey: await exportKey(playerKeys.publicKey),
-                    }
-                });
-            }
         });
 
         getRelay(async (data) => {

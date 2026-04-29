@@ -6,7 +6,7 @@ import {
 import { saveLocalState } from './persistence.js';
 import { log, printStatus, renderActionButtons, startTicker } from './ui.js';
 import {
-    renderWorld, toggleDevRadar, setRefreshCallback,
+    renderWorld, toggleDevRadar, setVisualRefreshCallback, setLogicalRefreshCallback,
     showDialogue, advanceDialogue, isDialogueOpen,
     showToast, showRoomBanner, showItemFanfare, showLevelUp, triggerHitFlash,
     showFloatingText, setTicker

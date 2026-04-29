@@ -172,10 +172,7 @@ export function levelBonus(level) {
 // appId in joinTorrent config handles swarm isolation; room name just needs to be unique within the app.
 // We append the instance ID and a 15-minute time epoch to shard the discovery layer,
 // preventing info_hash bans on public trackers.
-export const getShardName = (loc, inst) => {
-    const epoch = Math.floor(Date.now() / 900000); // 15 minute chunks
-    return `${GAME_NAME}-${loc}-v1-${inst}-${epoch}`;
-};
+export const getShardName = (loc, inst) => `${GAME_NAME}-${loc}-v1-${inst}`;
 
 // --- WORLD DATA ---
 
