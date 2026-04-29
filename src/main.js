@@ -191,6 +191,12 @@ const start = async () => {
             showDialogue(npcName, text);
         });
 
+        bus.on('log', ({ msg }) => {
+            // Strip HTML tags for toast display
+            const cleanMsg = msg.replace(/<[^>]*>?/gm, '');
+            showToast(cleanMsg);
+        });
+
         bus.on('input:action', ({ action, type }) => {
             if (type !== 'down') return;
 

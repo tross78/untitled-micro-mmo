@@ -214,6 +214,28 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             const hasCombatEvent = allEvents.some(e => e.startsWith('combat:') || e.startsWith('monster:') || e === 'log');
             expect(hasCombatEvent).toBe(true);
         });
+
+        test('forest_wolf cannot be attacked at night', async () => {
+            const { getTimeOfDay } = require('./rules.js');
+            getTimeOfDay.mockReturnValue('night');
+            
+            localPlayer.location = 'forest_edge';
+            localPlayer.forestFights = 5;
+            
+            await handleCommand('attack');
+            
+            // Check that no combat events were fired
+            const allEvents = emitSpy.mock.calls.map(c => c[0]);
+            const hasCombatEvent = allEvents.some(e => e.startsWith('combat:') || e.startsWith('monster:'));
+            expect(hasCombatEvent).toBe(false);
+            
+            // Check for the "retreat" log message
+            const logCall = emitSpy.mock.calls.find(c => c[0] === 'log');
+            expect(logCall[1].msg).toContain('retreated');
+            
+            // Restore mock
+            getTimeOfDay.mockReturnValue('day');
+        });
     });
 
     describe('NPC visibility with empty worldState.seed (offline mode)', () => {
@@ -246,11 +268,11 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         });
 
         test('move to invalid direction logs error and stays put', async () => {
-            const { log } = require('./ui.js');
             localPlayer.location = 'cellar';
             await handleCommand('move south'); // no south exit from cellar
             expect(localPlayer.location).toBe('cellar');
-            expect(log).toHaveBeenCalledWith("You can't go that way.");
+            const logCall = emitSpy.mock.calls.find(c => c[0] === 'log');
+            expect(logCall[1].msg).toBe("You can't go that way.");
         });
     });
 

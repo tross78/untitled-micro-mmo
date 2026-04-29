@@ -105,33 +105,33 @@ export const handleCommand = async (cmd) => {
     switch (command) {
         case 'equip': {
             const query = args.slice(1).join(' ').toLowerCase();
-            if (!query) { log(`Usage: /equip <item name>`); break; }
+            if (!query) { bus.emit('log', { msg: `Usage: /equip <item name>` }); break; }
 
             const invIdx = localPlayer.inventory.findIndex(id => (ITEMS[id]?.name || id).toLowerCase() === query || id === query);
-            if (invIdx === -1) { log(`You don't have that.`); break; }
+            if (invIdx === -1) { bus.emit('log', { msg: `You don't have that.` }); break; }
 
             const itemId = localPlayer.inventory[invIdx];
             const item = ITEMS[itemId];
             if (item.type === 'weapon') {
                 localPlayer.equipped.weapon = itemId;
-                log(`You equip the ${item.name}.`, '#0f0');
+                bus.emit('log', { msg: `You equip the ${item.name}.`, color: '#0f0' });
             } else if (item.type === 'armor') {
                 localPlayer.equipped.armor = itemId;
-                log(`You equip the ${item.name}.`, '#0f0');
+                bus.emit('log', { msg: `You equip the ${item.name}.`, color: '#0f0' });
             } else {
-                log(`You can't equip that.`);
+                bus.emit('log', { msg: `You can't equip that.` });
             }
             saveLocalState(localPlayer);
             break;
         }
 
         case 'who': {
-            log(`\n--- PLAYERS NEARBY ---`, '#aaa');
-            players.forEach((p, id) => {
-                log(`${getPlayerName(id)} (Level ${p.level})`, '#aaa');
-            });
-            if (players.size === 0) log(`You are alone here.`, '#555');
-            log(`----------------------\n`, '#aaa');
+            const nearby = Array.from(players.keys()).map(id => getPlayerName(id));
+            if (nearby.length === 0) {
+                bus.emit('log', { msg: `You are alone here.`, color: '#555' });
+            } else {
+                bus.emit('log', { msg: `Nearby: ${nearby.join(', ')}`, color: '#aaa' });
+            }
             break;
         }
 
@@ -192,7 +192,6 @@ export const handleCommand = async (cmd) => {
             } else {
                 const exit = ( loc.exitTiles || []).find(p => p.x === localPlayer.x && p.y === localPlayer.y);
                 if (exit) {
-                    log(`[System] Stepping through the exit to ${world[exit.dest].name}...`, '#f0f');
                     const prevLoc = localPlayer.location;
                     localPlayer.location = exit.dest;
                     localPlayer.x = exit.destX ?? 5;
@@ -202,7 +201,6 @@ export const handleCommand = async (cmd) => {
                     myEntry().then(entry => {
                         if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
                     });
-                    handleCommand('look');
                     if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: exit.dest, x: localPlayer.x, y: localPlayer.y });
                     bus.emit('player:move', { from: prevLoc, to: exit.dest });
                     await joinInstance(exit.dest, currentInstance, currentRtcConfig);
@@ -226,7 +224,7 @@ export const handleCommand = async (cmd) => {
                         }
                     });
                 } else {
-                    log(`Nothing to interact with here.`);
+                    bus.emit('log', { msg: `Nothing to interact with here.` });
                 }
             }
             break;
@@ -330,10 +328,10 @@ export const handleCommand = async (cmd) => {
 
         case 'attack': {
             const loc = world[localPlayer.location];
-            if (!loc.enemy) { log(`There is nothing to fight here.`); break; }
+            if (!loc.enemy) { bus.emit('log', { msg: `There is nothing to fight here.`, color: '#f55' }); break; }
 
             if (loc.enemy === 'forest_wolf' && getTimeOfDay() === 'night') {
-                log(`[System] The wolves have retreated to their dens for the night.`, '#555');
+                bus.emit('log', { msg: `The wolves have retreated to their dens for the night.`, color: '#aaa' });
                 break;
             }
             
@@ -347,7 +345,7 @@ export const handleCommand = async (cmd) => {
 
             if (!sharedEnemy || sharedEnemy.hp <= 0) {
                 if (localPlayer.forestFights <= 0) {
-                    log(`You are too exhausted to look for more trouble today. Come back tomorrow!`, '#aaa');
+                    bus.emit('log', { msg: `You are too exhausted to fight today.`, color: '#aaa' });
                     break;
                 }
                 localPlayer.forestFights--;
@@ -412,7 +410,7 @@ export const handleCommand = async (cmd) => {
                             if (!localPlayer.statusEffects.find(s => s.id === 'poisoned')) {
                                 localPlayer.statusEffects.push({ id: 'poisoned', duration: 5 });
                                 bus.emit('combat:status', { entity: 'You', effect: 'poisoned', stacks: 1 });
-                                log(`You have been poisoned!`, '#f55');
+                                bus.emit('log', { msg: `You have been poisoned!`, color: '#f55' });
                             }
                         }
                     }
@@ -424,11 +422,11 @@ export const handleCommand = async (cmd) => {
             if (poisonEffect && sharedEnemy.hp > 0) {
                 const poisonDmg = 1 + (rng(2));
                 localPlayer.hp -= poisonDmg;
-                log(`Poison courses through you for ${poisonDmg} damage.`, '#a0f');
+                bus.emit('log', { msg: `Poison courses through you for ${poisonDmg} damage.`, color: '#a0f' });
                 poisonEffect.duration--;
                 if (poisonEffect.duration <= 0) {
                     localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== 'poisoned');
-                    log(`The poison has worn off.`, '#a0f');
+                    bus.emit('log', { msg: `The poison has worn off.`, color: '#a0f' });
                 }
             }
 
@@ -494,11 +492,11 @@ export const handleCommand = async (cmd) => {
         }
 
         case 'flee': {
-            if (!localPlayer.currentEnemy) { log(`There is nothing to flee from.`); break; }
+            if (!localPlayer.currentEnemy) { bus.emit('log', { msg: `There is nothing to flee from.` }); break; }
             const combatSeed = hashStr(worldState.seed + worldState.day + selfId + localPlayer.combatRound + 99);
             const rng = seededRNG(combatSeed);
             if (rng(100) < 50) {
-                log(`You successfully fled from combat!`, '#0af');
+                bus.emit('log', { msg: `You successfully fled from combat!`, color: '#0af' });
                 localPlayer.currentEnemy = null;
                 localPlayer.combatRound = 0;
                 const loc = world[localPlayer.location];
@@ -508,7 +506,7 @@ export const handleCommand = async (cmd) => {
                     await handleCommand(`move ${dir}`);
                 }
             } else {
-                log(`Failed to flee! The enemy gets a free hit.`, '#f55');
+                bus.emit('log', { msg: `Failed to flee! The enemy gets a free hit.`, color: '#f55' });
                 const enemyDef = ENEMIES[localPlayer.currentEnemy.type];
                 const scale = 1 + (worldState.threatLevel * 0.1);
                 const scaledAtk = Math.floor(enemyDef.attack * scale);
@@ -517,7 +515,7 @@ export const handleCommand = async (cmd) => {
                 if (!enemyRes.isDodge) {
                     localPlayer.hp -= enemyRes.damage;
                     triggerShake();
-                    log(`${nameColor(enemyDef.name, enemyDef.color)} hits you for ${enemyRes.damage}!`, '#f55');
+                    bus.emit('log', { msg: `${enemyDef.name} hits you for ${enemyRes.damage}!`, color: '#f55' });
                     if (localPlayer.hp <= 0) await handleCommand('die');
                 }
                 saveLocalState(localPlayer);
@@ -526,12 +524,12 @@ export const handleCommand = async (cmd) => {
         }
 
         case 'die': {
-            log(`\nYou have been slain! 💀`, '#f00');
+            bus.emit('log', { msg: `You have been slain! 💀`, color: '#f00' });
             triggerShake();
             const goldLoss = Math.floor(localPlayer.gold * 0.1);
             if (goldLoss > 0) {
                 localPlayer.gold -= goldLoss;
-                log(`You dropped ${goldLoss} gold on the ground.`, '#f55');
+                bus.emit('log', { msg: `You dropped ${goldLoss} gold.`, color: '#f55' });
             }
             localPlayer.hp = 5;
             const deathLoc = localPlayer.location;
@@ -542,15 +540,15 @@ export const handleCommand = async (cmd) => {
             localPlayer.y = 5;
             bus.emit('combat:death', { entity: 'You' });
             bus.emit('player:move', { from: deathLoc, to: 'cellar' });
-            log(`You awaken in the cellar, battered and bruised...`, '#aaa');
+            bus.emit('log', { msg: `You awaken in the cellar...`, color: '#aaa' });
             if (gameActions.sendMove) gameActions.sendMove({ from: deathLoc, to: 'cellar', x: 5, y: 5 });
-            joinInstance('cellar', currentInstance, currentRtcConfig).then(() => handleCommand('look'));
+            joinInstance('cellar', currentInstance, currentRtcConfig);
             saveLocalState(localPlayer, true);
             break;
         }
 
         case 'rest': {
-            if (localPlayer.currentEnemy) { log(`You can't rest mid-combat!`); break; }
+            if (localPlayer.currentEnemy) { bus.emit('log', { msg: `You can't rest mid-combat!` }); break; }
             const bonus = levelBonus(localPlayer.level);
             const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.statusEffects?.find(s => s.id === 'well_rested') ? 5 : 0);
             const healed = Math.max(0, Math.min(10, cap - localPlayer.hp));
@@ -560,13 +558,13 @@ export const handleCommand = async (cmd) => {
             const restMsg = (localPlayer.location === 'tavern' && isNight) 
                 ? `You sleep until dawn and recover ${healed} HP.` 
                 : `You rest and recover ${healed} HP.`;
-            log(`${restMsg} (HP: ${localPlayer.hp}/${cap})`, '#0f0');
+            bus.emit('log', { msg: `${restMsg} (HP: ${localPlayer.hp}/${cap})`, color: '#0f0' });
 
             if (localPlayer.location === 'tavern' && !localPlayer.statusEffects?.find(s => s.id === 'well_rested')) {
                 if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
                 localPlayer.statusEffects.push({ id: 'well_rested', duration: 100 }); // "Today"
                 bus.emit('combat:status', { entity: 'You', effect: 'well_rested', stacks: 1 });
-                log(`The comfort of the Tavern makes you feel <b>Well Rested</b>! (+5 Max HP today)`, '#0af');
+                bus.emit('log', { msg: `The Tavern comfort makes you Well Rested! (+5 Max HP)`, color: '#0af' });
 
                 // tavern_regular quest: track unique days rested at Tavern
                 const tq = localPlayer.quests['tavern_regular'];
@@ -587,7 +585,7 @@ export const handleCommand = async (cmd) => {
         case 'use': {
             const query = args.slice(1).join(' ').toLowerCase();
             const idx = localPlayer.inventory.findIndex(id => id.toLowerCase() === query || (ITEMS[id]?.name || '').toLowerCase() === query);
-            if (idx === -1) { log(`You don't have "${query}".`); break; }
+            if (idx === -1) { bus.emit('log', { msg: `You don't have "${query}".` }); break; }
             const itemId = localPlayer.inventory[idx];
             const item = ITEMS[itemId];
             if (item?.type === 'consumable') {
@@ -595,25 +593,25 @@ export const handleCommand = async (cmd) => {
                 const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.buffs?.rested ? 5 : 0);
                 localPlayer.hp = Math.min(cap, localPlayer.hp + item.heal);
                 localPlayer.inventory.splice(idx, 1);
-                log(`You use the ${nameColor(item.name, item.color)} and recover ${item.heal} HP.`, '#0f0');
+                bus.emit('log', { msg: `You use ${item.name} (+${item.heal} HP).`, color: '#0f0' });
                 saveLocalState(localPlayer);
             } else if (item?.type === 'buff') {
                 if (!localPlayer.buffs) localPlayer.buffs = { rested: false, activeElixir: null };
                 localPlayer.buffs.activeElixir = itemId;
                 localPlayer.inventory.splice(idx, 1);
-                log(`You drink the ${nameColor(item.name, item.color)}. You feel much stronger! (+${item.atkBonus} ATK today)`, '#fa0');
+                bus.emit('log', { msg: `You drink ${item.name} (+${item.atkBonus} ATK).`, color: '#fa0' });
                 saveLocalState(localPlayer);
-            } else log(`You can't use that.`);
+            } else bus.emit('log', { msg: `You can't use that.` });
             break;
         }
 
         case 'rename': {
             const newName = args.slice(1).join(' ').trim();
-            if (!newName) { log(`Usage: /rename <name>`); break; }
-            if (newName.length > 14) { log(`Name too long (max 14 characters).`); break; }
+            if (!newName) { bus.emit('log', { msg: `Usage: /rename <name>` }); break; }
+            if (newName.length > 14) { bus.emit('log', { msg: `Name too long (max 14 characters).` }); break; }
             localPlayer.name = newName;
             saveLocalState(localPlayer);
-            log(`[System] You are now known as ${newName}`);
+            bus.emit('log', { msg: `You are now known as ${newName}` });
             break;
         }
 
@@ -623,7 +621,7 @@ export const handleCommand = async (cmd) => {
             const nextLocId = validateMove(localPlayer.location, dir);
 
             if (nextLocId) {
-                if (localPlayer.currentEnemy) { log(`You can't move while in combat!`); break; }
+                if (localPlayer.currentEnemy) { bus.emit('log', { msg: `You can't move while in combat!` }); break; }
 
                 // Spatial Transition logic
                 const exit = ( loc.exitTiles || []).find(p => p.dir === dir || (p.dest === nextLocId));
@@ -634,12 +632,11 @@ export const handleCommand = async (cmd) => {
                 localPlayer.y = exit?.destY ?? 5;
 
                 saveLocalState(localPlayer);
-                log(`You move ${dir}.`);
 
                 // Cancel active trade on move
                 if (pendingTrade) {
                     setPendingTrade(null);
-                    log(`[Trade] Session cancelled due to movement.`, '#555');
+                    bus.emit('log', { msg: `Trade cancelled due to movement.`, color: '#555' });
                 }
 
                 // Immediate presence broadcast for responsiveness
@@ -647,7 +644,6 @@ export const handleCommand = async (cmd) => {
                     if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
                 });
 
-                handleCommand('look');
                 if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: nextLocId, x: localPlayer.x, y: localPlayer.y });
                 bus.emit('player:move', { from: prevLoc, to: nextLocId });
                 await joinInstance(nextLocId, currentInstance, currentRtcConfig);
@@ -670,7 +666,9 @@ export const handleCommand = async (cmd) => {
                         }
                     }
                 });
-            } else log(`You can't go that way.`);
+            } else {
+                bus.emit('log', { msg: `You can't go that way.` });
+            }
             break;
         }
         case 'map': {
