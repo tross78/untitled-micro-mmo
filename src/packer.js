@@ -4,6 +4,7 @@
  */
 
 import { world } from './data.js';
+import { packHLC, unpackHLC } from './hlc.js';
 
 class SchemaBuffer {
     constructor(size) {
@@ -15,9 +16,15 @@ class SchemaBuffer {
     u16(val) { this.view.setUint16(this.offset, val, false); this.offset += 2; }
     u32(val) { this.view.setUint32(this.offset, val, false); this.offset += 4; }
     ts(val) {
+        // Legacy: accepts a plain number for move packets (wall ms + 0 logical)
         const t = val || Date.now();
         this.u16(Math.floor(t / 0x100000000));
         this.u32(t % 0x100000000);
+    }
+    hlc(val) {
+        // HLC: 4-byte wall + 2-byte logical counter (6 bytes total)
+        packHLC(val || { wall: Date.now() & 0xFFFFFFFF, logical: 0 }, this.view, this.offset);
+        this.offset += 6;
     }
     sig(val) {
         if (val) {
@@ -47,6 +54,11 @@ class SchemaReader {
         const high = this.u16();
         const low = this.u32();
         return high * 0x100000000 + low;
+    }
+    hlc() {
+        const h = unpackHLC(this.view, this.offset);
+        this.offset += 6;
+        return h;
     }
     sig() {
         const r = btoa(String.fromCharCode(...this.buf.subarray(this.offset, this.offset + 64)));
@@ -139,7 +151,7 @@ export const packPresence = (p) => {
         s.u8(id ? QUEST_MAP.indexOf(id) : 255);
         s.u8(data.progress || 0);
     }
-    s.ts(p.ts);
+    s.hlc(p.hlc);
     s.sig(p.signature);
     return s.buf;
 };
@@ -170,9 +182,9 @@ export const unpackPresence = (buf) => {
             quests[QUEST_MAP[idx]] = { progress, completed: false };
         }
     }
-    const ts = r.ts();
+    const hlc = r.hlc();
     const signature = r.sig();
-    return { name, location, ph, level, xp, x, y, gold, inventory, quests, ts, signature };
+    return { name, location, ph, level, xp, x, y, gold, inventory, quests, hlc, signature };
 };
 
 export const packDuelCommit = (c) => {

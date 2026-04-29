@@ -124,11 +124,29 @@ async function startArbiter() {
                 const { signature: witnessSig, publicKey: witnessKey } = witness;
 
                 if (type === 'illegal_move') {
+                    // Stateless verification: re-check the world graph independently.
                     const { move, signature, publicKey: cheaterKey } = proof;
                     if (!await verifyMessage(JSON.stringify(move), signature, cheaterKey)) return;
                     const isValid = Object.values(world[move.from]?.exits || {}).includes(move.to);
                     if (!isValid && move.from !== move.to) {
                         console.log(`[Arbiter] MOVEMENT FRAUD: ${String(cheaterKey).slice(0, 8)}`);
+                        banPeer(cheaterKey);
+                    }
+                    return;
+                }
+
+                if (type === 'xp_fraud') {
+                    // Stateless XP verification: re-run rollLoot + enemy XP lookup.
+                    const { publicKey: cheaterKey, feedEntry, worldSeed, actionEntropy } = proof;
+                    if (!feedEntry || feedEntry.type !== 'kill') return;
+                    const { seededRNG, rollLoot } = await import('../src/rules.js');
+                    const { ENEMIES } = await import('../src/data.js');
+                    const enemyDef = ENEMIES[feedEntry.target];
+                    if (!enemyDef) return;
+                    const rng = seededRNG(actionEntropy);
+                    const expectedXp = enemyDef.xp;
+                    if (feedEntry.xp !== expectedXp) {
+                        console.log(`[Arbiter] XP FRAUD: ${String(cheaterKey).slice(0, 8)} claimed ${feedEntry.xp}, expected ${expectedXp}`);
                         banPeer(cheaterKey);
                     }
                     return;
@@ -144,7 +162,7 @@ async function startArbiter() {
 
                 if (!fraudCounts.has(proposerKey)) fraudCounts.set(proposerKey, new Set());
                 fraudCounts.get(proposerKey).add(witnessKey);
-                
+
                 if (fraudCounts.get(proposerKey).size >= FRAUD_BAN_THRESHOLD) {
                     console.log(`[Arbiter] Proposer Banned: ${String(proposerKey).slice(0, 8)}`);
                     banPeer(proposerKey);

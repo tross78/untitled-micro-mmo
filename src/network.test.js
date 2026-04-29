@@ -22,10 +22,9 @@ describe('Network Protocol Integration', () => {
         // Catches bug: getShardName was used in main.js but not imported — any consumer
         // test that imports and calls it would surface a missing-export error immediately.
         test('getShardName produces correct shard room identifier', () => {
-            const epoch = Math.floor(Date.now() / 900000);
-            expect(getShardName('tavern', 1)).toBe(`hearthwick-tavern-v1-1-${epoch}`);
-            expect(getShardName('cellar', 3)).toBe(`hearthwick-cellar-v1-3-${epoch}`);
-            expect(getShardName('forest_edge', 10)).toBe(`hearthwick-forest_edge-v1-10-${epoch}`);
+            expect(getShardName('tavern', 1)).toBe('hearthwick-tavern-v1-1');
+            expect(getShardName('cellar', 3)).toBe('hearthwick-cellar-v1-3');
+            expect(getShardName('forest_edge', 10)).toBe('hearthwick-forest_edge-v1-10');
         });
 
         test('INSTANCE_CAP is exported and equals 50', () => {
@@ -208,7 +207,7 @@ describe('Network Protocol Integration', () => {
             expect(() => packPresence(makeEntry())).not.toThrow();
         });
 
-        test('packPresence round-trips name, location, level, xp, ts, ph correctly', () => {
+        test('packPresence round-trips name, location, level, xp, hlc, ph correctly', () => {
             const entry = makeEntry({ name: 'Alice', location: 'forest_edge', level: 5, xp: 1200, ph: 'deadbeef' });
             const unpacked = unpackPresence(packPresence(entry));
             expect(unpacked.name).toBe('Alice');
@@ -216,7 +215,7 @@ describe('Network Protocol Integration', () => {
             expect(unpacked.level).toBe(5);
             expect(unpacked.xp).toBe(1200);
             expect(unpacked.ph).toBe('deadbeef');
-            expect(unpacked.ts).toBe(entry.ts);
+            expect(unpacked.hlc).toBeDefined();
             expect(unpacked.signature).toBe(entry.signature);
         });
 
@@ -249,14 +248,15 @@ describe('Network Protocol Integration', () => {
                 ph: '12345678',
                 level: 10,
                 xp: 5000,
-                ts: 1700000000000,
+                hlc: { wall: 1700000000, logical: 7 },
                 signature: btoa('s'.repeat(64))
             };
             const unpacked = unpackPresence(packPresence(original));
             expect(unpacked.name).toBe(original.name);
             expect(unpacked.level).toBe(original.level);
             expect(unpacked.xp).toBe(original.xp);
-            expect(unpacked.ts).toBe(original.ts);
+            expect(unpacked.hlc.wall).toBe(original.hlc.wall);
+            expect(unpacked.hlc.logical).toBe(original.hlc.logical);
             expect(unpacked.ph).toBe(original.ph);
             expect(unpacked.signature).toBe(original.signature);
         });

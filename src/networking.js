@@ -8,7 +8,9 @@ import {
 } from './store.js';
 import { INSTANCE_CAP, ENEMIES, world } from './data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
-import { IBLT } from './iblt.js';
+import { Minisketch } from './minisketch.js';
+import { HyParView } from './hyparview.js';
+import { sendHLC, recvHLC, cmpHLC } from './hlc.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, unpackPresence, packDuelCommit, unpackDuelCommit,
@@ -39,6 +41,21 @@ const ROLLUP_INTERVAL = 10000;
 const SKETCH_INTERVAL = 30000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
 
+// Token bucket: max XP rate derived from the best enemy's XP value.
+// Bucket holds 60s of max-rate XP so tab-switches and network gaps don't false-positive.
+const MAX_XP_PER_MS = Math.max(...Object.values(ENEMIES).map(e => e.xp || 0), 1) / 5000;
+const XP_BUCKET_CAPACITY = MAX_XP_PER_MS * 60000;
+
+// Per-peer XP rate buckets and HLC tracking for causal ordering.
+const xpBuckets = new Map();   // peerId → { tokens, lastRefill }
+const peerHlc = new Map();     // peerId → last accepted HLC
+
+// Pending commit-reveal entries: peerId → Map<seq, { commit, ts }>
+const pendingCommits = new Map();
+
+// Per-peer feed heads for append-only signed action chain.
+const feedHeads = new Map();   // peerId → { seq, hash }
+
 // x,y are excluded deliberately — tile position changes every keystroke and would
 // cause false fraud alerts between the 10s rollup interval. Only level, xp, and
 // location (room-level, bounded) belong in the consensus hash.
@@ -50,6 +67,39 @@ const buildLeafData = () => {
     leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
     leaves.sort();
     return leaves;
+};
+
+const buildSketch = () => {
+    const ms = new Minisketch(32);
+    players.forEach((_, id) => ms.add(id));
+    ms.add(selfId);
+    return ms;
+};
+
+// Returns true if the XP gain is within the token bucket allowance for this peer.
+const checkXpRate = (peerId, newXp, oldXp) => {
+    const gain = newXp - oldXp;
+    if (gain <= 0) return true;
+    const now = Date.now();
+    let bucket = xpBuckets.get(peerId);
+    if (!bucket) {
+        bucket = { tokens: XP_BUCKET_CAPACITY, lastRefill: now };
+        xpBuckets.set(peerId, bucket);
+    }
+    const elapsed = now - bucket.lastRefill;
+    bucket.tokens = Math.min(XP_BUCKET_CAPACITY, bucket.tokens + MAX_XP_PER_MS * elapsed);
+    bucket.lastRefill = now;
+    bucket.tokens -= gain;
+    return bucket.tokens >= 0;
+};
+
+// Returns true if the incoming HLC is newer than the last accepted one for this peer.
+const checkAndUpdateHlc = (peerId, incoming) => {
+    const last = peerHlc.get(peerId);
+    if (last && cmpHLC(incoming, last) <= 0) return false;
+    const updated = recvHLC(incoming);
+    peerHlc.set(peerId, updated);
+    return true;
 };
 
 export const updateSimulation = (state) => {
@@ -285,10 +335,7 @@ export const initNetworking = async (rtcConfig) => {
     const scheduleNextSketch = () => {
         const delay = 30000 + (players.size * 5000);
         setTimeout(() => {
-            const iblt = new IBLT();
-            players.forEach((_, id) => iblt.insert(id));
-            iblt.insert(selfId);
-            if (gameActions.sendSketch) gameActions.sendSketch(iblt.serialize());
+            if (gameActions.sendSketch) gameActions.sendSketch(buildSketch().serialize());
             scheduleNextSketch();
         }, delay);
     };
@@ -359,32 +406,227 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendTradeFinal, getTradeFinal] = r.makeAction('trade_finalized');
         const [sendSketch, getSketch] = r.makeAction('presence_sketch');
         const [sendRequest, getRequest] = r.makeAction('request_presence');
+        const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
+        // Plumtree lazy-push announcements and commit-reveal wire actions
+        const [sendAnnounce, getAnnounce] = r.makeAction('presence_announce');
+        const [sendCommit, getCommit] = r.makeAction('commit_action');
+        const [sendReveal, getReveal] = r.makeAction('reveal_action');
+
+        // HyParView logical overlay for this shard
+        const hpv = new HyParView();
+
+        // Presence packets that arrive before the peer's public key is known
+        // are queued here (keyed by peerId, one packet max — newest wins).
+        const _pendingPresence = new Map();
+
+        // --- helpers ---
+
+        const localIds = () => [...players.keys(), selfId];
+
+        const processPresenceSingle = async (buf, peerId) => {
+            const entry = players.get(peerId);
+            if (!entry?.publicKey) {
+                _pendingPresence.set(peerId, buf);
+                return;
+            }
+
+            if (bans.has(entry.publicKey)) {
+                players.delete(peerId);
+                _pendingPresence.delete(peerId);
+                return;
+            }
+
+            const unpacked = unpackPresence(buf);
+
+            // HLC causal ordering: reject stale/replayed presence
+            if (unpacked.hlc && !checkAndUpdateHlc(peerId, unpacked.hlc)) return;
+
+            // Security: ph must derive from the sender's known public key
+            const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
+            if (unpacked.ph !== expectedPh) {
+                console.warn(`[Security] ph mismatch for ${peerId.slice(0,8)}: got ${unpacked.ph}, expected ${expectedPh}`);
+                return;
+            }
+
+            // Security: Ed25519 signature
+            try {
+                const { signature, ...sigData } = unpacked;
+                const pubKey = await importKey(entry.publicKey, 'public');
+                if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) return;
+            } catch { return; }
+
+            // Security: token bucket XP rate check
+            const shadow = shadowPlayers.get(peerId);
+            if (shadow) {
+                if (!checkXpRate(peerId, unpacked.xp, shadow.xp)) {
+                    console.warn(`[Security] XP rate exceeded for ${peerId.slice(0,8)}: ${unpacked.xp} vs ${shadow.xp}`);
+                    return;
+                }
+                if (unpacked.level > shadow.level + 1) return;
+            }
+
+            trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
+            trackShadowPlayer(peerId, unpacked);
+        };
+
+        // Plumtree: send full payload to eager peers, lazy announcement to passive peers.
+        const plumSend = (packed) => {
+            const msgId = HyParView.msgId(hashStr, packed);
+            hpv.markSeen(msgId);
+            const eager = hpv.eagerPeers();
+            const lazy = hpv.lazyPeers();
+            if (eager.length) sendPresenceSingle(packed, eager);
+            else sendPresenceSingle(packed); // fallback broadcast when no eager peers yet
+            if (lazy.length) sendAnnounce({ msgId }, lazy);
+        };
+
+        // --- action handlers ---
 
         myEntry().then(entry => {
-            if (entry) sendPresenceSingle(packPresence(entry));
+            if (entry) plumSend(packPresence(entry));
+        });
+
+        getAnnounce(async ({ msgId }, peerId) => {
+            if (hpv.hasSeen(msgId)) return;
+            // We haven't seen this payload — pull it from the sender and promote them.
+            hpv.promote(peerId);
+            sendRequest([selfId], [peerId]); // use request_presence to pull the missing entry
+        });
+
+        getSketch(async (remoteArr, peerId) => {
+            const localMs = buildSketch();
+            const remoteMs = Minisketch.fromSerialized(remoteArr);
+            const { added, removed } = Minisketch.decode(localMs, remoteMs, localIds(), []);
+            if (added.length > 32 || removed.length > 32) return; // cap for safety
+            if (removed.length > 0) sendRequest(removed.map(String), [peerId]);
+            if (added.length > 0) {
+                const response = {};
+                for (const [id, data] of players.entries()) {
+                    if (added.some(h => h === Number(Minisketch.hashId(id)))) {
+                        response[id] = { presence: packPresence(data), publicKey: data.publicKey };
+                    }
+                }
+                if (added.some(h => h === Number(Minisketch.hashId(selfId)))) {
+                    const entry = await myEntry();
+                    response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+                }
+                if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
+            }
+        });
+
+        getRequest(async (idStrings, peerId) => {
+            const ids = idStrings.map(s => Number(Minisketch.hashId(s)));
+            const response = {};
+            for (const [id, data] of players.entries()) {
+                if (ids.some(x => x === Number(Minisketch.hashId(id)))) {
+                    response[id] = { presence: packPresence(data), publicKey: data.publicKey };
+                }
+            }
+            if (ids.some(x => x === Number(Minisketch.hashId(selfId)))) {
+                const entry = await myEntry();
+                response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+            }
+            if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
+        });
+
+        getPresenceSingle(async (buf, peerId) => {
+            if (peerId === selfId) return;
+            const msgId = HyParView.msgId(hashStr, buf);
+            hpv.markSeen(msgId);
+            await processPresenceSingle(buf, peerId);
+        });
+
+        getPresenceBatch(async (data) => {
+            for (const [id, { presence, publicKey }] of Object.entries(data)) {
+                if (id === selfId || !publicKey) continue;
+                if (bans.has(publicKey)) continue;
+                try {
+                    const unpacked = unpackPresence(presence);
+
+                    // HLC causal ordering
+                    if (unpacked.hlc && !checkAndUpdateHlc(id, unpacked.hlc)) continue;
+
+                    const shadow = shadowPlayers.get(id);
+                    if (shadow) {
+                        if (!checkXpRate(id, unpacked.xp, shadow.xp)) {
+                            console.warn(`[Security] XP rate exceeded for ${id.slice(0,8)}`);
+                            continue;
+                        }
+                        if (unpacked.level > shadow.level + 1) continue;
+                    }
+
+                    const expectedPh = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+                    if (unpacked.ph !== expectedPh) continue;
+                    const { signature, ...sigData } = unpacked;
+                    const pubKey = await importKey(publicKey, 'public');
+                    if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) continue;
+                    const entry = players.get(id) || {};
+                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
+                    trackShadowPlayer(id, unpacked);
+                } catch { }
+            }
+        });
+
+        // Commit-reveal: peer commits to a kill action before claiming XP.
+        getCommit(({ seq, commit }, peerId) => {
+            if (!pendingCommits.has(peerId)) pendingCommits.set(peerId, new Map());
+            pendingCommits.get(peerId).set(seq, { commit, ts: Date.now() });
+        });
+
+        getReveal(async ({ seq, type, target, nonce }, peerId) => {
+            const entry = players.get(peerId);
+            if (!entry?.publicKey) return;
+            const commits = pendingCommits.get(peerId);
+            const pending = commits?.get(seq);
+            if (!pending) return; // no matching commit — ignore
+            commits.delete(seq);
+
+            // Verify hash: H(type|target|nonce) must match committed hash
+            const revealStr = `${type}|${target}|${nonce}`;
+            const expectedCommit = (hashStr(revealStr) >>> 0).toString(16).padStart(8, '0');
+            if (pending.commit !== expectedCommit) {
+                console.warn(`[Security] Commit-reveal mismatch for ${peerId.slice(0,8)}: seq ${seq}`);
+                return;
+            }
+
+            // Verify action feed chain
+            const head = feedHeads.get(peerId);
+            const prevHash = head ? (hashStr(`${head.seq}:${head.hash}`) >>> 0).toString(16).padStart(8, '0') : '00000000';
+            const expectedSeq = head ? head.seq + 1 : 1;
+            if (seq !== expectedSeq) {
+                console.warn(`[Security] Feed seq gap for ${peerId.slice(0,8)}: got ${seq}, expected ${expectedSeq}`);
+                return;
+            }
+            const entryHash = (hashStr(`${seq}:${type}:${target}:${prevHash}`) >>> 0).toString(16).padStart(8, '0');
+            feedHeads.set(peerId, { seq, hash: entryHash });
+        });
+
+        getRollupLocal((data) => {
+            lastRollupReceivedAt = Date.now();
+        });
+
+        getRelay(async (data) => {
+            const { state, signature } = data;
+            const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+            if (await verifyMessage(stateStr, signature, arbiterPublicKey)) {
+                updateSimulation(typeof state === 'string' ? JSON.parse(state) : state);
+            }
         });
 
         getActionLog(async (buf, peerId) => {
             const data = unpackActionLog(buf);
             const entry = players.get(peerId);
             if (!entry?.publicKey) return;
-
             try {
                 const pubKey = await importKey(entry.publicKey, 'public');
                 const sigData = JSON.stringify({ type: data.type, index: data.index, target: data.target, data: data.data });
                 if (!await verifyMessage(sigData, data.signature, pubKey)) return;
-
                 let shadow = shadowPlayers.get(peerId);
-                if (!shadow) {
-                    shadow = { level: 1, xp: 0, inventory: [], gold: 0, actionIndex: -1 };
-                }
+                if (!shadow) shadow = { level: 1, xp: 0, inventory: [], gold: 0, actionIndex: -1 };
                 trackShadowPlayer(peerId, shadow);
-
                 if (data.index <= shadow.actionIndex) return;
-
                 const actionEntropy = hashStr(worldState.seed + '|' + entry.publicKey + '|' + data.index);
                 const rng = seededRNG(actionEntropy);
-
                 if (data.type === 'kill') {
                     const enemyDef = ENEMIES[data.target];
                     if (enemyDef) {
@@ -416,7 +658,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getTradeFinal((data) => {
             const { peerA, peerB, delta } = data;
             [peerA, peerB].forEach(id => {
-                let shadow = shadowPlayers.get(id);
+                const shadow = shadowPlayers.get(id);
                 if (shadow) {
                     const d = delta[id];
                     shadow.gold -= (d.gives_gold || 0);
@@ -442,180 +684,28 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getDuelCommit(async (buf, peerId) => {
             const chan = activeChannels.get(peerId);
             if (!chan) return;
-
             const processCommit = async (retryCount = 0) => {
                 const playerEntry = players.get(peerId);
                 if (!playerEntry?.publicKey) {
-                    if (retryCount < 5) {
-                        console.log(`[Duel] Waiting for handshake from ${peerId}... (Retry ${retryCount + 1})`);
-                        setTimeout(() => processCommit(retryCount + 1), 1000);
-                    } else {
-                        console.warn(`[Duel] Handshake timeout for ${peerId}.`);
-                    }
+                    if (retryCount < 5) setTimeout(() => processCommit(retryCount + 1), 1000);
+                    else console.warn(`[Duel] Handshake timeout for ${peerId}.`);
                     return;
                 }
-
                 const { commit, signature } = unpackDuelCommit(buf);
                 try {
                     const opponentPubKey = await importKey(playerEntry.publicKey, 'public');
-                    if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) {
-                        console.error(`[Duel] Signature verification failed for ${peerId}`);
-                        return;
-                    }
+                    if (!await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) return;
                     chan.theirHistory.push(commit);
                     bus.emit('duel:commit-received', { targetId: peerId });
-                } catch (e) {
-                    console.error(`[Duel] Error processing commit from ${peerId}:`, e.message);
-                }
+                } catch (e) { console.error(`[Duel] Error processing commit from ${peerId}:`, e.message); }
             };
-
             await processCommit();
-        });
-
-        getSketch(async (remoteTable, peerId) => {
-            const localIblt = new IBLT();
-            players.forEach((_, id) => localIblt.insert(id));
-            localIblt.insert(selfId);
-            const remoteIblt = IBLT.fromSerialized(remoteTable);
-            const diff = IBLT.subtract(localIblt, remoteIblt);
-            const { added, removed, success } = diff.decode();
-            if (!success) return;
-            // Cap diff size to prevent a malicious zero-IBLT from enumerating all shard players
-            if (added.length > 50 || removed.length > 50) return;
-            if (removed.length > 0) sendRequest(removed.map(id => id.toString()), peerId);
-            if (added.length > 0) {
-                const response = {};
-                for (const [id, data] of players.entries()) {
-                    if (added.some(h => h === IBLT.hashId(id))) {
-                        response[id] = { presence: packPresence(data), publicKey: data.publicKey };
-                    }
-                }
-                if (added.some(h => h === IBLT.hashId(selfId))) {
-                    const entry = await myEntry();
-                    response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
-                }
-                if (Object.keys(response).length > 0) sendPresenceBatch(response, peerId);
-            }
-        });
-
-        getRequest(async (idStrings, peerId) => {
-            const ids = idStrings.map(s => BigInt(s));
-            const response = {};
-            for (const [id, data] of players.entries()) {
-                if (ids.some(x => x === IBLT.hashId(id))) {
-                    response[id] = { presence: packPresence(data), publicKey: data.publicKey };
-                }
-            }
-            if (ids.some(x => x === IBLT.hashId(selfId))) {
-                const entry = await myEntry();
-                response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
-            }
-            if (Object.keys(response).length > 0) sendPresenceBatch(response, peerId);
-        });
-
-        // Presence packets that arrive before the peer's public key is known
-        // are queued here (keyed by peerId, one packet max — newest wins).
-        // Replayed via processPresenceSingle once the identity handshake completes.
-        const _pendingPresence = new Map();
-
-        const processPresenceSingle = async (buf, peerId) => {
-            const entry = players.get(peerId);
-            if (!entry?.publicKey) {
-                _pendingPresence.set(peerId, buf);
-                return;
-            }
-
-            // Security: Arbiter Blacklist
-            if (bans.has(entry.publicKey)) {
-                players.delete(peerId);
-                _pendingPresence.delete(peerId);
-                return;
-            }
-
-            const unpacked = unpackPresence(buf);
-
-            // Security: verify ph is derived from the sender's known public key
-            const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
-            if (unpacked.ph !== expectedPh) {
-                console.warn(`[Security] ph mismatch for ${peerId.slice(0,8)}: got ${unpacked.ph}, expected ${expectedPh}`);
-                return;
-            }
-
-            // Security: verify Ed25519 signature
-            try {
-                const { signature, ...sigData } = unpacked;
-                const pubKey = await importKey(entry.publicKey, 'public');
-                if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) return;
-            } catch { return; }
-
-            // Security: shadow validation (XP/level sanity)
-            const shadow = shadowPlayers.get(peerId);
-            if (shadow) {
-                if (unpacked.xp > shadow.xp + 100) return;
-                if (unpacked.level > shadow.level + 1) return;
-            }
-
-            trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
-            trackShadowPlayer(peerId, unpacked);
-        };
-
-        getPresenceSingle(async (buf, peerId) => {
-            if (peerId === selfId) return;
-            await processPresenceSingle(buf, peerId);
-        });
-
-        getPresenceBatch(async (data) => {
-            for (const [id, { presence, publicKey }] of Object.entries(data)) {
-                if (id === selfId || !publicKey) continue;
-
-                // Security: Arbiter Blacklist
-                if (bans.has(publicKey)) continue;
-
-                try {
-                    const unpacked = unpackPresence(presence);
-                    
-                    // Security Check: Shadow Validation
-                    const shadow = shadowPlayers.get(id);
-                    if (shadow) {
-                        if (unpacked.xp > shadow.xp + 100) {
-                            console.warn(`[Security] Rejecting XP jump for ${id}: ${unpacked.xp} > ${shadow.xp}`);
-                            continue;
-                        }
-                        if (unpacked.level > shadow.level + 1) {
-                            console.warn(`[Security] Rejecting Level jump for ${id}: ${unpacked.level} > ${shadow.level}`);
-                            continue;
-                        }
-                    }
-
-                    const expectedPh = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
-                    if (unpacked.ph !== expectedPh) continue;
-                    const { signature, ...sigData } = unpacked;
-                    const pubKey = await importKey(publicKey, 'public');
-                    if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) continue;
-                    const entry = players.get(id) || {};
-                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
-                    trackShadowPlayer(id, unpacked);
-                } catch { }
-            }
-        });
-
-        getRollupLocal((data) => {
-            lastRollupReceivedAt = Date.now();
-        });
-
-        getRelay(async (data) => {
-            const { state, signature } = data;
-            const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
-            if (await verifyMessage(stateStr, signature, arbiterPublicKey)) {
-                updateSimulation(typeof state === 'string' ? JSON.parse(state) : state);
-            }
         });
 
         getMove(async (buf, peerId) => {
             const data = unpackMove(buf);
             const entry = players.get(peerId);
             if (!entry?.publicKey) return;
-
             try {
                 const pubKey = await importKey(entry.publicKey, 'public');
                 const sigData = JSON.stringify({ from: data.from, to: data.to, x: data.x, y: data.y, ts: data.ts });
@@ -623,12 +713,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     console.warn(`[Security] Invalid move signature from ${peerId}`);
                     return;
                 }
-
-                // Path Validation (from data.js world graph)
                 const isValidRoomJump = Object.values(world[data.from]?.exits || {}).includes(data.to);
                 const isMicroMove = data.from === data.to;
-                
-                // Enforce max 1-tile distance for micro-moves to prevent blinking
                 if (isMicroMove && entry.x !== undefined) {
                     const dist = Math.abs(data.x - entry.x) + Math.abs(data.y - entry.y);
                     if (dist > 1) {
@@ -636,11 +722,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                         return;
                     }
                 }
-
                 if (!isValidRoomJump && !isMicroMove) {
                     console.warn(`[Security] Illegal teleport attempt by ${peerId}: ${data.from} -> ${data.to}`);
-                    
-                    // Submit Fraud Proof to Arbiter
                     if (gameActions.submitFraudProof) {
                         gameActions.submitFraudProof({
                             type: 'illegal_move',
@@ -659,17 +742,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     }
                     return;
                 }
-
-                // Update peer coordinates locally
                 trackPlayer(peerId, { ...entry, location: data.to, x: data.x, y: data.y, ts: Date.now() });
-
                 bus.emit('peer:move', { peerId, data });
             } catch (e) { console.error('[Security] Move validation fail:', e); }
         });
 
         getEmote((buf, peerId) => {
-            const data = unpackEmote(buf);
-            bus.emit('peer:emote', { peerId, data });
+            bus.emit('peer:emote', { peerId, data: unpackEmote(buf) });
         });
 
         getMonsterDmg((data) => {
@@ -682,30 +761,31 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
         });
 
-        const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
-
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId);
+            hpv.onJoin(peerId);
+
+            // Immediate targeted sketch — reconcile peer roster within ~200ms of connection
+            sendSketch(buildSketch().serialize(), [peerId]);
+
             const handshake = async () => {
                 if (!knownPeers.has(peerId) || players.get(peerId)?.publicKey) return;
                 sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
                 const entry = await myEntry();
-                if (entry && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry, [peerId]);
+                if (entry && gameActions.sendPresenceSingle) {
+                    gameActions.sendPresenceSingle(entry, [peerId]);
+                }
                 setTimeout(handshake, 3000);
             };
-            setTimeout(handshake, 500);
+            setTimeout(handshake, 100); // reduced from 500ms
         });
 
         getIdentity(({ publicKey }, peerId) => {
-            // Security: Arbiter Blacklist
             if (bans.has(publicKey)) return;
-
             const entry = players.get(peerId) || {};
             const isNew = !entry.publicKey;
             trackPlayer(peerId, { ...entry, publicKey, ts: Date.now() });
             if (isNew) log(`[Social] Peer ${peerId.slice(0,4)} entered the world.`, '#aaa');
-
-            // Replay any presence packet that arrived before the key was known
             const pending = _pendingPresence.get(peerId);
             if (pending) {
                 _pendingPresence.delete(peerId);
@@ -716,8 +796,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         r.onPeerLeave(peerId => {
             bus.emit('peer:leave', { peerId });
             knownPeers.delete(peerId);
+            hpv.onLeave(peerId);
             players.delete(peerId);
             shadowPlayers.delete(peerId);
+            xpBuckets.delete(peerId);
+            peerHlc.delete(peerId);
+            feedHeads.delete(peerId);
+            pendingCommits.delete(peerId);
             _pendingPresence.delete(peerId);
             const chan = activeChannels.get(peerId);
             if (chan) {
@@ -726,19 +811,28 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
         });
 
-        return { 
-            sendMove, sendEmote, sendMonsterDmg, sendPresenceSingle, sendPresenceBatch, 
-            sendRelay, sendRollupLocal, sendSketch, sendRequest, 
+        return {
+            sendMove, sendEmote, sendMonsterDmg, sendPresenceSingle, sendPresenceBatch,
+            sendRelay, sendRollupLocal, sendSketch, sendRequest,
             sendDuelChallenge, sendDuelAccept, sendDuelCommit,
-            sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal
+            sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
+            sendCommit, sendReveal, plumSend,
         };
     };
 
     const r = setupShard(rooms.torrent);
 
+    // Re-broadcast presence 800ms after joining — catches peers whose data channel
+    // wasn't open when the initial sendPresenceSingle fired in setupShard.
+    setTimeout(async () => {
+        const entry = await myEntry();
+        if (entry) r.plumSend(packPresence(entry));
+    }, 800);
+
     Object.assign(gameActions, {
         sendMove: async (data) => {
-            const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: Date.now() };
+            const hlc = sendHLC();
+            const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: hlc.wall };
             const signature = await signMessage(JSON.stringify(moveData), playerKeys.privateKey);
             r.sendMove(packMove({ ...moveData, signature }));
         },
@@ -746,8 +840,10 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendMonsterDmg: (data) => r.sendMonsterDmg(data),
         sendActionLog: (data) => r.sendActionLog(packActionLog(data)),
         sendPresenceSingle: (data, target) => {
-            const packed = packPresence(data);
-            target ? r.sendPresenceSingle(packed, target) : r.sendPresenceSingle(packed);
+            const hlc = sendHLC();
+            const packed = packPresence({ ...data, hlc });
+            if (target) r.sendPresenceSingle(packed, target);
+            else r.plumSend(packed);
         },
         sendPresenceBatch: (data, target) => {
             target ? r.sendPresenceBatch(data, target) : r.sendPresenceBatch(data);
@@ -761,7 +857,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendTradeAccept: (data, target) => r.sendTradeAccept(data, target),
         sendTradeCommit: (data, target) => r.sendTradeCommit(packTradeCommit(data), target),
         sendTradeFinal: (data) => r.sendTradeFinal(data),
-        sendSketch: (data) => r.sendSketch(data),
+        sendSketch: (data, target) => target ? r.sendSketch(data, target) : r.sendSketch(data),
         sendRequest: (data, target) => r.sendRequest(data, target),
+        // Commit-reveal: call sendCommitAction before the kill, sendRevealAction after.
+        sendCommitAction: ({ seq, type, target, nonce }) => {
+            const commit = (hashStr(`${type}|${target}|${nonce}`) >>> 0).toString(16).padStart(8, '0');
+            r.sendCommit({ seq, commit });
+        },
+        sendRevealAction: (data) => r.sendReveal(data),
     });
 };

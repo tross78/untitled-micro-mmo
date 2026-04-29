@@ -791,6 +791,322 @@ Add to the existing smoke-list:
 
 ---
 
+### **Phase 7.9.5: Advanced Peering & Fraud Detection — TODO**
+
+Six techniques drawn from distributed systems research and cryptographic protocol design. Ordered by implementation risk — implement in sequence.
+
+---
+
+#### **Technique 1 — Hybrid Logical Clocks (HLC) on all timestamped messages**
+
+**From:** Kulkarni et al. 2014. Used in CockroachDB, YugabyteDB.
+
+**Problem.** Every presence and move packet uses `ts: Date.now()`. Physical clocks drift between browsers. Two events can share the same millisecond timestamp. Out-of-order delivery cannot be detected — a stale presence packet can overwrite a newer one if it arrives late.
+
+**Fix.** Replace all `ts: Date.now()` with an HLC value. An HLC is `{ wall: ms, logical: counter }` packed into a single `uint64` (or two uint32s). Rules: on send, `hlc = { wall: max(Date.now(), lastHlc.wall), logical: wall === lastHlc.wall ? lastHlc.logical + 1 : 0 }`. On receive, `hlc = max(local, received) + 1`. HLCs are monotonic, stay within a bounded skew of wall time, and give causal ordering for free.
+
+**Impact on peering.** When a peer receives two presence packets, drop the one with the lower HLC regardless of arrival order. Currently a packet dropped and retried 3s later will overwrite the newer state — with HLC it's correctly ordered.
+
+**Impact on fraud.** Move packets include HLC. A move with `hlc ≤ peer's last accepted hlc` is a replay attack. Reject it. No separate sequence number needed.
+
+**Implementation.**
+- Add `src/hlc.js` (~30 lines): `createHLC()`, `sendHLC(last)`, `recvHLC(last, received)`, `packHLC(hlc)` → uint32 pair, `unpackHLC(hi, lo)`.
+- Replace `ts` field in `packPresence`/`unpackPresence` in `packer.js` with HLC pair (8 bytes, same slot).
+- Replace `ts: Date.now()` in move packets and `trackPlayer()` calls.
+- Presence validation in `processPresenceSingle`: reject if `unpacked.hlc ≤ players.get(peerId).hlc`.
+
+**No new dependencies. ~60 lines of new code + packer change.**
+
+---
+
+#### **Technique 2 — Token Bucket XP Rate Limiter**
+
+**From:** Network QoS. Used in every major CDN and API rate limiter.
+
+**Problem.** Shadow validation rejects `xp > shadow.xp + 100` per packet — a flat delta with no time dimension. A cheater can gain 99 XP per presence packet indefinitely. The tolerance is also arbitrary; 100 has no relation to actual game mechanics.
+
+**Fix.** Replace the flat delta with a per-peer token bucket. The bucket capacity and refill rate are derived from the maximum XP a player could legitimately earn. Compute at startup:
+
+```js
+// networking.js
+const MAX_XP_PER_MS = Math.max(...Object.values(ENEMIES).map(e => e.xp)) / 5000;
+// best enemy XP divided by minimum plausible kill time (5s)
+```
+
+Each peer has a bucket: `{ tokens: MAX_BUCKET, lastRefill: Date.now() }`. On each presence received:
+1. Refill: `tokens = min(MAX_BUCKET, tokens + MAX_XP_PER_MS * (now - lastRefill))`
+2. Drain: `tokens -= (unpacked.xp - shadow.xp)`
+3. If `tokens < 0`: reject, warn, submit fraud proof.
+
+`MAX_BUCKET` = 60 seconds of max possible XP (generous for tab-switching or network gaps).
+
+**Impact.** Catches slow-drip XP inflation that the current check misses. The limit is derived from `ENEMIES` data — it stays correct as enemy XP values are tuned.
+
+**Implementation.** Add `xpBuckets: Map<peerId, {tokens, lastRefill}>` alongside `shadowPlayers`. Update in `processPresenceSingle` and `getPresenceBatch`. ~25 lines.
+
+---
+
+#### **Technique 3 — Immediate Targeted Sketch on `onPeerJoin`**
+
+**From:** Anti-entropy reconciliation in Dynamo, Cassandra, Riak.
+
+**Problem.** The IBLT sketch fires every `30s + 5s × peerCount`. After a portal transition, a peer who just joined the shard waits up to 35s before their first sketch reconciliation. During that window, if any presence packet was dropped (common on fresh WebRTC connections), the peer is invisible.
+
+**Fix.** When `onPeerJoin` fires, immediately send a targeted sketch to the new peer only (not a full broadcast). This kicks off IBLT reconciliation within ~200ms of connection instead of up to 35s.
+
+```js
+r.onPeerJoin(async peerId => {
+    knownPeers.add(peerId);
+    // ... existing handshake ...
+
+    // Immediately reconcile peer roster with the new peer
+    const iblt = new IBLT();
+    players.forEach((_, id) => iblt.insert(id));
+    iblt.insert(selfId);
+    if (gameActions.sendSketch) gameActions.sendSketch(iblt.serialize(), [peerId]);
+});
+```
+
+Also add a second presence broadcast 800ms after `joinInstance` completes — catches peers whose WebRTC data channel wasn't open when the initial `sendPresenceSingle` fired on line 364.
+
+```js
+// joinInstance — after rooms.torrent is assigned
+setTimeout(() => {
+    myEntry().then(entry => {
+        if (entry && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(packPresence(entry));
+    });
+}, 800);
+```
+
+**Impact.** Portal re-appearance drops from "up to 35s" to "~200–800ms". Zero protocol changes, zero extra bandwidth at steady state.
+
+---
+
+#### **Technique 4 — Plumtree Epidemic Broadcast (lazy-push gossip)**
+
+**From:** Leitão, Pereira, Rodrigues — "Epidemic Broadcast Trees" (2007). Used in Riak, distributed consensus engines.
+
+**Problem.** Presence and sketch messages are broadcast to all peers (`sendPresenceSingle` with no target = flood). In a 50-peer shard, every move triggers N messages. Flood gossip has O(N) redundancy — every peer receives every message N times.
+
+**Architecture.** Plumtree separates peers into two sets per local node:
+- **Eager set** (2–4 peers): receive full message payloads immediately.
+- **Lazy set** (remaining peers): receive only a lightweight `{messageId, type}` announcement after a short delay (e.g. 200ms).
+
+On receiving a lazy announcement, if the payload hasn't arrived via an eager peer yet, the node upgrades the sender to eager and pulls the payload. If the payload already arrived, the announcement is silently dropped. This self-heals: if an eager link drops, a lazy link promotes itself automatically.
+
+**Implementation plan for this codebase.**
+1. Add `eagerSet: Set<peerId>` and `lazySet: Set<peerId>` per shard room (maintained alongside `knownPeers`).
+2. On `onPeerJoin`: add to `eagerSet` if `eagerSet.size < 3`, else `lazySet`.
+3. Modify `sendPresenceSingle` and `sendSketch`: send full payload to eager peers, send `{msgId: hash(payload), type}` to lazy peers via a new `presence_announce` action.
+4. Add `getPresenceAnnounce` handler: if `msgId` not seen within 200ms window, pull full payload from sender via `sendRequest`.
+5. On `onPeerLeave`: remove from eager/lazy sets; if eager set is now empty, promote from lazy.
+
+**Impact.** Reduces presence broadcast traffic by ~60–70% in a 10-peer shard. Makes the system scale toward 50 peers without flooding. Portal re-appearance stays fast because the eager set is always fresh.
+
+**Complexity.** Medium — requires a seen-message cache (LRU, cap at 256 entries, 20 lines), a `presence_announce` wire action, and the eager/lazy set maintenance. No new dependencies.
+
+---
+
+#### **Technique 5 — Append-Only Signed Action Feed (Scuttlebutt-style)**
+
+**From:** Secure Scuttlebutt (Tarr et al. 2019). Used in SSB, Cabal, Manyverse.
+
+**Problem.** The current `actionIndex` in shadow state is a bare integer. There is no linkage between entries — a cheater can submit action index 50 with forged XP, and peers have no way to verify it chains from a legitimate index 49. The shadow validation only checks the delta from the last *received* packet, not the full history.
+
+**Architecture.** Each player maintains a local append-only feed. Every XP-granting action (kill, quest complete) produces a feed entry:
+
+```js
+{
+  seq: N,                          // monotonic, starts at 1
+  type: 'kill',
+  target: 'wolf',
+  xp: 12,
+  prev: H(entry_{N-1}),            // hash of previous entry (links the chain)
+  ts: hlc,                         // HLC timestamp (Technique 1)
+  sig: sign(above fields),
+}
+```
+
+The `prev` field links each entry to its predecessor via hash. A fork — two valid entries with the same `seq` and `prev` but different content — is cryptographically irrefutable proof of fraud. Peers verify the chain is intact when processing action logs.
+
+**What this enables.**
+- Replay `seq 1..N` from any peer's feed to reconstruct their XP from scratch.
+- Detect gaps (missing entries) and request them explicitly.
+- Fork detection: if peer sends `seq=5` with `prev=X` but you already have `seq=5` with `prev=Y`, the earlier one is evidence of fraud.
+
+**Integration with existing code.** The `action_log` message type already exists (`sendActionLog`, `getActionLog`). Extend the payload with `prev` and `seq`. Peers maintain a `feedHead: Map<peerId, {seq, hash}>` alongside `shadowPlayers`. On each `getActionLog`: verify `entry.prev === feedHead.get(peerId).hash`, verify seq increments, update head. Reject anything that breaks the chain.
+
+**Feed storage.** Feed heads only (not full history) live in memory. Full feed persisted to IndexedDB for offline verification. Cap stored feed at last 200 entries per peer — older entries are checkpointed into a summary hash.
+
+**Complexity.** Medium-high. The hash chaining is straightforward; the IndexedDB persistence and gap-fill request/response protocol adds complexity. Implement feed heads first (in-memory only), add persistence in a follow-up.
+
+---
+
+#### **Technique 6 — Stateless Fraud Proofs for the Arbiter**
+
+**From:** Ethereum Optimistic Rollups (Arbitrum, Optimism).
+
+**Problem.** Current fraud proofs sent to the Arbiter contain `{ presence, signature, disputedRoot }` — the Arbiter must trust the witness's claimed state. There is no way for the Arbiter to independently verify the dispute without trusting one party.
+
+**Fix.** Make fraud proofs self-contained (stateless): include all data needed for the Arbiter to independently re-execute the disputed action and verify the outcome.
+
+For an XP fraud proof (most common case):
+```js
+{
+  type: 'xp_fraud',
+  proof: {
+    peerId,
+    publicKey,
+    feedEntry: { seq, type:'kill', target:'wolf', xp:12, prev, sig },    // the disputed entry
+    worldSeed: worldState.seed,
+    actionEntropy: hashStr(worldSeed + '|' + publicKey + '|' + seq),     // deterministic RNG seed
+  }
+}
+```
+
+The Arbiter re-runs `rollLoot(target, seededRNG(actionEntropy))` and `ENEMIES[target].xp` — if the claimed XP doesn't match the deterministic output, the proof is valid fraud. No trust required.
+
+For an illegal-move proof (already partially implemented):
+```js
+{
+  type: 'illegal_move',
+  proof: {
+    from, to,                     // the claimed transition
+    worldSnapshot: ROOM_MAP,      // which rooms exist (static — just version hash)
+    signature,                    // peer's signed move packet
+    publicKey,
+  }
+}
+```
+
+The Arbiter checks `Object.values(world[from]?.exits || {}).includes(to)` independently. Deterministic, no trust.
+
+**Arbiter changes (arbiter/index.js).**
+- Add `verifyXpFraud(proof)`: re-run `rollLoot` + XP lookup, compare to claimed XP.
+- Add `verifyIllegalMove(proof)`: check world graph exits.
+- Existing `fraudCounts` accumulation stays — now based on verified proofs rather than trusted claims.
+
+**Impact.** The Arbiter becomes a genuine fraud adjudicator rather than a vote counter. Ban decisions are now based on cryptographically verifiable re-execution, not majority claims.
+
+---
+
+#### **Technique 7 — Commit-Reveal for XP-Granting Actions**
+
+**From:** Cryptographic protocol design. Used in Ethereum games, zkSNARK protocols, sealed-bid auctions.
+
+**Problem.** A client can claim they killed an enemy after seeing the outcome — picking the most favorable action retroactively. No peer can prove the kill was committed to before the result was known.
+
+**Architecture.** Two-phase protocol per kill:
+1. **Commit:** Before the attack resolves, broadcast `{ seq, commit: H(action | nonce) }` — a binding hash. Peers record it.
+2. **Reveal:** After the kill, broadcast `{ seq, action: 'kill', target: 'wolf', nonce }` — peers verify `H(action | nonce) === stored commit`.
+
+A cheater cannot choose a different action after the commit is recorded, because the hash binds them. A missing reveal (commit with no matching reveal within N seconds) is logged as suspicious.
+
+**Pi Zero W impact:** None. Arbiter receives only the final fraud proof if a reveal doesn't match its commit — same shape as existing proofs. No new Arbiter logic needed.
+
+**Bundle size:** ~40 lines in `networking.js`. Uses existing `hashStr`. No new crypto primitives.
+
+**Implementation.**
+- New wire actions: `commit_action` and `reveal_action` in `setupShard`.
+- `pendingCommits: Map<peerId, Map<seq, {commit, ts}>>` — held until reveal or timeout (10s).
+- On `getRevealAction`: verify hash, clear from pending, process XP grant.
+- On timeout: if commit has no reveal, flag the peer (increment suspicion counter; don't ban on first offence — network drops happen).
+- Integrates directly with Technique 5 (signed action feed): the reveal becomes the feed entry.
+
+---
+
+#### **Technique 8 — Minisketch (Polynomial Set Reconciliation)**
+
+**From:** Naumenko, Maxwell, Wuille et al. — "Bandwidth-Efficient Transaction Relay for Bitcoin" (2019). Used in Bitcoin Core's Erlay.
+
+**Problem.** The current IBLT silently fails to decode when the set difference is large (line 482: `if (!success) return`). A shard that has drifted significantly (e.g. after a network partition) cannot reconcile. Also, IBLT requires pre-allocating enough cells for the expected diff size — too small and it fails; too large wastes bandwidth.
+
+**Architecture.** Minisketch encodes the symmetric difference of two sets as a polynomial over GF(2³²). The sketch size is exactly `d × 4 bytes` where `d` is the number of differing elements. Decoding uses Berlekamp-Massey (finds the polynomial's roots). It never fails within its declared capacity — and capacity can be declared conservatively because the sketch is optimally compact.
+
+**Pi Zero W impact:** None. Arbiter doesn't participate in IBLT/Minisketch reconciliation — that's purely client-side P2P.
+
+**Bundle size:** `src/minisketch.js` (~120 lines of pure JS GF arithmetic + BM decoder) **replaces** `src/iblt.js` (~same size). Net bundle change: approximately neutral, possibly smaller. `iblt.js` is deleted.
+
+**Implementation.**
+- `src/minisketch.js` exports `Minisketch` with `add(id)`, `serialize()`, `Minisketch.decode(a, b)` → `[added[], removed[]]`.
+- GF(2³²) multiply: carryless multiplication via lookup table (256-entry, generated at module init — ~1KB, within budget).
+- Berlekamp-Massey: ~40 lines, operates on GF elements.
+- Drop-in replacement for IBLT in `getSketch`/`sendSketch` handlers. Wire format changes (smaller), but since it's internal gossip between same-version clients this is safe.
+- Capacity declared as `min(32, players.size + 4)` — generous enough for any realistic diff, tiny enough to stay compact.
+
+**Constraint note:** The 50-peer cap on IBLT diff (line 484) is replaced by Minisketch's declared capacity. Set capacity to 32 by default — covers any realistic per-gossip-round diff without risk of decode failure.
+
+---
+
+#### **Technique 9 — HyParView Logical Overlay (Eager/Lazy Peer Sets)**
+
+**From:** Leitão, Marques, Pereira, Rodrigues — "HyParView: A Membership Protocol for Reliable Gossip-Based Broadcast" (2007). Used in Ethereum devp2p, libp2p, Riak.
+
+**Architecture in this codebase.** Trystero owns the actual WebRTC mesh — we cannot dictate which peers connect to which. HyParView is therefore implemented as a **logical overlay**: all peers remain connected via Trystero's torrent room, but each node independently designates 2–3 peers as its **active view** (eager gossip targets) and the rest as its **passive view** (lazy announcement targets). The underlying WebRTC connections are unchanged; only the message routing policy changes.
+
+**Active view selection:** On shard join, peers that complete the identity handshake first fill the active view (up to `ACTIVE_VIEW_SIZE = 3`). Subsequent peers go to the passive view. On `onPeerLeave`, if the departed peer was in the active view, promote the longest-known passive-view peer to replace them.
+
+**Gossip behavior:**
+- Presence and sketch payloads → full payload to active view only.
+- Presence and sketch IDs (`{msgId: hashStr(payload).toString(16), type}`) → passive view via `presence_announce` action, after 200ms delay.
+- On receiving an announcement: if `msgId` not seen, pull full payload from sender via existing `request_presence` action. Promote sender to active view.
+- Seen-message LRU: 256 entries, evict oldest. ~20 lines.
+
+**Pi Zero W impact:** None. The Arbiter is in the global room, not the shard. HyParView is shard-only.
+
+**Bundle size:** ~100 lines split between `src/hyparview.js` (view management, ~60 lines) and additions to `networking.js` (~40 lines for announce/pull handlers). New wire action `presence_announce` adds one `makeAction` call per shard setup — negligible.
+
+**What HyParView does NOT do here:** It does not reduce WebRTC connection count (Trystero controls that). It reduces **message volume**: in a 10-peer shard, instead of broadcasting presence to 9 peers, you send full payload to 3 and a 4-byte announcement ID to 6. Roughly 60% bandwidth reduction on presence traffic. Portal re-appearance stays fast because the active view peers receive full payloads immediately.
+
+**Constraint note:** `ACTIVE_VIEW_SIZE = 3` is hardcoded. With 2 peers (the common dev case), both go into the active view automatically — HyParView degrades gracefully to full broadcast at low peer counts.
+
+---
+
+#### **Implementation order**
+
+| # | Technique | Complexity | Pi Zero impact | Bundle delta | Unlocks |
+|---|-----------|------------|----------------|--------------|---------|
+| 1 | HLC timestamps | Low | None | +30 lines | Causal ordering for all subsequent |
+| 2 | Token bucket XP | Low | None | +25 lines | Tight fraud bounds from game data |
+| 3 | Immediate sketch on join | Low | None | +10 lines | Portal re-appearance fix |
+| 8 | Minisketch (replaces IBLT) | Medium | None | ~neutral | Reliable set reconciliation |
+| 4 | Plumtree gossip | Medium | None | +80 lines | Efficient broadcast |
+| 9 | HyParView logical overlay | Medium | None | +100 lines | Bandwidth reduction at scale |
+| 7 | Commit-reveal | Medium | None | +40 lines | Retroactive action fraud closed |
+| 5 | Signed action feed | Medium-high | None | +60 lines | Chain-verifiable XP history |
+| 6 | Stateless fraud proofs | Medium | Minimal* | +30 lines | Arbiter as genuine adjudicator |
+
+*Technique 6 adds two re-execution functions to `arbiter/index.js`. Both are O(1) — a lookup in `ENEMIES` and a single `rollLoot` call. Pi Zero cost is negligible.
+
+Techniques 1–3 ship together. Technique 8 ships next (replaces IBLT, neutral bundle). Techniques 4 and 9 ship together (both are gossip routing — Plumtree defines the eager/lazy split that HyParView manages). Techniques 7, 5, 6 follow in sequence.
+
+---
+
+#### **New files**
+
+- `src/hlc.js` — Hybrid Logical Clock (~30 lines)
+- `src/minisketch.js` — GF(2³²) polynomial set reconciliation, replaces `src/iblt.js` (~120 lines)
+- `src/hyparview.js` — Eager/lazy view management + seen-message LRU (~60 lines)
+
+#### **Deleted files**
+
+- `src/iblt.js` — replaced by `src/minisketch.js`
+
+#### **Modified files**
+
+- `src/networking.js` — HLC timestamps, token bucket, immediate sketch on join, Plumtree broadcast, HyParView routing, commit-reveal protocol, feed head tracking, stateless fraud proof construction
+- `src/packer.js` — HLC replaces `ts` uint48 field in presence packet
+- `src/store.js` — `xpBuckets`, `feedHeads`, `pendingCommits` maps alongside `shadowPlayers`
+- `arbiter/index.js` — `verifyXpFraud`, `verifyIllegalMove` re-execution handlers (Technique 6 only)
+
+#### **Test additions**
+
+- `src/hlc.test.js` — monotonicity, skew bounds, pack/unpack round-trip
+- `src/minisketch.test.js` — GF arithmetic correctness, BM decode, symmetric difference round-trip, capacity edge cases
+- `src/networking.peer.test.js` — token bucket drain/refill, feed chain validation, fork detection, HyParView view promotion, commit-reveal hash verification, announce/pull flow
+
+---
+
 ### **Phase 8: Full Zelda-Style Graphical Client — TODO**
 
 Target feel: ALttP / Link's Awakening. No visible text log during play. All feedback is spatial, animated, and momentary.

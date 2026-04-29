@@ -64,7 +64,7 @@ describe('Binary Packer', () => {
         expect(unpacked.xp).toBe(1000);
         expect(unpacked.x).toBe(7);
         expect(unpacked.y).toBe(8);
-        expect(unpacked.ts).toBe(presence.ts);
+        expect(unpacked.hlc).toBeDefined();
         expect(unpacked.signature).toBe(presence.signature);
     });
 
@@ -92,15 +92,16 @@ describe('Binary Packer', () => {
         expect(unpackPresence(packPresence(presence)).xp).toBe(75000);
     });
 
-    // Catches bug: timestamp truncation. Modern Unix timestamps (~1.7e12) exceed 32 bits.
-    // The 48-bit split must survive the round-trip without losing the high bits.
-    test('Presence timestamp round-trips correctly with modern epoch value', () => {
-        const ts = 1700000000000; // Nov 2023 — well above 32-bit max (4294967295)
+    // Presence now uses HLC instead of a plain timestamp.
+    test('Presence HLC round-trips wall and logical fields correctly', () => {
+        const hlc = { wall: 1700000000, logical: 42 };
         const presence = {
             name: 'T', location: 'cellar', ph: '00000000', level: 1,
-            xp: 0, ts, signature: btoa('x'.repeat(64)),
+            xp: 0, hlc, signature: btoa('x'.repeat(64)),
         };
-        expect(unpackPresence(packPresence(presence)).ts).toBe(ts);
+        const unpacked = unpackPresence(packPresence(presence));
+        expect(unpacked.hlc.wall).toBe(hlc.wall);
+        expect(unpacked.hlc.logical).toBe(hlc.logical);
     });
 
     test('Presence packet byte layout matches documented offsets', () => {
