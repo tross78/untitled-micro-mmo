@@ -489,43 +489,60 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getAnnounce(async ({ msgId }, peerId) => {
             if (hpv.hasSeen(msgId)) return;
-            // We haven't seen this payload — pull it from the sender and promote them.
+            // We haven't seen this payload — pull it from the announcing peer.
             hpv.promote(peerId);
-            sendRequest([selfId], [peerId]); // use request_presence to pull the missing entry
+            sendRequest([peerId], [peerId]); // request announcing peer's presence by their ID string
         });
 
         getSketch(async (remoteArr, peerId) => {
             const localMs = buildSketch();
             const remoteMs = Minisketch.fromSerialized(remoteArr);
+            // decode convention: removed = we have, remote doesn't; added = remote has, we don't
             const { added, removed } = Minisketch.decode(localMs, remoteMs, localIds(), []);
             if (added.length > 32 || removed.length > 32) return; // cap for safety
-            if (removed.length > 0) sendRequest(removed.map(String), [peerId]);
-            if (added.length > 0) {
+
+            // removed: we have these peers, remote doesn't — push their presences
+            if (removed.length > 0) {
                 const response = {};
-                for (const [id, data] of players.entries()) {
-                    if (added.some(h => h === Number(Minisketch.hashId(id)))) {
-                        response[id] = { presence: packPresence(data), publicKey: data.publicKey };
-                    }
+                for (const id of localIds()) {
+                    const h = Number(Minisketch.hashId(id));
+                    if (!removed.some(r => r === h)) continue;
+                    if (id === selfId) continue; // handled below
+                    const data = players.get(id);
+                    if (data) response[id] = { presence: packPresence(data), publicKey: data.publicKey };
                 }
-                if (added.some(h => h === Number(Minisketch.hashId(selfId)))) {
+                if (removed.some(r => r === Number(Minisketch.hashId(selfId)))) {
                     const entry = await myEntry();
-                    response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+                    if (entry) response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
                 }
                 if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
             }
+
+            // added: remote has these peers, we don't — request them by sending the hash numbers
+            if (added.length > 0) sendRequest(added.map(String), [peerId]);
         });
 
         getRequest(async (idStrings, peerId) => {
-            const ids = idStrings.map(s => Number(Minisketch.hashId(s)));
+            // idStrings can be:
+            //   - stringified uint32 hash numbers (from sketch reconciliation)
+            //   - actual peer ID strings (from getAnnounce)
+            // Match strategy: if the string parses to a number, match by hash; otherwise match by direct ID.
             const response = {};
+            const matchesSelf = idStrings.some(s => {
+                const n = Number(s);
+                return s === selfId || (Number.isInteger(n) && n === Number(Minisketch.hashId(selfId)));
+            });
             for (const [id, data] of players.entries()) {
-                if (ids.some(x => x === Number(Minisketch.hashId(id)))) {
-                    response[id] = { presence: packPresence(data), publicKey: data.publicKey };
-                }
+                const idHash = Number(Minisketch.hashId(id));
+                const matches = idStrings.some(s => {
+                    const n = Number(s);
+                    return s === id || (Number.isInteger(n) && n === idHash);
+                });
+                if (matches) response[id] = { presence: packPresence(data), publicKey: data.publicKey };
             }
-            if (ids.some(x => x === Number(Minisketch.hashId(selfId)))) {
+            if (matchesSelf) {
                 const entry = await myEntry();
-                response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+                if (entry) response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
             }
             if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
         });
@@ -766,8 +783,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             knownPeers.add(peerId);
             hpv.onJoin(peerId);
 
-            // Immediate targeted sketch — reconcile peer roster within ~200ms of connection
-            sendSketch(buildSketch().serialize(), [peerId]);
+            // Immediate targeted sketch — reconcile peer roster within ~200ms of connection.
+            // Wrapped in try-catch so a sketch error never blocks the identity handshake.
+            try { sendSketch(buildSketch().serialize(), [peerId]); } catch (e) {
+                console.warn('[P2P] Sketch send failed on join:', e.message);
+            }
 
             const handshake = async () => {
                 if (!knownPeers.has(peerId) || players.get(peerId)?.publicKey) return;

@@ -103,13 +103,19 @@ export class Minisketch {
         }
     }
 
+    // Returns a plain number[] for safe JSON wire transport via Trystero.
     serialize() {
-        return this._s.slice(); // Uint32Array copy
+        return Array.from(this._s);
     }
 
+    // Accepts plain Array, Uint32Array, or ArrayBuffer from wire.
     static fromSerialized(arr) {
-        const ms = new Minisketch(arr.length);
-        ms._s = new Uint32Array(arr);
+        let src;
+        if (arr instanceof ArrayBuffer) src = new Uint32Array(arr);
+        else if (arr instanceof Uint32Array) src = arr;
+        else src = arr; // plain Array of numbers
+        const ms = new Minisketch(Array.isArray(src) ? src.length : src.length);
+        ms._s = new Uint32Array(src);
         return ms;
     }
 
