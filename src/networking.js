@@ -93,12 +93,13 @@ const checkXpRate = (peerId, newXp, oldXp) => {
     return bucket.tokens >= 0;
 };
 
-// Returns true if the incoming HLC is newer than the last accepted one for this peer.
+// Returns true if the incoming HLC is strictly newer than the last accepted one from this peer.
+// Stores the peer's own HLC (not ours) so subsequent comparisons are peer-relative.
 const checkAndUpdateHlc = (peerId, incoming) => {
     const last = peerHlc.get(peerId);
     if (last && cmpHLC(incoming, last) <= 0) return false;
-    const updated = recvHLC(incoming);
-    peerHlc.set(peerId, updated);
+    recvHLC(incoming); // advance local clock for causal ordering
+    peerHlc.set(peerId, incoming); // track peer's own clock, not ours
     return true;
 };
 
