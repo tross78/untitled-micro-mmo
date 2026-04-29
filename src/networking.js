@@ -628,7 +628,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             try {
                 const pubKey = await importKey(entry.publicKey, 'public');
-                const sigData = JSON.stringify({ from: data.from, to: data.to, ts: data.ts });
+                const sigData = JSON.stringify({ from: data.from, to: data.to, x: data.x, y: data.y, ts: data.ts });
                 if (!await verifyMessage(sigData, data.signature, pubKey)) {
                     console.warn(`[Security] Invalid move signature from ${peerId}`);
                     return;

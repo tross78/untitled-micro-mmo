@@ -314,16 +314,36 @@ export const world = {
     },
     hallway: {
         name: 'The Hallway',
-        description: 'A narrow passage. The cellar is south, the tavern north, the forest east.',
+        description: 'A narrow passage. The cellar is south, the tavern north, the forest east, library west.',
         width: 11, height: 10,
-        exits: { south: 'cellar', north: 'tavern', east: 'forest_edge' },
+        exits: { south: 'cellar', north: 'tavern', east: 'forest_edge', west: 'library' },
         exitTiles: [
             { x: 5, y: 9, dest: 'cellar', destX: 5, destY: 1 },
             { x: 5, y: 0, dest: 'tavern', destX: 5, destY: 8 },
             { x: 10, y: 5, dest: 'forest_edge', destX: 1, destY: 5 },
+            { x: 0, y: 5, dest: 'library', destX: 9, destY: 5 },
         ],
         staticEntities: [{ id: 'guard', x: 2, y: 2 }],
         scenery: [{ x: 4, y: 4, label: '🏛' }, { x: 6, y: 4, label: '🏛' }],
+        enemy: null,
+    },
+    library: {
+        name: 'The Great Library',
+        description: 'Dusty shelves and ancient scrolls. A quiet sanctuary of knowledge.',
+        width: 11, height: 11,
+        exits: { east: 'hallway' },
+        exitTiles: [{ x: 10, y: 5, dest: 'hallway', destX: 1, destY: 5 }],
+        staticEntities: [],
+        scenery: [{ x: 5, y: 2, label: '📜' }],
+        tileOverrides: [
+            // Create some "bookshelf" rows using wall tiles
+            { x: 3, y: 2, type: 'wall' }, { x: 3, y: 3, type: 'wall' }, { x: 3, y: 4, type: 'wall' },
+            { x: 7, y: 2, type: 'wall' }, { x: 7, y: 3, type: 'wall' }, { x: 7, y: 4, type: 'wall' },
+            { x: 3, y: 6, type: 'wall' }, { x: 3, y: 7, type: 'wall' }, { x: 3, y: 8, type: 'wall' },
+            { x: 7, y: 6, type: 'wall' }, { x: 7, y: 7, type: 'wall' }, { x: 7, y: 8, type: 'wall' },
+            // A rug in the center
+            { x: 5, y: 5, type: 'interior' }
+        ],
         enemy: null,
     },
     tavern: {

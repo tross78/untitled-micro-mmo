@@ -255,6 +255,76 @@ Direction: eliminate the MUD text log from normal gameplay. All moment-to-moment
 * **Remove `> command` echo** — strip `log(\`> ${cmdOrAction}\`)` from main.js button handler.
 * **Ambient Ticker** — moved from HTML element to canvas overlay (top strip, italicized lore text).
 
+### **Phase 7.8: State of the Game — Retrospective & Pre-Phase 8 Tuning — COMPLETE**
+
+This phase is a deliberate pause before the large Phase 8 graphical push. No new systems. Take stock of what's here, what hurts, and what is genuinely interesting about the project so we can sharpen our focus before the next sprint.
+
+---
+
+#### **What works well**
+
+**Canvas overlay pipeline.** The progression from HTML log → chip UI → full canvas feedback (7.75) landed cleanly. Dialogue boxes, toasts, item fanfares, room banners, hit flashes, and the ambient ticker all coexist without conflict. The pattern of bus events driving canvas overlays is the right architecture and scales to Phase 8 without redesign.
+
+**Procedural everything.** No external asset files. Sprites, tiles, and audio are all generated at runtime from seeded RNG and WebAudio oscillators. This is genuinely rare in a browser game and means the entire game ships as a single bundled JS file. That constraint has been a creative forcing function, not a limitation.
+
+**P2P serverless architecture.** Ed25519 identity, Trystero transport, a Pi Zero W as Arbiter — this is not a tutorial project. The design is principled: the Arbiter only signs and validates; it does not simulate. Rollup/fraud-proof/proposer-election logic is solid. The architecture could support thousands of players without a cloud bill.
+
+**Seeded determinism.** Keeping all simulation logic in `seededRNG(hashStr(...))` means two peers with the same seed will always produce the same world. This is load-bearing for P2P trust and is worth protecting in every future phase.
+
+**Event bus.** Replacing `window.dispatchEvent` with the typed `bus` was the right call. Payloads are documented, shapes are enforced in tests, and new systems can subscribe without touching existing code.
+
+---
+
+#### **What isn't so good**
+
+**Two input paradigms, unresolved tension.** The game has a command interpreter (MUD heritage) and a chip/button UI (mobile-first) running in parallel. They were never fully unified. The chip UI covers the happy path; the CLI handles edge cases. This ambiguity leaks into the UX — power users type, casual players tap, and neither path feels complete. Phase 8's canvas D-pad will displace the chip UI, but the CLI layer will need a clear decision: keep as a debug tool (like the log) or surface it intentionally.
+
+**Teleporting movement.** Player position snaps tile-to-tile with no interpolation. Every other piece of the canvas pipeline is polished; this stands out. Even a 100ms linear lerp (no physics, no easing) would make the world feel inhabited rather than mechanical.
+
+**NPCs don't exist spatially.** NPCs have positions in data but they never move. They are statues with dialogue. One or two tiles of idle wandering, even deterministic (seeded per-day), would make the world feel alive at almost no implementation cost.
+
+**Combat is shallow.** Hit, crit, dodge, flee. The fight counter creates a resource loop but there's no tactical decision inside a fight. This is fine for a pre-Phase 8 state but risks feeling thin once visuals improve and players notice there's nothing to do but watch the numbers.
+
+**The world is small.** A handful of rooms. Phase 4.8 expanded it, but most rooms are variations on the same grammar (grass, enemy, exit). There are no environmental puzzles, no rooms that feel distinct from each other beyond the name banner.
+
+**Phase 6 is still TODO.** Ed25519 signatures on movement, secure trading, deterministic move validation — none of this exists yet. The fraud-proof architecture is built but not wired to the simulation paths. Until it is, a determined bad actor can teleport or dupe gold.
+
+---
+
+#### **What is genuinely innovative — and how to emphasise it**
+
+**"No server, no sprites, no bullshit."** The combination of serverless P2P + procedural graphics + procedural audio in a browser MMO is novel. Other browser MMOs either use WebSockets to a game server or load sprite atlases. This game does neither. That should be the lead when anyone asks what it is.
+
+*How to emphasise it:* The bundle size is a living proof-point. Keep it visible (log it on build). Consider a small `?debug` HUD overlay that shows peers connected, Arbiter latency, and bundle size — not for players, but for anyone evaluating the tech.
+
+**The Pi Zero W Arbiter.** A $15 computer as the sole authoritative game server for a potentially large player base is a great story. The nightly Arbiter → llama.cpp → Arbiter handoff (for future NPC AI) is a clever architectural trick.
+
+*How to emphasise it:* Document it visually in the README. A simple diagram of the P2P topology with the Pi at the center is more compelling than paragraphs.
+
+**Seeded shared world.** All players on the same day see the same procedurally generated world without any server sync for world state. This is the core P2P insight.
+
+*How to emphasise it:* Make it legible to the player — show the current world seed and day in the debug view (already partially there). Consider a "world fingerprint" visible in the UI: a short hash that changes daily, so players know when they're in sync.
+
+---
+
+#### **What to do before Phase 8**
+
+These are small, targeted improvements that reduce Phase 8 scope and make the current build feel more complete. None require architectural changes.
+
+1. **Sprite movement lerp.** Add `prevX/prevY/moveStart` tracking per entity in `renderer.js`. On each `renderWorld()` call, interpolate draw position for 100ms after a move. Logical position updates immediately — this is purely visual. (~50 lines in renderer.js, no new data structures.)
+
+2. **Two or three authored sprite silhouettes.** The player character, the wolf enemy, and a guard NPC are the most-seen entities. Give each a hand-defined pixel array in `graphics.js` (8×16, 4 columns = 4 frames). Keep the procedural color tinting from `seededRNG`. This immediately distinguishes "is that me or another player?" without touching the procedural tile system.
+
+3. **NPC idle wander.** One seeded `npcWanderOffset(npcId, day, tick)` function returns a ±1 tile delta. Apply it in `renderWorld()` when drawing NPC sprites. NPCs stay within their room, drift a tile or two, then drift back. No pathfinding, no bus events, no gameplay impact — purely cosmetic.
+
+4. **World: one distinct room.** Add one room that uses `tileOverrides` to feel deliberately designed — a library, a dungeon cell, a market stall. Not for gameplay, just to prove the authored set-dressing system works and to give Phase 8 a reference point for what "authored" looks like next to "procedural."
+
+5. **Unify the input model decision.** Decide explicitly: the CLI text input is a debug/power-user tool (hidden by default, `~` to reveal, like the log). Document this in `CLAUDE.md`. This lets Phase 8 build the D-pad without hedging against two input systems.
+
+6. **Phase 6 minimal viable wire-up.** Sign `move` actions with the player's Ed25519 key and validate on receipt. Not the full fraud-proof/rollback system — just enough so the architecture claim is partially true and Phase 6 can be marked partial-complete rather than fully TODO.
+
+---
+
 ### **Phase 8: Full Zelda-Style Graphical Client — TODO**
 
 Target feel: ALttP / Link's Awakening. No visible text log during play. All feedback is spatial, animated, and momentary.

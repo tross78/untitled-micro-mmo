@@ -133,6 +133,49 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
     }
 }
 
+// --- AUTHORED SPRITE SILHOUETTES ---
+// 8x12 shapes (compact bitmask)
+const SHAPES = {
+    // Player: Heroic humanoid
+    player: [
+        0x3C, 0x7E, 0x66, 0x7E, 0x3C, 0x3C, 0x7E, 0xDB, 0xDB, 0x7E, 0x66, 0x66
+    ],
+    // Wolf: Quadruped with ears
+    wolf: [
+        0x00, 0x00, 0x42, 0x24, 0x7E, 0xFF, 0xFF, 0xFF, 0xBD, 0x81, 0x81, 0xC3
+    ],
+    // Guard: Humanoid with helmet/shield feel
+    guard: [
+        0x3C, 0x7E, 0x7E, 0x7E, 0x3C, 0xBD, 0xFF, 0xFF, 0xFF, 0xFF, 0x66, 0x66
+    ]
+};
+
+function drawSilhouette(ctx, type, pal) {
+    const shape = SHAPES[type];
+    if (!shape) return false;
+    
+    ctx.fillStyle = pal.body;
+    shape.forEach((row, y) => {
+        for (let x = 0; x < 8; x++) {
+            if ((row >> (7 - x)) & 1) {
+                // Add some shading/texture based on row/column
+                ctx.fillStyle = (y < 5) ? pal.body : (x < 2 || x > 5) ? pal.dark : pal.body;
+                ctx.fillRect(4 + x, 2 + y, 1, 1);
+            }
+        }
+    });
+    // Eyes
+    ctx.fillStyle = pal.eye;
+    if (type === 'wolf') {
+        ctx.fillRect(6, 6, 1, 1);
+        ctx.fillRect(9, 6, 1, 1);
+    } else {
+        ctx.fillRect(6, 4, 1, 2);
+        ctx.fillRect(9, 4, 1, 2);
+    }
+    return true;
+}
+
 // Hash-identicon character sprite — 16×16, seeded from entity id
 export function generateCharacterSprite(seed, type) {
     const colors = {
@@ -146,6 +189,17 @@ export function generateCharacterSprite(seed, type) {
     const canvas = new OffscreenCanvas(16, 16);
     const ctx = canvas.getContext('2d');
 
+    // Attempt authored silhouette first
+    let sType = null;
+    if (type === 'self' || type === 'peer') sType = 'player';
+    if (type === 'enemy') sType = 'wolf';
+    if (type === 'npc') sType = 'guard';
+
+    if (sType && drawSilhouette(ctx, sType, pal)) {
+        return canvas;
+    }
+
+    // Fallback to procedural identicon
     // Head
     ctx.fillStyle = pal.body;
     ctx.fillRect(5, 2, 6, 6);
@@ -160,7 +214,7 @@ export function generateCharacterSprite(seed, type) {
     ctx.fillStyle = pal.dark;
     ctx.fillRect(3, 8, 2, 4);
     ctx.fillRect(11, 8, 2, 4);
-    // Legs — seeded stance
+    // Legs
     ctx.fillStyle = pal.dark;
     ctx.fillRect(5, 13, 2, 3);
     ctx.fillRect(9, 13, 2, 3);
@@ -179,3 +233,4 @@ export function getWalkPose(frameTime) {
     const bodyY = Math.abs(Math.sin(t * Math.PI * 2)) > 0.7 ? -1 : 0;
     return { legOffset, bodyY };
 }
+

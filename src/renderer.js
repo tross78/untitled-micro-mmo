@@ -69,6 +69,54 @@ export function toggleDevRadar() {
     console.log(`[Dev] ${_devMode ? 'Radar' : 'Canvas'} view active. Press \` to toggle.`);
 }
 
+// --- LERP & ANIMATION STATE ---
+const _moveStates = new Map(); // id -> { x, y, prevX, prevY, moveStart, loc }
+let _isAnimating = false;
+
+function getDrawPos(id, x, y, location, duration = 120) {
+    let state = _moveStates.get(id);
+    const now = Date.now();
+    if (!state || state.loc !== location) {
+        state = { x, y, prevX: x, prevY: y, moveStart: 0, loc: location };
+        _moveStates.set(id, state);
+    }
+    if (state.x !== x || state.y !== y) {
+        // Only lerp if it's a 1-tile move within the same room
+        const dist = Math.abs(x - state.x) + Math.abs(y - state.y);
+        if (dist === 1 && state.loc === location) {
+            state.prevX = state.x;
+            state.prevY = state.y;
+            state.moveStart = now;
+        } else {
+            state.prevX = x;
+            state.prevY = y;
+            state.moveStart = 0;
+        }
+        state.x = x;
+        state.y = y;
+    }
+    const elapsed = now - state.moveStart;
+    if (elapsed < duration && state.moveStart > 0) {
+        _isAnimating = true;
+        const t = elapsed / duration;
+        return {
+            x: state.prevX + (state.x - state.prevX) * t,
+            y: state.prevY + (state.y - state.prevY) * t
+        };
+    }
+    return { x, y };
+}
+
+function npcWanderOffset(id, seed, day) {
+    // Deterministic but time-varying wander
+    const phase = (Date.now() / 2500) + (hashStr(id) % 100);
+    _isAnimating = true;
+    return {
+        x: Math.sin(phase) * 0.35,
+        y: Math.cos(phase * 0.7) * 0.35
+    };
+}
+
 export function renderWorld(state, onTileClick) {
     if (_devMode) {
         drawRadar(state, onTileClick);
@@ -76,6 +124,7 @@ export function renderWorld(state, onTileClick) {
     }
 
     initCanvas();
+    _isAnimating = false; // Reset; helpers will set true if they need another frame
     const ctx = _canvas.getContext('2d');
     const { localPlayer, world, players, shardEnemies, NPCS, getNPCLocation, worldState, ENEMIES } = state;
     const loc = world[localPlayer.location];
@@ -83,25 +132,34 @@ export function renderWorld(state, onTileClick) {
 
     const tileType = zoneTileType(localPlayer.location);
 
-    // Camera: center on player, clamped so we never show out-of-bounds tiles
-    const camX = Math.max(0, Math.min(loc.width  - VIEWPORT_W, localPlayer.x - Math.floor(VIEWPORT_W / 2)));
-    const camY = Math.max(0, Math.min(loc.height - VIEWPORT_H, localPlayer.y - Math.floor(VIEWPORT_H / 2)));
+    // Camera: follows player draw position for smoothness
+    const dPlayer = getDrawPos('self', localPlayer.x, localPlayer.y, localPlayer.location);
+    const camX = Math.max(0, Math.min(loc.width  - VIEWPORT_W, dPlayer.x - Math.floor(VIEWPORT_W / 2)));
+    const camY = Math.max(0, Math.min(loc.height - VIEWPORT_H, dPlayer.y - Math.floor(VIEWPORT_H / 2)));
 
     // --- TILES ---
-    for (let ty = 0; ty < VIEWPORT_H; ty++) {
-        for (let tx = 0; tx < VIEWPORT_W; tx++) {
-            const wx = camX + tx;
-            const wy = camY + ty;
-            if (wx >= loc.width || wy >= loc.height) {
-                // Out-of-bounds: draw void (wall/darkness)
+    const floorCamX = Math.floor(camX);
+    const floorCamY = Math.floor(camY);
+    const offsetX = (camX - floorCamX) * S;
+    const offsetY = (camY - floorCamY) * S;
+
+    for (let ty = 0; ty <= VIEWPORT_H; ty++) {
+        for (let tx = 0; tx <= VIEWPORT_W; tx++) {
+            const wx = floorCamX + tx;
+            const wy = floorCamY + ty;
+            const dx = tx * S - offsetX;
+            const dy = ty * S - offsetY;
+
+            if (wx >= loc.width || wy >= loc.height || wx < 0 || wy < 0) {
                 ctx.fillStyle = '#0a0a0a';
-                ctx.fillRect(tx * S, ty * S, S, S);
-                ctx.fillStyle = '#111';
-                ctx.fillRect(tx * S + 1, ty * S + 1, S - 2, S - 2);
+                ctx.fillRect(dx, dy, S, S);
                 continue;
             }
+
+            // authored tile overrides
+            const override = (loc.tileOverrides || []).find(o => o.x === wx && o.y === wy);
             const seed = hashStr(localPlayer.location) ^ (wx * 7919) ^ (wy * 6271);
-            drawTile(ctx, tileType, tx * S, ty * S, seed, S);
+            drawTile(ctx, override?.type || tileType, dx, dy, seed, S);
         }
     }
 
@@ -109,7 +167,7 @@ export function renderWorld(state, onTileClick) {
     ( loc.exitTiles || []).forEach(p => {
         const sx = p.x - camX;
         const sy = p.y - camY;
-        if (sx < 0 || sx >= VIEWPORT_W || sy < 0 || sy >= VIEWPORT_H) return;
+        if (sx < -1 || sx >= VIEWPORT_W || sy < -1 || sy >= VIEWPORT_H) return;
         drawTile(ctx, 'exit', sx * S, sy * S, 0, S);
         const destName = world[p.dest]?.name || p.dest;
         ctx.fillStyle = '#cc88ff';
@@ -123,7 +181,7 @@ export function renderWorld(state, onTileClick) {
     (loc.scenery || []).forEach(sc => {
         const sx = sc.x - camX;
         const sy = sc.y - camY;
-        if (sx < 0 || sx >= VIEWPORT_W || sy < 0 || sy >= VIEWPORT_H) return;
+        if (sx < -1 || sx >= VIEWPORT_W || sy < -1 || sy >= VIEWPORT_H) return;
         ctx.fillStyle = '#2a3a2a';
         ctx.fillRect(sx * S + 2, sy * S + 2, S - 4, S - 4);
         ctx.fillStyle = '#668855';
@@ -139,9 +197,12 @@ export function renderWorld(state, onTileClick) {
         const npc = NPCS[id];
         const se = (loc.staticEntities || []).find(e => e.id === id);
         if (!se) return;
-        const sx = se.x - camX;
-        const sy = se.y - camY;
-        if (sx < 0 || sx >= VIEWPORT_W || sy < 0 || sy >= VIEWPORT_H) return;
+        
+        const wander = npcWanderOffset(id, worldState.seed, worldState.day);
+        const sx = se.x + wander.x - camX;
+        const sy = se.y + wander.y - camY;
+
+        if (sx < -1 || sx >= VIEWPORT_W || sy < -1 || sy >= VIEWPORT_H) return;
         const sprite = getSprite(hashStr(id), 'npc');
         ctx.drawImage(sprite, sx * S + Math.floor(S * 0.15), sy * S, Math.floor(S * 0.7), S);
         ctx.fillStyle = '#ffdd00';
@@ -155,9 +216,13 @@ export function renderWorld(state, onTileClick) {
     const sharedEnemy = shardEnemies.get(localPlayer.location);
     const hasEnemy = loc.enemy && (!sharedEnemy || sharedEnemy.hp > 0);
     if (hasEnemy) {
-        const ex = (loc.enemyX ?? Math.floor(loc.width / 2)) - camX;
-        const ey = (loc.enemyY ?? Math.floor(loc.height / 2)) - camY;
-        if (ex >= 0 && ex < VIEWPORT_W && ey >= 0 && ey < VIEWPORT_H) {
+        const lex = loc.enemyX ?? Math.floor(loc.width / 2);
+        const ley = loc.enemyY ?? Math.floor(loc.height / 2);
+        const de = getDrawPos('enemy', lex, ley, localPlayer.location);
+        const ex = de.x - camX;
+        const ey = de.y - camY;
+
+        if (ex >= -1 && ex < VIEWPORT_W && ey >= -1 && ey < VIEWPORT_H) {
             const edef = ENEMIES?.[loc.enemy];
             const sprite = getSprite(hashStr(loc.enemy), 'enemy');
             
@@ -199,9 +264,10 @@ export function renderWorld(state, onTileClick) {
     if (players) {
         players.forEach((p, id) => {
             if (p.location !== localPlayer.location) return;
-            const px = (p.x ?? 0) - camX;
-            const py = (p.y ?? 0) - camY;
-            if (px < 0 || px >= VIEWPORT_W || py < 0 || py >= VIEWPORT_H) return;
+            const dp = getDrawPos(id, p.x ?? 0, p.y ?? 0, localPlayer.location);
+            const px = dp.x - camX;
+            const py = dp.y - camY;
+            if (px < -1 || px >= VIEWPORT_W || py < -1 || py >= VIEWPORT_H) return;
             const sprite = getSprite(hashStr(id), 'peer');
             ctx.drawImage(sprite, px * S + Math.floor(S * 0.15), py * S, Math.floor(S * 0.7), S);
             ctx.fillStyle = '#00aaff';
@@ -213,9 +279,9 @@ export function renderWorld(state, onTileClick) {
     }
 
     // --- LOCAL PLAYER ---
-    const plx = localPlayer.x - camX;
-    const ply = localPlayer.y - camY;
-    if (plx >= 0 && plx < VIEWPORT_W && ply >= 0 && ply < VIEWPORT_H) {
+    const plx = dPlayer.x - camX;
+    const ply = dPlayer.y - camY;
+    if (plx >= -1 && plx < VIEWPORT_W && ply >= -1 && ply < VIEWPORT_H) {
         const sprite = getSprite(hashStr(localPlayer.name || 'self'), 'self');
         ctx.drawImage(sprite, plx * S + Math.floor(S * 0.15), ply * S, Math.floor(S * 0.7), S);
         // Selection glow
@@ -242,14 +308,18 @@ export function renderWorld(state, onTileClick) {
     edgeArrows.forEach(({ dir, x, y, label }) => {
         if (!exits[dir]) return;
         const destName = shortName(world[exits[dir]]?.name || dir);
+        const sx = x - camX;
+        const sy = y - camY;
+        if (sx < 0 || sx >= VIEWPORT_W || sy < 0 || sy >= VIEWPORT_H) return;
+
         ctx.fillStyle = 'rgba(0,255,180,0.7)';
         ctx.font = `bold ${Math.floor(S * 0.5)}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(label, x * S + S / 2, y * S + S / 2);
+        ctx.fillText(label, sx * S + S / 2, sy * S + S / 2);
         ctx.fillStyle = 'rgba(0,200,140,0.6)';
         ctx.font = `${Math.floor(S * 0.25)}px monospace`;
-        ctx.fillText(destName, x * S + S / 2, dir === 'north' ? y * S + S - 4 : y * S + 4);
+        ctx.fillText(destName, sx * S + S / 2, dir === 'north' ? sy * S + S - 4 : sy * S + 4);
     });
 
     // --- NIGHT OVERLAY ---
@@ -278,6 +348,9 @@ export function renderWorld(state, onTileClick) {
     drawFloatingTexts(ctx, camX, camY);
     if (_dialogue) drawDialogueBox(ctx, _dialogue.name);
 
+    // If we are animating, schedule another redraw immediately
+    if (_isAnimating) scheduleRedraw(16);
+
     // --- CLICK HANDLER ---
     // Build a lookup of what's on each tile so clicks can resolve intent
     const npcTiles = new Map(); // "wx,wy" -> npcId
@@ -294,8 +367,8 @@ export function renderWorld(state, onTileClick) {
         const rect = _canvas.getBoundingClientRect();
         const scaleX = CW / rect.width;
         const scaleY = CH / rect.height;
-        const tx = Math.floor((e.clientX - rect.left) * scaleX / S) + camX;
-        const ty = Math.floor((e.clientY - rect.top)  * scaleY / S) + camY;
+        const tx = Math.floor((e.clientX - rect.left) * scaleX / S + camX);
+        const ty = Math.floor((e.clientY - rect.top)  * scaleY / S + camY);
 
         const key = `${tx},${ty}`;
         if (npcTiles.has(key)) {
@@ -307,6 +380,7 @@ export function renderWorld(state, onTileClick) {
         }
     };
 }
+
 
 // ─── Overlay state ────────────────────────────────────────────────────────────
 
