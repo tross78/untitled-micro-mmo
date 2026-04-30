@@ -359,6 +359,13 @@ async function startArbiter() {
     healthServer.listen(3001, '127.0.0.1');
 
     setTimeout(() => broadcastState().catch(() => {}), 5000);
+
+    // Technique A: Periodic Gist update to keep the player snapshot fresh.
+    setInterval(() => {
+        if (lastBroadcastPacket) {
+            publishBeacon(lastBroadcastPacket).catch(() => {});
+        }
+    }, 60000);
 }
 
 const SURVIVABLE_CODES = new Set([
