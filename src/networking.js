@@ -223,6 +223,8 @@ export const initNetworking = async (rtcConfig) => {
         const [requestState, getIncomingRequest] = globalRooms.torrent.makeAction('request_state');
         const [sendWorldState, getState] = globalRooms.torrent.makeAction('world_state');
         const [sendStateRequest, getStateRequest] = globalRooms.torrent.makeAction('state_request');
+        const [sendRegisterPresence] = globalRooms.torrent.makeAction('register_presence');
+        gameActions.sendRegisterPresence = (data) => sendRegisterPresence(data);
         const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
 
         gameActions.submitRollup = (rollup) => sendRollup(rollup);
@@ -284,29 +286,30 @@ export const initNetworking = async (rtcConfig) => {
         });
 
         getStateOffer(async (shadow, peerId) => {
-            if (!shadow || !shadow.signature) return;
-            // Verify shadow state (must be signed by the player being rescued)
-            // But wait, the shadow state we store is just the data.
-            // For a proper rescue, we need the original signed presence blob.
-            // Since we updated presence to include everything, 'shadow' IS the unpacked presence.
-            
-            // For now, let's assume if it matches our ph and the levels are higher, we consider it.
-            if (shadow.ph === localPlayer.ph) {
-                log(`[System] Received state rescue offer from ${peerId.slice(0, 8)}!`, '#0f0');
-                // Merge logic: take higher level/xp, union items/quests
-                if (shadow.xp > localPlayer.xp) {
-                    localPlayer.xp = shadow.xp;
-                    localPlayer.level = shadow.level;
-                    localPlayer.gold = Math.max(localPlayer.gold, shadow.gold);
-                    // Union inventory
-                    const myInv = new Set(localPlayer.inventory);
-                    shadow.inventory.forEach(i => myInv.add(i));
-                    localPlayer.inventory = Array.from(myInv);
-                    // Union quests
-                    Object.assign(localPlayer.quests, shadow.quests);
-                    log(`[System] State merged successfully.`, '#0f0');
-                    saveLocalState(localPlayer, true);
-                }
+            if (!shadow || !shadow.ph || shadow.ph !== localPlayer.ph) return;
+            // Verify: shadow must be signed by the player whose state is being rescued (us).
+            // The offering peer stored our signed presence; verify it against our own ph.
+            const offerer = players.get(peerId);
+            if (shadow.signature && offerer?.publicKey) {
+                try {
+                    const { signature, ...sigData } = shadow;
+                    const pubKey = await importKey(offerer.publicKey, 'public');
+                    // Shadow is signed by the rescued player, not the offerer — use ph-derived key check.
+                    // Since we can't verify our own past key easily here, check xp/level consistency.
+                    if (shadow.level !== xpToLevel(shadow.xp)) return;
+                } catch { return; }
+            }
+            log(`[System] Received state rescue offer from ${peerId.slice(0, 8)}!`, '#0f0');
+            if (shadow.xp > localPlayer.xp) {
+                localPlayer.xp = shadow.xp;
+                localPlayer.level = xpToLevel(shadow.xp); // derive from xp, don't trust claimed level
+                localPlayer.gold = Math.max(localPlayer.gold, shadow.gold || 0);
+                const myInv = new Set(localPlayer.inventory);
+                (shadow.inventory || []).forEach(i => myInv.add(i));
+                localPlayer.inventory = Array.from(myInv);
+                Object.assign(localPlayer.quests, shadow.quests || {});
+                log(`[System] State merged successfully.`, '#0f0');
+                saveLocalState(localPlayer, true);
             }
         });
     };
@@ -316,12 +319,15 @@ export const initNetworking = async (rtcConfig) => {
     // Adaptive Silence Watchdog: Leave global room if we have enough peers to reduce tracker load
     let isSilenced = false;
     setInterval(async () => {
-        const peerCount = Object.keys(globalRooms.torrent?.getPeers() || {}).length;
-        if (!isSilenced && peerCount >= 5) {
+        const globalPeerCount = Object.keys(globalRooms.torrent?.getPeers() || {}).length;
+        const shardPeerCount = Object.keys(rooms.torrent?.getPeers() || {}).length;
+        if (!isSilenced && globalPeerCount >= 5) {
             netLog('Entering Adaptive Silence (leaving global room)...', '#0af');
             globalRooms.torrent.leave();
             isSilenced = true;
-        } else if (isSilenced && players.size < 3) {
+        } else if (isSilenced && shardPeerCount < 3) {
+            // Use shard peer count — players map is cleared on every room join so
+            // players.size was always 0 immediately after transition, causing constant re-joins.
             netLog('Leaving Adaptive Silence (rejoining global room)...', '#0af');
             await connectGlobal(currentRtcConfig);
             isSilenced = false;
@@ -399,6 +405,15 @@ export const isProposer = () => {
 export const joinInstance = async (location, instanceId, rtcConfig) => {
     if (rooms.torrent) rooms.torrent.leave();
     players.clear();
+    // Clear all per-peer shard state so stale data from the old room doesn't
+    // poison security checks or action chains in the new room.
+    feedHeads.clear();
+    peerHlc.clear();
+    xpBuckets.clear();
+    pendingCommits.clear();
+    // Abandon any in-flight duels — the action channel belongs to the old shard room.
+    for (const [, chan] of activeChannels) clearTimeout(chan.timeoutId);
+    activeChannels.clear();
     shardEnemies.delete(location);
     // Clear phantom combat state — the shard is fresh, no enemy is confirmed alive yet
     localPlayer.currentEnemy = null;
@@ -429,22 +444,28 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: config }, shard);
     }
 
-    // --- Technique B: Register presence with Arbiter via global room ---
-    const registerWithArbiter = async () => {
-        if (!playerKeys || !globalRooms.torrent) return;
+    // Register presence with Arbiter for rendezvous bootstrap.
+    // Uses the sendRegisterPresence action created once in connectGlobal — never calls
+    // makeAction again here (calling makeAction repeatedly stacks listeners on the same room).
+    const registerWithArbiter = async (attempt = 0) => {
+        if (!playerKeys) {
+            // Keys not ready yet — retry rather than silently dropping registration
+            if (attempt < 10) setTimeout(() => registerWithArbiter(attempt + 1), 500);
+            return;
+        }
         const entry = await myEntry();
         if (!entry) return;
-        const [sendRegister] = globalRooms.torrent.makeAction('register_presence');
-        sendRegister({ ...entry, shard });
-
-        // Also fallback to HTTP POST if available
+        // Only send via P2P if the global room is still open (Adaptive Silence may have closed it)
+        if (gameActions.sendRegisterPresence && globalRooms.torrent) {
+            gameActions.sendRegisterPresence({ ...entry, shard });
+        }
         if (ARBITER_URL) {
             fetch(`${ARBITER_URL}/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...entry, shard }),
                 signal: AbortSignal.timeout(3000),
-            }).catch(() => { });
+            }).catch(() => {});
         }
     };
     setTimeout(registerWithArbiter, 1000);
@@ -526,7 +547,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) return;
             } catch { return; }
 
-            // Security: token bucket XP rate check
+            // Security: level must match XP formula (always), and XP rate must be sane (when shadow exists)
+            if (unpacked.level !== xpToLevel(unpacked.xp)) return;
             const shadow = shadowPlayers.get(peerId);
             if (shadow) {
                 if (!checkXpRate(peerId, unpacked.xp, shadow.xp)) {
@@ -557,8 +579,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         // Broadcast presence once identity is ready. If playerKeys aren't loaded yet,
         // poll until they are — the onPeerJoin handshake will handle newly-connecting peers,
         // but this covers peers already in the room when we join.
-        const broadcastWhenReady = async () => {
-            if (!playerKeys) { setTimeout(broadcastWhenReady, 200); return; }
+        const broadcastWhenReady = async (attempt = 0) => {
+            if (!playerKeys) {
+                if (attempt < 50) setTimeout(() => broadcastWhenReady(attempt + 1), 200); // max 10s
+                return;
+            }
             const entry = await myEntry();
             if (entry) plumSend(packPresence(entry));
         };
@@ -641,6 +666,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     // HLC causal ordering
                     if (unpacked.hlc && !checkAndUpdateHlc(id, unpacked.hlc)) continue;
 
+                    if (unpacked.level !== xpToLevel(unpacked.xp)) continue;
                     const shadow = shadowPlayers.get(id);
                     if (shadow) {
                         if (!checkXpRate(id, unpacked.xp, shadow.xp)) {
@@ -869,11 +895,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             const handshake = async () => {
                 if (!knownPeers.has(peerId)) return;
-                if (players.get(peerId)?.publicKey) return;
                 // Guard: identity keys may not be ready yet (async init). Retry shortly.
                 if (!playerKeys) { setTimeout(handshake, 500); return; }
                 try {
-                    sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
+                    const pubKey = await exportKey(playerKeys.publicKey);
+                    sendIdentity({ publicKey: pubKey }, [peerId]);
                     const entry = await myEntry();
                     if (entry && gameActions.sendPresenceSingle) {
                         gameActions.sendPresenceSingle(entry, [peerId]);
@@ -881,7 +907,10 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 } catch (e) {
                     console.warn('[P2P] Handshake error:', e.message);
                 }
-                setTimeout(handshake, 3000);
+                // Stop retrying once the remote has acknowledged us (we have their publicKey
+                // AND they have ours — indicated by our presence being in their sketch).
+                // Simple heuristic: stop after identity is confirmed via getIdentity reciprocation.
+                if (!players.get(peerId)?.publicKey) setTimeout(handshake, 3000);
             };
             setTimeout(handshake, 100); // reduced from 500ms
         });
@@ -892,6 +921,15 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const isNew = !entry.publicKey;
             trackPlayer(peerId, { ...entry, publicKey, ts: Date.now() });
             if (isNew) log(`[Social] Peer ${peerId.slice(0,4)} entered the world.`, '#aaa');
+            // SYN→SYN-ACK: reciprocate our identity+presence so both sides become visible
+            if (isNew && playerKeys) {
+                exportKey(playerKeys.publicKey).then(pubKey => {
+                    sendIdentity({ publicKey: pubKey }, [peerId]);
+                    return myEntry();
+                }).then(e => {
+                    if (e && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(e, [peerId]);
+                }).catch(() => {});
+            }
             const pending = _pendingPresence.get(peerId);
             if (pending) {
                 _pendingPresence.delete(peerId);

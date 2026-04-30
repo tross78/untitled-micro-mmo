@@ -447,7 +447,6 @@ export const handleCommand = async (cmd) => {
                             if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
                             if (!localPlayer.statusEffects.find(s => s.id === 'poisoned')) {
                                 localPlayer.statusEffects.push({ id: 'poisoned', duration: 5 });
-                                bus.emit('combat:status', { entity: 'You', effect: 'poisoned', stacks: 1 });
                                 bus.emit('log', { msg: `You have been poisoned!`, color: '#f55' });
                             }
                         }
@@ -601,7 +600,6 @@ export const handleCommand = async (cmd) => {
             if (localPlayer.location === 'tavern' && !localPlayer.statusEffects?.find(s => s.id === 'well_rested')) {
                 if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
                 localPlayer.statusEffects.push({ id: 'well_rested', duration: 100 }); // "Today"
-                bus.emit('combat:status', { entity: 'You', effect: 'well_rested', stacks: 1 });
                 bus.emit('log', { msg: `The Tavern comfort makes you Well Rested! (+5 Max HP)`, color: '#0af' });
 
                 // tavern_regular quest: track unique days rested at Tavern

@@ -100,6 +100,14 @@ async function startArbiter() {
         }
     };
 
+    const addToPresenceCache = (key, entry) => {
+        if (presenceCache.size >= 500) {
+            const oldest = [...presenceCache.entries()].sort(([, a], [, b]) => a.ts - b.ts)[0];
+            presenceCache.delete(oldest[0]);
+        }
+        presenceCache.set(key, { ...entry, ts: Date.now() });
+    };
+
     const setupArbiterRoom = (r, name) => {
         const [sendState] = r.makeAction('world_state');
         const [, getRollup] = r.makeAction('rollup');
@@ -109,11 +117,7 @@ async function startArbiter() {
 
         getRegisterPresence((entry, peerId) => {
             if (bans.has(entry.ph)) return;
-            if (presenceCache.size > 500) {
-                const oldest = [...presenceCache.entries()].sort(([, a], [, b]) => a.ts - b.ts)[0];
-                presenceCache.delete(oldest[0]);
-            }
-            presenceCache.set(peerId, { ...entry, ts: Date.now() });
+            addToPresenceCache(peerId, entry);
         });
 
         getRequestState(async (_, peerId) => {
@@ -340,13 +344,7 @@ async function startArbiter() {
             req.on('end', () => {
                 try {
                     const entry = JSON.parse(body);
-                    if (entry.ph && entry.location) {
-                        if (presenceCache.size > 500) {
-                            const oldest = [...presenceCache.entries()].sort(([, a], [, b]) => a.ts - b.ts)[0];
-                            presenceCache.delete(oldest[0]);
-                        }
-                        presenceCache.set(entry.ph, { ...entry, ts: Date.now() });
-                    }
+                    if (entry.ph && entry.location) addToPresenceCache(entry.ph, entry);
                     res.writeHead(200, cors);
                     res.end('{}');
                 } catch { res.writeHead(400); res.end(); }

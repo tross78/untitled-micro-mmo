@@ -190,12 +190,6 @@ const start = async () => {
                 showFloatingText(ex, ey, 'MISS', '#fff');
             }
         });
-        bus.on('combat:miss', () => {
-            const loc = world[localPlayer.location];
-            const ex = loc.enemyX ?? Math.floor(loc.width / 2);
-            const ey = loc.enemyY ?? Math.floor(loc.height / 2);
-            showFloatingText(ex, ey, 'MISS', '#fff');
-        });
         bus.on('combat:death', ({ entity }) => {
             if (entity === 'You') playDeath();
             else playPickup();
@@ -277,7 +271,13 @@ const start = async () => {
                 updateSimulation(stateObj);
                 if (snapshot) {
                     const { seedFromSnapshot } = await import('./networking.js');
-                    seedFromSnapshot(snapshot);
+                    // Only seed ghosts for the current room — avoids polluting the
+                    // players map and sketch with stale entries from other shards.
+                    const localLoc = localPlayer?.location;
+                    const filtered = localLoc
+                        ? snapshot.filter(e => e.location === localLoc)
+                        : snapshot;
+                    seedFromSnapshot(filtered);
                 }
                 triggerLogicalRefresh();
             } else {
@@ -356,7 +356,7 @@ TAB_CHANNEL.onmessage = ({ data }) => {
     if (data.type === 'request_state' && lastValidStatePacket) {
         TAB_CHANNEL.postMessage({ type: 'state', packet: lastValidStatePacket });
     }
-    if (data.type === 'state' && worldState.day === 0) {
+    if (data.type === 'state' && !hasSyncedWithArbiter) {
         verifyMessage(
             typeof data.packet.state === 'string' ? data.packet.state : JSON.stringify(data.packet.state),
             data.packet.signature,
@@ -614,9 +614,10 @@ function setupUIEvents() {
             advanceDialogue();
             return;
         }
-        if (e.key === '~' && !inInput) {
+        if ((e.key === '~' || e.key === '`') && !inInput) {
             const visible = debugConsole.style.display !== 'none';
             debugConsole.style.display = visible ? 'none' : 'flex';
+            if (!visible) bus.emit('ui:requestFocus', {});
         }
     });
 

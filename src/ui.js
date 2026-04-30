@@ -494,7 +494,7 @@ export const drawRadar = (ctx, onTileClick) => {
         }
     });
     players.forEach((p, id) => {
-        if (p.location === localPlayer.location && p.x !== undefined && p.hp !== 0) {
+        if (!p.ghost && p.location === localPlayer.location && p.x !== undefined) {
             if (p.x < loc.width && p.y < loc.height) grid[p.y][p.x] = { type: 'peer', label: 'P' };
         }
     });
@@ -521,7 +521,6 @@ bus.on('combat:hit', ({ attacker, target, damage, crit, targetHP, targetMaxHP })
     if (targetHP !== undefined) msg += ` ${getHealthBar(targetHP, targetMaxHP)}`;
     _injectLog(msg, attacker === 'You' ? '#0f0' : '#f55');
 });
-bus.on('combat:miss', ({ attacker, target }) => _injectLog(`${attacker} missed ${target}.`, '#aaa'));
 bus.on('combat:dodge', ({ attacker, target }) => _injectLog(`${target} dodged ${attacker}'s attack!`, '#0af'));
 bus.on('combat:death', ({ entity }) => _injectLog(`${entity} has been defeated!`, '#ff0'));
 bus.on('player:levelup', ({ level }) => _injectLog(`LEVEL UP! You are now level ${level}! ✨`, '#ff0'));
