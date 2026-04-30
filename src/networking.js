@@ -176,18 +176,8 @@ export const updateSimulation = (state) => {
     }
 };
 
-// Deterministic tracker selection — same 2 trackers every time for this peer ID.
-const getMyTrackers = () => {
-    const out = [];
-    if (TORRENT_TRACKERS.length > 0) {
-        const seed = parseInt(selfId.slice(0, 8), 16) || 0;
-        const idx1 = seed % TORRENT_TRACKERS.length;
-        const idx2 = (seed + 1) % TORRENT_TRACKERS.length;
-        out.push(TORRENT_TRACKERS[idx1]);
-        if (idx1 !== idx2) out.push(TORRENT_TRACKERS[idx2]);
-    }
-    return out;
-};
+// Use all trackers to ensure maximum peer discovery and prevent network fragmentation.
+const getMyTrackers = () => TORRENT_TRACKERS;
 
 // Pre-join cache: destination shard name → { room, timeout }
 // Populated by preJoinShard() when the player walks near a portal.
@@ -231,15 +221,24 @@ export const initNetworking = async (rtcConfig) => {
         // A2: Seeking shard relay
         const [sendSeekingShard, getSeekingShard] = globalRooms.torrent.makeAction('seeking_shard');
         gameActions.sendSeekingShard = (shard) => sendSeekingShard(shard);
+        const [sendPresenceBootstrap, getPresenceBootstrap] = globalRooms.torrent.makeAction('presence_bootstrap');
 
         getSeekingShard(async (shard, peerId) => {
             // If we are in the shard the peer is seeking, push our presence to them globally
             const currentShard = getShardName(localPlayer.location, currentInstance);
             if (shard === currentShard) {
                 const entry = await myEntry();
-                if (entry && gameActions.sendPresenceSingle) {
-                    gameActions.sendPresenceSingle(entry, [peerId]);
+                if (entry) {
+                    const hlc = sendHLC();
+                    const packed = packPresence({...entry, hlc});
+                    sendPresenceBootstrap(packed, [peerId]);
                 }
+            }
+        });
+
+        getPresenceBootstrap(async (packed, peerId) => {
+            if (gameActions.processPresence) {
+                gameActions.processPresence(packed, peerId);
             }
         });
 
@@ -382,10 +381,12 @@ export const initNetworking = async (rtcConfig) => {
         console.log(`[P2P] Global Room: global (${globalPeers} peers) | Shard Room: ${shardName} (${shardPeers} peers) | Synced: ${hasSyncedWithArbiter}`);
     }, 10000);
 
-    // Fallback to TURN after 20 seconds
+    // Fallback to TURN after 20 seconds if no peers found
     setTimeout(async () => {
         const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
-        if (!hasSyncedWithArbiter && shardPeers === 0) {
+        const globalPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
+        
+        if (shardPeers === 0 && globalPeers === 0) {
             log(`\n[System] Connection sparse. Attempting relay fallback...`, '#555');
             currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
             if (globalRooms.torrent) globalRooms.torrent.leave();
@@ -1034,6 +1035,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             sendDuelChallenge, sendDuelAccept, sendDuelCommit,
             sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
             sendCommit, sendReveal, plumSend, sendPresenceDelta,
+            processPresenceSingle,
         };
     };
 
@@ -1077,6 +1079,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendSketch: (data, target) => target ? r.sendSketch(data, target) : r.sendSketch(data),
         sendRequest: (data, target) => r.sendRequest(data, target),
         sendPresenceDelta: (data, target) => target ? r.sendPresenceDelta(data, target) : r.sendPresenceDelta(data),
+        processPresence: (packed, peerId) => r.processPresenceSingle(packed, peerId),
         // Commit-reveal: call sendCommitAction before the kill, sendRevealAction after.
         sendCommitAction: ({ seq, type, target, nonce }) => {
             const commit = (hashStr(`${type}|${target}|${nonce}`) >>> 0).toString(16).padStart(8, '0');
