@@ -1,6 +1,6 @@
 import { selfId } from '@trystero-p2p/torrent';
-import { DEFAULT_PLAYER_STATS, GAME_NAME } from './data.js';
-import { deriveWorldState } from './rules.js';
+import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from './data.js';
+import { deriveWorldState, xpToLevel } from './rules.js';
 import { world } from './data.js';
 
 export const WORLD_STATE_KEY = `${GAME_NAME}_worldstate_v1`;
@@ -27,9 +27,19 @@ export const players = new Map(); // id -> {name, location, ph, level, xp, ts, p
 export const shadowPlayers = new Map(); // id -> {level, xp, inventory, gold, actionIndex}
 export const shardEnemies = new Map(); // roomId -> {hp, maxHp, lastUpdate}
 export const bans = new Set();
-export let bansHash = '';
+export const bansHash = '';
+
+// A3: SWIM-inspired presence deltas
+export let _presenceDelta = { joined: new Set(), left: new Set() };
+export const clearPresenceDelta = () => {
+    _presenceDelta.joined.clear();
+    _presenceDelta.left.clear();
+};
+
+export const SAVE_VERSION = 2;
 
 const PEER_LIMIT = 200;
+
 
 export const setBans = (list, hash) => {
     bans.clear();
@@ -37,8 +47,35 @@ export const setBans = (list, hash) => {
     bansHash = hash;
 };
 
+export const evictPlayer = (id) => {
+    if (players.has(id)) {
+        players.delete(id);
+        _presenceDelta.left.add(id);
+        _presenceDelta.joined.delete(id);
+    }
+};
+
+export const trackPlayer = (id, data) => {
+    const isNew = !players.has(id);
+    if (players.has(id)) players.delete(id);
+    players.set(id, data);
+    
+    if (isNew) {
+        _presenceDelta.joined.add(id);
+        _presenceDelta.left.delete(id);
+    }
+
+    if (players.size > PEER_LIMIT) {
+        const first = players.keys().next().value;
+        evictPlayer(first);
+    }
+};
+
+export const evictShadowPlayer = (id) => {
+    shadowPlayers.delete(id);
+};
+
 export const trackShadowPlayer = (id, data) => {
-    // data is the unpacked presence
     const shadow = { 
         ph: data.ph,
         level: data.level, 
@@ -52,16 +89,7 @@ export const trackShadowPlayer = (id, data) => {
     shadowPlayers.set(id, shadow);
     if (shadowPlayers.size > PEER_LIMIT) {
         const first = shadowPlayers.keys().next().value;
-        shadowPlayers.delete(first);
-    }
-};
-
-export const trackPlayer = (id, data) => {
-    if (players.has(id)) players.delete(id);
-    players.set(id, data);
-    if (players.size > PEER_LIMIT) {
-        const first = players.keys().next().value;
-        players.delete(first);
+        evictShadowPlayer(first);
     }
 };
 
@@ -99,10 +127,29 @@ import { loadState } from './persistence.js';
 // ...
 // --- PERSISTENCE HELPERS ---
 export const loadLocalState = async (log) => {
-    const data = await loadState();
+    let data = await loadState();
     if (data) {
         try {
+            // E3: Migration - If no version or old version, handle appropriately
+            if (!data._version || data._version < SAVE_VERSION) {
+                if (log) log(`[System] Migrating state to v${SAVE_VERSION}...`, '#aaa');
+                data._version = SAVE_VERSION;
+            }
+
+            // E2: Field Clamping / Validation
+            data.maxHp = Math.max(1, data.maxHp ?? 50);
+            data.hp = Math.max(0, Math.min(data.hp ?? 0, data.maxHp));
+            data.gold = Math.max(0, data.gold ?? 0);
+            if (data.gold > 999999) data.gold = 999999;
+            data.xp = Math.max(0, data.xp ?? 0);
+            data.level = xpToLevel(data.xp); // derive, don't trust
+            
+            if (!Array.isArray(data.inventory)) data.inventory = [];
+            // strip unknown items and clamp size
+            data.inventory = data.inventory.filter(id => ITEMS[id]).slice(0, 50);
+
             Object.assign(localPlayer, data);
+            
             if (typeof localPlayer.combatRound !== 'number' || isNaN(localPlayer.combatRound)) {
                 localPlayer.combatRound = 0;
             }
@@ -117,7 +164,7 @@ export const loadLocalState = async (log) => {
                 localPlayer.location = 'cellar';
             }
             if (log) log(`[System] Welcome back, ${localPlayer.name}.`);
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error('[Store] Load error:', e); }
     }
     const cachedWorld = localStorage.getItem(WORLD_STATE_KEY);
     // ...
@@ -140,6 +187,6 @@ export const loadLocalState = async (log) => {
 export const pruneStale = (PRESENCE_TTL) => {
     const cutoff = Date.now() - PRESENCE_TTL;
     players.forEach((entry, id) => {
-        if (id !== selfId && (entry.ts ?? 0) < cutoff) players.delete(id);
+        if (id !== selfId && (entry.ts ?? 0) < cutoff) evictPlayer(id);
     });
 };

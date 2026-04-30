@@ -28,11 +28,52 @@ export class InputManager {
   constructor() {
     this.activeActions = new Set();
     this.prevGamepadButtons = new Set();
+    this.gamepadConnected = false;
+    this.touchStart = { x: 0, y: 0 };
   }
 
   init() {
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
     window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    
+    // D1: Gamepad connection tracking
+    window.addEventListener('gamepadconnected', () => { this.gamepadConnected = true; });
+    window.addEventListener('gamepaddisconnected', () => {
+      this.gamepadConnected = (navigator.getGamepads ? Array.from(navigator.getGamepads()) : []).some(g => g);
+    });
+
+    // D2: Touch swipe gestures
+    const canvas = document.getElementById('game-area');
+    if (canvas) {
+      canvas.addEventListener('touchstart', (e) => {
+        this.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }, { passive: true });
+
+      canvas.addEventListener('touchend', (e) => {
+        const touchEnd = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        const dx = touchEnd.x - this.touchStart.x;
+        const dy = touchEnd.y - this.touchStart.y;
+        const absX = Math.abs(dx);
+        const absY = Math.abs(dy);
+
+        if (Math.max(absX, absY) > 20) {
+          // Swipe detected
+          e.preventDefault(); // Prevent synthetic click
+          let action = null;
+          if (absX > absY) {
+            action = dx > 0 ? ACTION.MOVE_E : ACTION.MOVE_W;
+          } else {
+            action = dy > 0 ? ACTION.MOVE_S : ACTION.MOVE_N;
+          }
+          if (action) {
+            bus.emit('input:action', { action, type: 'down' });
+            // Emit UP immediately since swipe is a discrete step
+            setTimeout(() => bus.emit('input:action', { action, type: 'up' }), 50);
+          }
+        }
+      }, { passive: false });
+    }
+
     this.startGamepadPolling();
   }
 
@@ -61,6 +102,10 @@ export class InputManager {
 
   startGamepadPolling() {
     const poll = () => {
+      if (!this.gamepadConnected) {
+        requestAnimationFrame(poll);
+        return;
+      }
       const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
       for (const gp of gamepads) {
         if (!gp) continue;

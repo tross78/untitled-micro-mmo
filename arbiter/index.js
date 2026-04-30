@@ -340,8 +340,15 @@ async function startArbiter() {
             res.end(JSON.stringify(entries));
         } else if (req.url === '/register' && req.method === 'POST') {
             let body = '';
-            req.on('data', chunk => { body += chunk; });
+            req.on('data', chunk => { 
+                if (body.length + chunk.length > 1024) {
+                    req.socket.destroy();
+                    return;
+                }
+                body += chunk; 
+            });
             req.on('end', () => {
+                if (req.socket.destroyed) return;
                 try {
                     const entry = JSON.parse(body);
                     if (entry.ph && entry.location) addToPresenceCache(entry.ph, entry);

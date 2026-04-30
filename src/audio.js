@@ -6,8 +6,13 @@
 let audioCtx = null;
 
 function initAudio() {
-    if (audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx || typeof window === 'undefined') return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+        audioCtx = null;
+        return;
+    }
     // Resume context on user gesture if needed
     if (audioCtx.state === 'suspended') {
         const resume = () => {

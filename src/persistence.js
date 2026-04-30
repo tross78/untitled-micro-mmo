@@ -1,4 +1,4 @@
-import { STORAGE_KEY } from './store.js';
+import { STORAGE_KEY, SAVE_VERSION } from './store.js';
 
 let saveTimer = null;
 
@@ -43,12 +43,13 @@ const dbGet = async (store, key) => {
  * Persists localPlayer state to IndexedDB (and legacy write-through).
  */
 export const saveLocalState = async (localPlayer, immediate = false) => {
+    const dataWithVersion = { ...localPlayer, _version: SAVE_VERSION };
     const persist = async () => {
         try {
             // Primary store: IndexedDB
-            await dbPut('player', 'local', localPlayer);
+            await dbPut('player', 'local', dataWithVersion);
             // Legacy write-through (for now)
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(localPlayer));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(dataWithVersion));
         } catch (e) {
             console.warn('[System] Persistence failed:', e.message);
         }
@@ -63,6 +64,19 @@ export const saveLocalState = async (localPlayer, immediate = false) => {
         await persist();
         saveTimer = null;
     }, 5000);
+};
+
+/**
+ * Emergency synchronous flush for beforeunload.
+ * Uses localStorage only as IDB is async and unreliable in beforeunload.
+ */
+export const flushSync = (localPlayer) => {
+    try {
+        const dataWithVersion = { ...localPlayer, _version: SAVE_VERSION };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(dataWithVersion));
+    } catch (e) {
+        console.warn('[System] Emergency flush failed:', e.message);
+    }
 };
 
 export const loadState = async () => {

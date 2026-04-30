@@ -1,5 +1,5 @@
 import { saveLocalState, loadState } from './persistence.js';
-import { STORAGE_KEY } from './store.js';
+import { STORAGE_KEY, SAVE_VERSION } from './store.js';
 
 // Mock IndexedDB
 const mockIDB = {
@@ -48,7 +48,8 @@ describe('Persistence System (Phase 7.5 Audit)', () => {
         // Use the existing mock which triggers callbacks
         await saveLocalState(player, true);
         
-        expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify(player));
+        const expected = { ...player, _version: SAVE_VERSION };
+        expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify(expected));
     });
 
     test('loadState falls back to localStorage if IndexedDB empty', async () => {

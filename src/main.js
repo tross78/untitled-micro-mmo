@@ -3,7 +3,7 @@ import {
     worldState, players, localPlayer, hasSyncedWithArbiter,
     TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade, shardEnemies
 } from './store.js';
-import { saveLocalState } from './persistence.js';
+import { saveLocalState, flushSync } from './persistence.js';
 import { log, printStatus, renderActionButtons, startTicker } from './ui.js';
 import {
     renderWorld, toggleDevRadar, setVisualRefreshCallback, setLogicalRefreshCallback,
@@ -47,7 +47,10 @@ const HEARTBEAT_MS = 120000;
  */
 // Move the player one tile in (stepX, stepY). If the step exits the zone boundary,
 // auto-transition to the adjacent room via the matching exit entry point.
+let isMoving = false;
 const stepPlayer = async (stepX, stepY) => {
+    if (isMoving) return;
+
     // Combat Guard: check shard state to see if enemy is still alive
     if (localPlayer.currentEnemy) {
         const shared = shardEnemies.get(localPlayer.location);
@@ -55,69 +58,87 @@ const stepPlayer = async (stepX, stepY) => {
         localPlayer.currentEnemy = null; // Clear if dead
     }
 
-    const loc = world[localPlayer.location];
-    const nextX = localPlayer.x + stepX;
-    const nextY = localPlayer.y + stepY;
+    isMoving = true;
+    
+    try {
+        const loc = world[localPlayer.location];
+        const nextX = localPlayer.x + stepX;
+        const nextY = localPlayer.y + stepY;
 
-    // Predictive pre-join: start WebRTC negotiation for adjacent rooms while the player
-    // is still walking toward them, so the connection is ready when they arrive.
-    const px = localPlayer.x, py = localPlayer.y;
-    for (const tile of (loc.exitTiles || [])) {
-        if (Math.abs(tile.x - px) + Math.abs(tile.y - py) <= 2) preJoinShard(tile.dest);
-    }
-    const exits = loc.exits || {};
-    if (px <= 1 && exits.west) preJoinShard(exits.west);
-    if (px >= loc.width - 2 && exits.east) preJoinShard(exits.east);
-    if (py <= 1 && exits.north) preJoinShard(exits.north);
-    if (py >= loc.height - 2 && exits.south) preJoinShard(exits.south);
+        // Predictive pre-join: start WebRTC negotiation for adjacent rooms
+        const px = localPlayer.x, py = localPlayer.y;
+        for (const tile of (loc.exitTiles || [])) {
+            if (Math.abs(tile.x - px) + Math.abs(tile.y - py) <= 2) preJoinShard(tile.dest);
+        }
+        const exits = loc.exits || {};
+        if (px <= 1 && exits.west) preJoinShard(exits.west);
+        if (px >= loc.width - 2 && exits.east) preJoinShard(exits.east);
+        if (py <= 1 && exits.north) preJoinShard(exits.north);
+        if (py >= loc.height - 2 && exits.south) preJoinShard(exits.south);
 
-    const outOfBounds = nextX < 0 || nextX >= loc.width || nextY < 0 || nextY >= loc.height;
+        const outOfBounds = nextX < 0 || nextX >= loc.width || nextY < 0 || nextY >= loc.height;
 
-    if (!outOfBounds) {
-        localPlayer.x = nextX;
-        localPlayer.y = nextY;
-        saveLocalState(localPlayer);
-        if (gameActions.sendMove) gameActions.sendMove({ from: localPlayer.location, to: localPlayer.location, x: nextX, y: nextY });
-
-        // Exit tile check (interior doorways)
-        const exit = ( loc.exitTiles || []).find(p => p.x === nextX && p.y === nextY);
-        if (exit) {
-            const prevLoc = localPlayer.location;
-            localPlayer.location = exit.dest;
-            localPlayer.x = exit.destX ?? 5;
-            localPlayer.y = exit.destY ?? 5;
+        if (!outOfBounds) {
+            localPlayer.x = nextX;
+            localPlayer.y = nextY;
             saveLocalState(localPlayer);
-            myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
-            if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: exit.dest, x: localPlayer.x, y: localPlayer.y });
-            bus.emit('player:move', { from: prevLoc, to: exit.dest });
-            joinInstance(exit.dest, currentInstance, currentRtcConfig).then(triggerLogicalRefresh);
+            if (gameActions.sendMove) gameActions.sendMove({ from: localPlayer.location, to: localPlayer.location, x: nextX, y: nextY });
+
+            // Exit tile check (interior doorways)
+            const exit = ( loc.exitTiles || []).find(p => p.x === nextX && p.y === nextY);
+            if (exit) {
+                const prevLoc = localPlayer.location;
+                localPlayer.location = exit.dest;
+                localPlayer.x = exit.destX ?? 5;
+                localPlayer.y = exit.destY ?? 5;
+                saveLocalState(localPlayer);
+                
+                // Join new shard BEFORE broadcasting to ensure shardActions are updated
+                await joinInstance(exit.dest, currentInstance, currentRtcConfig);
+                
+                const entry = await myEntry();
+                if (entry && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
+                if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: exit.dest, x: localPlayer.x, y: localPlayer.y });
+                
+                bus.emit('player:move', { from: prevLoc, to: exit.dest });
+                triggerLogicalRefresh();
+                return;
+            }
+            triggerLogicalRefresh();
             return;
         }
+
+        // Out of bounds — find the exit direction and transition
+        const dirMap = [
+            { sx: 0, sy: -1, dir: 'north' }, { sx: 0, sy: 1, dir: 'south' },
+            { sx: -1, sy: 0, dir: 'west' },  { sx: 1, sy: 0, dir: 'east' },
+            { sx: 0, sy: -1, dir: 'up' },    { sx: 0, sy: 1, dir: 'down' },
+        ];
+        const match = dirMap.find(d => d.sx === stepX && d.sy === stepY);
+        const destId = match && loc.exits?.[match.dir];
+        if (!destId || !world[destId]) return; // no exit, treat as wall
+
+        // Use the exit that leads to destId for the entry position
+        const entryExit = ( loc.exitTiles || []).find(p => p.dest === destId);
+        const prevLoc = localPlayer.location;
+        localPlayer.location = destId;
+        localPlayer.x = entryExit?.destX ?? Math.floor(world[destId].width / 2);
+        localPlayer.y = entryExit?.destY ?? Math.floor(world[destId].height / 2);
+        saveLocalState(localPlayer);
+        
+        // Join new shard BEFORE broadcasting
+        await joinInstance(destId, currentInstance, currentRtcConfig);
+        
+        const entry = await myEntry();
+        if (entry && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
+        if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: destId, x: localPlayer.x, y: localPlayer.y });
+        
+        bus.emit('player:move', { from: prevLoc, to: destId });
         triggerLogicalRefresh();
-        return;
+    } finally {
+        const MOVE_COOLDOWN = 150; // ms per tile
+        setTimeout(() => { isMoving = false; }, MOVE_COOLDOWN);
     }
-
-    // Out of bounds — find the exit direction and transition
-    const dirMap = [
-        { sx: 0, sy: -1, dir: 'north' }, { sx: 0, sy: 1, dir: 'south' },
-        { sx: -1, sy: 0, dir: 'west' },  { sx: 1, sy: 0, dir: 'east' },
-        { sx: 0, sy: -1, dir: 'up' },    { sx: 0, sy: 1, dir: 'down' },
-    ];
-    const match = dirMap.find(d => d.sx === stepX && d.sy === stepY);
-    const destId = match && loc.exits?.[match.dir];
-    if (!destId || !world[destId]) return; // no exit, treat as wall
-
-    // Use the exit that leads to destId for the entry position
-    const entryExit = ( loc.exitTiles || []).find(p => p.dest === destId);
-    const prevLoc = localPlayer.location;
-    localPlayer.location = destId;
-    localPlayer.x = entryExit?.destX ?? Math.floor(world[destId].width / 2);
-    localPlayer.y = entryExit?.destY ?? Math.floor(world[destId].height / 2);
-    saveLocalState(localPlayer);
-    myEntry().then(entry => { if (gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry); });
-    if (gameActions.sendMove) gameActions.sendMove({ from: prevLoc, to: destId, x: localPlayer.x, y: localPlayer.y });
-    bus.emit('player:move', { from: prevLoc, to: destId });
-    joinInstance(destId, currentInstance, currentRtcConfig).then(triggerLogicalRefresh);
 };
 
 let _vRefreshTimer = null;
@@ -634,5 +655,13 @@ function setupUIEvents() {
         window.visualViewport.addEventListener('scroll', onViewportChange);
     }
 }
+
+// E1: Emergency Flush on tab close or backgrounding
+window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSync(localPlayer);
+});
+window.addEventListener('beforeunload', () => {
+    flushSync(localPlayer);
+});
 
 start();

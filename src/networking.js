@@ -4,7 +4,8 @@ import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } fro
 import { 
     worldState, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
     TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY,
-    players, shadowPlayers, shardEnemies, trackPlayer, trackShadowPlayer, bansHash, setBans, bans
+    players, shadowPlayers, shardEnemies, trackPlayer, trackShadowPlayer, bansHash, setBans, bans,
+    _presenceDelta, clearPresenceDelta, evictPlayer, evictShadowPlayer
 } from './store.js';
 import { INSTANCE_CAP, ENEMIES, world } from './data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
@@ -227,6 +228,21 @@ export const initNetworking = async (rtcConfig) => {
         gameActions.sendRegisterPresence = (data) => sendRegisterPresence(data);
         const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
 
+        // A2: Seeking shard relay
+        const [sendSeekingShard, getSeekingShard] = globalRooms.torrent.makeAction('seeking_shard');
+        gameActions.sendSeekingShard = (shard) => sendSeekingShard(shard);
+
+        getSeekingShard(async (shard, peerId) => {
+            // If we are in the shard the peer is seeking, push our presence to them globally
+            const currentShard = getShardName(localPlayer.location, currentInstance);
+            if (shard === currentShard) {
+                const entry = await myEntry();
+                if (entry && gameActions.sendPresenceSingle) {
+                    gameActions.sendPresenceSingle(entry, [peerId]);
+                }
+            }
+        });
+
         gameActions.submitRollup = (rollup) => sendRollup(rollup);
         gameActions.submitFraudProof = (proof) => sendFraud(proof);
 
@@ -287,22 +303,46 @@ export const initNetworking = async (rtcConfig) => {
 
         getStateOffer(async (shadow, peerId) => {
             if (!shadow || !shadow.ph || shadow.ph !== localPlayer.ph) return;
-            // Verify: shadow must be signed by the player whose state is being rescued (us).
-            // The offering peer stored our signed presence; verify it against our own ph.
-            const offerer = players.get(peerId);
-            if (shadow.signature && offerer?.publicKey) {
-                try {
-                    const { signature, ...sigData } = shadow;
-                    const pubKey = await importKey(offerer.publicKey, 'public');
-                    // Shadow is signed by the rescued player, not the offerer — use ph-derived key check.
-                    // Since we can't verify our own past key easily here, check xp/level consistency.
-                    if (shadow.level !== xpToLevel(shadow.xp)) return;
-                } catch { return; }
+
+            // Security: derives must match and signature is REQUIRED for rescue
+            const derivedLevel = xpToLevel(shadow.xp || 0);
+            if (shadow.level !== derivedLevel) {
+                console.warn(`[Rescue] Rejected: level mismatch (${shadow.level} vs ${derivedLevel})`);
+                return;
             }
+
+            const offerer = players.get(peerId);
+            if (!shadow.signature || !offerer?.publicKey) {
+                console.warn(`[Rescue] Rejected: missing signature or offerer public key`);
+                return;
+            }
+
+            // Security: 10% XP ceiling — rescue shouldn't advance more than 10% beyond current progress
+            const xpCeiling = Math.floor(localPlayer.xp * 1.10) + 100; // +100 base buffer for early game
+            if (shadow.xp > xpCeiling) {
+                console.warn(`[Rescue] Rejected: XP ceiling exceeded (${shadow.xp} vs ${xpCeiling})`);
+                log(`[Rescue] Rejected: offer from ${peerId.slice(0, 8)} exceeds progress ceiling.`, '#f55');
+                return;
+            }
+
+            try {
+                const { signature, ...sigData } = shadow;
+                const pubKey = await importKey(offerer.publicKey, 'public');
+                // Note: since we are the ones being rescued, we verify against our own PH which 
+                // the offerer has signed. The offerer is acting as the store.
+                if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) {
+                    console.warn(`[Rescue] Rejected: signature verification failed`);
+                    return;
+                }
+            } catch (e) { 
+                console.error(`[Rescue] Verification error:`, e);
+                return; 
+            }
+
             log(`[System] Received state rescue offer from ${peerId.slice(0, 8)}!`, '#0f0');
             if (shadow.xp > localPlayer.xp) {
                 localPlayer.xp = shadow.xp;
-                localPlayer.level = xpToLevel(shadow.xp); // derive from xp, don't trust claimed level
+                localPlayer.level = derivedLevel;
                 localPlayer.gold = Math.max(localPlayer.gold, shadow.gold || 0);
                 const myInv = new Set(localPlayer.inventory);
                 (shadow.inventory || []).forEach(i => myInv.add(i));
@@ -379,12 +419,31 @@ export const initNetworking = async (rtcConfig) => {
         gameActions.sendRollupLocal(data);
     }, ROLLUP_INTERVAL);
 
-    // Dynamic Sketch Intervals: scale with population to prevent chatter storms
-    const scheduleNextSketch = () => {
-        const delay = 30000 + (players.size * 5000);
+    // A1: Exponential Backoff Sketch Intervals
+    const scheduleNextSketch = (attempt = 0) => {
+        // Burst sequence: [200ms, 1s, 4s, 16s] then settle to steady-state formula
+        let delay;
+        if (attempt === 0) delay = 200;
+        else if (attempt === 1) delay = 1000;
+        else if (attempt === 2) delay = 4000;
+        else if (attempt === 3) delay = 16000;
+        else delay = 30000 + (players.size * 5000);
+
         setTimeout(() => {
             if (gameActions.sendSketch) gameActions.sendSketch(buildSketch().serialize());
-            scheduleNextSketch();
+            
+            // A3: SWIM-inspired presence delta piggybacking
+            if (_presenceDelta.joined.size > 0 || _presenceDelta.left.size > 0) {
+                if (gameActions.sendPresenceDelta) {
+                    gameActions.sendPresenceDelta({
+                        joined: Array.from(_presenceDelta.joined),
+                        left: Array.from(_presenceDelta.left)
+                    });
+                }
+                clearPresenceDelta();
+            }
+
+            scheduleNextSketch(attempt + 1);
         }, delay);
     };
     scheduleNextSketch();
@@ -422,6 +481,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     const shard = getShardName(location, instanceId);
     console.log(`[P2P] Joining Shard Room: ${shard}`);
     const config = rtcConfig || currentRtcConfig;
+
+    // A2: Global-to-shard relay bootstrap
+    if (globalRooms.torrent && gameActions.sendSeekingShard) {
+        gameActions.sendSeekingShard(shard);
+    }
 
     // Technique B: Fetch shard-specific peer snapshot from Arbiter.
     if (ARBITER_URL) {
@@ -499,6 +563,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendSketch, getSketch] = r.makeAction('presence_sketch');
         const [sendRequest, getRequest] = r.makeAction('request_presence');
         const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
+        // A3: Presence delta piggybacking
+        const [sendPresenceDelta, getPresenceDelta] = r.makeAction('presence_delta');
+
         // Plumtree lazy-push announcements and commit-reveal wire actions
         const [sendAnnounce, getAnnounce] = r.makeAction('presence_announce');
         const [sendCommit, getCommit] = r.makeAction('commit_action');
@@ -510,6 +577,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         // Presence packets that arrive before the peer's public key is known
         // are queued here (keyed by peerId, one packet max — newest wins).
         const _pendingPresence = new Map();
+
+        getPresenceDelta(async ({ joined, left }, peerId) => {
+            // SWIM-inspired: immediately update peer roster from delta
+            (left || []).forEach(id => {
+                if (id !== selfId) evictPlayer(id);
+            });
+            // If we see joined IDs we don't have, request them
+            const missing = (joined || []).filter(id => id !== selfId && !players.has(id));
+            if (missing.length > 0) sendRequest(missing, [peerId]);
+        });
 
         // --- helpers ---
 
@@ -523,7 +600,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
 
             if (bans.has(entry.publicKey)) {
-                players.delete(peerId);
+                evictPlayer(peerId);
                 _pendingPresence.delete(peerId);
                 return;
             }
@@ -547,16 +624,14 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) return;
             } catch { return; }
 
-            // Security: level must match XP formula (always), and XP rate must be sane (when shadow exists)
+            // Security: level must match XP formula (always), and XP rate must be sane
             if (unpacked.level !== xpToLevel(unpacked.xp)) return;
             const shadow = shadowPlayers.get(peerId);
-            if (shadow) {
-                if (!checkXpRate(peerId, unpacked.xp, shadow.xp)) {
-                    console.warn(`[Security] XP rate exceeded for ${peerId.slice(0,8)}: ${unpacked.xp} vs ${shadow.xp}`);
-                    return;
-                }
-                if (unpacked.level > shadow.level + 1) return;
+            if (!checkXpRate(peerId, unpacked.xp, shadow?.xp || 0)) {
+                console.warn(`[Security] XP rate exceeded for ${peerId.slice(0,8)}: ${unpacked.xp} vs ${shadow?.xp || 0}`);
+                return;
             }
+            if (shadow && unpacked.level > shadow.level + 1) return;
 
             trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
             trackShadowPlayer(peerId, unpacked);
@@ -668,13 +743,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
                     if (unpacked.level !== xpToLevel(unpacked.xp)) continue;
                     const shadow = shadowPlayers.get(id);
-                    if (shadow) {
-                        if (!checkXpRate(id, unpacked.xp, shadow.xp)) {
-                            console.warn(`[Security] XP rate exceeded for ${id.slice(0,8)}`);
-                            continue;
-                        }
-                        if (unpacked.level > shadow.level + 1) continue;
+                    if (!checkXpRate(id, unpacked.xp, shadow?.xp || 0)) {
+                        console.warn(`[Security] XP rate exceeded for ${id.slice(0,8)}`);
+                        continue;
                     }
+                    if (shadow && unpacked.level > shadow.level + 1) continue;
 
                     const expectedPh = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
                     if (unpacked.ph !== expectedPh) continue;
@@ -941,8 +1014,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             bus.emit('peer:leave', { peerId });
             knownPeers.delete(peerId);
             hpv.onLeave(peerId);
-            players.delete(peerId);
-            shadowPlayers.delete(peerId);
+            evictPlayer(peerId);
+            evictShadowPlayer(peerId);
             xpBuckets.delete(peerId);
             peerHlc.delete(peerId);
             feedHeads.delete(peerId);
@@ -960,7 +1033,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             sendRelay, sendRollupLocal, sendSketch, sendRequest,
             sendDuelChallenge, sendDuelAccept, sendDuelCommit,
             sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
-            sendCommit, sendReveal, plumSend,
+            sendCommit, sendReveal, plumSend, sendPresenceDelta,
         };
     };
 
@@ -973,7 +1046,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         if (entry) r.plumSend(packPresence(entry));
     }, 800);
 
-    Object.assign(gameActions, {
+    const shardActions = {
         sendMove: async (data) => {
             const hlc = sendHLC();
             const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: hlc.wall };
@@ -1003,11 +1076,15 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendTradeFinal: (data) => r.sendTradeFinal(data),
         sendSketch: (data, target) => target ? r.sendSketch(data, target) : r.sendSketch(data),
         sendRequest: (data, target) => r.sendRequest(data, target),
+        sendPresenceDelta: (data, target) => target ? r.sendPresenceDelta(data, target) : r.sendPresenceDelta(data),
         // Commit-reveal: call sendCommitAction before the kill, sendRevealAction after.
         sendCommitAction: ({ seq, type, target, nonce }) => {
             const commit = (hashStr(`${type}|${target}|${nonce}`) >>> 0).toString(16).padStart(8, '0');
             r.sendCommit({ seq, commit });
         },
         sendRevealAction: (data) => r.sendReveal(data),
-    });
+    };
+
+    Object.assign(gameActions, shardActions);
+    return shardActions;
 };

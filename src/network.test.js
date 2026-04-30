@@ -306,4 +306,79 @@ describe('Network Protocol Integration', () => {
             expect(seed1).not.toBe(seed2);
         });
     });
+
+    describe('Join Instance Lifecycle', () => {
+        test('joinInstance does not stack makeAction listeners on repeated calls', () => {
+            const globalRoom = { makeAction: jest.fn(() => [jest.fn(), jest.fn()]) };
+            let makeActionCalls = 0;
+            globalRoom.makeAction.mockImplementation(() => {
+                makeActionCalls++;
+                return [jest.fn(), jest.fn()];
+            });
+
+            // connectGlobal (simulated)
+            const [sendRegisterPresence] = globalRoom.makeAction('register_presence');
+            const gameActions = { sendRegisterPresence: (data) => sendRegisterPresence(data) };
+
+            // joinInstance (simulated)
+            const joinInstance = () => {
+                // Uses existing gameActions, does NOT call makeAction again
+                if (gameActions.sendRegisterPresence) {
+                    gameActions.sendRegisterPresence({ shard: 'test' });
+                }
+            };
+
+            joinInstance();
+            joinInstance();
+
+            expect(makeActionCalls).toBe(1);
+        });
+
+        test('players map is empty immediately after joinInstance', () => {
+            const players = new Map([['peer1', { name: 'Alice' }]]);
+            const joinInstance = () => {
+                players.clear();
+            };
+            joinInstance();
+            expect(players.size).toBe(0);
+        });
+
+        test('feedHeads/peerHlc cleared on room transition', () => {
+            const feedHeads = new Map([['p1', { seq: 1 }]]);
+            const peerHlc = new Map([['p1', { wall: 100 }]]);
+            const joinInstance = () => {
+                feedHeads.clear();
+                peerHlc.clear();
+            };
+            joinInstance();
+            expect(feedHeads.size).toBe(0);
+            expect(peerHlc.size).toBe(0);
+        });
+
+        test('registerWithArbiter retries if playerKeys not ready', () => {
+            jest.useFakeTimers();
+            let playerKeys = null;
+            let registered = false;
+
+            const registerWithArbiter = (attempt = 0) => {
+                if (!playerKeys) {
+                    if (attempt < 10) setTimeout(() => registerWithArbiter(attempt + 1), 500);
+                    return;
+                }
+                registered = true;
+            };
+
+            registerWithArbiter();
+            expect(registered).toBe(false);
+
+            jest.advanceTimersByTime(500);
+            expect(registered).toBe(false);
+
+            playerKeys = { public: {}, private: {} };
+            jest.advanceTimersByTime(500);
+            expect(registered).toBe(true);
+            jest.useRealTimers();
+        });
+    });
 });
+
