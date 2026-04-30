@@ -27,7 +27,7 @@ export const players = new Map(); // id -> {name, location, ph, level, xp, ts, p
 export const shadowPlayers = new Map(); // id -> {level, xp, inventory, gold, actionIndex}
 export const shardEnemies = new Map(); // roomId -> {hp, maxHp, lastUpdate}
 export const bans = new Set();
-export const bansHash = '';
+export let bansHash = '';
 
 // A3: SWIM-inspired presence deltas
 export let _presenceDelta = { joined: new Set(), left: new Set() };
