@@ -193,10 +193,66 @@
         .tile.entity-enemy { color: #f55; }
         .tile.portal      { color: #f0f; }
 
+        /* C4 Step 2: Dual Layout */
+        #game-area {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            /* Safe area padding for notched phones */
+            padding-top: env(safe-area-inset-top);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+
+        #side-panel {
+            display: none;
+            overflow-y: auto;
+            border-left: 1px solid #111;
+            padding: 8px;
+        }
+
+        @media (orientation: landscape) {
+            body {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                grid-template-rows: 1fr auto;
+                padding: 0;
+            }
+            #game-area {
+                grid-column: 1;
+                grid-row: 1 / span 2;
+                height: 100vh;
+                height: 100dvh;
+            }
+            #side-panel {
+                display: flex;
+                flex-direction: column;
+                grid-column: 2;
+                grid-row: 1;
+            }
+            #debug-console {
+                grid-column: 2;
+                grid-row: 2;
+                max-height: 40vh;
+            }
+            #action-buttons {
+                border-top: none;
+            }
+        }
+
     </style>
 </head>
 <body>
-    <div id="radar-container"></div>
+    <div id="game-area">
+        <div id="radar-container"></div>
+    </div>
+    
+    <div id="side-panel">
+        <!-- Phase 8 will move action buttons here in landscape -->
+    </div>
 
     <div id="action-buttons"></div>
 
