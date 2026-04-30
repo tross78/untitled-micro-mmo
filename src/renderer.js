@@ -105,11 +105,11 @@ function initCanvas() {
         container.appendChild(_canvas);
         // C4: Scale-to-fit via ResizeObserver
         const ro = new ResizeObserver(() => {
-            const scale = Math.min(container.clientWidth / VP.CW, container.clientHeight / VP.CH);
+            // Subtract small padding to avoid scrollbars
+            const scale = Math.min((container.clientWidth - 4) / VP.CW, (container.clientHeight - 4) / VP.CH);
             _canvas.style.transform = `scale(${scale})`;
-            _canvas.style.transformOrigin = 'top left';
-            // Collapse dead space in the container to avoid weird layout gaps
-            container.style.height = Math.round(VP.CH * scale) + 'px';
+            _canvas.style.transformOrigin = 'center';
+            _canvas.style.margin = '0';
         });
         ro.observe(container);
     } else if (_radarEl) {
