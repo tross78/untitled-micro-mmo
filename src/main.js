@@ -267,7 +267,7 @@ const start = async () => {
 
         const processBeacon = async (packet, source) => {
             if (!packet || hasSyncedWithArbiter) return;
-            const { state, signature } = packet;
+            const { state, signature, snapshot } = packet;
             const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
             const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
             if (valid) {
@@ -275,6 +275,10 @@ const start = async () => {
                 TAB_CHANNEL.postMessage({ type: 'state', packet });
                 const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
                 updateSimulation(stateObj);
+                if (snapshot) {
+                    const { seedFromSnapshot } = await import('./networking.js');
+                    seedFromSnapshot(snapshot);
+                }
                 triggerLogicalRefresh();
             } else {
                 console.warn(`[System] Beacon from ${source} failed verification.`);

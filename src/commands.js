@@ -126,7 +126,7 @@ export const handleCommand = async (cmd) => {
         }
 
         case 'who': {
-            const nearby = Array.from(players.keys()).map(id => getPlayerName(id));
+            const nearby = Array.from(players.keys()).filter(id => !players.get(id).ghost).map(id => getPlayerName(id));
             if (nearby.length === 0) {
                 bus.emit('log', { msg: `You are alone here.`, color: '#555' });
             } else {
@@ -157,12 +157,14 @@ export const handleCommand = async (cmd) => {
             break;
 
         case 'duel': {
-            const targetName = args.slice(1).join(' ').toLowerCase();
-            if (!targetName) break;
-            const ids = Array.from(players.keys());
+            const rawArg = args.slice(1).join(' ');
+            if (!rawArg) break;
+            const ids = Array.from(players.keys()).filter(id => !players.get(id).ghost);
             const getNameOnly = (id) => (getPlayerEntry(id)?.name || '').toLowerCase();
-            const targetId = ids.find(id => getNameOnly(id) === targetName)
-                          ?? ids.find(id => getNameOnly(id).includes(targetName));
+            const lower = rawArg.toLowerCase();
+            const targetId = (players.has(rawArg) ? rawArg : null)
+                          ?? ids.find(id => getNameOnly(id) === lower)
+                          ?? ids.find(id => getNameOnly(id).includes(lower));
             if (!targetId) { log(`Player not found.`); break; }
             log(`[DUEL] Challenging ${getPlayerName(targetId)}...`, '#ff0');
             gameActions.sendDuelChallenge({ target: targetId, fromName: localPlayer.name });
@@ -247,7 +249,7 @@ export const handleCommand = async (cmd) => {
             }
             const npcs = getNPCsAt(localPlayer.location);
             if (npcs.length > 0) log(`NPCs here: ${npcs.map(id => NPCS[id].name).join(', ')}`, '#0ff');
-            const here = Array.from(players.keys()).filter(id => players.get(id).location === localPlayer.location);
+            const here = Array.from(players.keys()).filter(id => !players.get(id).ghost && players.get(id).location === localPlayer.location);
             if (here.length > 0) log(`Also here: ${here.map(getPlayerName).join(', ')}`, '#aaa');
             const exits = Object.keys(loc.exits).join(', ');
             log(`Exits: ${exits}`, '#555');
@@ -1102,9 +1104,17 @@ export const handleCommand = async (cmd) => {
                 break;
             }
 
-            // trade <partnerId>
-            const partnerId = sub;
-            const partner = players.get(partnerId);
+            // trade <partnerId|name> — sub is lowercased so use args[1] for exact peer ID lookup,
+            // falling back to name search for CLI use.
+            const rawArg = args.slice(1).join(' ');
+            let partnerId = (players.has(rawArg) && !players.get(rawArg).ghost) ? rawArg : null;
+            if (!partnerId) {
+                const lower = rawArg.toLowerCase();
+                const ids = Array.from(players.keys()).filter(id => !players.get(id).ghost);
+                partnerId = ids.find(id => (players.get(id)?.name || '').toLowerCase() === lower)
+                         ?? ids.find(id => (players.get(id)?.name || '').toLowerCase().includes(lower));
+            }
+            const partner = partnerId ? players.get(partnerId) : null;
             if (!partner) { log(`Player not found.`); break; }
             if (partner.location !== localPlayer.location) { log(`${partner.name} is not here.`); break; }
 

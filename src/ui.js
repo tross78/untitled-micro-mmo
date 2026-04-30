@@ -202,21 +202,33 @@ export const renderActionButtons = (ctx, onAction) => {
                 addButton('Vision 🔮', 'vision');
             }
 
-            const localPeers = Array.from(players.keys()).filter(id => players.get(id)?.location === localPlayer.location);
+            const localPeers = Array.from(players.keys()).filter(id => !players.get(id)?.ghost && players.get(id)?.location === localPlayer.location);
             if (localPeers.length > 0) {
                 addButton('Trade 🤝', () => { uiState = 'trade_select'; renderActionButtons(ctx, onAction); });
+                addButton('Duel ⚔️', () => { uiState = 'duel_select'; renderActionButtons(ctx, onAction); });
             }
 
             addButton('Quests 📜', () => { uiState = 'quests'; renderActionButtons(ctx, onAction); });
             addButton('Config ⚙️', () => { uiState = 'settings'; renderActionButtons(ctx, onAction); });
 
         } else if (uiState === 'trade_select') {
-            const localPeers = Array.from(players.keys()).filter(id => players.get(id)?.location === localPlayer.location);
+            const localPeers = Array.from(players.keys()).filter(id => !players.get(id)?.ghost && players.get(id)?.location === localPlayer.location);
             localPeers.forEach(id => {
                 const name = players.get(id).name || `Peer-${id.slice(0, 4)}`;
                 addButton(`${name}`, () => {
                     onAction(`trade ${id}`);
                     uiState = 'trade_session';
+                });
+            });
+            addButton('Back ⬅️', ACTION.CANCEL);
+
+        } else if (uiState === 'duel_select') {
+            const localPeers = Array.from(players.keys()).filter(id => !players.get(id)?.ghost && players.get(id)?.location === localPlayer.location);
+            localPeers.forEach(id => {
+                const name = players.get(id).name || `Peer-${id.slice(0, 4)}`;
+                addButton(`⚔️ ${name}`, () => {
+                    onAction(`duel ${id}`);
+                    uiState = 'root';
                 });
             });
             addButton('Back ⬅️', ACTION.CANCEL);

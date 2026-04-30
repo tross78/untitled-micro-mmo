@@ -313,6 +313,8 @@ export function renderWorld(state, onTileClick) {
             const px = dp.x - camX;
             const py = dp.y - camY;
             if (px < -1 || px >= VIEWPORT_W || py < -1 || py >= VIEWPORT_H) return;
+            
+            if (p.ghost) ctx.globalAlpha = 0.5;
             const sprite = getSprite(hashStr(id), 'peer');
             ctx.drawImage(sprite, px * S + Math.floor(S * 0.15), py * S, Math.floor(S * 0.7), S);
             ctx.fillStyle = '#00aaff';
@@ -320,6 +322,7 @@ export function renderWorld(state, onTileClick) {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText((p.name || id).split('').slice(0, 8).join(''), px * S + S / 2, py * S);
+            ctx.globalAlpha = 1.0;
         });
     }
 

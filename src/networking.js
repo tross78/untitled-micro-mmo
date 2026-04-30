@@ -61,7 +61,7 @@ const feedHeads = new Map();   // peerId → { seq, hash }
 // location (room-level, bounded) belong in the consensus hash.
 const buildLeafData = () => {
     const leaves = Array.from(players.entries())
-        .filter(([id]) => id !== selfId)
+        .filter(([id, p]) => id !== selfId && !p.ghost)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
     leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
@@ -71,7 +71,9 @@ const buildLeafData = () => {
 
 const buildSketch = () => {
     const ms = new Minisketch(32);
-    players.forEach((_, id) => ms.add(id));
+    players.forEach((p, id) => {
+        if (!p.ghost) ms.add(id);
+    });
     ms.add(selfId);
     return ms;
 };
@@ -101,6 +103,20 @@ const checkAndUpdateHlc = (peerId, incoming) => {
     recvHLC(incoming); // advance local clock for causal ordering
     peerHlc.set(peerId, incoming); // track peer's own clock, not ours
     return true;
+};
+
+export const seedFromSnapshot = (snapshot) => {
+    if (!Array.isArray(snapshot)) return;
+    const existingPhs = new Set(Array.from(players.values()).map(p => p.ph));
+    for (const entry of snapshot) {
+        if (!entry.ph || !entry.location || existingPhs.has(entry.ph)) continue;
+        // Store as ghost — no peerId, no publicKey. Keyed by ph (display only).
+        // Real P2P presence will overwrite when it arrives.
+        const ghostKey = 'ghost:' + entry.ph;
+        if (!players.has(ghostKey)) {
+            trackPlayer(ghostKey, { ...entry, ghost: true, ts: entry.ts || Date.now() });
+        }
+    }
 };
 
 export const updateSimulation = (state) => {
@@ -369,7 +385,7 @@ export const initNetworking = async (rtcConfig) => {
 };
 
 export const isProposer = () => {
-    const all = Array.from(players.keys()).concat(selfId).sort();
+    const all = Array.from(players.keys()).filter(id => !players.get(id).ghost).concat(selfId).sort();
     if (all.length < 2) return false;
 
     const slot = Math.floor(Date.now() / ROLLUP_INTERVAL) % all.length;
@@ -392,6 +408,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     console.log(`[P2P] Joining Shard Room: ${shard}`);
     const config = rtcConfig || currentRtcConfig;
 
+    // Technique B: Fetch shard-specific peer snapshot from Arbiter.
+    if (ARBITER_URL) {
+        fetch(`${ARBITER_URL}/peers?shard=${encodeURIComponent(shard)}`, {
+            signal: AbortSignal.timeout(3000)
+        })
+            .then(r => r.ok ? r.json() : [])
+            .then(entries => seedFromSnapshot(entries))
+            .catch(() => { }); // non-fatal — P2P still works without this
+    }
+
     // Promote a pre-joined room if we started connecting early (zero ICE latency).
     const preJoined = preJoinCache.get(shard);
     if (preJoined) {
@@ -402,6 +428,26 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     } else {
         rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: config }, shard);
     }
+
+    // --- Technique B: Register presence with Arbiter via global room ---
+    const registerWithArbiter = async () => {
+        if (!playerKeys || !globalRooms.torrent) return;
+        const entry = await myEntry();
+        if (!entry) return;
+        const [sendRegister] = globalRooms.torrent.makeAction('register_presence');
+        sendRegister({ ...entry, shard });
+
+        // Also fallback to HTTP POST if available
+        if (ARBITER_URL) {
+            fetch(`${ARBITER_URL}/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...entry, shard }),
+                signal: AbortSignal.timeout(3000),
+            }).catch(() => { });
+        }
+    };
+    setTimeout(registerWithArbiter, 1000);
 
     const checkFull = async () => {
         const peerCount = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
@@ -446,7 +492,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         // --- helpers ---
 
-        const localIds = () => [...players.keys(), selfId];
+        const localIds = () => [...Array.from(players.keys()).filter(id => !players.get(id).ghost), selfId];
 
         const processPresenceSingle = async (buf, peerId) => {
             const entry = players.get(peerId);
@@ -492,6 +538,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
             trackShadowPlayer(peerId, unpacked);
+            players.delete('ghost:' + unpacked.ph); // evict stale ghost for this identity
         };
 
         // Plumtree: send full payload to eager peers, lazy announcement to passive peers.
@@ -611,6 +658,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     const entry = players.get(id) || {};
                     trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
                     trackShadowPlayer(id, unpacked);
+                    players.delete('ghost:' + unpacked.ph);
                 } catch { }
             }
         });

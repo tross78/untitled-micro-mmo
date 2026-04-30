@@ -1107,6 +1107,301 @@ Techniques 1–3 ship together. Technique 8 ships next (replaces IBLT, neutral b
 
 ---
 
+### **Phase 7.98: Cold-Page Bootstrap — Gist Presence Snapshot & Arbiter Peer Rendezvous — TODO**
+
+Two complementary techniques that attack the cold-page join latency from different angles. Neither requires new dependencies. Together they make the world feel populated the moment the page loads — before a single WebRTC connection is open.
+
+---
+
+#### **Background: what "cold-page join latency" actually is**
+
+When a new player loads the game, three things must happen before they see other players:
+
+1. **BitTorrent tracker announce** — Trystero registers with trackers and discovers peers in the shard room. Typically 500ms–2s depending on tracker responsiveness.
+2. **WebRTC ICE negotiation** — After discovery, peers negotiate a direct connection. Another 200ms–1s.
+3. **Presence exchange** — Once connected, the handshake and sketch reconciliation run. With the Phase 7.9.5 fixes, this is now ~100–800ms.
+
+Total cold-page-to-seeing-other-players: **1–4 seconds** at best. This phase reduces the *perceived* latency to near-zero by bootstrapping from a server-cached snapshot, and reduces actual WebRTC time by seeding the Minisketch with known peers before the first reconciliation round.
+
+---
+
+#### **Technique A — Gist Presence Snapshot (Approach #3)**
+
+**What it does.** The arbiter maintains a rolling list of the 50 most recently active players across all shards and writes it to the existing Gist file (alongside the arbiter beacon) every 60 seconds. On cold page load, clients parse this snapshot and immediately seed the `players` map with "ghost" entries — display-only data with no publicKey. The game renders other players' sprites and names on canvas *before any WebRTC connection is open*. When real P2P presence arrives and is verified, ghost entries are replaced.
+
+**Why only the arbiter writes.** GitHub Gist rate limit is 5,000 authenticated requests/hour per token. At 50k concurrent players each writing on join: ~14 writes/second — instantly rate-limited. The arbiter is a single writer making one write per minute: 1 request/min, orders of magnitude under the limit. Clients only read; Gist raw content is served from GitHub's CDN edge and scales to any read volume without hitting the API.
+
+**Gist file format** (extends the existing arbiter beacon file):
+
+```json
+{
+  "peerId": "<arbiter trystero peer id>",
+  "state": "<signed world state string>",
+  "signature": "<arbiter ed25519 sig>",
+  "snapshot": [
+    { "name": "Alice",  "location": "cellar", "level": 5,  "ph": "ab12cd34", "ts": 1714435210 },
+    { "name": "Tyson",  "location": "tavern", "level": 12, "ph": "ef56gh78", "ts": 1714435205 },
+    ...up to 50 entries, sorted by ts descending
+  ],
+  "snapshotTs": 1714435210
+}
+```
+
+No signatures on individual snapshot entries — they are display-only hints, not authoritative state. Security: ghost entries cannot initiate trade, duel, or any signed action. They render as other players' sprites but are marked `ghost: true` internally and filtered out of any security-sensitive lookup.
+
+**Arbiter changes (`arbiter/index.js`):**
+
+```js
+// Rolling presence cache: peerId → { name, location, level, ph, ts }
+// Peers send their presence to the arbiter via a new wire action 'register_presence'
+const presenceCache = new Map(); // peerId → entry
+const PRESENCE_CACHE_TTL = 120000; // 2 minutes
+
+// New wire action in setupArbiterRoom:
+const [, getRegisterPresence] = r.makeAction('register_presence');
+getRegisterPresence((entry, peerId) => {
+    if (bans.has(entry.ph)) return; // rough ban check by ph
+    presenceCache.set(peerId, { ...entry, ts: Date.now() });
+});
+
+// Prune stale entries before each Gist write
+const prunePresenceCache = () => {
+    const cutoff = Date.now() - PRESENCE_CACHE_TTL;
+    for (const [id, e] of presenceCache) {
+        if (e.ts < cutoff) presenceCache.delete(id);
+    }
+};
+
+// Extend publishBeacon to include snapshot:
+async function publishBeacon(packet) {
+    prunePresenceCache();
+    const snapshot = Array.from(presenceCache.values())
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 50)
+        .map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }));
+    const payload = { peerId: selfId, ...packet, snapshot, snapshotTs: Date.now() };
+    // ... existing fetch to GitHub Gist API (unchanged)
+}
+```
+
+**Arbiter Pi Zero W impact.** `presenceCache` is a plain Map bounded to active players (TTL 2 min). At 50k players across many shards this could grow large — cap at 500 entries total, evicting oldest:
+
+```js
+if (presenceCache.size > 500) {
+    const oldest = [...presenceCache.entries()].sort(([,a],[,b]) => a.ts - b.ts)[0];
+    presenceCache.delete(oldest[0]);
+}
+```
+
+Memory cost: 500 × ~100 bytes = ~50KB. CPU cost: one sort + slice every 60s. Negligible on Pi Zero.
+
+**Client changes (`src/networking.js`):**
+
+```js
+// Called from initNetworking, after Gist fetch resolves (already happening in main.js).
+export const seedFromSnapshot = (snapshot) => {
+    if (!Array.isArray(snapshot)) return;
+    for (const entry of snapshot) {
+        if (!entry.ph || !entry.location || players.has(entry.ph)) continue;
+        // Store as ghost — no peerId, no publicKey. Keyed by ph (display only).
+        // Real P2P presence will overwrite when it arrives.
+        if (!players.has('ghost:' + entry.ph)) {
+            trackPlayer('ghost:' + entry.ph, { ...entry, ghost: true, ts: entry.ts });
+        }
+    }
+};
+```
+
+Ghost entries are keyed `ghost:<ph>` so they can never collide with real Trystero peer IDs (which don't contain colons). When real presence for a peer with the same `ph` arrives and is verified, remove the ghost and add the real entry.
+
+**Renderer impact.** Ghost players render at their last known `location` but with a subtle visual distinction — 50% opacity or a faded color, so the local player can tell who is "live" vs "cached". Add a `ghost` flag check in `renderer.js`:
+
+```js
+// renderer.js — when drawing other players
+const alpha = entry.ghost ? 0.4 : 1.0;
+ctx.globalAlpha = alpha;
+// ... draw sprite
+ctx.globalAlpha = 1.0;
+```
+
+---
+
+#### **Technique B — Arbiter Peer Rendezvous Endpoint (Approach #1, lightweight)**
+
+**What it does.** The arbiter exposes a new HTTP endpoint `/peers?shard=<shardName>` that returns the current presence data for all active players in a specific shard. When a client calls `joinInstance(location)`, it immediately hits this endpoint and seeds the `players` map with the returned entries — *before* Trystero has found anyone via the BitTorrent tracker. This means the Minisketch on first `onPeerJoin` starts from a populated baseline, and the sketch diff on first contact is tiny (usually empty) rather than covering all unknown peers.
+
+**Why not full ICE rendezvous.** True ICE rendezvous (posting SDP offers to the arbiter so new peers can skip BitTorrent tracker discovery entirely) requires accessing Trystero's underlying `RTCPeerConnection` SDP, which isn't exposed by the library. The lightweight version here is practical: it doesn't eliminate tracker discovery but it ensures the Minisketch + presence bootstrap happens the instant the WebRTC channel opens, not after a reconciliation round-trip.
+
+**Arbiter changes (`arbiter/index.js`):**
+
+```js
+// HTTP endpoint — add to healthServer handler:
+} else if (req.url.startsWith('/peers')) {
+    const url = new URL(req.url, 'http://localhost');
+    const shard = url.searchParams.get('shard');
+    const entries = shard
+        ? Array.from(presenceCache.values()).filter(e => e.shard === shard)
+        : Array.from(presenceCache.values());
+    prunePresenceCache();
+    res.writeHead(200, { ...cors, 'Cache-Control': 'public, max-age=10' });
+    res.end(JSON.stringify(entries.map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }))));
+}
+```
+
+The `shard` field is added to presence registrations: `presenceCache.set(peerId, { ...entry, shard: entry.shard, ts: Date.now() })`.
+
+`Cache-Control: max-age=10` means responses are cached for 10 seconds at any reverse-proxy or CDN in front of the Pi. Multiple players joining the same shard within 10s share one Pi HTTP response. Pi Zero W CPU cost: one Map filter + JSON.stringify per unique request per 10s window. Negligible.
+
+**Client changes (`src/networking.js`):**
+
+```js
+// In joinInstance, immediately after setting rooms.torrent:
+if (ARBITER_URL) {
+    fetch(`${ARBITER_URL}/peers?shard=${encodeURIComponent(shard)}`, {
+        signal: AbortSignal.timeout(3000)
+    })
+    .then(r => r.ok ? r.json() : [])
+    .then(entries => seedFromSnapshot(entries))
+    .catch(() => {}); // non-fatal — P2P still works without this
+}
+```
+
+The `seedFromSnapshot` function (from Technique A) handles both the Gist snapshot and the arbiter `/peers` response — same shape, same ghost-entry logic. One function, two callers.
+
+**Client registration.** Peers register their presence with the arbiter when joining a shard. Add to `setupShard` alongside the global room setup:
+
+```js
+// After identity is ready, register with arbiter for rendezvous
+const registerWithArbiter = async () => {
+    if (!playerKeys || !ARBITER_URL) return;
+    const entry = await myEntry();
+    if (!entry) return;
+    // Send via the global Trystero room (arbiter is in 'global', not the shard)
+    // Use existing sendPresenceSingle mechanism on globalRooms — arbiter receives it
+    // and caches it. No new wire protocol needed if arbiter is in global room.
+    // Alternatively: POST to ARBITER_URL/register (simpler, more reliable)
+    fetch(`${ARBITER_URL}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: entry.name,
+            location: entry.location,
+            level: entry.level,
+            ph: entry.ph,
+            shard,
+        }),
+        signal: AbortSignal.timeout(3000),
+    }).catch(() => {});
+};
+setTimeout(registerWithArbiter, 500); // after identity confirmed ready
+```
+
+**Arbiter HTTP POST handler:**
+
+```js
+} else if (req.url === '/register' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+        try {
+            const entry = JSON.parse(body);
+            if (entry.ph && entry.location) {
+                if (presenceCache.size > 500) {
+                    const oldest = [...presenceCache.entries()].sort(([,a],[,b]) => a.ts - b.ts)[0];
+                    presenceCache.delete(oldest[0]);
+                }
+                presenceCache.set(entry.ph, { ...entry, ts: Date.now() });
+            }
+            res.writeHead(200, cors);
+            res.end('{}');
+        } catch { res.writeHead(400); res.end(); }
+    });
+}
+```
+
+Note: we key by `ph` (not peerId) for the POST endpoint since peerId is a Trystero runtime ID not known to the HTTP layer. This is fine — `ph` is unique per player identity.
+
+---
+
+#### **Ghost entry lifecycle**
+
+```
+Page load
+  └─ Gist fetch → seedFromSnapshot() → ghost entries in players map
+  └─ joinInstance(location) → /peers?shard=X → seedFromSnapshot() → refresh ghosts for this shard
+
+onPeerJoin(peerId)
+  └─ Identity handshake → publicKey stored
+  └─ Presence received + verified → trackPlayer(peerId, real entry)
+  └─ Remove ghost: if real entry's ph matches a ghost key, players.delete('ghost:' + ph)
+```
+
+Ghost cleanup happens in `processPresenceSingle` after a verified presence is stored:
+
+```js
+// After trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() }):
+players.delete('ghost:' + unpacked.ph); // evict stale ghost for this identity
+```
+
+---
+
+#### **Security model**
+
+Ghost entries are display-only. They are:
+- Excluded from `localIds()` in Minisketch (only real peerId strings matter for reconciliation)
+- Excluded from proposer election (`Array.from(players.keys())` filtered for `ghost:` prefix)
+- Excluded from rollup leaf data (`buildLeafData` skips ghost entries)
+- Excluded from duel/trade target lookups
+- Never signed, never verified — they are explicitly untrusted display hints
+
+A malicious Gist entry (if someone compromised the arbiter's Gist token) could display fake players. This is cosmetic only — it cannot affect game state, XP, or combat. Ghost entries disappear when their TTL (2 min from snapshot timestamp) expires with no P2P confirmation.
+
+---
+
+#### **Implementation order**
+
+| Step | What | Files | Lines |
+|------|------|-------|-------|
+| 1 | `presenceCache` + prune + `/register` POST endpoint | `arbiter/index.js` | ~40 |
+| 2 | `/peers?shard=` GET endpoint | `arbiter/index.js` | ~15 |
+| 3 | Extend `publishBeacon` to include snapshot | `arbiter/index.js` | ~20 |
+| 4 | `seedFromSnapshot()` + ghost entry logic | `src/networking.js` | ~35 |
+| 5 | Gist parse in `processBeacon` + call `seedFromSnapshot` | `src/main.js` | ~10 |
+| 6 | `/peers` fetch in `joinInstance` | `src/networking.js` | ~10 |
+| 7 | `registerWithArbiter` on shard join | `src/networking.js` | ~15 |
+| 8 | Ghost rendering (50% alpha) in `renderer.js` | `src/renderer.js` | ~5 |
+| 9 | Ghost cleanup in `processPresenceSingle` | `src/networking.js` | ~3 |
+
+Total: ~153 lines across 4 files. No new files. No new dependencies. Arbiter requires a restart to pick up the new endpoints.
+
+---
+
+#### **Pi Zero W impact summary**
+
+| Addition | Memory | CPU |
+|----------|--------|-----|
+| `presenceCache` Map (500 entries max) | ~50KB | Negligible |
+| `/peers` endpoint | 0 | One Map filter + JSON.stringify per 10s per shard |
+| `/register` POST | 0 | One JSON.parse + Map.set per player join |
+| Gist snapshot in `publishBeacon` | 0 | One sort + slice per 60s write |
+
+All O(1) or O(n) with small bounded n. No loops in hot paths.
+
+---
+
+#### **Test additions**
+
+- `src/networking.peer.test.js` (extend existing):
+  - `seedFromSnapshot` with valid entries populates players map as ghosts
+  - Ghost entries keyed `ghost:<ph>` do not appear in `localIds()` or `buildLeafData()`
+  - Verified real presence for same `ph` removes the ghost entry
+  - `seedFromSnapshot` with empty/null/malformed data does not throw
+  - Ghost entries with `ts` older than 2 minutes are treated as stale and not rendered
+
+- Arbiter unit tests (if test harness exists): `/register` accepts valid entry, rejects malformed body; `/peers?shard=X` returns only entries for that shard; presenceCache evicts at 500 entries.
+
+---
+
 ### **Phase 8: Full Zelda-Style Graphical Client — TODO**
 
 Target feel: ALttP / Link's Awakening. No visible text log during play. All feedback is spatial, animated, and momentary.

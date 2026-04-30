@@ -88,11 +88,33 @@ async function startArbiter() {
     const fraudCounts = new Map();
     const bans = new Set(worldState.bans || []);
 
+    // Technique A & B: Rolling presence cache for cold-page bootstrap.
+    // peerId/ph -> { name, location, level, ph, shard, ts }
+    const presenceCache = new Map();
+    const PRESENCE_CACHE_TTL = 120000; // 2 minutes
+
+    const prunePresenceCache = () => {
+        const cutoff = Date.now() - PRESENCE_CACHE_TTL;
+        for (const [id, e] of presenceCache) {
+            if (e.ts < cutoff) presenceCache.delete(id);
+        }
+    };
+
     const setupArbiterRoom = (r, name) => {
         const [sendState] = r.makeAction('world_state');
         const [, getRollup] = r.makeAction('rollup');
         const [, getFraud] = r.makeAction('fraud_proof');
         const [, getRequestState] = r.makeAction('request_state');
+        const [, getRegisterPresence] = r.makeAction('register_presence');
+
+        getRegisterPresence((entry, peerId) => {
+            if (bans.has(entry.ph)) return;
+            if (presenceCache.size > 500) {
+                const oldest = [...presenceCache.entries()].sort(([, a], [, b]) => a.ts - b.ts)[0];
+                presenceCache.delete(oldest[0]);
+            }
+            presenceCache.set(peerId, { ...entry, ts: Date.now() });
+        });
 
         getRequestState(async (_, peerId) => {
             console.log(`[Arbiter][${name}] State requested by ${peerId}`);
@@ -194,6 +216,12 @@ async function startArbiter() {
     async function publishBeacon(packet) {
         if (!GH_GIST_TOKEN || !GH_GIST_ID) return;
         try {
+            prunePresenceCache();
+            const snapshot = Array.from(presenceCache.values())
+                .sort((a, b) => b.ts - a.ts)
+                .slice(0, 50)
+                .map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }));
+
             await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
                 method: 'PATCH',
                 signal: AbortSignal.timeout(8000),
@@ -203,7 +231,7 @@ async function startArbiter() {
                     'User-Agent': 'Hearthwick-Arbiter'
                 },
                 body: JSON.stringify({
-                    files: { 'mmo_arbiter_discovery.json': { content: JSON.stringify({ peerId: selfId, ...packet }) } }
+                    files: { 'mmo_arbiter_discovery.json': { content: JSON.stringify({ peerId: selfId, ...packet, snapshot, snapshotTs: Date.now() }) } }
                 })
             });
         } catch (e) { console.warn('[Arbiter] Gist failed:', e.message); }
@@ -274,7 +302,18 @@ async function startArbiter() {
     process.on('message', (msg) => { if ((msg?.data ?? msg) === 'reset') doReset(); });
 
     const healthServer = createServer((req, res) => {
-        const cors = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
+        const cors = {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        };
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204, cors);
+            res.end();
+            return;
+        }
+
         if (req.url === '/health') {
             res.writeHead(200, cors);
             res.end(JSON.stringify({ day: worldState.day, bans: bans.size, uptime: Math.floor(process.uptime()) }));
@@ -284,6 +323,34 @@ async function startArbiter() {
         } else if (req.url === '/state' && lastBroadcastPacket) {
             res.writeHead(200, cors);
             res.end(JSON.stringify(lastBroadcastPacket));
+        } else if (req.url.startsWith('/peers')) {
+            const url = new URL(req.url, 'http://localhost');
+            const shard = url.searchParams.get('shard');
+            prunePresenceCache();
+            const entries = Array.from(presenceCache.values())
+                .filter(e => !shard || e.shard === shard)
+                .sort((a, b) => b.ts - a.ts)
+                .slice(0, 50)
+                .map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }));
+            res.writeHead(200, { ...cors, 'Cache-Control': 'public, max-age=10' });
+            res.end(JSON.stringify(entries));
+        } else if (req.url === '/register' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                try {
+                    const entry = JSON.parse(body);
+                    if (entry.ph && entry.location) {
+                        if (presenceCache.size > 500) {
+                            const oldest = [...presenceCache.entries()].sort(([, a], [, b]) => a.ts - b.ts)[0];
+                            presenceCache.delete(oldest[0]);
+                        }
+                        presenceCache.set(entry.ph, { ...entry, ts: Date.now() });
+                    }
+                    res.writeHead(200, cors);
+                    res.end('{}');
+                } catch { res.writeHead(400); res.end(); }
+            });
         } else {
             res.writeHead(404);
             res.end();
