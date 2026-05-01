@@ -32,8 +32,10 @@ export const initIdentity = async (log) => {
             playerKeys = keys;
             if (log) log(`[System] New identity generated.`);
         }
-        const exported = JSON.parse(localStorage.getItem(KEYS_STORAGE_KEY));
-        localPlayer.ph = pidHash(exported.publicKey);
+        
+        // Autoritative update of localPlayer.ph from the current key
+        const finalExported = JSON.parse(localStorage.getItem(KEYS_STORAGE_KEY));
+        localPlayer.ph = pidHash(finalExported.publicKey);
     } catch (e) {
         console.error('Identity Init Failed', e);
         throw e;

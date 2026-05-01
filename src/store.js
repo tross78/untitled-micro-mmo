@@ -151,7 +151,7 @@ export const loadLocalState = async (log) => {
 
             // Security: Never restore 'ph' from saved state. 
             // It must be derived from the current cryptographic keys by initIdentity.
-            delete data.ph;
+            if ('ph' in data) delete data.ph;
 
             Object.assign(localPlayer, data);
             

@@ -456,6 +456,11 @@ TAB_CHANNEL.onmessage = ({ data }) => {
         ).then(valid => {
             if (!valid) return;
             const stateObj = typeof data.packet.state === 'string' ? JSON.parse(data.packet.state) : data.packet.state;
+            
+            // Security: Never sync 'ph' across tabs. Each tab must derive its own
+            // from its own cryptographic keys.
+            if (stateObj.ph) delete stateObj.ph;
+
             updateSimulation(stateObj);
             triggerLogicalRefresh();
         }).catch(() => {});
