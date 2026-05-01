@@ -111,7 +111,7 @@ const unpackPresencePacket = (presence) => {
     if (!presence) return null;
     try {
         return unpackPresence(presence);
-    } catch (e) {
+    } catch {
         return null;
     }
 };

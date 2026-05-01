@@ -32,10 +32,11 @@ describe('Audio System (Phase 7.5 Audit)', () => {
     });
 
     test('multiple calls reuse the context', () => {
-        jest.clearAllMocks();
         audio.playHit();
         audio.playCrit();
-        // Since it's stored in a module variable, we might need to reset module or check logic
-        // But for this simple audit, we just check it doesn't fail.
+        
+        // Context should have been initialized exactly once 
+        // (already called in the first test, should not be called again)
+        expect(global.AudioContext).toHaveBeenCalledTimes(1);
     });
 });
