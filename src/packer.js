@@ -10,11 +10,35 @@ import { packHLC, unpackHLC } from './hlc.js';
 const toUint8Array = (buf) => {
     if (buf instanceof Uint8Array) return buf;
     if (buf instanceof ArrayBuffer) return new Uint8Array(buf);
+    if (Array.isArray(buf)) return Uint8Array.from(buf);
     if (ArrayBuffer.isView(buf)) {
         return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     }
+    if (typeof buf === 'string') {
+        try {
+            return Uint8Array.from(atob(buf), c => c.charCodeAt(0));
+        } catch {
+            return Uint8Array.from(buf, c => c.charCodeAt(0));
+        }
+    }
+    if (buf && typeof buf === 'object') {
+        if (buf.type === 'Buffer' && Array.isArray(buf.data)) return Uint8Array.from(buf.data);
+        const keys = Object.keys(buf);
+        if (typeof buf.length === 'number' && keys.every(k => /^\d+$/.test(k))) {
+            return Uint8Array.from({ length: buf.length }, (_, i) => buf[i] ?? 0);
+        }
+    }
     throw new TypeError('Expected binary buffer');
 };
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+const writeString = (target, offset, value) => {
+    const bytes = textEncoder.encode(String(value || ''));
+    target.set(bytes, offset);
+    return bytes.length;
+};
+const readString = (source, offset, length) => textDecoder.decode(source.subarray(offset, offset + length));
 
 class SchemaBuffer {
     constructor(size) {
@@ -268,6 +292,55 @@ export const unpackActionLog = (buf) => {
         data: r.u16(),
         signature: r.sig()
     };
+};
+
+export const packPresenceBatch = (entries) => {
+    const list = Array.isArray(entries)
+        ? entries
+        : Object.entries(entries || {}).map(([peerId, value]) => ({ peerId, ...value }));
+    const normalized = list.map(({ peerId, presence, publicKey }) => {
+        const presenceBuf = toUint8Array(presence);
+        const peerIdBytes = textEncoder.encode(String(peerId || ''));
+        const publicKeyBytes = textEncoder.encode(String(publicKey || ''));
+        return { peerIdBytes, publicKeyBytes, presenceBuf };
+    });
+
+    const total = 2 + normalized.reduce((sum, rec) => sum
+        + 2 + rec.peerIdBytes.length
+        + 2 + rec.publicKeyBytes.length
+        + 4 + rec.presenceBuf.length, 0);
+
+    const out = new Uint8Array(total);
+    const view = new DataView(out.buffer);
+    let offset = 0;
+    view.setUint16(offset, normalized.length, false); offset += 2;
+    for (const rec of normalized) {
+        view.setUint16(offset, rec.peerIdBytes.length, false); offset += 2;
+        out.set(rec.peerIdBytes, offset); offset += rec.peerIdBytes.length;
+        view.setUint16(offset, rec.publicKeyBytes.length, false); offset += 2;
+        out.set(rec.publicKeyBytes, offset); offset += rec.publicKeyBytes.length;
+        view.setUint32(offset, rec.presenceBuf.length, false); offset += 4;
+        out.set(rec.presenceBuf, offset); offset += rec.presenceBuf.length;
+    }
+    return out;
+};
+
+export const unpackPresenceBatch = (buf) => {
+    const bytes = toUint8Array(buf);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let offset = 0;
+    const count = view.getUint16(offset, false); offset += 2;
+    const out = {};
+    for (let i = 0; i < count; i++) {
+        const peerIdLen = view.getUint16(offset, false); offset += 2;
+        const peerId = readString(bytes, offset, peerIdLen); offset += peerIdLen;
+        const publicKeyLen = view.getUint16(offset, false); offset += 2;
+        const publicKey = readString(bytes, offset, publicKeyLen); offset += publicKeyLen;
+        const presenceLen = view.getUint32(offset, false); offset += 4;
+        const presence = bytes.subarray(offset, offset + presenceLen); offset += presenceLen;
+        out[peerId] = { presence, publicKey };
+    }
+    return out;
 };
 
 export const packTradeCommit = (t) => {

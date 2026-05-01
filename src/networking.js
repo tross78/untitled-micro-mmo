@@ -17,6 +17,7 @@ import {
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, unpackPresence, packDuelCommit, unpackDuelCommit,
     packActionLog, unpackActionLog, packTradeCommit, unpackTradeCommit,
+    packPresenceBatch, unpackPresenceBatch,
     presenceSignaturePayload
 } from './packer.js';
 import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
@@ -94,6 +95,21 @@ const signPresence = async (entry) => {
 };
 
 const packSignedPresence = async (entry) => packPresence(await signPresence(entry));
+
+const isPresenceLike = (value) => value && typeof value === 'object'
+    && !Array.isArray(value)
+    && !(value instanceof ArrayBuffer)
+    && !ArrayBuffer.isView(value)
+    && typeof value.name === 'string'
+    && typeof value.location === 'string'
+    && typeof value.ph === 'string'
+    && typeof value.level === 'number'
+    && typeof value.xp === 'number';
+
+const unpackPresencePacket = (presence) => {
+    if (isPresenceLike(presence)) return presence;
+    return unpackPresence(presence);
+};
 
 // Returns true if the XP gain is within the token bucket allowance for this peer.
 const checkXpRate = (peerId, newXp, oldXp) => {
@@ -675,7 +691,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 return;
             }
 
-            const unpacked = unpackPresence(buf);
+            const unpacked = unpackPresencePacket(buf);
 
             // Security: ph must derive from the sender's known public key
             const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
@@ -820,11 +836,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         getPresenceBatch(async (data, _) => {
-            for (const [id, { presence, publicKey }] of Object.entries(data)) {
+            const batch = unpackPresenceBatch(data);
+            for (const [id, { presence, publicKey }] of Object.entries(batch)) {
                 if (id === selfId || !publicKey) continue;
                 if (bans.has(publicKey)) continue;
                 try {
-                    const unpacked = unpackPresence(presence);
+                    const unpacked = unpackPresencePacket(presence);
 
                     // Security check (ED25519) BEFORE HLC update
                     const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
@@ -1166,7 +1183,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }).catch(e => console.warn('[P2P] Presence signing failed:', e.message));
         },
         sendPresenceBatch: (data, target) => {
-            target ? r.sendPresenceBatch(data, target) : r.sendPresenceBatch(data);
+            const packed = packPresenceBatch(data);
+            target ? r.sendPresenceBatch(packed, target) : r.sendPresenceBatch(packed);
         },
         relayState: (data) => r.sendRelay(data),
         sendRollupLocal: (data) => r.sendRollupLocal(data),

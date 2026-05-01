@@ -3,7 +3,8 @@ import { signMessage, verifyMessage } from './crypto.js';
 import {
     packMove, unpackMove, packEmote, unpackEmote,
     packPresence, unpackPresence, presenceSignaturePayload,
-    packDuelCommit, unpackDuelCommit, unpackActionLog
+    packDuelCommit, unpackDuelCommit, unpackActionLog,
+    packPresenceBatch, unpackPresenceBatch
 } from './packer.js';
 
 function makeTestKeyPair() {
@@ -216,6 +217,40 @@ describe('Binary Packer', () => {
         buf.set(sigBytes, 8);
         const unpacked = unpackActionLog(buf);
         expect(unpacked.target).toBeNull();
+    });
+
+    test('Presence batch round-trips as a single packed binary envelope', () => {
+        const batch = {
+            'peer-a': {
+                presence: packPresence({
+                    name: 'Alice',
+                    location: 'tavern',
+                    ph: '11112222',
+                    level: 3,
+                    xp: 900,
+                    signature: btoa('a'.repeat(64)),
+                }),
+                publicKey: 'pub-a',
+            },
+            'peer-b': {
+                presence: packPresence({
+                    name: 'Bob',
+                    location: 'market',
+                    ph: '33334444',
+                    level: 4,
+                    xp: 1200,
+                    signature: btoa('b'.repeat(64)),
+                }),
+                publicKey: 'pub-b',
+            },
+        };
+
+        const packed = packPresenceBatch(batch);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        const unpacked = unpackPresenceBatch(packed);
+        expect(Object.keys(unpacked).sort()).toEqual(['peer-a', 'peer-b']);
+        expect(unpackPresence(unpacked['peer-a'].presence).name).toBe('Alice');
+        expect(unpackPresence(unpacked['peer-b'].presence).location).toBe('market');
     });
 
     test('ENEMY_MAP includes crab and matches data.js', () => {
