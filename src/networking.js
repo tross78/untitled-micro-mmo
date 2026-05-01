@@ -792,7 +792,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     const entry = await myEntry();
                     if (entry) response[selfId] = { presence: await packSignedPresence({ ...entry, hlc: sendHLC() }), publicKey: await exportKey(playerKeys.publicKey) };
                 }
-                if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
+                if (Object.keys(response).length > 0) sendPresenceBatch(packPresenceBatch(response), [peerId]);
             }
 
             // added: remote has these peers, we don't — request them by sending the hash numbers
@@ -825,7 +825,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 const entry = await myEntry();
                 if (entry) response[selfId] = { presence: await packSignedPresence({ ...entry, hlc: sendHLC() }), publicKey: await exportKey(playerKeys.publicKey) };
             }
-            if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
+            if (Object.keys(response).length > 0) sendPresenceBatch(packPresenceBatch(response), [peerId]);
         });
 
         getPresenceSingle(async (buf, peerId) => {

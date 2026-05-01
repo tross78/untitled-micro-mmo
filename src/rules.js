@@ -29,7 +29,7 @@ export function hashStr(str) {
         hash = ((hash << 5) - hash) + char;
         hash |= 0;
     }
-    return Math.abs(hash);
+    return hash >>> 0;
 }
 
 // --- SEASON ---

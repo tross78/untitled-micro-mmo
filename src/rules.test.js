@@ -83,6 +83,11 @@ describe('hashStr determinism', () => {
         const h = hashStr('test');
         expect(h).toBeGreaterThanOrEqual(0);
         expect(Number.isInteger(h)).toBe(true);
+
+        // Test string known to have a negative signed 32-bit hash
+        const h2 = hashStr('hearthwick1');
+        expect(h2).toBeGreaterThan(0);
+        expect(h2).toBe(4271852821); 
     });
 });
 
