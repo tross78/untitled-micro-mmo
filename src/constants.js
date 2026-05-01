@@ -13,7 +13,7 @@ export const TILE_PX = 16;     // pixels per tile
 // - `localStorage.hearthwick_arbiter_url = 'https://...'`
 export const ARBITER_URL = '';
 // Set this to the ID of a Gist you want to use for discovery (leave empty if not used)
-export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
+export const GH_GIST_ID = '2e8f42685ce96e29f60da95ed9ca3be9';
 // GitHub username that owns the Gist above
 export const GH_GIST_USERNAME = 'tross78';
 
