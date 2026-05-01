@@ -1172,7 +1172,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     // wasn't open when the initial sendPresenceSingle fired in setupShard.
     setTimeout(async () => {
         const entry = await myEntry();
-        if (entry && playerKeys) {
+        if (entry && playerKeys && localPlayer.ph && localPlayer.ph !== '00000000') {
             const pubKey = await exportKey(playerKeys.publicKey);
             r.sendIdentity({ publicKey: pubKey });
             r.plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
@@ -1181,6 +1181,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
     const shardActions = {
         sendMove: async (data) => {
+            if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return;
             const hlc = sendHLC();
             const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: hlc.wall };
             const signature = await signMessage(JSON.stringify(moveData), playerKeys.privateKey);
@@ -1190,7 +1191,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendMonsterDmg: (data) => r.sendMonsterDmg(data),
         sendActionLog: (data) => r.sendActionLog(packActionLog(data)),
         sendPresenceSingle: (data, target) => {
-            if (!playerKeys) return;
+            if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return;
             const hlc = sendHLC();
             packSignedPresence({ ...data, hlc }).then(packed => {
                 if (target) r.sendPresenceSingle(packed, target);
