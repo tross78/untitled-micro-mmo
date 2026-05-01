@@ -679,6 +679,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const localIds = () => [...Array.from(players.keys()).filter(id => !players.get(id).ghost), selfId];
 
         const processPresenceSingle = async (buf, peerId) => {
+            if (!buf) return;
             const entry = players.get(peerId);
             if (!entry?.publicKey) {
                 _pendingPresence.set(peerId, buf);
@@ -692,11 +693,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
 
             const unpacked = unpackPresencePacket(buf);
+            if (!unpacked) return;
 
             // Security: ph must derive from the sender's known public key
             const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
             if (unpacked.ph !== expectedPh) {
                 console.warn(`[Security] ph mismatch for ${peerId.slice(0,8)}: got ${unpacked.ph}, expected ${expectedPh}`);
+                if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
+                    console.debug(`[Security] Key: ${entry.publicKey.slice(0,16)}...`);
+                    console.debug(`[Security] Key Hash (current hashStr): ${hashStr(entry.publicKey).toString(16).padStart(8, '0')}`);
+                }
                 return;
             }
 

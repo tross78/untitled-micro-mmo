@@ -22,12 +22,20 @@ export function seededRNG(seed) {
     }
 }
 
-export function hashStr(str) {
+export function hashStr(val) {
     let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash |= 0;
+    if (val instanceof Uint8Array || Array.isArray(val)) {
+        for (let i = 0; i < val.length; i++) {
+            hash = ((hash << 5) - hash) + val[i];
+            hash |= 0;
+        }
+    } else {
+        const str = String(val);
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash |= 0;
+        }
     }
     return hash >>> 0;
 }

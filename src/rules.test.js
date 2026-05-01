@@ -88,6 +88,10 @@ describe('hashStr determinism', () => {
         const h2 = hashStr('hearthwick1');
         expect(h2).toBeGreaterThan(0);
         expect(h2).toBe(4271852821); 
+
+        // Test Uint8Array input
+        const buf = new Uint8Array([104, 101, 108, 108, 111]); // "hello"
+        expect(hashStr(buf)).toBe(hashStr("hello"));
     });
 });
 
