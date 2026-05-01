@@ -36,13 +36,12 @@ import {
     GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL
 } from './constants.js';
 import { getNPCLocation } from './rules.js';
-import { getRuntimeParam, isE2EMode } from './runtime.js';
+import { getArbiterUrl, getRuntimeParam, isE2EMode, resolveBootstrapArbiterUrl } from './runtime.js';
 
 const input = document.getElementById('input');
 const suggestionsEl = document.getElementById('suggestions');
 const output = document.getElementById('output');
 const E2E_MODE = isE2EMode();
-
 const HEARTBEAT_MS = 120000;
 
 /**
@@ -247,6 +246,10 @@ const start = async () => {
     try {
         // Run identity key import and state loading in parallel — they're independent.
         await Promise.all([initIdentity(log), loadLocalState(log)]);
+        await resolveBootstrapArbiterUrl();
+        if (E2E_MODE && getRuntimeParam('debugnet') === '1') {
+            localStorage.setItem(`${GAME_NAME}_debug`, 'true');
+        }
         initAds();
         showBanner();
         inputManager.init();
@@ -383,8 +386,9 @@ const start = async () => {
         }
 
         // HTTP bootstrap
-        if (!E2E_MODE && ARBITER_URL && !hasSyncedWithArbiter) {
-            fetch(`${ARBITER_URL}/state`, { signal: AbortSignal.timeout(5000) })
+        const runtimeArbiterUrl = getArbiterUrl(ARBITER_URL);
+        if (!E2E_MODE && runtimeArbiterUrl && !hasSyncedWithArbiter) {
+            fetch(`${runtimeArbiterUrl}/state`, { signal: AbortSignal.timeout(5000) })
                 .then(r => r.ok ? r.json() : null)
                 .then(async packet => {
                     if (!packet || hasSyncedWithArbiter) return;

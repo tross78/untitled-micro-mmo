@@ -4,6 +4,13 @@ import WebSocket from 'ws';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import {
+    PRESENCE_CACHE_TTL,
+    sanitizePresenceEntry,
+    addToPresenceCache,
+    prunePresenceCache,
+    listPeersForShard,
+} from '../src/arbiter-presence-cache.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -89,24 +96,8 @@ async function startArbiter() {
     const bans = new Set(worldState.bans || []);
 
     // Technique A & B: Rolling presence cache for cold-page bootstrap.
-    // peerId/ph -> { name, location, level, ph, shard, ts }
+    // ph -> { name, location, level, ph, shard, ts }
     const presenceCache = new Map();
-    const PRESENCE_CACHE_TTL = 120000; // 2 minutes
-
-    const prunePresenceCache = () => {
-        const cutoff = Date.now() - PRESENCE_CACHE_TTL;
-        for (const [id, e] of presenceCache) {
-            if (e.ts < cutoff) presenceCache.delete(id);
-        }
-    };
-
-    const addToPresenceCache = (key, entry) => {
-        if (presenceCache.size >= 500) {
-            const oldest = [...presenceCache.entries()].sort(([, a], [, b]) => a.ts - b.ts)[0];
-            presenceCache.delete(oldest[0]);
-        }
-        presenceCache.set(key, { ...entry, ts: Date.now() });
-    };
 
     const setupArbiterRoom = (r, name) => {
         const [sendState] = r.makeAction('world_state');
@@ -115,9 +106,10 @@ async function startArbiter() {
         const [, getRequestState] = r.makeAction('request_state');
         const [, getRegisterPresence] = r.makeAction('register_presence');
 
-        getRegisterPresence((entry, peerId) => {
-            if (bans.has(entry.ph)) return;
-            addToPresenceCache(peerId, entry);
+        getRegisterPresence((entry) => {
+            const sanitized = sanitizePresenceEntry(entry);
+            if (!sanitized || bans.has(sanitized.ph)) return;
+            addToPresenceCache(presenceCache, sanitized.ph, sanitized);
         });
 
         getRequestState(async (_, peerId) => {
@@ -220,7 +212,7 @@ async function startArbiter() {
     async function publishBeacon(packet) {
         if (!GH_GIST_TOKEN || !GH_GIST_ID) return;
         try {
-            prunePresenceCache();
+            prunePresenceCache(presenceCache);
             const snapshot = Array.from(presenceCache.values())
                 .sort((a, b) => b.ts - a.ts)
                 .slice(0, 50)
@@ -329,14 +321,15 @@ async function startArbiter() {
             res.end(JSON.stringify(lastBroadcastPacket));
         } else if (req.url.startsWith('/peers')) {
             const url = new URL(req.url, 'http://localhost');
-            const shard = url.searchParams.get('shard');
-            prunePresenceCache();
-            const entries = Array.from(presenceCache.values())
-                .filter(e => !shard || e.shard === shard)
-                .sort((a, b) => b.ts - a.ts)
-                .slice(0, 50)
-                .map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }));
-            res.writeHead(200, { ...cors, 'Cache-Control': 'public, max-age=10' });
+            const shard = (url.searchParams.get('shard') || '').trim();
+            prunePresenceCache(presenceCache);
+            if (!shard) {
+                res.writeHead(400, cors);
+                res.end(JSON.stringify({ error: 'missing shard' }));
+                return;
+            }
+            const entries = listPeersForShard(presenceCache, shard);
+            res.writeHead(200, { ...cors, 'Cache-Control': 'no-store' });
             res.end(JSON.stringify(entries));
         } else if (req.url === '/register' && req.method === 'POST') {
             let body = '';
@@ -350,8 +343,13 @@ async function startArbiter() {
             req.on('end', () => {
                 if (req.socket.destroyed) return;
                 try {
-                    const entry = JSON.parse(body);
-                    if (entry.ph && entry.location) addToPresenceCache(entry.ph, entry);
+                    const entry = sanitizePresenceEntry(JSON.parse(body));
+                    if (!entry || bans.has(entry.ph)) {
+                        res.writeHead(400, cors);
+                        res.end(JSON.stringify({ error: 'invalid presence' }));
+                        return;
+                    }
+                    addToPresenceCache(presenceCache, entry.ph, entry);
                     res.writeHead(200, cors);
                     res.end('{}');
                 } catch { res.writeHead(400); res.end(); }

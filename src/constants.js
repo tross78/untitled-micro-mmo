@@ -6,8 +6,11 @@ export const VIEWPORT_W = 15;  // tiles wide (ALttP style)
 export const VIEWPORT_H = 11;  // tiles tall
 export const TILE_PX = 16;     // pixels per tile
 
-// Set this to the trycloudflare.com URL printed by `cloudflared tunnel --url http://localhost:3001`
-// Leave empty string to skip HTTP bootstrap and rely on P2P only.
+// Optional build-time arbiter URL fallback.
+// Runtime overrides:
+// - `?arbiter=https://...`
+// - `?arbiter=self` to use the current origin
+// - `localStorage.hearthwick_arbiter_url = 'https://...'`
 export const ARBITER_URL = '';
 // Set this to the ID of a Gist you want to use for discovery (leave empty if not used)
 export const GH_GIST_ID = 'bb6903724e5f89a8ad354c66b01d2b59';
@@ -18,14 +21,13 @@ export const GH_GIST_USERNAME = 'tross78';
 // Strip non-alphanumeric chars — base64 contains + and / which can break Trystero's room hashing.
 export const APP_ID = GAME_NAME + '-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-// Stable high-uptime trackers (WebTorrent-compatible)
+// Browser-validated trackers.
+// The broader pool previously used here is currently degraded in Chrome:
+// DNS failures, certificate errors, and 403s prevented real peer discovery.
+// Keep this list conservative and expand it only after `node scripts/probe-trackers.mjs`
+// confirms the endpoint can open from a real browser context.
 export const TORRENT_TRACKERS = [
-    'wss://tracker.openwebtorrent.com',
-    'wss://tracker.files.fm:7073/announce',
-    'wss://tracker.gbitt.info:443/announce',
-    'wss://tracker.open-internet.nl:443/announce',
-    'wss://tracker.btorrent.xyz',
-    'wss://tracker.fastcast.nz'
+    'wss://tracker.openwebtorrent.com'
 ];
 
 // Expanded STUN list for better browser-to-browser NAT traversal.

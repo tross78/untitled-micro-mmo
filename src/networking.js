@@ -24,6 +24,7 @@ import { log, printStatus } from './ui.js';
 import { GAME_NAME } from './data.js';
 import { bus } from './eventbus.js';
 import { saveLocalState } from './persistence.js';
+import { getArbiterUrl } from './runtime.js';
 
 const netLog = (msg, color = '#555') => {
     if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
@@ -43,6 +44,7 @@ export let joinTime = Date.now();
 let lastPeerSeenAt = Date.now();
 let lastNetworkHealAt = 0;
 let networkHealInFlight = false;
+const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 
 const ROLLUP_INTERVAL = 10000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
@@ -141,8 +143,9 @@ export const updateSimulation = (state) => {
     }
 
     // Sync Ban List if hash mismatch
-    if (state.bans && state.bans !== bansHash && ARBITER_URL) {
-        fetch(`${ARBITER_URL}/bans`)
+    const arbiterUrl = runtimeArbiterUrl();
+    if (state.bans && state.bans !== bansHash && arbiterUrl) {
+        fetch(`${arbiterUrl}/bans`)
             .then(r => r.ok ? r.json() : [])
             .then(list => setBans(list, state.bans))
             .catch(() => {});
@@ -259,14 +262,21 @@ export const initNetworking = async (rtcConfig) => {
                 if (entry) {
                     const hlc = sendHLC();
                     const packed = await packSignedPresence({ ...entry, hlc });
-                    sendPresenceBootstrap(packed, [peerId]);
+                    sendPresenceBootstrap({
+                        presence: packed,
+                        publicKey: await exportKey(playerKeys.publicKey)
+                    }, [peerId]);
                 }
             }
         });
 
-        getPresenceBootstrap(async (packed, peerId) => {
+        getPresenceBootstrap(async (packet, peerId) => {
+            if (!packet?.presence || !packet?.publicKey || bans.has(packet.publicKey)) return;
+            const entry = players.get(peerId) || {};
+            const ph = (hashStr(packet.publicKey) >>> 0).toString(16).padStart(8, '0');
+            trackPlayer(peerId, { ...entry, publicKey: packet.publicKey, ph, ts: Date.now() });
             if (gameActions.processPresence) {
-                gameActions.processPresence(packed, peerId);
+                gameActions.processPresence(packet.presence, peerId);
             }
         });
 
@@ -420,22 +430,31 @@ export const initNetworking = async (rtcConfig) => {
         const now = Date.now();
         const silentFor = now - Math.max(joinTime, lastPeerSeenAt);
 
-        if (shardPeers > 0 || globalPeers > 0) return;
+        if (shardPeers > 0) return;
         if (silentFor < NETWORK_STALL_MS) return;
         if (now - lastNetworkHealAt < NETWORK_HEAL_COOLDOWN_MS) return;
 
         networkHealInFlight = true;
         lastNetworkHealAt = now;
         try {
-            if (!isUsingTurnFallback(currentRtcConfig)) {
-                log(`\n[System] No live peers found. Retrying with TURN relay fallback...`, '#555');
-                currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+            if (globalPeers > 0) {
+                if (!isUsingTurnFallback(currentRtcConfig)) {
+                    log(`\n[System] Discovery is active, but shard peering is stalled. Rejoining shard with TURN relay fallback...`, '#555');
+                    currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+                } else {
+                    log(`\n[System] Discovery is active, but shard peering is stalled. Rejoining shard room...`, '#555');
+                }
+                await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
             } else {
-                log(`\n[System] No live peers found. Rejoining discovery rooms...`, '#555');
+                if (!isUsingTurnFallback(currentRtcConfig)) {
+                    log(`\n[System] No live peers found. Retrying with TURN relay fallback...`, '#555');
+                    currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+                } else {
+                    log(`\n[System] No live peers found. Rejoining discovery rooms...`, '#555');
+                }
+                await connectGlobal(currentRtcConfig);
+                await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
             }
-
-            await connectGlobal(currentRtcConfig);
-            await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
         } finally {
             networkHealInFlight = false;
         }
@@ -537,8 +556,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     }
 
     // Technique B: Fetch shard-specific peer snapshot from Arbiter.
-    if (ARBITER_URL) {
-        fetch(`${ARBITER_URL}/peers?shard=${encodeURIComponent(shard)}`, {
+    const arbiterUrl = runtimeArbiterUrl();
+    if (arbiterUrl) {
+        fetch(`${arbiterUrl}/peers?shard=${encodeURIComponent(shard)}`, {
             signal: AbortSignal.timeout(3000)
         })
             .then(r => r.ok ? r.json() : [])
@@ -572,8 +592,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         if (gameActions.sendRegisterPresence && globalRooms.torrent) {
             gameActions.sendRegisterPresence({ ...entry, shard });
         }
-        if (ARBITER_URL) {
-            fetch(`${ARBITER_URL}/register`, {
+        const arbiterUrl = runtimeArbiterUrl();
+        if (arbiterUrl) {
+            fetch(`${arbiterUrl}/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...entry, shard }),

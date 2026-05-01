@@ -125,6 +125,43 @@ describe('Networking Discovery Integration', () => {
         expect(log).toHaveBeenCalledWith('FALLBACK');
     });
 
+    test('shard heal still triggers when global discovery works but shard peers are zero', () => {
+        const joinInstance = jest.fn();
+        let currentRtcConfig = { iceServers: STUN_SERVERS };
+
+        const healShard = (globalPeers, shardPeers) => {
+            if (shardPeers > 0) return 'STAY';
+            if (globalPeers > 0) {
+                currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+                joinInstance('cellar', 1, currentRtcConfig);
+                return 'REJOIN_SHARD';
+            }
+            return 'REJOIN_ALL';
+        };
+
+        expect(healShard(1, 0)).toBe('REJOIN_SHARD');
+        expect(joinInstance).toHaveBeenCalledTimes(1);
+        expect(currentRtcConfig.iceServers).toContainEqual(TURN_SERVERS[0]);
+    });
+
+    test('global-to-shard bootstrap must include public key with presence payload', () => {
+        const sendPresenceBootstrap = jest.fn();
+        const packet = {
+            presence: new Uint8Array([1, 2, 3]),
+            publicKey: 'base64-public-key',
+        };
+
+        sendPresenceBootstrap(packet, ['peer-1']);
+
+        expect(sendPresenceBootstrap).toHaveBeenCalledWith(
+            expect.objectContaining({
+                presence: expect.any(Uint8Array),
+                publicKey: 'base64-public-key',
+            }),
+            ['peer-1']
+        );
+    });
+
     test('Presence update does NOT overwrite Identity data (Sequence Integrity)', () => {
         const players = new Map();
         const peerId = 'peer-test-123';

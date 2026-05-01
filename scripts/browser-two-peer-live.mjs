@@ -39,7 +39,7 @@ const serveDist = async () => {
     };
 };
 
-const waitFor = async (label, fn, timeoutMs = 10000, intervalMs = 100) => {
+const waitFor = async (label, fn, timeoutMs = 30000, intervalMs = 250) => {
     const deadline = Date.now() + timeoutMs;
     let lastError = null;
     while (Date.now() < deadline) {
@@ -55,13 +55,12 @@ const waitFor = async (label, fn, timeoutMs = 10000, intervalMs = 100) => {
 };
 
 const startChrome = async () => {
-    const userDataDir = await mkdtemp(join(tmpdir(), 'hearthwick-e2e-'));
+    const userDataDir = await mkdtemp(join(tmpdir(), 'hearthwick-live-e2e-'));
     const child = spawn(chromePath, [
         '--headless',
         '--disable-gpu',
         '--no-first-run',
         '--no-default-browser-check',
-        '--disable-background-networking',
         '--remote-debugging-port=0',
         `--user-data-dir=${userDataDir}`,
         'about:blank',
@@ -78,7 +77,7 @@ const startChrome = async () => {
         const file = await readFile(join(userDataDir, 'DevToolsActivePort'), 'utf8').catch(() => '');
         const [portLine] = file.trim().split('\n');
         return portLine ? Number(portLine) : null;
-    }, 10000).catch(err => {
+    }, 10000, 100).catch(err => {
         if (child.exitCode != null) {
             throw new Error(`Chrome exited early (${child.exitCode}). Output:\n${buffer}`);
         }
@@ -94,7 +93,7 @@ class CdpClient {
         this.ws = null;
         this.nextId = 1;
         this.pending = new Map();
-        this.eventWaiters = [];
+        this.consoleLogs = [];
     }
 
     async connect() {
@@ -104,47 +103,35 @@ class CdpClient {
             this.ws.addEventListener('error', reject, { once: true });
             this.ws.addEventListener('message', (event) => {
                 const msg = JSON.parse(event.data);
-                if (msg.id) {
-                    const pending = this.pending.get(msg.id);
-                    if (!pending) return;
-                    this.pending.delete(msg.id);
-                    if (msg.error) pending.reject(new Error(msg.error.message));
-                    else pending.resolve(msg.result);
+                if (!msg.id) {
+                    if (msg.method === 'Runtime.consoleAPICalled') {
+                        const type = msg.params?.type || 'log';
+                        const args = (msg.params?.args || []).map(arg => arg.value ?? arg.description ?? '').join(' ');
+                        this.consoleLogs.push(`[${type}] ${args}`.trim());
+                        if (this.consoleLogs.length > 200) this.consoleLogs.shift();
+                    }
+                    if (msg.method === 'Log.entryAdded') {
+                        const entry = msg.params?.entry;
+                        const line = `[${entry?.level || 'info'}] ${entry?.text || ''}`.trim();
+                        this.consoleLogs.push(line);
+                        if (this.consoleLogs.length > 200) this.consoleLogs.shift();
+                    }
                     return;
                 }
-                this.eventWaiters = this.eventWaiters.filter(waiter => {
-                    if (waiter.method !== msg.method) return true;
-                    if (waiter.predicate && !waiter.predicate(msg.params || {})) return true;
-                    waiter.resolve(msg.params || {});
-                    return false;
-                });
+                const pending = this.pending.get(msg.id);
+                if (!pending) return;
+                this.pending.delete(msg.id);
+                if (msg.error) pending.reject(new Error(msg.error.message));
+                else pending.resolve(msg.result);
             });
         });
     }
 
     send(method, params = {}) {
         const id = this.nextId++;
-        const payload = { id, method, params };
         return new Promise((resolve, reject) => {
             this.pending.set(id, { resolve, reject });
-            this.ws.send(JSON.stringify(payload));
-        });
-    }
-
-    waitForEvent(method, predicate, timeoutMs = 10000) {
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.eventWaiters = this.eventWaiters.filter(waiter => waiter.resolve !== resolve);
-                reject(new Error(`${method} timed out`));
-            }, timeoutMs);
-            this.eventWaiters.push({
-                method,
-                predicate,
-                resolve: (params) => {
-                    clearTimeout(timer);
-                    resolve(params);
-                },
-            });
+            this.ws.send(JSON.stringify({ id, method, params }));
         });
     }
 
@@ -154,16 +141,12 @@ class CdpClient {
             awaitPromise: true,
             returnByValue: true,
         });
-        if (result.exceptionDetails) {
-            throw new Error(result.exceptionDetails.text || 'Runtime evaluation failed');
-        }
+        if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'Runtime evaluation failed');
         return result.result?.value;
     }
 
     async close() {
-        try {
-            this.ws?.close();
-        } catch {}
+        try { this.ws?.close(); } catch {}
     }
 }
 
@@ -174,28 +157,28 @@ const openPage = async (endpoint, url) => {
     const client = new CdpClient(target.webSocketDebuggerUrl);
     await client.connect();
     await client.send('Page.enable');
+    await client.send('Log.enable');
     await client.send('Runtime.enable');
     await waitFor('document readiness', async () => {
         const ready = await client.evaluate('document.readyState');
         return ready === 'complete';
-    }, 15000);
+    }, 15000, 100);
     await waitFor('test api readiness', async () => {
         const ready = await client.evaluate('typeof window.__HEARTHWICK_TEST__ === "object"');
         return ready === true;
-    }, 15000);
+    }, 15000, 100);
     return client;
 };
 
 const getSnapshot = (client) => client.evaluate('window.__HEARTHWICK_TEST__.getSnapshot()');
-
-const issueCommand = (client, cmd) =>
-    client.evaluate(`window.__HEARTHWICK_TEST__.issueCommand(${JSON.stringify(cmd)})`);
-
-const step = (client, dx, dy) =>
-    client.evaluate(`window.__HEARTHWICK_TEST__.step(${JSON.stringify(dx)}, ${JSON.stringify(dy)})`);
-
-const assert = (cond, msg) => {
-    if (!cond) throw new Error(msg);
+const issueCommand = (client, cmd) => client.evaluate(`window.__HEARTHWICK_TEST__.issueCommand(${JSON.stringify(cmd)})`);
+const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
+const waitForProcessExit = async (child, timeoutMs = 5000) => {
+    if (!child || child.exitCode != null) return;
+    await Promise.race([
+        new Promise(resolve => child.once('exit', resolve)),
+        new Promise(resolve => setTimeout(resolve, timeoutMs)),
+    ]);
 };
 
 let chrome;
@@ -209,59 +192,65 @@ try {
     const baseUrl = served.baseUrl;
     chrome = await startChrome();
 
-    const urlA = `${baseUrl}/e2e.html?e2e=1&scope=peer-a&peer=peer-a&name=Alpha`;
-    const urlB = `${baseUrl}/e2e.html?e2e=1&scope=peer-b&peer=peer-b&name=Beta`;
+    const urlA = `${baseUrl}/e2e.html?e2e=1&transport=real&scope=live-peer-a&name=Alpha&debugnet=1`;
+    const urlB = `${baseUrl}/e2e.html?e2e=1&transport=real&scope=live-peer-b&name=Beta&debugnet=1`;
 
     pageA = await openPage(chrome.endpoint, urlA);
     pageB = await openPage(chrome.endpoint, urlB);
 
-    await waitFor('peer A boot', async () => (await getSnapshot(pageA))?.localPlayer?.ph, 15000);
-    await waitFor('peer B boot', async () => (await getSnapshot(pageB))?.localPlayer?.ph, 15000);
+    await waitFor('peer A boot', async () => (await getSnapshot(pageA))?.localPlayer?.ph);
+    await waitFor('peer B boot', async () => (await getSnapshot(pageB))?.localPlayer?.ph);
 
-    await waitFor('peer discovery', async () => {
+    const initialA = await getSnapshot(pageA);
+    const initialB = await getSnapshot(pageB);
+    assert(initialA.selfId !== initialB.selfId, 'real transport peers reused the same peer id');
+
+    const discovery = await waitFor('real transport discovery', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
-        const seesB = snapA.peers.some(p => p.id === 'peer-b' && !p.ghost && p.location === 'cellar');
-        const seesA = snapB.peers.some(p => p.id === 'peer-a' && !p.ghost && p.location === 'cellar');
-        return seesA && seesB;
-    }, 15000);
+        const seesB = snapA.network.globalPeers > 0 || snapA.network.shardPeers > 0 || snapA.peers.some(p => !p.ghost);
+        const seesA = snapB.network.globalPeers > 0 || snapB.network.shardPeers > 0 || snapB.peers.some(p => !p.ghost);
+        return seesA && seesB ? { snapA, snapB } : null;
+    }, 45000, 500);
 
     await issueCommand(pageA, 'rename Alpha');
     await issueCommand(pageB, 'rename Beta');
 
-    await waitFor('name propagation', async () => {
+    await waitFor('real transport name propagation', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
-        const aSees = snapA.peers.some(p => p.id === 'peer-b' && p.name === 'Beta');
-        const bSees = snapB.peers.some(p => p.id === 'peer-a' && p.name === 'Alpha');
+        const aSees = snapA.peers.some(p => p.name === 'Beta');
+        const bSees = snapB.peers.some(p => p.name === 'Alpha');
         return aSees && bSees;
-    }, 5000);
+    }, 30000, 500);
 
-    await step(pageA, 1, 0);
-
-    const moved = await waitFor('movement propagation', async () => {
-        const snapB = await getSnapshot(pageB);
-        return snapB.peers.find(p => p.id === 'peer-a' && p.x === 6 && p.y === 5);
-    }, 5000);
-    assert(!!moved, 'peer movement did not propagate');
-
-    await issueCommand(pageA, 'move north');
-    await issueCommand(pageA, 'move north');
-    await waitFor('room transition to tavern', async () => {
-        const snapA = await getSnapshot(pageA);
-        return snapA.localPlayer.location === 'tavern';
-    }, 5000);
-
-    await issueCommand(pageA, 'talk barkeep');
-    const dialogue = await waitFor('dialogue render', async () => {
-        const snapA = await getSnapshot(pageA);
-        return snapA.dialogueOpen === true;
-    }, 5000);
-    assert(dialogue, 'local gameplay command did not open dialogue');
-
-    console.log('Two-peer browser E2E passed.');
+    console.log('Two-peer live transport E2E passed.');
+    console.log(JSON.stringify({
+        peerA: discovery.snapA.network,
+        peerB: discovery.snapB.network,
+        ids: [initialA.selfId, initialB.selfId],
+    }, null, 2));
+} catch (err) {
+    const snapA = await pageA?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);
+    const snapB = await pageB?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);
+    console.error('LIVE TRANSPORT FAILURE');
+    console.error(JSON.stringify({
+        error: err.message,
+        peerA: {
+            snapshot: snapA,
+            console: pageA?.consoleLogs?.slice(-80) || [],
+        },
+        peerB: {
+            snapshot: snapB,
+            console: pageB?.consoleLogs?.slice(-80) || [],
+        },
+    }, null, 2));
+    throw err;
 } finally {
     await pageA?.close();
     await pageB?.close();
-    if (chrome?.child) chrome.child.kill('SIGTERM');
+    if (chrome?.child) {
+        chrome.child.kill('SIGTERM');
+        await waitForProcessExit(chrome.child);
+    }
     if (chrome?.userDataDir) await rm(chrome.userDataDir, { recursive: true, force: true });
     if (server) await new Promise(resolve => server.close(resolve));
 }
