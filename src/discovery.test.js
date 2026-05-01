@@ -1,25 +1,12 @@
 import { jest } from '@jest/globals';
 
-// Mock Trystero
-const mockRoom = {
-    onPeerJoin: jest.fn(),
-    onPeerLeave: jest.fn(),
-    makeAction: jest.fn(() => [jest.fn(), jest.fn()]),
-    leave: jest.fn(),
-    getPeers: jest.fn(() => ({})),
-};
-
 describe('Discovery Race & Networking Logic', () => {
     let knownPeers;
     let gameActions;
-    let worldState;
-    let lastValidStatePacket;
 
     beforeEach(() => {
         knownPeers = new Set();
         gameActions = {};
-        worldState = { day: 0 };
-        lastValidStatePacket = null;
         jest.clearAllMocks();
     });
 
@@ -68,7 +55,7 @@ describe('Discovery Race & Networking Logic', () => {
 
     test('Discovery beacon processing validates signatures correctly', async () => {
         // Mock verifyMessage
-        const verifyMessage = jest.fn(async (state, sig, key) => {
+        const verifyMessage = jest.fn(async (state, sig, _key) => {
             return sig === 'valid-sig';
         });
 

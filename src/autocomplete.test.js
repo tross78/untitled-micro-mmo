@@ -62,10 +62,9 @@ describe('Autocomplete — Command Completion', () => {
         for (const cmd of ['use', 'move', 'duel', 'rename']) {
             const results = getSuggestions(cmd, ctx());
             const match = results.find(r => r.display === cmd);
-            if (match) {
-                expect(match.immediate).toBe(false);
-                expect(match.fill).toBe(cmd + ' ');
-            }
+            expect(match).toBeDefined();
+            expect(match.immediate).toBe(false);
+            expect(match.fill).toBe(cmd + ' ');
         }
     });
 

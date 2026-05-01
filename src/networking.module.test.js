@@ -80,15 +80,11 @@ describe('networking module hardening', () => {
 
     test('batch presence tracks rawPresence for reliable relaying', async () => {
         const peerId = 'peer-to-relay';
-        const publicKey = 'relay-pub-key';
         
         // We need to bypass verification for this test
         verifyMessage.mockResolvedValue(true);
         
         const fakePresence = new Uint8Array([1, 2, 3]); // Mock packed presence
-        const batchData = {
-            [peerId]: { presence: fakePresence, publicKey }
-        };
         
         // Trigger getPresenceBatch (we need to find where it's stored or mock the handler)
         // Since we can't easily trigger the inner handler, we check if trackPlayer stores rawPresence

@@ -4,10 +4,6 @@ describe('Crypto Node.js Implementation', () => {
     beforeAll(() => {
         setNode(true);
     });
-    const seed = '0'.repeat(44); // 32-byte zero seed in base64
-    const pubKey = 'MCowBQYDK2VwAyEA0000000000000000000000000000000000000000000='; // dummy spki-like
-    // Using real values for a proper test
-    const testSeedB64 = 'r659C99r659C99r659C99r659C99r659C99r659C998='; // 32 bytes
     const testPubKeyB64 = 'iH5D8Yh+QfGIfkPxiH5D8Yh+QfGIfkPxiH5D8Yh+QfE='; // 32 bytes
 
     test('computeHash in Node.js returns valid sha256', async () => {

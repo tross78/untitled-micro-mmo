@@ -70,7 +70,7 @@ describe('renderer public overlay API', () => {
         expect(advanceDialogue()).toBe(true);
         expect(isDialogueOpen()).toBe(true);
 
-        while (advanceDialogue()) {}
+        while (advanceDialogue());
         expect(isDialogueOpen()).toBe(false);
     });
 });

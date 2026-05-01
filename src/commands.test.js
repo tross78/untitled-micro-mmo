@@ -1,6 +1,6 @@
 import { handleCommand, getBestGear } from './commands.js';
 import { localPlayer, worldState } from './store.js';
-import { QUESTS, NPCS, ITEMS } from './data.js';
+import { QUESTS } from './data.js';
 import { bus } from './eventbus.js';
 
 // Mocking dependencies
@@ -110,6 +110,7 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             // The interact command handles portal/room entry progress indirectly
             // but find_tavern is special: handleCommand('move north') doesn't auto-update progress
             // unless we added that logic. Let's check interact.
+            expect(localPlayer.quests['find_tavern'].progress).toBe(0);
         });
 
         test('completing quest grants rewards and items', async () => {
@@ -163,11 +164,6 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         test('interact command uses portal if no NPC present', async () => {
             localPlayer.location = 'cellar';
             localPlayer.x = 5; localPlayer.y = 0; // At hallway portal
-
-            const npcs = Object.keys(NPCS).filter(id => {
-                const loc = require('./rules.js').getNPCLocation(id);
-                return loc === 'cellar';
-            });
 
             await handleCommand('interact');
             expect(localPlayer.location).toBe('hallway');

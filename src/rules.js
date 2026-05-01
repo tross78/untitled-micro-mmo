@@ -5,8 +5,7 @@
 
 import {
     SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL,
-    ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, INSTANCE_CAP, world,
-    NPCS, DIALOGUE_POOLS, QUESTS, CORPORA, GAME_NAME
+    ENEMIES, world, NPCS, CORPORA, GAME_NAME
 } from './data.js';
 
 export { world };
@@ -58,7 +57,7 @@ export function nextMood(currentMood, rng) {
 
 // --- MARKET SCARCITY ---
 
-export function rollScarcity(rng, season) {
+export function rollScarcity(rng, _season) {
     const count = rng(3); // 0, 1, or 2 scarce items
     const pool = [...SCARCITY_ITEMS];
     // Fisher-Yates shuffle with seeded RNG
@@ -189,7 +188,7 @@ export function getNPCLocation(npcId, worldSeed, day) {
     return patrolArray[rng(patrolArray.length)];
 }
 
-export function getNPCDialogue(npcId, worldSeed, day, mood) {
+export function getNPCDialogue(npcId, worldSeed, day, _mood) {
     const npc = NPCS[npcId];
     if (!npc) return "";
     

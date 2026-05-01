@@ -1,6 +1,5 @@
 import { handleCommand, getBestGear } from './commands.js';
 import { localPlayer, worldState } from './store.js';
-import { QUESTS, ITEMS } from './data.js';
 import { bus } from './eventbus.js';
 import { log } from './ui.js';
 

@@ -27,7 +27,6 @@ describe('Networking Discovery Integration', () => {
     test('TURN fallback does NOT trigger if a peer is found within the window', () => {
         const log = jest.fn();
         const connectGlobal = jest.fn();
-        const joinInstance = jest.fn();
 
         // 1. Start discovery
         const triggerFallback = () => {
@@ -153,7 +152,6 @@ describe('Networking Discovery Integration', () => {
     test('Identity Mirroring: skips fraud check if rollup is from another local tab', async () => {
         // Mock dependencies
         const myPubKey = 'key-123';
-        const otherPeerId = 'peer-tab-2';
         const data = {
             publicKey: myPubKey, // Same key as us
             rollup: { root: 'different-root' }
@@ -173,9 +171,9 @@ describe('Networking Discovery Integration', () => {
     test('Alone Proposer: suppresses rollups if no other peers are present', () => {
         const players = new Map();
         const selfId = 'my-id';
-        const ROLLUP_INTERVAL = 10000;
-        
+
         const isProposer = (peerMap, myId) => {
+
             const all = Array.from(peerMap.keys()).concat(myId).sort();
             if (all.length < 2) return false; // The fix we added
             return all[0] === myId;

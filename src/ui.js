@@ -493,7 +493,7 @@ export const drawRadar = (ctx, onTileClick) => {
             if (nx < loc.width && ny < loc.height) grid[ny][nx] = { type: 'npc', label: 'N' };
         }
     });
-    players.forEach((p, id) => {
+    players.forEach((p, _id) => {
         if (!p.ghost && p.location === localPlayer.location && p.x !== undefined) {
             if (p.x < loc.width && p.y < loc.height) grid[p.y][p.x] = { type: 'peer', label: 'P' };
         }

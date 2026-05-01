@@ -83,7 +83,6 @@ export const flushSync = (localPlayer) => {
 };
 
 export const loadState = async () => {
-    let saved = null;
     try {
         // 1. Try IndexedDB
         const idbState = await dbGet('player', 'local');
@@ -91,7 +90,7 @@ export const loadState = async () => {
     } catch (e) { console.error('[Persistence] Load fail:', e); }
     try {
         // 2. Fallback to localStorage (migration / IDB unavailable)
-        saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) return JSON.parse(saved);
     } catch (e) { console.error('[Persistence] localStorage load fail:', e); }
     return null;

@@ -2,7 +2,6 @@ import { drawTile, generateCharacterSprite, zoneTileType } from './graphics.js';
 import { drawRadar } from './ui.js';
 import { VIEWPORT_W, VIEWPORT_H, TILE_PX } from './constants.js';
 import { getTimeOfDay } from './rules.js';
-import { bus } from './eventbus.js';
 
 const ARTICLES = new Set(['the', 'a', 'an']);
 const shortName = (name) => {
@@ -29,7 +28,6 @@ const VP = {
 let _canvas = null;
 let _radarEl = null;
 let _devMode = false;                 // backtick toggles this
-let _dpr = 1;
 
 // LRU Helper for C2 and C3
 function lruGet(map, key, limit, factory) {
@@ -87,7 +85,6 @@ function initCanvas() {
     if (_canvas) return;
     _radarEl = document.getElementById('radar-container');
     const container = document.getElementById('game-area');
-    _dpr = window.devicePixelRatio || 1;
 
     _canvas = document.createElement('canvas');
     _canvas.id = 'game-canvas';
@@ -175,7 +172,7 @@ function getDrawPos(id, x, y, location, duration = 120) {
     return { x, y };
 }
 
-function npcWanderOffset(id, seed, day) {
+function npcWanderOffset(id, _seed, _day) {
     // Deterministic but time-varying wander
     const phase = (Date.now() / 2500) + (hashStr(id) % 100);
     _isAnimating = true;
@@ -584,12 +581,12 @@ export function isDialogueOpen() {
 }
 
 // stubs for future phases
-export function showSpeechBubble(entityId, text) {}
-export function showInventoryPanel(items, equipped) {}
-export function showQuestPanel(quests) {}
-export function showShopPanel(npcId, inventory) {}
-export function updateHUD(player, world) {}
-export function renderMinimap(state) {}
+export function showSpeechBubble(_entityId, _text) {}
+export function showInventoryPanel(_items, _equipped) {}
+export function showQuestPanel(_quests) {}
+export function showShopPanel(_npcId, _inventory) {}
+export function updateHUD(_player, _world) {}
+export function renderMinimap(_state) {}
 
 // ─── Overlay rendering helpers ────────────────────────────────────────────────
 
@@ -659,7 +656,7 @@ function drawFloatingTexts(ctx, camX, camY) {
     });
 }
 
-function drawDialogueBox(ctx, npcName) {
+function drawDialogueBox(ctx, _npcName) {
     if (!_dialogue) return;
     // Safety valve: if dialogue is broken, clear it
     if (!_dialogue.pages || !_dialogue.pages.length || _dialogue.page >= _dialogue.pages.length) {

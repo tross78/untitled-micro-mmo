@@ -9,7 +9,7 @@ function initAudio() {
     if (audioCtx || typeof window === 'undefined') return;
     try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) {
+    } catch {
         audioCtx = null;
         return;
     }

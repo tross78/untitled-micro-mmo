@@ -294,13 +294,11 @@ describe('Network Protocol Integration', () => {
 
         test('Combat results differ for different round seeds', () => {
             const peerA = 'peerA';
-            const peerB = 'peerB';
+            const peerB = 'peer-b';
             const day = 1;
 
-            const dmgRound1 = resolveAttack(10, 5, seededRNG(hashStr(peerA + peerB + day + 1)));
-            const dmgRound2 = resolveAttack(10, 5, seededRNG(hashStr(peerA + peerB + day + 2)));
-
             // Seeds differ, so at minimum the RNG sequence differs (values may occasionally match)
+
             const seed1 = hashStr(peerA + peerB + day + 1);
             const seed2 = hashStr(peerA + peerB + day + 2);
             expect(seed1).not.toBe(seed2);

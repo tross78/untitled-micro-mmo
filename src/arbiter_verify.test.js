@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { signMessage, verifyMessage, createMerkleRoot } from './crypto.js';
+import { signMessage, verifyMessage } from './crypto.js';
 import { hashStr } from './rules.js';
 
 const ROLLUP_INTERVAL = 10000;
@@ -174,8 +174,7 @@ describe('Arbiter: Fraud Proof Cryptographic Verification', () => {
             expect(valid).toBe(true);
             // Accumulate (Arbiter step 4)
             const shouldBan = accumulate(proposerKey, pubB64);
-            if (i < claimants.length - 1) expect(shouldBan).toBe(false);
-            else expect(shouldBan).toBe(true); // last one triggers ban
+            expect(shouldBan).toBe(i === claimants.length - 1);
         }
     });
 });

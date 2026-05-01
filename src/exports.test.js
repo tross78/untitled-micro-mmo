@@ -32,13 +32,11 @@ import * as Data from './data.js';
 // 2. State & Identity
 import * as Store from './store.js';
 import * as Persistence from './persistence.js';
-import * as Identity from './identity.js';
 
 // 3. Networking & Protocol
 import * as Networking from './networking.js';
 import * as Packer from './packer.js';
 import * as Crypto from './crypto.js';
-import { IBLT } from './iblt.js';
 
 // 4. UI & Commands
 import * as Commands from './commands.js';

@@ -3,7 +3,7 @@ import { signMessage, verifyMessage } from './crypto.js';
 import {
     packMove, unpackMove, packEmote, unpackEmote,
     packPresence, unpackPresence, presenceSignaturePayload,
-    packDuelCommit, unpackDuelCommit, packActionLog, unpackActionLog
+    packDuelCommit, unpackDuelCommit, unpackActionLog
 } from './packer.js';
 
 function makeTestKeyPair() {
