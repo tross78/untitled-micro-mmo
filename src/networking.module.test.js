@@ -33,6 +33,7 @@ jest.mock('@trystero-p2p/torrent', () => ({
 }));
 
 import { initNetworking, isProposer, seedFromSnapshot, updateSimulation, gameActions } from './networking.js';
+import { buildTorrentConfig } from './networking.js';
 import {
     hasSyncedWithArbiter,
     localPlayer,
@@ -45,6 +46,8 @@ import {
 } from './store.js';
 import { verifyMessage } from './crypto.js';
 import { checkAndUpdateHlc } from './hlc.js';
+import { joinRoom } from '@trystero-p2p/torrent';
+import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS } from './constants.js';
 
 describe('networking module hardening', () => {
     beforeEach(async () => {
@@ -178,5 +181,28 @@ describe('networking exported module behavior', () => {
         expect(localPlayer.forestFights).toBe(15);
         expect(localPlayer.combatRound).toBe(0);
         expect(localPlayer.buffs).toEqual({ rested: false, activeElixir: null });
+    });
+
+    test('buildTorrentConfig uses relayUrls for Trystero torrent strategy', () => {
+        const config = buildTorrentConfig({ iceServers: STUN_SERVERS });
+
+        expect(config).toEqual({
+            appId: APP_ID,
+            relayUrls: TORRENT_TRACKERS,
+            rtcConfig: { iceServers: STUN_SERVERS },
+        });
+        expect(config.trackerUrls).toBeUndefined();
+    });
+
+    test('initNetworking joins rooms with relayUrls instead of ignored trackerUrls', async () => {
+        await initNetworking();
+
+        const calls = joinRoom.mock.calls;
+        expect(calls.length).toBeGreaterThanOrEqual(2);
+        calls.forEach(([config]) => {
+            expect(config.appId).toBe(APP_ID);
+            expect(config.relayUrls).toEqual(TORRENT_TRACKERS);
+            expect(config.trackerUrls).toBeUndefined();
+        });
     });
 });

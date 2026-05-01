@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Hearthwick E2E</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 12px 12px 0 12px;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh;
+            text-shadow: 0 0 4px rgba(0, 255, 0, 0.4);
+            overflow: hidden;
+        }
+
+        #output {
+            flex: 1 1 0;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-bottom: 8px;
+            min-height: 0;
+        }
+
+        #action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px 0;
+            border-top: 1px solid #222;
+            max-height: 25vh;
+            overflow-y: auto;
+        }
+
+        .action-btn,
+        .chip {
+            background: #111;
+            border: 1px solid #0f0;
+            color: #0f0;
+            font-family: inherit;
+        }
+
+        #suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 4px 0;
+        }
+
+        #input-container {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            border-top: 1px solid #222;
+            padding-bottom: max(4px, env(safe-area-inset-bottom));
+        }
+
+        #prompt {
+            color: #0a0;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+
+        #input {
+            background: transparent;
+            border: none;
+            color: #0f0;
+            font-family: inherit;
+            font-size: inherit;
+            flex: 1;
+            outline: none;
+            min-width: 0;
+        }
+
+        #radar-container {
+            display: none;
+            width: 100%;
+            height: 250px;
+            background: #050505;
+            border: 1px solid #111;
+            margin-bottom: 4px;
+            gap: 1px;
+            padding: 2px;
+            user-select: none;
+            touch-action: none;
+            overflow: hidden;
+        }
+
+        #game-area {
+            position: relative;
+            width: 100%;
+            flex: 1 1 0;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding-top: env(safe-area-inset-top);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-area">
+        <div id="radar-container"></div>
+    </div>
+
+    <div id="action-buttons"></div>
+
+    <div id="debug-console" style="display:flex; flex-direction:column; flex:1 1 0; min-height:0; max-height:35vh; border-top:1px solid #222;">
+        <div id="output" style="flex:1 1 0; overflow-y:auto; min-height:0;">Initializing E2E runtime...</div>
+
+        <div id="banner-ad" style="display:none;"></div>
+
+        <div id="suggestions"></div>
+
+        <div id="input-container" style="display: flex;">
+            <span id="prompt">></span>
+            <input type="text" id="input" autofocus spellcheck="false" autocomplete="off"
+                   autocorrect="off" autocapitalize="off" enterkeyhint="send"
+                   placeholder="type a command...">
+        </div>
+    </div>
+
+    <script type="module" src="e2e-main.js"></script>
+</body>
+</html>

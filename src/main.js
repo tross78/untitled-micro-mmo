@@ -1,4 +1,4 @@
-import { selfId } from '@trystero-p2p/torrent';
+import { selfId } from './transport.js';
 import { 
     worldState, players, localPlayer, hasSyncedWithArbiter,
     TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade, shardEnemies
@@ -20,6 +20,7 @@ import {
 import {
     initNetworking, gameActions, lastValidStatePacket, updateSimulation, joinInstance, currentInstance, currentRtcConfig, preJoinShard
 } from './networking.js';
+import { globalRooms, rooms } from './networking.js';
 import {
     handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem
 } from './commands.js';
@@ -35,10 +36,12 @@ import {
     GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL
 } from './constants.js';
 import { getNPCLocation } from './rules.js';
+import { getRuntimeParam, isE2EMode } from './runtime.js';
 
 const input = document.getElementById('input');
 const suggestionsEl = document.getElementById('suggestions');
 const output = document.getElementById('output');
+const E2E_MODE = isE2EMode();
 
 const HEARTBEAT_MS = 120000;
 
@@ -184,6 +187,61 @@ const triggerLogicalRefresh = () => {
     }, 50);
 };
 
+const buildTestSnapshot = () => ({
+    selfId,
+    localPlayer: {
+        name: localPlayer.name,
+        location: localPlayer.location,
+        x: localPlayer.x,
+        y: localPlayer.y,
+        hp: localPlayer.hp,
+        xp: localPlayer.xp,
+        level: localPlayer.level,
+        gold: localPlayer.gold,
+        ph: localPlayer.ph,
+    },
+    worldState: {
+        seed: worldState.seed,
+        day: worldState.day,
+        mood: worldState.mood,
+    },
+    peers: Array.from(players.entries()).map(([id, entry]) => ({
+        id,
+        name: entry.name,
+        location: entry.location,
+        x: entry.x,
+        y: entry.y,
+        ph: entry.ph,
+        ghost: !!entry.ghost,
+        hasPublicKey: !!entry.publicKey,
+    })),
+    network: {
+        globalPeers: globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0,
+        shardPeers: rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0,
+        synced: hasSyncedWithArbiter,
+    },
+    dialogueOpen: isDialogueOpen(),
+    outputText: output?.textContent || '',
+});
+
+const installE2ETestApi = () => {
+    if (!E2E_MODE || typeof window === 'undefined') return;
+    window.__HEARTHWICK_TEST__ = {
+        getSnapshot: () => buildTestSnapshot(),
+        issueCommand: async (cmd) => {
+            await handleCommand(cmd);
+            triggerLogicalRefresh();
+            return buildTestSnapshot();
+        },
+        step: async (dx, dy) => {
+            await stepPlayer(dx, dy);
+            triggerLogicalRefresh();
+            return buildTestSnapshot();
+        },
+        wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+    };
+};
+
 // --- IDENTITY & P2P BOOTSTRAP ---
 const start = async () => {
     try {
@@ -306,7 +364,7 @@ const start = async () => {
         };
 
         // Gist Discovery
-        if (GH_GIST_ID && GH_GIST_USERNAME && !hasSyncedWithArbiter) {
+        if (!E2E_MODE && GH_GIST_ID && GH_GIST_USERNAME && !hasSyncedWithArbiter) {
             const directUrl = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`;
             fetch(directUrl, { signal: AbortSignal.timeout(5000) })
                 .then(r => r.ok ? r.json() : Promise.reject('Direct fail'))
@@ -325,7 +383,7 @@ const start = async () => {
         }
 
         // HTTP bootstrap
-        if (ARBITER_URL && !hasSyncedWithArbiter) {
+        if (!E2E_MODE && ARBITER_URL && !hasSyncedWithArbiter) {
             fetch(`${ARBITER_URL}/state`, { signal: AbortSignal.timeout(5000) })
                 .then(r => r.ok ? r.json() : null)
                 .then(async packet => {
@@ -339,6 +397,13 @@ const start = async () => {
         // handshake fires signed immediately — no polling delay for playerKeys.
         await initNetworking();
         startTicker(worldState, setTicker);
+        if (E2E_MODE) {
+            const forcedName = getRuntimeParam('name');
+            if (forcedName) {
+                localPlayer.name = forcedName;
+                saveLocalState(localPlayer, true);
+            }
+        }
 
         // Heartbeat for presence
         setInterval(async () => {
@@ -366,6 +431,7 @@ const start = async () => {
 
         setupNetworkEvents();
         setupUIEvents();
+        installE2ETestApi();
         triggerLogicalRefresh();
 
     } catch (err) { log(`[FATAL] Engine crash: ${err.message}`, '#f00'); }

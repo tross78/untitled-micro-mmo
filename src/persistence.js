@@ -1,8 +1,9 @@
 import { STORAGE_KEY, SAVE_VERSION } from './store.js';
+import { scopedStorageKey } from './runtime.js';
 
 let saveTimer = null;
 
-const DB_NAME = 'hearthwick';
+const DB_NAME = scopedStorageKey('hearthwick');
 const DB_VERSION = 1;
 
 /**

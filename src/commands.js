@@ -1,4 +1,4 @@
-import { selfId } from '@trystero-p2p/torrent';
+import { selfId } from './transport.js';
 import {
     worldState, players, localPlayer, pendingDuel, setPendingDuel,
     activeChannels, hasSyncedWithArbiter, pendingTrade, setPendingTrade, shardEnemies

@@ -4,6 +4,7 @@ import { localPlayer } from './store.js';
 import { hashStr } from './rules.js';
 import { GAME_NAME } from './data.js';
 import { presenceSignaturePayload } from './packer.js';
+import { scopedStorageKey } from './runtime.js';
 
 export let playerKeys = null;
 export let arbiterPublicKey = null;
@@ -12,7 +13,7 @@ const pidHash = (playerId) => playerId ? (hashStr(playerId) >>> 0).toString(16).
 
 export const initIdentity = async (log) => {
     try {
-        const KEYS_STORAGE_KEY = `${GAME_NAME}_keys_v3`;
+        const KEYS_STORAGE_KEY = scopedStorageKey(`${GAME_NAME}_keys_v3`);
         arbiterPublicKey = await importKey(MASTER_PUBLIC_KEY, 'public');
         const savedKeys = localStorage.getItem(KEYS_STORAGE_KEY);
         if (savedKeys) {

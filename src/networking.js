@@ -1,5 +1,5 @@
 // @ts-check
-import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
+import { joinRoom as joinTorrent, selfId } from './transport.js';
 import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot, getTimeOfDay } from './rules.js';
 import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from './constants.js';
 import { 
@@ -40,9 +40,14 @@ export let lastValidStatePacket = null;
 export let currentInstance = 1;
 export let currentRtcConfig = { iceServers: STUN_SERVERS };
 export let joinTime = Date.now();
+let lastPeerSeenAt = Date.now();
+let lastNetworkHealAt = 0;
+let networkHealInFlight = false;
 
 const ROLLUP_INTERVAL = 10000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
+const NETWORK_STALL_MS = 20000;
+const NETWORK_HEAL_COOLDOWN_MS = 15000;
 
 // Token bucket: max XP rate derived from the best enemy's XP value.
 // Bucket holds 60s of max-rate XP so tab-switches and network gaps don't false-positive.
@@ -188,6 +193,20 @@ export const updateSimulation = (state) => {
 // Use all trackers to ensure maximum peer discovery and prevent network fragmentation.
 const getMyTrackers = () => TORRENT_TRACKERS;
 
+export const buildTorrentConfig = (rtcConfig = currentRtcConfig) => ({
+    appId: APP_ID,
+    relayUrls: getMyTrackers(),
+    rtcConfig
+});
+
+const isUsingTurnFallback = (rtcConfig = currentRtcConfig) => {
+    const iceServers = rtcConfig?.iceServers || [];
+    return iceServers.some(server => {
+        const urls = Array.isArray(server?.urls) ? server.urls : [server?.urls];
+        return urls.some(url => typeof url === 'string' && url.startsWith('turn:'));
+    });
+};
+
 // Pre-join cache: destination shard name → { room, timeout }
 // Populated by preJoinShard() when the player walks near a portal.
 const preJoinCache = new Map();
@@ -200,7 +219,7 @@ export const preJoinShard = (location, instanceId) => {
     if (shard === currentShard || preJoinCache.has(shard)) return;
     netLog(`[Pre-join] Starting early connect to ${shard}`);
     const room = joinTorrent(
-        { appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: currentRtcConfig },
+        buildTorrentConfig(currentRtcConfig),
         shard
     );
     const timeout = setTimeout(() => {
@@ -216,7 +235,7 @@ export const initNetworking = async (rtcConfig) => {
     const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
 
-        globalRooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: config }, 'global');
+        globalRooms.torrent = joinTorrent(buildTorrentConfig(config), 'global');
 
         const [sendRollup] = globalRooms.torrent.makeAction('rollup');
         const [sendFraud] = globalRooms.torrent.makeAction('fraud_proof');
@@ -283,6 +302,7 @@ export const initNetworking = async (rtcConfig) => {
 
         globalRooms.torrent.onPeerJoin(peerId => {
             knownPeers.add(peerId);
+            lastPeerSeenAt = Date.now();
             if (!hasSyncedWithArbiter) {
                 console.log(`[Discovery] Peer ${peerId} joined global room. Requesting state...`);
                 log(`[System] Found a peer (${peerId.slice(0, 8)}). Syncing...`, '#555');
@@ -390,21 +410,40 @@ export const initNetworking = async (rtcConfig) => {
         console.log(`[P2P] Global Room: global (${globalPeers} peers) | Shard Room: ${shardName} (${shardPeers} peers) | Synced: ${hasSyncedWithArbiter}`);
     }, 10000);
 
-    // Fallback to TURN after 20 seconds if no peers found
-    setTimeout(async () => {
+    await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+
+    const healNetworking = async () => {
+        if (networkHealInFlight) return;
+
         const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
         const globalPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
-        
-        if (shardPeers === 0 && globalPeers === 0) {
-            log(`\n[System] Connection sparse. Attempting relay fallback...`, '#555');
-            currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
-            if (globalRooms.torrent) globalRooms.torrent.leave();
+        const now = Date.now();
+        const silentFor = now - Math.max(joinTime, lastPeerSeenAt);
+
+        if (shardPeers > 0 || globalPeers > 0) return;
+        if (silentFor < NETWORK_STALL_MS) return;
+        if (now - lastNetworkHealAt < NETWORK_HEAL_COOLDOWN_MS) return;
+
+        networkHealInFlight = true;
+        lastNetworkHealAt = now;
+        try {
+            if (!isUsingTurnFallback(currentRtcConfig)) {
+                log(`\n[System] No live peers found. Retrying with TURN relay fallback...`, '#555');
+                currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+            } else {
+                log(`\n[System] No live peers found. Rejoining discovery rooms...`, '#555');
+            }
+
             await connectGlobal(currentRtcConfig);
             await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+        } finally {
+            networkHealInFlight = false;
         }
-    }, 20000);
+    };
 
-    await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+    setInterval(() => {
+        healNetworking().catch(err => console.warn('[P2P] Network heal failed:', err?.message || err));
+    }, 10000);
 
     // Periodic Rollups & Sketching
     setInterval(async () => {
@@ -515,7 +554,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         rooms.torrent = preJoined.room;
         netLog(`[Pre-join] Promoted pre-joined room for ${shard}`);
     } else {
-        rooms.torrent = joinTorrent({ appId: APP_ID, trackerUrls: getMyTrackers(), rtcConfig: config }, shard);
+        rooms.torrent = joinTorrent(buildTorrentConfig(config), shard);
     }
 
     // Register presence with Arbiter for rendezvous bootstrap.
@@ -670,7 +709,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 return;
             }
             const entry = await myEntry();
-            if (entry) plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
+            if (entry) {
+                const pubKey = await exportKey(playerKeys.publicKey);
+                sendIdentity({ publicKey: pubKey });
+                plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
+            }
         };
         broadcastWhenReady();
 
@@ -985,6 +1028,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId);
+            lastPeerSeenAt = Date.now();
             hpv.onJoin(peerId);
 
             // Immediate targeted sketch — reconcile peer roster within ~200ms of connection.
@@ -1017,6 +1061,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getIdentity(({ publicKey }, peerId) => {
             if (bans.has(publicKey)) return;
+            lastPeerSeenAt = Date.now();
             const entry = players.get(peerId) || {};
             const isNew = !entry.publicKey;
             const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
@@ -1062,7 +1107,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             sendRelay, sendRollupLocal, sendSketch, sendRequest,
             sendDuelChallenge, sendDuelAccept, sendDuelCommit,
             sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
-            sendCommit, sendReveal, plumSend, sendPresenceDelta,
+            sendCommit, sendReveal, plumSend, sendPresenceDelta, sendIdentity,
             processPresenceSingle,
         };
     };
@@ -1073,7 +1118,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     // wasn't open when the initial sendPresenceSingle fired in setupShard.
     setTimeout(async () => {
         const entry = await myEntry();
-        if (entry) r.plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
+        if (entry && playerKeys) {
+            const pubKey = await exportKey(playerKeys.publicKey);
+            r.sendIdentity({ publicKey: pubKey });
+            r.plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
+        }
     }, 800);
 
     const shardActions = {

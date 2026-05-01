@@ -1,13 +1,14 @@
 // @ts-check
-import { selfId } from '@trystero-p2p/torrent';
+import { selfId } from './transport.js';
 import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from './data.js';
 import { deriveWorldState, xpToLevel } from './rules.js';
 import { world } from './data.js';
+import { scopedStorageKey } from './runtime.js';
 
-export const WORLD_STATE_KEY = `${GAME_NAME}_worldstate_v1`;
-export const STORAGE_KEY = `${GAME_NAME}_state_v5`;
+export const WORLD_STATE_KEY = scopedStorageKey(`${GAME_NAME}_worldstate_v1`);
+export const STORAGE_KEY = scopedStorageKey(`${GAME_NAME}_state_v5`);
 export const TAB_CHANNEL = typeof BroadcastChannel !== 'undefined'
-    ? new BroadcastChannel(`${GAME_NAME}_state`)
+    ? new BroadcastChannel(scopedStorageKey(`${GAME_NAME}_state`))
     : (() => {
         console.warn('[System] BroadcastChannel not available; multi-tab sync disabled.');
         return { postMessage: () => {}, onmessage: null, close: () => {} };
