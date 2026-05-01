@@ -167,6 +167,11 @@ export const seedFromSnapshot = (snapshot) => {
 };
 
 export const updateSimulation = (state) => {
+    if (!state) return;
+    
+    // Security: Never allow P2P sync or Beacons to overwrite our cryptographic identity
+    if (state.ph) delete state.ph;
+
     if (state.type === 'ban') {
         log(`[Arbiter] Proposer banned: ${state.target.slice(0, 8)}`, '#f55');
         return;
