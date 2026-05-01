@@ -422,6 +422,9 @@ export const initNetworking = async (rtcConfig) => {
 
             log(`[System] Received state rescue offer from ${peerId.slice(0, 8)}!`, '#0f0');
             if (shadow.xp > localPlayer.xp) {
+                if (shadow.name && !shadow.name.startsWith('Peer-')) {
+                    localPlayer.name = shadow.name;
+                }
                 localPlayer.xp = shadow.xp;
                 localPlayer.level = derivedLevel;
                 localPlayer.gold = Math.max(localPlayer.gold, shadow.gold || 0);
@@ -429,7 +432,7 @@ export const initNetworking = async (rtcConfig) => {
                 (shadow.inventory || []).forEach(i => myInv.add(i));
                 localPlayer.inventory = Array.from(myInv);
                 Object.assign(localPlayer.quests, shadow.quests || {});
-                log(`[System] State merged successfully.`, '#0f0');
+                log(`[System] State merged successfully. Welcome back, ${localPlayer.name}!`, '#0f0');
                 saveLocalState(localPlayer, true);
             }
         });
