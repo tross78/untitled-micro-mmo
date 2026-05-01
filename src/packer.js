@@ -198,8 +198,11 @@ export const packPresence = (p) => {
     s.str(truncateName(p.name, 16), 16);
     s.u8(ROOM_MAP.indexOf(p.location));
     // Pack PH (4 bytes from 8-char hex)
-    const phHex = (p.ph || '00000000').slice(0, 8);
-    for (let i = 0; i < 4; i++) s.u8(parseInt(phHex.slice(i * 2, i * 2 + 2), 16));
+    const phHex = String(p.ph || '00000000').padStart(8, '0').slice(0, 8);
+    for (let i = 0; i < 4; i++) {
+        const byteHex = phHex.slice(i * 2, i * 2 + 2);
+        s.u8(parseInt(byteHex, 16) || 0);
+    }
     s.u8(p.level || 1);
     s.u32(p.xp || 0);
     s.u8(p.x || 0);

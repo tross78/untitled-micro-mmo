@@ -299,6 +299,7 @@ export const DEFAULT_PLAYER_STATS = {
     actionIndex: 0,
     buffs: { rested: false, activeElixir: null },
     x: 5, y: 5, // Spatial Coordinates
+    ph: '00000000',
 };
 
 export const INSTANCE_CAP = 50;

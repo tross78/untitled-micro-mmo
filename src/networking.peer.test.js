@@ -249,6 +249,14 @@ describe('Bug 3 — ROOM_MAP derived from data.js (wrong room fix)', () => {
         });
     });
 
+    test('packPresence pads short ph strings with leading zeros', () => {
+        // "da3f33" (6 chars) should be padded to "00da3f33"
+        const p = makePresence({ ph: 'da3f33' });
+        const packed = packPresence(p);
+        const unpacked = unpackPresence(packed);
+        expect(unpacked.ph).toBe('00da3f33');
+    });
+
     test('unknown room index falls back to first sorted room, not silent corruption', () => {
         // Byte 255 is used as "unknown" sentinel in other maps
         const buf = new Uint8Array(160);
