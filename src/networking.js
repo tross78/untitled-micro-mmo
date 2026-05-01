@@ -173,7 +173,9 @@ export const updateSimulation = (state) => {
     if (!state) return;
     
     // Security: Never allow P2P sync or Beacons to overwrite our cryptographic identity
-    if (state.ph) delete state.ph;
+    // or personal character progress.
+    const personalFields = ['ph', 'name', 'xp', 'level', 'gold', 'inventory', 'quests', 'hp', 'maxHp'];
+    personalFields.forEach(f => { if (f in state) delete state[f]; });
 
     if (state.type === 'ban') {
         log(`[Arbiter] Proposer banned: ${state.target.slice(0, 8)}`, '#f55');
