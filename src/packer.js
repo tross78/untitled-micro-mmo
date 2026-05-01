@@ -33,11 +33,7 @@ const toUint8Array = (buf) => {
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-const writeString = (target, offset, value) => {
-    const bytes = textEncoder.encode(String(value || ''));
-    target.set(bytes, offset);
-    return bytes.length;
-};
+
 const readString = (source, offset, length) => textDecoder.decode(source.subarray(offset, offset + length));
 
 class SchemaBuffer {
