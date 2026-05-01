@@ -7,7 +7,7 @@ import { saveLocalState } from './persistence.js';
 
 import { log, printStatus, triggerShake, getHealthBar } from './ui.js';
 import { 
-    world, ENEMIES, ITEMS, DEFAULT_PLAYER_STATS, GAME_NAME,
+    world, ENEMIES, ITEMS, DEFAULT_PLAYER_STATS,
     NPCS, QUESTS, ENABLE_ADS, RECIPES
 } from './data.js';
 import { 
@@ -15,12 +15,12 @@ import {
     rollLoot, xpToLevel, validateMove, getShardName,
     getNPCLocation, getNPCDialogue, getTimeOfDay
 } from './rules.js';
-import { signMessage, verifyMessage, importKey } from './crypto.js';
+import { signMessage } from './crypto.js';
 import { 
     gameActions, joinInstance, globalRooms, rooms, 
     currentInstance, currentRtcConfig 
 } from './networking.js';
-import { playerKeys, arbiterPublicKey, myEntry } from './identity.js';
+import { playerKeys, myEntry } from './identity.js';
 import { showRewardedAd } from './ads.js';
 import { bus } from './eventbus.js';
 
@@ -406,8 +406,6 @@ export const handleCommand = async (cmd) => {
             const playerRes = resolveAttack(localPlayer.attack + bonus.attack + gear.weaponBonus + elixirBonus, scaledDef, rng);
             const isNight = getTimeOfDay() === 'night';
             const enemyRes = resolveAttack(scaledAtk, localPlayer.defense + bonus.defense + gear.defenseBonus, rng, isNight);
-
-            const eName = nameColor(enemyDef.name, enemyDef.color);
 
             // Player Attack
             if (playerRes.isDodge) {

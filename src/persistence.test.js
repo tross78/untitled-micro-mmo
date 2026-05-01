@@ -63,4 +63,29 @@ describe('Persistence System (Phase 7.5 Audit)', () => {
         const state = await loadState();
         expect(state).toEqual(player);
     });
+
+    test('saveLocalState still writes localStorage when IndexedDB open fails', async () => {
+        mockIDB.open.mockImplementationOnce(() => {
+            const req = { onerror: null, error: new Error('idb unavailable') };
+            setTimeout(() => { if (req.onerror) req.onerror({ target: req }); }, 0);
+            return req;
+        });
+
+        const player = { name: 'Fallback', gold: 25 };
+        await saveLocalState(player, true);
+
+        expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify({ ...player, _version: SAVE_VERSION }));
+    });
+
+    test('loadState falls back to localStorage when IndexedDB open fails', async () => {
+        const player = { name: 'LegacyAfterIDBFailure', gold: 15 };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(player));
+        mockIDB.open.mockImplementationOnce(() => {
+            const req = { onerror: null, error: new Error('idb unavailable') };
+            setTimeout(() => { if (req.onerror) req.onerror({ target: req }); }, 0);
+            return req;
+        });
+
+        await expect(loadState()).resolves.toEqual(player);
+    });
 });

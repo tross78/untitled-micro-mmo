@@ -28,13 +28,16 @@ export const cmpHLC = (a, b) => {
     return a.logical - b.logical;
 };
 
-// Pack HLC into 6 bytes: 4-byte wall (ms, fits until year 2106), 2-byte logical counter.
+// Pack HLC into 8 bytes: 48-bit wall milliseconds + 16-bit logical counter.
+// Date.now() already exceeds 32 bits, so truncating to uint32 breaks stale/replay checks.
 export const packHLC = (hlc, view, offset) => {
-    view.setUint32(offset, hlc.wall & 0xFFFFFFFF, false);
-    view.setUint16(offset + 4, hlc.logical & 0xFFFF, false);
+    const wall = Math.max(0, Math.floor(hlc.wall || 0));
+    view.setUint16(offset, Math.floor(wall / 0x100000000) & 0xFFFF, false);
+    view.setUint32(offset + 2, wall >>> 0, false);
+    view.setUint16(offset + 6, hlc.logical & 0xFFFF, false);
 };
 
 export const unpackHLC = (view, offset) => ({
-    wall: view.getUint32(offset, false),
-    logical: view.getUint16(offset + 4, false),
+    wall: view.getUint16(offset, false) * 0x100000000 + view.getUint32(offset + 2, false),
+    logical: view.getUint16(offset + 6, false),
 });

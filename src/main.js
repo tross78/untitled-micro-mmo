@@ -4,9 +4,9 @@ import {
     TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade, shardEnemies
 } from './store.js';
 import { saveLocalState, flushSync } from './persistence.js';
-import { log, printStatus, renderActionButtons, startTicker } from './ui.js';
+import { log, renderActionButtons, startTicker } from './ui.js';
 import {
-    renderWorld, toggleDevRadar, setVisualRefreshCallback, setLogicalRefreshCallback,
+    renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback,
     showDialogue, advanceDialogue, isDialogueOpen,
     showToast, showRoomBanner, showItemFanfare, showLevelUp, triggerHitFlash,
     showFloatingText, setTicker
@@ -21,7 +21,7 @@ import {
     initNetworking, gameActions, lastValidStatePacket, updateSimulation, joinInstance, currentInstance, currentRtcConfig, preJoinShard
 } from './networking.js';
 import {
-    handleCommand, getPlayerName, getTag, startStateChannel, resolveRound, escapeHtml, grantItem
+    handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem
 } from './commands.js';
 import { verifyMessage, importKey } from './crypto.js';
 import { bus } from './eventbus.js';
@@ -196,13 +196,12 @@ const start = async () => {
         setVisualRefreshCallback(triggerVisualRefresh);
         setLogicalRefreshCallback(triggerLogicalRefresh);
 
-        bus.on('combat:hit', ({ attacker, crit }) => {
+        bus.on('combat:hit', ({ _attacker, crit }) => {
             if (crit) playCrit(); else playHit();
             triggerHitFlash();
         });
         bus.on('combat:dodge', ({ target }) => {
             if (target === 'You') {
-                const loc = world[localPlayer.location];
                 showFloatingText(localPlayer.x, localPlayer.y, 'DODGE', '#0fa');
             } else {
                 const loc = world[localPlayer.location];

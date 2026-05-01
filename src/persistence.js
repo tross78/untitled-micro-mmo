@@ -46,12 +46,15 @@ export const saveLocalState = async (localPlayer, immediate = false) => {
     const dataWithVersion = { ...localPlayer, _version: SAVE_VERSION };
     const persist = async () => {
         try {
-            // Primary store: IndexedDB
-            await dbPut('player', 'local', dataWithVersion);
-            // Legacy write-through (for now)
             localStorage.setItem(STORAGE_KEY, JSON.stringify(dataWithVersion));
         } catch (e) {
-            console.warn('[System] Persistence failed:', e.message);
+            console.warn('[System] localStorage persistence failed:', e.message);
+        }
+        try {
+            // Primary store: IndexedDB
+            await dbPut('player', 'local', dataWithVersion);
+        } catch (e) {
+            console.warn('[System] IndexedDB persistence failed:', e.message);
         }
     };
     if (immediate) {
@@ -80,13 +83,16 @@ export const flushSync = (localPlayer) => {
 };
 
 export const loadState = async () => {
+    let saved = null;
     try {
         // 1. Try IndexedDB
         const idbState = await dbGet('player', 'local');
         if (idbState) return idbState;
-        // 2. Fallback to localStorage (migration)
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) return JSON.parse(saved);
     } catch (e) { console.error('[Persistence] Load fail:', e); }
+    try {
+        // 2. Fallback to localStorage (migration / IDB unavailable)
+        saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) return JSON.parse(saved);
+    } catch (e) { console.error('[Persistence] localStorage load fail:', e); }
     return null;
 };

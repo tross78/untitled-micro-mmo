@@ -1,5 +1,6 @@
+// @ts-check
 import { joinRoom as joinTorrent, selfId } from '@trystero-p2p/torrent';
-import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot, validateMove, getTimeOfDay } from './rules.js';
+import { getShardName, hashStr, seededRNG, deriveWorldState, xpToLevel, rollLoot, getTimeOfDay } from './rules.js';
 import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from './constants.js';
 import { 
     worldState, localPlayer, hasSyncedWithArbiter, setHasSyncedWithArbiter,
@@ -15,12 +16,14 @@ import { sendHLC, recvHLC, cmpHLC } from './hlc.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, unpackPresence, packDuelCommit, unpackDuelCommit,
-    packActionLog, unpackActionLog, packTradeCommit, unpackTradeCommit
+    packActionLog, unpackActionLog, packTradeCommit, unpackTradeCommit,
+    presenceSignaturePayload
 } from './packer.js';
 import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
 import { log, printStatus } from './ui.js';
 import { GAME_NAME } from './data.js';
 import { bus } from './eventbus.js';
+import { saveLocalState } from './persistence.js';
 
 const netLog = (msg, color = '#555') => {
     if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
@@ -39,7 +42,6 @@ export let currentRtcConfig = { iceServers: STUN_SERVERS };
 export let joinTime = Date.now();
 
 const ROLLUP_INTERVAL = 10000;
-const SKETCH_INTERVAL = 30000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
 
 // Token bucket: max XP rate derived from the best enemy's XP value.
@@ -78,6 +80,13 @@ const buildSketch = () => {
     ms.add(selfId);
     return ms;
 };
+
+const signPresence = async (entry) => {
+    const signature = await signMessage(JSON.stringify(presenceSignaturePayload(entry)), playerKeys.privateKey);
+    return { ...entry, signature };
+};
+
+const packSignedPresence = async (entry) => packPresence(await signPresence(entry));
 
 // Returns true if the XP gain is within the token bucket allowance for this peer.
 const checkXpRate = (peerId, newXp, oldXp) => {
@@ -230,7 +239,7 @@ export const initNetworking = async (rtcConfig) => {
                 const entry = await myEntry();
                 if (entry) {
                     const hlc = sendHLC();
-                    const packed = packPresence({...entry, hlc});
+                    const packed = await packSignedPresence({ ...entry, hlc });
                     sendPresenceBootstrap(packed, [peerId]);
                 }
             }
@@ -292,7 +301,7 @@ export const initNetworking = async (rtcConfig) => {
 
         getStateRequest((ph, peerId) => {
             // If we have a shadow player with this PH, offer the state
-            for (const [sid, shadow] of shadowPlayers.entries()) {
+            for (const shadow of shadowPlayers.values()) {
                 if (shadow.ph === ph) {
                     sendStateOffer(shadow, [peerId]);
                     break;
@@ -329,7 +338,7 @@ export const initNetworking = async (rtcConfig) => {
                 const pubKey = await importKey(offerer.publicKey, 'public');
                 // Note: since we are the ones being rescued, we verify against our own PH which 
                 // the offerer has signed. The offerer is acting as the store.
-                if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) {
+                if (!await verifyMessage(JSON.stringify(presenceSignaturePayload(sigData)), signature, pubKey)) {
                     console.warn(`[Rescue] Rejected: signature verification failed`);
                     return;
                 }
@@ -608,9 +617,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             const unpacked = unpackPresence(buf);
 
-            // HLC causal ordering: reject stale/replayed presence
-            if (unpacked.hlc && !checkAndUpdateHlc(peerId, unpacked.hlc)) return;
-
             // Security: ph must derive from the sender's known public key
             const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
             if (unpacked.ph !== expectedPh) {
@@ -622,8 +628,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             try {
                 const { signature, ...sigData } = unpacked;
                 const pubKey = await importKey(entry.publicKey, 'public');
-                if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) return;
+                if (!await verifyMessage(JSON.stringify(presenceSignaturePayload(sigData)), signature, pubKey)) return;
             } catch { return; }
+
+            // HLC causal ordering: reject stale/replayed presence (ONLY AFTER VERIFICATION)
+            if (unpacked.hlc && !checkAndUpdateHlc(peerId, unpacked.hlc)) return;
 
             // Security: level must match XP formula (always), and XP rate must be sane
             if (unpacked.level !== xpToLevel(unpacked.xp)) return;
@@ -634,7 +643,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
             if (shadow && unpacked.level > shadow.level + 1) return;
 
-            trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() });
+            trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now(), rawPresence: buf });
             trackShadowPlayer(peerId, unpacked);
             players.delete('ghost:' + unpacked.ph); // evict stale ghost for this identity
         };
@@ -661,7 +670,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 return;
             }
             const entry = await myEntry();
-            if (entry) plumSend(packPresence(entry));
+            if (entry) plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
         };
         broadcastWhenReady();
 
@@ -676,7 +685,15 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const localMs = buildSketch();
             const remoteMs = Minisketch.fromSerialized(remoteArr);
             // decode convention: removed = we have, remote doesn't; added = remote has, we don't
-            const { added, removed } = Minisketch.decode(localMs, remoteMs, localIds(), []);
+            const { added, removed, failure } = Minisketch.decode(localMs, remoteMs, localIds(), []);
+            
+            if (failure) {
+                // Minisketch reconciliation failed — fallback: request full roster
+                netLog(`Sketch reconciliation failed with ${peerId.slice(0, 8)}. Falling back to full request.`, '#f55');
+                sendRequest(localIds().map(String), [peerId]);
+                return;
+            }
+
             if (added.length > 32 || removed.length > 32) return; // cap for safety
 
             // removed: we have these peers, remote doesn't — push their presences
@@ -687,11 +704,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     if (!removed.some(r => r === h)) continue;
                     if (id === selfId) continue; // handled below
                     const data = players.get(id);
-                    if (data) response[id] = { presence: packPresence(data), publicKey: data.publicKey };
+                    if (data?.rawPresence) {
+                        response[id] = { presence: data.rawPresence, publicKey: data.publicKey };
+                    }
                 }
                 if (removed.some(r => r === Number(Minisketch.hashId(selfId)))) {
                     const entry = await myEntry();
-                    if (entry) response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+                    if (entry) response[selfId] = { presence: await packSignedPresence({ ...entry, hlc: sendHLC() }), publicKey: await exportKey(playerKeys.publicKey) };
                 }
                 if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
             }
@@ -714,11 +733,17 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     const n = Number(s);
                     return s === id || (Number.isInteger(n) && n === idHash);
                 });
-                if (matches) response[id] = { presence: packPresence(data), publicKey: data.publicKey };
+                if (matches) {
+                    if (data.rawPresence) {
+                        response[id] = { presence: data.rawPresence, publicKey: data.publicKey };
+                    } else {
+                        response[id] = { presence: packPresence(data), publicKey: data.publicKey };
+                    }
+                }
             }
             if (matchesSelf) {
                 const entry = await myEntry();
-                if (entry) response[selfId] = { presence: packPresence(entry), publicKey: await exportKey(playerKeys.publicKey) };
+                if (entry) response[selfId] = { presence: await packSignedPresence({ ...entry, hlc: sendHLC() }), publicKey: await exportKey(playerKeys.publicKey) };
             }
             if (Object.keys(response).length > 0) sendPresenceBatch(response, [peerId]);
         });
@@ -730,14 +755,21 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             await processPresenceSingle(buf, peerId);
         });
 
-        getPresenceBatch(async (data, peerId) => {
+        getPresenceBatch(async (data, _) => {
             for (const [id, { presence, publicKey }] of Object.entries(data)) {
                 if (id === selfId || !publicKey) continue;
                 if (bans.has(publicKey)) continue;
                 try {
                     const unpacked = unpackPresence(presence);
 
-                    // HLC causal ordering
+                    // Security check (ED25519) BEFORE HLC update
+                    const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+                    if (unpacked.ph !== ph) continue;
+                    const { signature, ...sigData } = unpacked;
+                    const pubKey = await importKey(publicKey, 'public');
+                    if (!await verifyMessage(JSON.stringify(presenceSignaturePayload(sigData)), signature, pubKey)) continue;
+
+                    // HLC causal ordering: ONLY AFTER VERIFICATION
                     if (unpacked.hlc && !checkAndUpdateHlc(id, unpacked.hlc)) continue;
 
                     if (unpacked.level !== xpToLevel(unpacked.xp)) continue;
@@ -747,15 +779,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                         continue;
                     }
                     if (shadow && unpacked.level > shadow.level + 1) continue;
-
-                    const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
-                    if (unpacked.ph !== ph) continue;
-                    const { signature, ...sigData } = unpacked;
-                    const pubKey = await importKey(publicKey, 'public');
-                    if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) continue;
                     
                     const entry = players.get(id) || {};
-                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey, ph });
+                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey, ph, rawPresence: presence });
                     trackShadowPlayer(id, unpacked);
                     players.delete('ghost:' + unpacked.ph);
                     hpv.onJoin(id); // Ensure they are in the logical overlay
@@ -797,7 +823,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             feedHeads.set(peerId, { seq, hash: entryHash });
         });
 
-        getRollupLocal((data) => {
+        getRollupLocal((_) => {
             lastRollupReceivedAt = Date.now();
         });
 
@@ -1047,7 +1073,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     // wasn't open when the initial sendPresenceSingle fired in setupShard.
     setTimeout(async () => {
         const entry = await myEntry();
-        if (entry) r.plumSend(packPresence(entry));
+        if (entry) r.plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
     }, 800);
 
     const shardActions = {
@@ -1061,10 +1087,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendMonsterDmg: (data) => r.sendMonsterDmg(data),
         sendActionLog: (data) => r.sendActionLog(packActionLog(data)),
         sendPresenceSingle: (data, target) => {
+            if (!playerKeys) return;
             const hlc = sendHLC();
-            const packed = packPresence({ ...data, hlc });
-            if (target) r.sendPresenceSingle(packed, target);
-            else r.plumSend(packed);
+            packSignedPresence({ ...data, hlc }).then(packed => {
+                if (target) r.sendPresenceSingle(packed, target);
+                else r.plumSend(packed);
+            }).catch(e => console.warn('[P2P] Presence signing failed:', e.message));
         },
         sendPresenceBatch: (data, target) => {
             target ? r.sendPresenceBatch(data, target) : r.sendPresenceBatch(data);

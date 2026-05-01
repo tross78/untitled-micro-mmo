@@ -4,6 +4,77 @@
  * pure functions and data-path logic that were broken are covered.
  */
 
+import {
+    advanceDialogue,
+    isDialogueOpen,
+    setLogicalRefreshCallback,
+    setTicker,
+    setVisualRefreshCallback,
+    showDialogue,
+    showFloatingText,
+    showItemFanfare,
+    showLevelUp,
+    showRoomBanner,
+    showToast,
+    triggerHitFlash,
+} from './renderer.js';
+
+describe('renderer public overlay API', () => {
+    let visual;
+    let logical;
+
+    beforeEach(() => {
+        visual = jest.fn();
+        logical = jest.fn();
+        setVisualRefreshCallback(visual);
+        setLogicalRefreshCallback(logical);
+        while (isDialogueOpen()) advanceDialogue();
+    });
+
+    afterEach(() => {
+        setVisualRefreshCallback(null);
+        setLogicalRefreshCallback(null);
+    });
+
+    test('overlay functions are callable before canvas initialization', () => {
+        expect(() => {
+            setTicker('A quiet rumor crosses the tavern.');
+            showFloatingText(1, 2, 'MISS');
+            showToast('Saved');
+            showRoomBanner('The Cellar');
+            showItemFanfare('Potion');
+            showLevelUp(4);
+            triggerHitFlash();
+        }).not.toThrow();
+
+        expect(visual).toHaveBeenCalled();
+    });
+
+    test('showDialogue ignores empty text and opens/closes non-empty dialogue', () => {
+        showDialogue('Barkeep', '');
+        expect(isDialogueOpen()).toBe(false);
+
+        showDialogue('Barkeep', 'Welcome to the tavern.');
+        expect(isDialogueOpen()).toBe(true);
+        expect(visual).toHaveBeenCalled();
+        expect(logical).toHaveBeenCalled();
+
+        expect(advanceDialogue()).toBe(false);
+        expect(isDialogueOpen()).toBe(false);
+    });
+
+    test('advanceDialogue pages through long text before closing', () => {
+        showDialogue('Sage', Array(40).fill('word').join(' '));
+
+        expect(isDialogueOpen()).toBe(true);
+        expect(advanceDialogue()).toBe(true);
+        expect(isDialogueOpen()).toBe(true);
+
+        while (advanceDialogue()) {}
+        expect(isDialogueOpen()).toBe(false);
+    });
+});
+
 // --- shortName helper (copy of the function from renderer.js) ---
 // If it's ever exported, import it instead. For now we inline the logic
 // so the test is independent of the canvas module.

@@ -1,3 +1,4 @@
+// @ts-check
 import { selfId } from '@trystero-p2p/torrent';
 import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from './data.js';
 import { deriveWorldState, xpToLevel } from './rules.js';
@@ -23,7 +24,7 @@ export let worldState = {
     lastTick: 0 
 };
 
-export const players = new Map(); // id -> {name, location, ph, level, xp, ts, publicKey}
+export const players = new Map(); // id -> {name, location, ph, level, xp, ts, publicKey, rawPresence}
 export const shadowPlayers = new Map(); // id -> {level, xp, inventory, gold, actionIndex}
 export const shardEnemies = new Map(); // roomId -> {hp, maxHp, lastUpdate}
 export const bans = new Set();

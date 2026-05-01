@@ -1,9 +1,10 @@
+// @ts-check
 /**
  * Hearthwick Schema-Based Binary Packer
  * Declarative serialization for high-frequency messages.
  */
 
-import { world } from './data.js';
+import { world, ENEMIES } from './data.js';
 import { packHLC, unpackHLC } from './hlc.js';
 
 class SchemaBuffer {
@@ -22,9 +23,9 @@ class SchemaBuffer {
         this.u32(t % 0x100000000);
     }
     hlc(val) {
-        // HLC: 4-byte wall + 2-byte logical counter (6 bytes total)
-        packHLC(val || { wall: Date.now() & 0xFFFFFFFF, logical: 0 }, this.view, this.offset);
-        this.offset += 6;
+        // HLC: 48-bit wall + 16-bit logical counter (8 bytes total)
+        packHLC(val || { wall: Date.now(), logical: 0 }, this.view, this.offset);
+        this.offset += 8;
     }
     sig(val) {
         if (val) {
@@ -57,7 +58,7 @@ class SchemaReader {
     }
     hlc() {
         const h = unpackHLC(this.view, this.offset);
-        this.offset += 6;
+        this.offset += 8;
         return h;
     }
     sig() {
@@ -74,14 +75,23 @@ class SchemaReader {
     }
 }
 
-// Derived from data.js world keys — sorted alphabetically for a stable, self-maintaining index.
-// Any new room added to data.js is automatically included. All peers must use the same sort.
+// Derived from data.js keys — sorted alphabetically for a stable, self-maintaining index.
+// Any new room/enemy added to data.js is automatically included. All peers must use the same sort.
 export const ROOM_MAP = Object.keys(world).sort();
+export const ENEMY_MAP = Object.keys(ENEMIES).sort();
+
+// Truncates a string to fit within a specific UTF-8 byte length.
+// Ensures canonicalization between signed payload and transmitted bytes.
+const truncateName = (str, maxBytes) => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let buf = encoder.encode(str || '');
+    if (buf.length <= maxBytes) return str || '';
+    // Byte-truncate and decode back to string (strips partial trailing multibyte chars)
+    return decoder.decode(buf.subarray(0, maxBytes)).replace(/\0/g, '');
+};
+
 const EMOTE_MAP = ['waves hello.', 'bows respectfully.', 'cheers loudly!'];
-const ENEMY_MAP = [
-    'forest_wolf', 'ruin_shade', 'cave_troll', 'bandit', 
-    'goblin', 'skeleton', 'wraith', 'mountain_troll'
-];
 const ACTION_TYPES = ['attack', 'kill', 'loot'];
 const ITEM_MAP = [
     'wolf_pelt', 'old_tome', 'iron_key', 'gold', 'potion', 'ale', 'bread',
@@ -94,6 +104,32 @@ const QUEST_MAP = [
     'gather_wood', 'iron_supply', 'craft_sword', 'market_recovery',
     'tavern_regular', 'courier_run', 'mountain_trial'
 ];
+
+export const presenceSignaturePayload = (p) => {
+    const activeQuests = Object.entries(p.quests || {})
+        .filter(([, q]) => !q.completed)
+        .slice(0, 8);
+    const quests = {};
+    activeQuests.forEach(([id, q]) => {
+        quests[id] = { progress: q.progress || 0, completed: false };
+    });
+    return {
+        name: truncateName(p.name, 16),
+        location: ROOM_MAP.includes(p.location) ? p.location : 'cellar',
+        ph: (p.ph || '00000000').slice(0, 8),
+        level: p.level || 1,
+        xp: p.xp || 0,
+        x: p.x || 0,
+        y: p.y || 0,
+        gold: p.gold || 0,
+        inventory: (p.inventory || []).slice(0, 16),
+        quests,
+        hlc: {
+            wall: p.hlc?.wall || 0,
+            logical: p.hlc?.logical || 0,
+        },
+    };
+};
 
 export const packMove = (m) => {
     const s = new SchemaBuffer(74);
@@ -129,7 +165,7 @@ export const unpackEmote = (buf) => ({
 
 export const packPresence = (p) => {
     const s = new SchemaBuffer(160); // Increased size
-    s.str(p.name || '', 16);
+    s.str(truncateName(p.name, 16), 16);
     s.u8(ROOM_MAP.indexOf(p.location));
     // Pack PH (4 bytes from 8-char hex)
     const phHex = (p.ph || '00000000').slice(0, 8);

@@ -1,175 +1,134 @@
-// Minisketch — polynomial set reconciliation over GF(2^32).
-// Based on Naumenko, Maxwell, Wuille et al. 2019 (Bitcoin Erlay).
-// Replaces IBLT: never fails within declared capacity, ~neutral bundle size.
+// Compact peer-set reconciliation sketch.
 //
-// API mirrors the old IBLT for a drop-in swap in networking.js:
+// The public API intentionally matches the earlier Minisketch drop-in:
 //   const ms = new Minisketch(capacity)
-//   ms.add(peerId)          // string peer id
-//   ms.serialize()          // Uint32Array
-//   Minisketch.decode(localMs, remoteMs) → { added: string[], removed: string[] }
-//   Minisketch.hashId(id)   // same contract as IBLT.hashId (returns BigInt)
+//   ms.add(peerId)
+//   ms.serialize()
+//   Minisketch.decode(localMs, remoteMs) -> { added, removed }
+//   Minisketch.hashId(peerId) -> BigInt
+//
+// Internally this uses a small invertible sketch. The previous polynomial
+// decoder could not recover remote-only peer hashes without candidate IDs,
+// which made shard roster reconciliation silently fail.
 
-// --- GF(2^32) with primitive polynomial x^32 + x^7 + x^3 + x^2 + 1 (0x8000008D) ---
-const MOD = 0x8000008D >>> 0;
+const CELLS_PER_ITEM = 5;
 
-const gfMul = (a, b) => {
-    let result = 0;
-    let aa = a >>> 0;
-    let bb = b >>> 0;
-    while (bb) {
-        if (bb & 1) result ^= aa;
-        const msb = aa & 0x80000000;
-        aa = (aa << 1) >>> 0;
-        if (msb) aa ^= MOD;
-        bb >>>= 1;
+const hashU32 = (str, seed = 0x811c9dc5) => {
+    let h = seed >>> 0;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
     }
-    return result >>> 0;
+    return h === 0 ? 1 : h;
 };
 
-const gfPow = (base, exp) => {
-    let result = 1;
-    let b = base >>> 0;
-    let e = exp >>> 0;
-    while (e) {
-        if (e & 1) result = gfMul(result, b);
-        b = gfMul(b, b);
-        e >>>= 1;
-    }
-    return result;
+const hashPeerId = (id) => hashU32(typeof id === 'string' ? id : String(id));
+const checkHash = (key) => hashU32(String(key), 0x9e3779b9);
+
+const indexesFor = (key, cellCount) => {
+    const a = hashU32(String(key), 0x85ebca6b);
+    const b = hashU32(String(key), 0xc2b2ae35);
+    const c = hashU32(String(key), 0x27d4eb2f);
+    const d = hashU32(String(key), 0x38b06037);
+    const e = hashU32(String(key), 0x4f420323);
+    return [a % cellCount, b % cellCount, c % cellCount, d % cellCount, e % cellCount];
 };
 
-const gfInv = (a) => gfPow(a, 0xFFFFFFFE); // Fermat: a^(2^32-2)
+const makeCells = (count) => Array.from({ length: count }, () => ({ count: 0, keyXor: 0, hashXor: 0 }));
 
-// Evaluate polynomial (coeffs[0] is constant term) at point x in GF(2^32).
-const polyEval = (coeffs, x) => {
-    let result = 0;
-    for (let i = coeffs.length - 1; i >= 0; i--) {
-        result = gfMul(result, x) ^ coeffs[i];
-    }
-    return result;
-};
-
-// Berlekamp-Massey over GF(2^32) — finds minimal LFSR for a sequence.
-const berlekampMassey = (s) => {
-    let C = [1], B = [1], L = 0, x = 1, b = 1;
-    for (let n = 0; n < s.length; n++) {
-        let d = s[n];
-        for (let i = 1; i <= L; i++) d ^= gfMul(C[i] || 0, s[n - i]);
-        if (d === 0) { x++; continue; }
-        const T = [...C];
-        const coef = gfMul(d, gfInv(b));
-        if (C.length < B.length + x) C.length = B.length + x;
-        for (let i = x; i < B.length + x; i++) C[i] = (C[i] || 0) ^ gfMul(coef, B[i - x] || 0);
-        if (2 * L <= n) { L = n + 1 - L; B = T; b = d; x = 1; } else x++;
-    }
-    return C;
-};
-
-// Find all roots of polynomial in GF(2^32) via Berlekamp's trace method (Cantor-Zassenhaus).
-// For small degree (≤32) we can afford brute-force over likely peer-hash values.
-// Since peer IDs are hashed to u32, we test the syndromes' roots directly.
-const findRoots = (poly) => {
-    // Use Chien search: evaluate poly at all possible element values.
-    // Only feasible because capacity ≤ 32, so poly degree ≤ 32.
-    // We don't search all 2^32 values — instead we recover roots from the
-    // fact that each element is a peer hash already tracked in our local set.
-    // This is called from decode() which has access to all candidate values.
-    return poly; // placeholder — actual root finding in decode()
-};
-
-// Per-peer string → uint32 hash (same contract as old IBLT.hashId but returns number not BigInt).
-const hashPeerId = (id) => {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < id.length; i++) {
-        h ^= id.charCodeAt(i);
-        h = (Math.imul(h, 0x01000193)) >>> 0;
-    }
-    return h === 0 ? 1 : h; // 0 is the additive identity in GF — avoid it
-};
+const cloneCells = (cells) => cells.map(c => ({ count: c.count, keyXor: c.keyXor >>> 0, hashXor: c.hashXor >>> 0 }));
 
 export class Minisketch {
     constructor(capacity = 32) {
         this._cap = capacity;
-        // Sketch = sum of power-sums S_k = Σ x^k for k=1..capacity
-        this._s = new Uint32Array(capacity);
+        this._cellCount = Math.max(8, capacity * CELLS_PER_ITEM);
+        this._cells = makeCells(this._cellCount);
     }
 
     add(id) {
-        const h = hashPeerId(typeof id === 'string' ? id : String(id));
-        let pw = h;
-        for (let k = 0; k < this._cap; k++) {
-            this._s[k] ^= pw;
-            pw = gfMul(pw, h);
+        const key = hashPeerId(id);
+        const checksum = checkHash(key);
+        for (const idx of indexesFor(key, this._cellCount)) {
+            const cell = this._cells[idx];
+            cell.count += 1;
+            cell.keyXor = (cell.keyXor ^ key) >>> 0;
+            cell.hashXor = (cell.hashXor ^ checksum) >>> 0;
         }
     }
 
-    // Returns a plain number[] for safe JSON wire transport via Trystero.
     serialize() {
-        return Array.from(this._s);
+        const out = [this._cap, this._cellCount];
+        for (const cell of this._cells) out.push(cell.count, cell.keyXor >>> 0, cell.hashXor >>> 0);
+        return out;
     }
 
-    // Accepts plain Array, Uint32Array, or ArrayBuffer from wire.
     static fromSerialized(arr) {
-        let src;
-        if (arr instanceof ArrayBuffer) src = new Uint32Array(arr);
-        else if (arr instanceof Uint32Array) src = arr;
-        else src = arr; // plain Array of numbers
-        const ms = new Minisketch(Array.isArray(src) ? src.length : src.length);
-        ms._s = new Uint32Array(src);
+        const src = arr instanceof ArrayBuffer ? Array.from(new Int32Array(arr)) : Array.from(arr || []);
+        // Security: cap capacity and cellCount to prevent memory DoS
+        const cap = Math.min(256, src[0] || 32);
+        const cellCount = Math.min(1024, src[1] || Math.max(8, cap * CELLS_PER_ITEM));
+        const ms = new Minisketch(cap);
+        ms._cellCount = cellCount;
+        ms._cells = makeCells(cellCount);
+        let offset = 2;
+        for (let i = 0; i < cellCount; i++) {
+            if (offset + 2 >= src.length) break;
+            ms._cells[i] = {
+                count: src[offset++] || 0,
+                keyXor: (src[offset++] || 0) >>> 0,
+                hashXor: (src[offset++] || 0) >>> 0,
+            };
+        }
         return ms;
     }
 
-    // Decode the symmetric difference between two Minisketches.
-    // Returns { added: string[], removed: string[] } relative to local.
-    // 'added' = in remote but not local; 'removed' = in local but not remote.
-    // Requires caller passes local peer id set for root verification.
-    static decode(local, remote, localIds = [], remoteIdsHint = []) {
-        // XOR power-sums to get the difference sketch
-        const diff = new Uint32Array(local._cap);
-        for (let k = 0; k < local._cap; k++) diff[k] = local._s[k] ^ remote._s[k];
-
-        // If all zeros, sets are identical
-        if (diff.every(v => v === 0)) return { added: [], removed: [] };
-
-        // Compute syndromes S_1..S_n from power sums (they ARE the power sums in our encoding)
-        const syndromes = Array.from(diff);
-
-        // Run Berlekamp-Massey to find the error-locator polynomial
-        const locator = berlekampMassey(syndromes);
-        const degree = locator.length - 1;
-
-        if (degree === 0 || degree > local._cap) return { added: [], removed: [] };
-
-        // Find roots by evaluating locator at every known local and remote hash.
-        // This is efficient because we only care about peer IDs we know about.
-        const candidates = new Set([
-            ...localIds.map(hashPeerId),
-            ...remoteIdsHint.map(hashPeerId),
-        ]);
-        // Also check if any individual syndrome is itself a root (single-element diff)
-        if (degree === 1) candidates.add(syndromes[0]);
-
-        const roots = [];
-        for (const h of candidates) {
-            if (h && polyEval(locator, h) === 0) roots.push(h);
+    static decode(local, remote) {
+        const cellCount = Math.min(local._cellCount, remote._cellCount);
+        const cells = makeCells(cellCount);
+        for (let i = 0; i < cellCount; i++) {
+            const a = local._cells[i] || { count: 0, keyXor: 0, hashXor: 0 };
+            const b = remote._cells[i] || { count: 0, keyXor: 0, hashXor: 0 };
+            cells[i] = {
+                count: a.count - b.count,
+                keyXor: (a.keyXor ^ b.keyXor) >>> 0,
+                hashXor: (a.hashXor ^ b.hashXor) >>> 0,
+            };
         }
 
-        if (roots.length !== degree) return { added: [], removed: [] };
+        const work = cloneCells(cells);
+        const added = [];
+        const removed = [];
+        const queue = [];
+        const enqueuePure = (i) => {
+            const c = work[i];
+            if (Math.abs(c.count) === 1 && c.keyXor !== 0 && c.hashXor === checkHash(c.keyXor)) queue.push(i);
+        };
+        for (let i = 0; i < work.length; i++) enqueuePure(i);
 
-        // Determine direction: check which roots are in local vs remote using power sums.
-        // A root is "added" (in remote not local) if its hash XORs into the diff positively.
-        // Simple heuristic: check membership in localIds set.
-        const localHashes = new Set(localIds.map(hashPeerId));
-        const added = [], removed = [];
-        for (const root of roots) {
-            if (localHashes.has(root)) removed.push(root);
-            else added.push(root);
+        while (queue.length) {
+            const idx = queue.shift();
+            const cell = work[idx];
+            if (!(Math.abs(cell.count) === 1 && cell.keyXor !== 0 && cell.hashXor === checkHash(cell.keyXor))) continue;
+
+            const key = cell.keyXor >>> 0;
+            const sign = cell.count;
+            if (sign > 0) removed.push(key);
+            else added.push(key);
+
+            for (const j of indexesFor(key, cellCount)) {
+                const c = work[j];
+                if (!c) continue;
+                c.count -= sign;
+                c.keyXor = (c.keyXor ^ key) >>> 0;
+                c.hashXor = (c.hashXor ^ checkHash(key)) >>> 0;
+                enqueuePure(j);
+            }
         }
 
-        return { added, removed };
+        const success = work.every(c => c.count === 0 && c.keyXor === 0 && c.hashXor === 0);
+        return success ? { added, removed, failure: false } : { added: [], removed: [], failure: true };
     }
 
-    // Compatibility shim: same contract as old IBLT.hashId (returns BigInt)
     static hashId(id) {
         return BigInt(hashPeerId(id));
     }

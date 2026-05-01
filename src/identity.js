@@ -3,6 +3,7 @@ import { MASTER_PUBLIC_KEY } from './constants.js';
 import { localPlayer } from './store.js';
 import { hashStr } from './rules.js';
 import { GAME_NAME } from './data.js';
+import { presenceSignaturePayload } from './packer.js';
 
 export let playerKeys = null;
 export let arbiterPublicKey = null;
@@ -54,6 +55,6 @@ export const myEntry = async () => {
         equipped: localPlayer.equipped || { weapon: null, armor: null },
         ts: Date.now() 
     };
-    const signature = await signMessage(JSON.stringify(data), playerKeys.privateKey);
+    const signature = await signMessage(JSON.stringify(presenceSignaturePayload(data)), playerKeys.privateKey);
     return { ...data, signature };
 };

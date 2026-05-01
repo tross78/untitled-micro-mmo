@@ -1,4 +1,17 @@
-import { packMove, unpackMove, packEmote, unpackEmote, packPresence, unpackPresence, packDuelCommit, unpackDuelCommit, packActionLog, unpackActionLog } from './packer.js';
+import { generateKeyPairSync } from 'node:crypto';
+import { signMessage, verifyMessage } from './crypto.js';
+import {
+    packMove, unpackMove, packEmote, unpackEmote,
+    packPresence, unpackPresence, presenceSignaturePayload,
+    packDuelCommit, unpackDuelCommit, packActionLog, unpackActionLog
+} from './packer.js';
+
+function makeTestKeyPair() {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const rawSeed = privateKey.export({ type: 'pkcs8', format: 'der' }).slice(16);
+    const rawPub  = publicKey.export({ type: 'spki',  format: 'der' }).slice(12);
+    return { privB64: rawSeed.toString('base64'), pubB64: rawPub.toString('base64') };
+}
 
 describe('Binary Packer', () => {
     test('Move packet encodes/decodes correctly', () => {
@@ -94,7 +107,7 @@ describe('Binary Packer', () => {
 
     // Presence now uses HLC instead of a plain timestamp.
     test('Presence HLC round-trips wall and logical fields correctly', () => {
-        const hlc = { wall: 1700000000, logical: 42 };
+        const hlc = { wall: 1777593957322, logical: 42 };
         const presence = {
             name: 'T', location: 'cellar', ph: '00000000', level: 1,
             xp: 0, hlc, signature: btoa('x'.repeat(64)),
@@ -102,6 +115,44 @@ describe('Binary Packer', () => {
         const unpacked = unpackPresence(packPresence(presence));
         expect(unpacked.hlc.wall).toBe(hlc.wall);
         expect(unpacked.hlc.logical).toBe(hlc.logical);
+    });
+
+    test('presence signature payload survives pack/unpack exactly', async () => {
+        const { privB64, pubB64 } = makeTestKeyPair();
+        const unsigned = {
+            name: 'Tyson', location: 'cellar', ph: 'abcdef12', level: 3,
+            xp: 220, x: 4, y: 5, gold: 12, inventory: ['potion'],
+            quests: { wolf_hunt: { progress: 1, objective: { target: 'forest_wolf' } } },
+            ts: 1777593957000, equipped: { weapon: 'iron_sword' },
+            hlc: { wall: 1777593957322, logical: 9 },
+        };
+        const signature = await signMessage(JSON.stringify(presenceSignaturePayload(unsigned)), privB64);
+        const unpacked = unpackPresence(packPresence({ ...unsigned, signature }));
+        await expect(verifyMessage(
+            JSON.stringify(presenceSignaturePayload(unpacked)),
+            unpacked.signature,
+            pubB64
+        )).resolves.toBe(true);
+    });
+
+    test('signing pre-wire myEntry shape fails after HLC is added', async () => {
+        const { privB64, pubB64 } = makeTestKeyPair();
+        const preWire = {
+            name: 'Tyson', location: 'cellar', ph: 'abcdef12', level: 3,
+            xp: 220, x: 4, y: 5, gold: 12, inventory: [], quests: {},
+            equipped: { weapon: null, armor: null }, ts: 1777593957000,
+        };
+        const signature = await signMessage(JSON.stringify(preWire), privB64);
+        const unpacked = unpackPresence(packPresence({
+            ...preWire,
+            hlc: { wall: 1777593957322, logical: 1 },
+            signature,
+        }));
+        await expect(verifyMessage(
+            JSON.stringify(presenceSignaturePayload(unpacked)),
+            unpacked.signature,
+            pubB64
+        )).resolves.toBe(false);
     });
 
     test('Presence packet byte layout matches documented offsets', () => {
@@ -165,6 +216,26 @@ describe('Binary Packer', () => {
         buf.set(sigBytes, 8);
         const unpacked = unpackActionLog(buf);
         expect(unpacked.target).toBeNull();
+    });
+
+    test('ENEMY_MAP includes crab and matches data.js', () => {
+        const { ENEMY_MAP } = require('./packer.js');
+        const { ENEMIES } = require('./data.js');
+        expect(ENEMY_MAP).toContain('crab');
+        expect(ENEMY_MAP).toEqual(Object.keys(ENEMIES).sort());
+    });
+
+    test('truncateName handles multi-byte characters and emoji correctly', () => {
+        const { packPresence, unpackPresence, presenceSignaturePayload } = require('./packer.js');
+        const longName = 'Tyson 🌈 MultiByte'; //  Rainbow is 4 bytes
+        const p = { name: longName, location: 'cellar', ph: '00000000', level: 1, xp: 0 };
+        
+        const payload = presenceSignaturePayload(p);
+        const unpacked = unpackPresence(packPresence(p));
+        
+        // The names should be identical after truncation logic
+        expect(unpacked.name).toBe(payload.name);
+        expect(Buffer.from(unpacked.name).length).toBeLessThanOrEqual(16);
     });
 
     // Catches bug: DuelCommit comment said 77 bytes but buffer was 70. Verify the layout
