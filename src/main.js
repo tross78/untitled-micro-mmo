@@ -244,8 +244,10 @@ const installE2ETestApi = () => {
 // --- IDENTITY & P2P BOOTSTRAP ---
 const start = async () => {
     try {
-        // Run identity key import and state loading in parallel — they're independent.
-        await Promise.all([initIdentity(log), loadLocalState(log)]);
+        // Run state loading then identity key initialization sequentially.
+        // initIdentity must run second to ensure its derivation of 'ph' wins.
+        await loadLocalState(log);
+        await initIdentity(log);
         await resolveBootstrapArbiterUrl();
         if (E2E_MODE && getRuntimeParam('debugnet') === '1') {
             localStorage.setItem(`${GAME_NAME}_debug`, 'true');

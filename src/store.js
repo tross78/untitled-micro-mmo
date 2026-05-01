@@ -149,6 +149,10 @@ export const loadLocalState = async (log) => {
             // strip unknown items and clamp size
             data.inventory = data.inventory.filter(id => ITEMS[id]).slice(0, 50);
 
+            // Security: Never restore 'ph' from saved state. 
+            // It must be derived from the current cryptographic keys by initIdentity.
+            delete data.ph;
+
             Object.assign(localPlayer, data);
             
             if (typeof localPlayer.combatRound !== 'number' || isNaN(localPlayer.combatRound)) {
