@@ -106,10 +106,6 @@ describe('networking module hardening', () => {
         const processPresenceSpy = jest.fn();
         gameActions.processPresence = processPresenceSpy;
         
-        // We need to trigger the handler. Since initNetworking is called in beforeEach,
-        // it registered a handler with the mock torrent room.
-        const mockTorrent = joinRoom();
-        
         // This is getting complicated due to nested mocks. Let's just test the logic directly
         // by verifying that packPresence is called when needed.
         const entry = { name: 'Test', location: 'cellar', ph: '123', level: 1, xp: 0 };
