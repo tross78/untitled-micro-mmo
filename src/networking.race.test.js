@@ -56,4 +56,22 @@ describe('Networking Race Condition Simulation', () => {
         // Should not call plumSend
         expect(mockSendPresence).not.toHaveBeenCalled();
     });
+
+    test('ghost-to-live promotion: trackPlayer clears ghost flag on real identity receipt', () => {
+        const peerId = 'promoted-peer';
+        const ph = 'abcdef12';
+        
+        // 1. Seed as a ghost
+        localPlayer.ph = 'self-ph'; // Avoid self-ghost filtering
+        const { trackPlayer, players } = require('./store.js');
+        trackPlayer(peerId, { name: 'Alice', ph, location: 'cellar', ghost: true });
+        expect(players.get(peerId).ghost).toBe(true);
+        
+        // 2. Receive real P2P data (identity handshake)
+        // trackPlayer should be called without ghost: true
+        trackPlayer(peerId, { name: 'Alice', ph, location: 'cellar', publicKey: 'real-key' });
+        
+        // 3. Verify ghost flag is now false
+        expect(players.get(peerId).ghost).toBe(false);
+    });
 });

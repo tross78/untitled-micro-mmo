@@ -59,7 +59,7 @@ export const evictPlayer = (id) => {
 
 export const trackPlayer = (id, data) => {
     const isNew = !players.has(id);
-    players.set(id, data);
+    players.set(id, { ...data, ghost: !!data.ghost });
     
     if (isNew) {
         _presenceDelta.joined.add(id);

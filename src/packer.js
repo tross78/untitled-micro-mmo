@@ -146,7 +146,7 @@ export const presenceSignaturePayload = (p) => {
     return {
         name: truncateName(p.name, 16),
         location: ROOM_MAP.includes(p.location) ? p.location : 'cellar',
-        ph: (p.ph || '00000000').slice(0, 8),
+        ph: p.ph ? String(p.ph).slice(0, 8) : null,
         level: p.level || 1,
         xp: p.xp || 0,
         x: p.x || 0,
@@ -198,7 +198,8 @@ export const packPresence = (p) => {
     s.str(truncateName(p.name, 16), 16);
     s.u8(ROOM_MAP.indexOf(p.location));
     // Pack PH (4 bytes from 8-char hex)
-    const phHex = String(p.ph || '00000000').padStart(8, '0').slice(0, 8);
+    if (!p.ph) throw new Error("ph is required for packing presence");
+    const phHex = String(p.ph).padStart(8, '0').slice(0, 8);
     for (let i = 0; i < 4; i++) {
         const byteHex = phHex.slice(i * 2, i * 2 + 2);
         s.u8(parseInt(byteHex, 16) || 0);

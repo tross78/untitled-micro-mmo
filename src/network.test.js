@@ -219,14 +219,14 @@ describe('Network Protocol Integration', () => {
             expect(unpacked.signature).toBe(entry.signature);
         });
 
-        test('packPresence does not throw when ph is null (identity not yet set)', () => {
+        test('packPresence throws when ph is null (identity not yet set)', () => {
             // localPlayer.ph starts as null before initIdentity() completes.
-            // The heartbeat may fire in this window on very slow devices.
-            expect(() => packPresence(makeEntry({ ph: null }))).not.toThrow();
+            // We now strictly require it to be set to prevent 00000000 mismatch.
+            expect(() => packPresence(makeEntry({ ph: null }))).toThrow('ph is required');
         });
 
-        test('packPresence does not throw when ph is undefined', () => {
-            expect(() => packPresence(makeEntry({ ph: undefined }))).not.toThrow();
+        test('packPresence throws when ph is undefined', () => {
+            expect(() => packPresence(makeEntry({ ph: undefined }))).toThrow('ph is required');
         });
     });
 
