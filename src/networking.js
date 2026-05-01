@@ -701,16 +701,14 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         getRequest(async (idStrings, peerId) => {
-            // idStrings can be:
-            //   - stringified uint32 hash numbers (from sketch reconciliation)
-            //   - actual peer ID strings (from getAnnounce)
-            // Match strategy: if the string parses to a number, match by hash; otherwise match by direct ID.
             const response = {};
+            const myIdHash = Number(Minisketch.hashId(selfId));
             const matchesSelf = idStrings.some(s => {
                 const n = Number(s);
-                return s === selfId || (Number.isInteger(n) && n === Number(Minisketch.hashId(selfId)));
+                return s === selfId || (Number.isInteger(n) && n === myIdHash);
             });
             for (const [id, data] of players.entries()) {
+                if (data.ghost) continue;
                 const idHash = Number(Minisketch.hashId(id));
                 const matches = idStrings.some(s => {
                     const n = Number(s);
@@ -732,7 +730,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             await processPresenceSingle(buf, peerId);
         });
 
-        getPresenceBatch(async (data) => {
+        getPresenceBatch(async (data, peerId) => {
             for (const [id, { presence, publicKey }] of Object.entries(data)) {
                 if (id === selfId || !publicKey) continue;
                 if (bans.has(publicKey)) continue;
@@ -750,16 +748,18 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                     }
                     if (shadow && unpacked.level > shadow.level + 1) continue;
 
-                    const expectedPh = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
-                    if (unpacked.ph !== expectedPh) continue;
+                    const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+                    if (unpacked.ph !== ph) continue;
                     const { signature, ...sigData } = unpacked;
                     const pubKey = await importKey(publicKey, 'public');
                     if (!await verifyMessage(JSON.stringify(sigData), signature, pubKey)) continue;
+                    
                     const entry = players.get(id) || {};
-                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey });
+                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey, ph });
                     trackShadowPlayer(id, unpacked);
                     players.delete('ghost:' + unpacked.ph);
-                } catch { }
+                    hpv.onJoin(id); // Ensure they are in the logical overlay
+                } catch (e) { console.error(`[Net] Batch presence error:`, e); }
             }
         });
 
@@ -993,7 +993,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (bans.has(publicKey)) return;
             const entry = players.get(peerId) || {};
             const isNew = !entry.publicKey;
-            trackPlayer(peerId, { ...entry, publicKey, ts: Date.now() });
+            const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+            trackPlayer(peerId, { ...entry, publicKey, ph, ts: Date.now() });
+            hpv.onJoin(peerId); // Ensure they are in the logical overlay
             if (isNew) log(`[Social] Peer ${peerId.slice(0,4)} entered the world.`, '#aaa');
             // SYN→SYN-ACK: reciprocate our identity+presence so both sides become visible
             if (isNew && playerKeys) {
