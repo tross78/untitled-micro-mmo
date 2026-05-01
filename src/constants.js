@@ -30,19 +30,15 @@ export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com'
 ];
 
-// Expanded STUN list for better browser-to-browser NAT traversal.
+// Optimized STUN list for faster NAT traversal and to avoid Firefox "5+ servers" warning.
 export const STUN_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.services.mozilla.com' },
 ];
 
-// TURN is the relay fallback for symmetric NAT (both peers behind NAT, e.g. Pi + mobile).
+// TURN is the relay fallback. Reduced to one reliable port to avoid discovery lag.
 export const TURN_SERVERS = [
-    { urls: 'turn:openrelay.metered.ca:80',                username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443',               username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 export const ICE_SERVERS = [...STUN_SERVERS, ...TURN_SERVERS];
