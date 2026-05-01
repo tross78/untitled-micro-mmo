@@ -27,7 +27,7 @@ function setupDOM() {
     `;
 }
 
-function makeCtx(locOverride = 'tavern', playerOverrides = {}) {
+function makeCtx(locOverride = 'tavern', playerOverrides = {}, extra = {}) {
     return {
         localPlayer: {
             name: 'Tester', location: locOverride,
@@ -42,8 +42,10 @@ function makeCtx(locOverride = 'tavern', playerOverrides = {}) {
         getNPCLocation: (id) => NPCS[id]?.home ?? null,
         ENEMIES, ITEMS, QUESTS,
         pendingTrade: null,
+        pendingDuel: null,
         players: new Map(),
         shardEnemies: new Map(),
+        ...extra,
     };
 }
 
@@ -122,6 +124,21 @@ describe('renderActionButtons DOM output', () => {
         const btns = actionButtons();
         expect(btns.some(b => b.startsWith('Iron Sword'))).toBe(true);
         expect(btns).toContain('Back ⬅️');
+    });
+
+    test('pending duel renders accept and decline buttons on root', () => {
+        renderActionButtons(makeCtx('tavern', {}, {
+            pendingDuel: {
+                challengerId: 'peer-123',
+                challengerName: 'Rival',
+                expiresAt: Date.now() + 60000,
+                day: 1,
+            }
+        }), jest.fn());
+
+        const btns = actionButtons();
+        expect(btns.some(b => b.startsWith('Accept Duel vs Rival'))).toBe(true);
+        expect(btns).toContain('Decline Duel');
     });
 
     test('no Buy button in rooms with no shop NPC', () => {

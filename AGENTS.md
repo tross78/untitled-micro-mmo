@@ -1409,6 +1409,17 @@ Target feel: ALttP / Link's Awakening. No visible text log during play. All feed
 **Rendering foundation (from Phase 7.85):**
 Phase 7.85 lands the five rendering fixes (DPR, aspect-ratio, RAF loop, tile cache, tab blur). Phase 8 builds directly on top of that — do not start Phase 8 renderer work until those are complete and stable.
 
+**Viewport / layout rules:**
+* The world viewport is orientation-aware, not just scaled. Portrait should bias toward a taller slice of the room and bottom-aligned controls; landscape should bias toward a wider slice and more lateral visibility.
+* Canvas, HUD, and interaction hotspots must all consume the same viewport metrics so tile clicks and touch targets remain aligned after resize/orientation changes.
+* The room camera should preserve a stable tile grid in both orientations. Do not let CSS stretching change gameplay coordinates.
+
+**Collision / occupancy:**
+* Phase 8 adds explicit occupancy rules for tiles and entities. A tile can be `walkable`, `solid`, `interactive`, or `occupied`.
+* Movement must resolve collisions before movement tweening commits. That includes walls, scenery blocks, NPCs, enemies, doors, and temporary props.
+* Collision should stay deterministic and data-driven. `data.js` owns collision metadata; renderer and movement logic read the same source of truth.
+* Start with single-tile axis-aligned blocking. No physics engine, no float nudging, no broadphase complexity.
+
 ---
 
 **Procedural world freshness — keeping maps consistent across all peers**
@@ -1453,6 +1464,11 @@ export function generateDungeonOverrides(roomKey, day, width, height) {
 
 All peers call this with the same `roomKey` + `day` → same overrides. The room feels different each week. No network traffic required — the seed is the sync mechanism.
 
+*Room grammar and authored set-dressing.* Keep a deliberate split between procedural noise and authored landmarks:
+* Procedural: floor/grass/water/wall fill, scatter, seasonal tint, fog, lighting falloff.
+* Authored: doors, rugs, shelves, altar footprints, boss markers, collision blockers, room-signature silhouettes.
+* The goal is to make every room feel hand-composed even when most of the pixels are seeded.
+
 *Unexplored room "fog".* When a peer first enters a room in the current week, mark `exploredRooms[roomKey + ':' + week] = true` in IndexedDB. The renderer can draw a subtle fog overlay on tiles outside the player's current sightline radius (e.g., 4 tiles), lifting as they move. This is local-only — it doesn't affect other peers and requires no state sync. It makes large rooms feel like genuine exploration rather than instant reveals.
 
 *Day/season visual theming.* The existing time-of-day tint (`getTimeOfDay()`) already varies by hour. Add a season pass in the tile renderer:
@@ -1477,6 +1493,7 @@ This is one overlay pass on the cached tile layer — essentially free.
 * Scenery objects (barrel, crate, altar) get designed silhouettes but procedural color/position variation.
 * Unknown peer sprites fall back to the existing hash-identicon generator (`generateCharacterSprite`) — they should look alien/unknown, and that's intentional.
 * Palette swapping per instance — wolf sprite uses the wolf shape but color is tinted from `seededRNG(hashStr(entityId))`, giving variation while preserving the designed silhouette.
+* Borrow the useful ideas from small game libs rather than their dependency trees: Kontra-style animation primitives, object pooling, and self-stopping render loops are the target patterns.
 
 **Kontra.js-inspired patterns (no library — steal the ideas):**
 * `Animator` class (~25 lines) in `graphics.js` — holds frame array, fps, elapsed time; `update(dt)` advances; `frame()` returns current `OffscreenCanvas`. Used by renderer for all animated entities.
@@ -1489,6 +1506,8 @@ This is one overlay pass on the cached tile layer — essentially free.
 * Sparse tile overrides — `data.js` gets an optional `tileOverrides` array per room (e.g. `{x:3,y:4,type:'rug'}`). Renderer checks overrides before the procedural pass. Allows authored set-dressing without replacing the procedural system.
 * Dynamic lighting — at night, draw a `createRadialGradient` vignette (opaque dark → transparent) centered on player. Torches in `scenery` extend the lit radius. Drawn as a canvas overlay after the tile pass.
 * Weather layer — occasional rain or snow: short-lived particle objects from the pool, drawn as a final canvas pass. No game logic impact.
+* Collision readability — blocked tiles should be visually explainable, not mysterious. Use subtle blockers, doorway frames, and shadow cues so players can read why they cannot step there.
+* Orientation-aware layout — portrait can expose a taller action stack and shorter side gutters; landscape can expose a wider playfield and a compact side panel. The same room should feel intentionally laid out in both modes.
 
 **HUD (canvas-native, no HTML):**
 * Heart containers for HP (whole/half/empty, ALttP style) — drawn as designed pixel sprites, not emoji. Hearts drain/refill with a brief scale-pulse animation via `Animator`.

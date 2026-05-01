@@ -7,6 +7,15 @@
 import { world, ENEMIES } from './data.js';
 import { packHLC, unpackHLC } from './hlc.js';
 
+const toUint8Array = (buf) => {
+    if (buf instanceof Uint8Array) return buf;
+    if (buf instanceof ArrayBuffer) return new Uint8Array(buf);
+    if (ArrayBuffer.isView(buf)) {
+        return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    }
+    throw new TypeError('Expected binary buffer');
+};
+
 class SchemaBuffer {
     constructor(size) {
         this.buf = new Uint8Array(size);
@@ -44,8 +53,8 @@ class SchemaBuffer {
 
 class SchemaReader {
     constructor(buf) {
-        this.buf = buf;
-        this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        this.buf = toUint8Array(buf);
+        this.view = new DataView(this.buf.buffer, this.buf.byteOffset, this.buf.byteLength);
         this.offset = 0;
     }
     u8() { return this.view.getUint8(this.offset++); }

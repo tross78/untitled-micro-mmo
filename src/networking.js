@@ -959,6 +959,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (data.target !== selfId) return;
             log(`\n[DUEL] ${data.fromName} challenges you to a duel!`, '#ff0');
             setPendingDuel({ challengerId: peerId, challengerName: data.fromName, expiresAt: Date.now() + 60000, day: worldState.day });
+            bus.emit('duel:incoming', { challengerId: peerId, challengerName: data.fromName });
         });
 
         getDuelAccept(async (data, peerId) => {

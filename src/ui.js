@@ -82,7 +82,7 @@ export const renderActionButtons = (ctx, onAction) => {
         if (!actionButtonsEl) return;
         actionButtonsEl.innerHTML = '';
         
-        const { localPlayer, world, worldState, getNPCLocation, shardEnemies } = ctx;
+        const { localPlayer, world, worldState, getNPCLocation, shardEnemies, pendingDuel } = ctx;
         if (!localPlayer || !world) return;
 
         const loc = world[localPlayer.location];
@@ -134,6 +134,10 @@ export const renderActionButtons = (ctx, onAction) => {
         const localNpcs = Object.keys(NPCS || {}).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
 
         if (uiState === 'root') {
+            if (pendingDuel && Date.now() <= pendingDuel.expiresAt) {
+                addButton(`Accept Duel vs ${pendingDuel.challengerName} ⚔️`, 'accept');
+                addButton('Decline Duel', 'decline');
+            }
             if (_lastAction === 'attack' && loc.enemy && localPlayer.currentEnemy) {
                 addButton('Attack Again ⚔️', ACTION.ATTACK);
             }

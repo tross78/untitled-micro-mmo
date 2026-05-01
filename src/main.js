@@ -1,7 +1,7 @@
 import { selfId } from './transport.js';
 import { 
     worldState, players, localPlayer, hasSyncedWithArbiter,
-    TAB_CHANNEL, loadLocalState, pruneStale, pendingTrade, setPendingTrade, shardEnemies
+    TAB_CHANNEL, loadLocalState, pruneStale, pendingDuel, pendingTrade, setPendingTrade, shardEnemies
 } from './store.js';
 import { saveLocalState, flushSync } from './persistence.js';
 import { log, renderActionButtons, startTicker } from './ui.js';
@@ -149,7 +149,7 @@ const triggerVisualRefresh = () => {
     _vRefreshTimer = requestAnimationFrame(() => {
         _vRefreshTimer = null;
         const ctx = {
-            localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
+            localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingDuel, pendingTrade, players, shardEnemies
         };
         renderWorld(ctx, (tx, ty, entity) => {
             const loc = world[localPlayer.location];
@@ -172,7 +172,7 @@ const triggerLogicalRefresh = () => {
     _lRefreshTimer = setTimeout(() => {
         _lRefreshTimer = null;
         const ctx = {
-            localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingTrade, players, shardEnemies
+            localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingDuel, pendingTrade, players, shardEnemies
         };
         renderActionButtons(ctx, (cmdOrAction) => {
             const ACTION_VALUES = new Set(Object.values(ACTION));
@@ -505,6 +505,11 @@ function setupNetworkEvents() {
             startTradeTimeout();
             triggerLogicalRefresh();
         }
+    });
+
+    bus.on('duel:incoming', ({ challengerName }) => {
+        showToast(`${challengerName} challenged you to a duel.`);
+        triggerLogicalRefresh();
     });
 
     const finalizeTrade = () => {
