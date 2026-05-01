@@ -149,6 +149,9 @@ export const seedFromSnapshot = (snapshot) => {
     const now = Date.now();
     for (const entry of snapshot) {
         if (!entry.ph || !entry.location || existingPhs.has(entry.ph)) continue;
+        // Security: Never seed ourselves as a ghost. Authority is our own localPlayer object.
+        if (entry.ph === localPlayer.ph) continue;
+
         // Store as ghost — no peerId, no publicKey. Keyed by ph (display only).
         // Real P2P presence will overwrite when it arrives.
         const ghostKey = 'ghost:' + entry.ph;
@@ -306,6 +309,7 @@ export const initNetworking = async (rtcConfig) => {
         });
 
         getPresenceBootstrap(async (packet, peerId) => {
+            if (peerId === selfId) return;
             if (!packet?.presence || !packet?.publicKey || bans.has(packet.publicKey)) return;
             const entry = players.get(peerId) || {};
             const ph = (hashStr(packet.publicKey) >>> 0).toString(16).padStart(8, '0');
@@ -700,7 +704,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const localIds = () => [...Array.from(players.keys()).filter(id => !players.get(id).ghost), selfId];
 
         const processPresenceSingle = async (buf, peerId) => {
-            if (!buf) return;
+            if (!buf || peerId === selfId) return;
             lastPeerSeenAt = Date.now();
             const entry = players.get(peerId);
             if (!entry?.publicKey) {

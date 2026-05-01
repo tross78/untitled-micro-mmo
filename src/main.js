@@ -370,7 +370,7 @@ const start = async () => {
 
         // Gist Discovery
         if (!E2E_MODE && GH_GIST_ID && GH_GIST_USERNAME && !hasSyncedWithArbiter) {
-            const directUrl = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/mmo_arbiter_discovery.json?t=${Date.now()}`;
+            const directUrl = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/mmo_arbiter_discovery_v4.json?t=${Date.now()}`;
             fetch(directUrl, { signal: AbortSignal.timeout(5000) })
                 .then(r => r.ok ? r.json() : Promise.reject('Direct fail'))
                 .then(packet => processBeacon(packet, 'GitHub Gist (Direct)'))
@@ -378,7 +378,7 @@ const start = async () => {
                     fetch(`https://api.github.com/gists/${GH_GIST_ID}`)
                         .then(r => r.ok ? r.json() : null)
                         .then(gist => {
-                            const file = gist?.files?.['mmo_arbiter_discovery.json'];
+                            const file = gist?.files?.['mmo_arbiter_discovery_v4.json'];
                             if (file?.raw_url) return fetch(file.raw_url + '?t=' + Date.now()).then(r => r.json());
                             return null;
                         })

@@ -227,7 +227,7 @@ async function startArbiter() {
                     'User-Agent': 'Hearthwick-Arbiter'
                 },
                 body: JSON.stringify({
-                    files: { 'mmo_arbiter_discovery.json': { content: JSON.stringify({ peerId: selfId, ...packet, snapshot, snapshotTs: Date.now() }) } }
+                    files: { 'mmo_arbiter_discovery_v4.json': { content: JSON.stringify({ peerId: selfId, ...packet, snapshot, snapshotTs: Date.now() }) } }
                 })
             });
         } catch (e) { console.warn('[Arbiter] Gist failed:', e.message); }
