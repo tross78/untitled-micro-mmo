@@ -292,7 +292,7 @@ export const initNetworking = async (rtcConfig) => {
             const ph = (hashStr(packet.publicKey) >>> 0).toString(16).padStart(8, '0');
             trackPlayer(peerId, { ...entry, publicKey: packet.publicKey, ph, ts: Date.now() });
             if (gameActions.processPresence) {
-                gameActions.processPresence(packet.presence, peerId);
+                await gameActions.processPresence(packet.presence, peerId);
             }
         });
 
@@ -841,31 +841,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (id === selfId || !publicKey) continue;
                 if (bans.has(publicKey)) continue;
                 try {
-                    const unpacked = unpackPresencePacket(presence);
-
-                    // Security check (ED25519) BEFORE HLC update
-                    const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
-                    if (unpacked.ph !== ph) continue;
-                    const { signature, ...sigData } = unpacked;
-                    const pubKey = await importKey(publicKey, 'public');
-                    if (!await verifyMessage(JSON.stringify(presenceSignaturePayload(sigData)), signature, pubKey)) continue;
-
-                    // HLC causal ordering: ONLY AFTER VERIFICATION
-                    if (unpacked.hlc && !checkAndUpdateHlc(id, unpacked.hlc)) continue;
-
-                    if (unpacked.level !== xpToLevel(unpacked.xp)) continue;
-                    const shadow = shadowPlayers.get(id);
-                    if (!checkXpRate(id, unpacked.xp, shadow?.xp || 0)) {
-                        console.warn(`[Security] XP rate exceeded for ${id.slice(0,8)}`);
-                        continue;
-                    }
-                    if (shadow && unpacked.level > shadow.level + 1) continue;
-                    
                     const entry = players.get(id) || {};
-                    trackPlayer(id, { ...entry, ...unpacked, ts: Date.now(), publicKey, ph, rawPresence: presence });
-                    trackShadowPlayer(id, unpacked);
-                    players.delete('ghost:' + unpacked.ph);
-                    hpv.onJoin(id); // Ensure they are in the logical overlay
+                    if (!entry.publicKey) {
+                        const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+                        trackPlayer(id, { ...entry, publicKey, ph, ts: Date.now() });
+                    }
+                    await processPresenceSingle(presence, id);
+                    hpv.onJoin(id); 
                 } catch (e) { console.error(`[Net] Batch presence error:`, e); }
             }
         });
@@ -1098,7 +1080,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             setTimeout(handshake, 100); // reduced from 500ms
         });
 
-        getIdentity(({ publicKey }, peerId) => {
+        getIdentity(async ({ publicKey }, peerId) => {
             if (bans.has(publicKey)) return;
             lastPeerSeenAt = Date.now();
             const entry = players.get(peerId) || {};
@@ -1119,7 +1101,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const pending = _pendingPresence.get(peerId);
             if (pending) {
                 _pendingPresence.delete(peerId);
-                processPresenceSingle(pending, peerId);
+                await processPresenceSingle(pending, peerId);
             }
         });
 
@@ -1198,7 +1180,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         sendSketch: (data, target) => target ? r.sendSketch(data, target) : r.sendSketch(data),
         sendRequest: (data, target) => r.sendRequest(data, target),
         sendPresenceDelta: (data, target) => target ? r.sendPresenceDelta(data, target) : r.sendPresenceDelta(data),
-        processPresence: (packed, peerId) => r.processPresenceSingle(packed, peerId),
+        processPresence: async (packed, peerId) => await r.processPresenceSingle(packed, peerId),
         // Commit-reveal: call sendCommitAction before the kill, sendRevealAction after.
         sendCommitAction: ({ seq, type, target, nonce }) => {
             const commit = (hashStr(`${type}|${target}|${nonce}`) >>> 0).toString(16).padStart(8, '0');
