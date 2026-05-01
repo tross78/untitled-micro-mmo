@@ -1,4 +1,4 @@
-import { selfId } from '../transport.js';
+import { selfId } from '../network/transport.js';
 import { activeChannels, localPlayer } from '../store.js';
 import { log } from '../ui.js';
 import { bus } from '../eventbus.js';

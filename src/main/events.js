@@ -9,7 +9,7 @@ import { bus } from '../eventbus.js';
 import { stepPlayer } from './movement.js';
 import { gameActions, saveLocalState } from '../networking.js';
 import { importKey, verifyMessage } from '../crypto.js';
-import { selfId } from '../transport.js';
+import { selfId } from '../network/transport.js';
 
 let _vRefreshTimer = null;
 export const triggerVisualRefresh = () => {

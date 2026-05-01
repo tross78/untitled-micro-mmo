@@ -1,0 +1,286 @@
+import { generateKeyPairSync } from 'node:crypto';
+import { signMessage, verifyMessage } from '../crypto.js';
+import {
+    packMove, unpackMove, packEmote, unpackEmote,
+    packPresence, unpackPresence, presenceSignaturePayload,
+    packDuelCommit, unpackDuelCommit, unpackActionLog,
+    packPresenceBatch, unpackPresenceBatch
+} from '../network/packer.js';
+
+function makeTestKeyPair() {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const rawSeed = privateKey.export({ type: 'pkcs8', format: 'der' }).slice(16);
+    const rawPub  = publicKey.export({ type: 'spki',  format: 'der' }).slice(12);
+    return { privB64: rawSeed.toString('base64'), pubB64: rawPub.toString('base64') };
+}
+
+describe('Binary Packer', () => {
+    test('Move packet encodes/decodes correctly', () => {
+        const move = {
+            from: 'tavern',
+            to: 'market',
+            x: 10,
+            y: 12,
+            ts: 1619184000000,
+            signature: btoa('m'.repeat(64))
+        };
+        const packed = packMove(move);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        expect(packed).toHaveLength(74);
+        
+        const unpacked = unpackMove(packed);
+        expect(unpacked.from).toBe(move.from);
+        expect(unpacked.to).toBe(move.to);
+        expect(unpacked.x).toBe(move.x);
+        expect(unpacked.y).toBe(move.y);
+        expect(unpacked.ts).toBe(move.ts);
+        expect(unpacked.signature).toBe(move.signature);
+    });
+
+    test('Emote packet encodes/decodes correctly', () => {
+        const text = 'cheers loudly!';
+        const packed = packEmote(text);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        expect(packed).toHaveLength(1);
+        
+        const unpacked = unpackEmote(packed);
+        expect(unpacked.text).toBe(text);
+    });
+
+    test('Unknown emote falls back to default', () => {
+        const packed = new Uint8Array([255]);
+        const unpacked = unpackEmote(packed);
+        expect(unpacked.text).toBe('gestures vaguely.');
+    });
+
+    test('Presence packet encodes/decodes correctly', () => {
+        const presence = {
+            name: 'Tyson',
+            location: 'cellar',
+            ph: 'abcdef12',
+            level: 5,
+            xp: 1000,
+            x: 7,
+            y: 8,
+            ts: 1619184000000,
+            signature: btoa('a'.repeat(64))
+        };
+        
+        const packed = packPresence(presence);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        expect(packed).toHaveLength(160);
+        
+        const unpacked = unpackPresence(packed);
+        expect(unpacked.name).toBe('Tyson');
+        expect(unpacked.location).toBe('cellar');
+        expect(unpacked.ph).toBe('abcdef12');
+        expect(unpacked.level).toBe(5);
+        expect(unpacked.xp).toBe(1000);
+        expect(unpacked.x).toBe(7);
+        expect(unpacked.y).toBe(8);
+        expect(unpacked.hlc).toBeDefined();
+        expect(unpacked.signature).toBe(presence.signature);
+    });
+
+    // Catches bug: XP field endianness. If setUint32 uses wrong byte order, large values corrupt.
+    test('Presence XP encodes as big-endian: distinct bytes are in correct order', () => {
+        const presence = {
+            name: 'X', location: 'cellar', ph: '00000000', level: 1,
+            xp: 0x01020304, // four distinct bytes — any endianness swap is detectable
+            ts: 1700000000000,
+            signature: btoa('x'.repeat(64)),
+        };
+        const packed = packPresence(presence);
+        const view = new DataView(packed.buffer);
+        expect(view.getUint8(22)).toBe(0x01);
+        expect(view.getUint8(23)).toBe(0x02);
+        expect(view.getUint8(24)).toBe(0x03);
+        expect(view.getUint8(25)).toBe(0x04);
+    });
+
+    test('Presence XP values above 0xFFFF round-trip correctly', () => {
+        const presence = {
+            name: 'X', location: 'cellar', ph: '00000000', level: 1,
+            xp: 75000, ts: 1700000000000, signature: btoa('x'.repeat(64)),
+        };
+        expect(unpackPresence(packPresence(presence)).xp).toBe(75000);
+    });
+
+    // Presence now uses HLC instead of a plain timestamp.
+    test('Presence HLC round-trips wall and logical fields correctly', () => {
+        const hlc = { wall: 1777593957322, logical: 42 };
+        const presence = {
+            name: 'T', location: 'cellar', ph: '00000000', level: 1,
+            xp: 0, hlc, signature: btoa('x'.repeat(64)),
+        };
+        const unpacked = unpackPresence(packPresence(presence));
+        expect(unpacked.hlc.wall).toBe(hlc.wall);
+        expect(unpacked.hlc.logical).toBe(hlc.logical);
+    });
+
+    test('presence signature payload survives pack/unpack exactly', async () => {
+        const { privB64, pubB64 } = makeTestKeyPair();
+        const unsigned = {
+            name: 'Tyson', location: 'cellar', ph: 'abcdef12', level: 3,
+            xp: 220, x: 4, y: 5, gold: 12, inventory: ['potion'],
+            quests: { wolf_hunt: { progress: 1, objective: { target: 'forest_wolf' } } },
+            ts: 1777593957000, equipped: { weapon: 'iron_sword' },
+            hlc: { wall: 1777593957322, logical: 9 },
+        };
+        const signature = await signMessage(JSON.stringify(presenceSignaturePayload(unsigned)), privB64);
+        const unpacked = unpackPresence(packPresence({ ...unsigned, signature }));
+        await expect(verifyMessage(
+            JSON.stringify(presenceSignaturePayload(unpacked)),
+            unpacked.signature,
+            pubB64
+        )).resolves.toBe(true);
+    });
+
+    test('signing pre-wire myEntry shape fails after HLC is added', async () => {
+        const { privB64, pubB64 } = makeTestKeyPair();
+        const preWire = {
+            name: 'Tyson', location: 'cellar', ph: 'abcdef12', level: 3,
+            xp: 220, x: 4, y: 5, gold: 12, inventory: [], quests: {},
+            equipped: { weapon: null, armor: null }, ts: 1777593957000,
+        };
+        const signature = await signMessage(JSON.stringify(preWire), privB64);
+        const unpacked = unpackPresence(packPresence({
+            ...preWire,
+            hlc: { wall: 1777593957322, logical: 1 },
+            signature,
+        }));
+        await expect(verifyMessage(
+            JSON.stringify(presenceSignaturePayload(unpacked)),
+            unpacked.signature,
+            pubB64
+        )).resolves.toBe(false);
+    });
+
+    test('Presence packet byte layout matches documented offsets', () => {
+        const presence = {
+            name: 'AB', location: 'cellar', ph: 'ff000000', level: 7,
+            xp: 500, x: 2, y: 3, ts: 1700000000000, signature: btoa('s'.repeat(64)),
+        };
+        const packed = packPresence(presence);
+        const view = new DataView(packed.buffer);
+        expect(view.getUint8(16)).toBe(3); // cellar is index 3 in sorted ROOM_MAP
+        expect(view.getUint8(21)).toBe(7); // level at byte 21
+        expect(packed).toHaveLength(160);
+    });
+
+    test('DuelCommit packet encodes/decodes correctly', () => {
+        const commit = {
+            round: 2,
+            dmg: 15,
+            day: 123,
+            signature: btoa('b'.repeat(64))
+        };
+
+        const packed = packDuelCommit(commit);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        expect(packed).toHaveLength(70);
+
+        const { commit: unpacked, signature } = unpackDuelCommit(packed);
+        expect(unpacked.round).toBe(commit.round);
+        expect(unpacked.dmg).toBe(commit.dmg);
+        expect(unpacked.day).toBe(commit.day);
+        expect(signature).toBe(commit.signature);
+    });
+
+    test('Unknown room index in move packet falls back to cellar', () => {
+        const buf = new Uint8Array(74);
+        buf[0] = 255;
+        buf[1] = 255;
+        const sig = btoa('z'.repeat(64));
+        const sigBytes = Uint8Array.from(atob(sig), c => c.charCodeAt(0));
+        buf.set(sigBytes, 10); // Offset shift for x/y
+
+        const unpacked = unpackMove(buf);
+        expect(unpacked.from).toBe('cellar');
+        expect(unpacked.to).toBe('cellar');
+    });
+
+    test('Unknown room index in presence packet falls back to cellar', () => {
+        const packed = new Uint8Array(98);
+        const view = new DataView(packed.buffer);
+        view.setUint8(16, 255); // unknown location index
+        const unpacked = unpackPresence(packed);
+        expect(unpacked.location).toBe('cellar');
+    });
+
+    test('Unknown enemy index in action log packet falls back to null', () => {
+        const buf = new Uint8Array(72);
+        buf[5] = 255; // unknown enemy index
+        // Signature must be valid base64 — fill with printable chars
+        const sig = btoa('a'.repeat(64));
+        const sigBytes = Uint8Array.from(atob(sig), c => c.charCodeAt(0));
+        buf.set(sigBytes, 8);
+        const unpacked = unpackActionLog(buf);
+        expect(unpacked.target).toBeNull();
+    });
+
+    test('Presence batch round-trips as a single packed binary envelope', () => {
+        const batch = {
+            'peer-a': {
+                presence: packPresence({
+                    name: 'Alice',
+                    location: 'tavern',
+                    ph: '11112222',
+                    level: 3,
+                    xp: 900,
+                    signature: btoa('a'.repeat(64)),
+                }),
+                publicKey: 'pub-a',
+            },
+            'peer-b': {
+                presence: packPresence({
+                    name: 'Bob',
+                    location: 'market',
+                    ph: '33334444',
+                    level: 4,
+                    xp: 1200,
+                    signature: btoa('b'.repeat(64)),
+                }),
+                publicKey: 'pub-b',
+            },
+        };
+
+        const packed = packPresenceBatch(batch);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        const unpacked = unpackPresenceBatch(packed);
+        expect(Object.keys(unpacked).sort()).toEqual(['peer-a', 'peer-b']);
+        expect(unpackPresence(unpacked['peer-a'].presence).name).toBe('Alice');
+        expect(unpackPresence(unpacked['peer-b'].presence).location).toBe('market');
+    });
+
+    test('ENEMY_MAP includes crab and matches data.js', () => {
+        const { ENEMY_MAP } = require('../network/packer.js');
+        const { ENEMIES } = require('../data.js');
+        expect(ENEMY_MAP).toContain('crab');
+        expect(ENEMY_MAP).toEqual(Object.keys(ENEMIES).sort());
+    });
+
+    test('truncateName handles multi-byte characters and emoji correctly', () => {
+        const { packPresence, unpackPresence, presenceSignaturePayload } = require('../network/packer.js');
+        const longName = 'Tyson 🌈 MultiByte'; //  Rainbow is 4 bytes
+        const p = { name: longName, location: 'cellar', ph: '00000000', level: 1, xp: 0 };
+        
+        const payload = presenceSignaturePayload(p);
+        const unpacked = unpackPresence(packPresence(p));
+        
+        // The names should be identical after truncation logic
+        expect(unpacked.name).toBe(payload.name);
+        expect(Buffer.from(unpacked.name).length).toBeLessThanOrEqual(16);
+    });
+
+    // Catches bug: DuelCommit comment said 77 bytes but buffer was 70. Verify the layout
+    // exactly: 1 (round) + 1 (dmg) + 4 (day) + 64 (sig) = 70 bytes, no padding.
+    test('DuelCommit is exactly 70 bytes with signature occupying bytes 6-69', () => {
+        const sig64 = btoa('z'.repeat(64));
+        const packed = packDuelCommit({ round: 1, dmg: 5, day: 999, signature: sig64 });
+        expect(packed).toHaveLength(70);
+        // Signature should be recoverable from subarray(6, 70)
+        const recovered = btoa(String.fromCharCode(...packed.subarray(6, 70)));
+        expect(recovered).toBe(sig64);
+    });
+});

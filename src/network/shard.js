@@ -1,6 +1,6 @@
 import { getShardName } from '../rules.js';
 import { localPlayer, shardEnemies, players, activeChannels } from '../store.js';
-import { joinRoom as joinTorrent } from '../transport.js';
+import { joinRoom as joinTorrent } from './transport.js';
 import { buildTorrentConfig } from './config.js';
 import { INSTANCE_CAP } from '../data.js';
 import { log } from '../ui.js';

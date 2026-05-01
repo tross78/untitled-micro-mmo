@@ -1,4 +1,4 @@
-import { selfId } from '../transport.js';
+import { selfId } from '../network/transport.js';
 import { localPlayer, worldState, players, hasSyncedWithArbiter } from '../store.js';
 import { globalRooms, rooms } from '../networking.js';
 import { isDialogueOpen } from '../renderer.js';

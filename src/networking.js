@@ -1,5 +1,5 @@
 // @ts-check
-import { joinRoom as joinTorrent, selfId } from './transport.js';
+import { joinRoom as joinTorrent, selfId } from './network/transport.js';
 import { getShardName, hashStr, seededRNG, xpToLevel, rollLoot, getTimeOfDay } from './rules.js';
 import { TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from './constants.js';
 import { 
@@ -10,16 +10,16 @@ import {
 } from './store.js';
 import { INSTANCE_CAP, ENEMIES, world } from './data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
-import { Minisketch } from './minisketch.js';
-import { HyParView } from './hyparview.js';
-import { sendHLC, recvHLC } from './hlc.js';
+import { Minisketch } from './network/minisketch.js';
+import { HyParView } from './network/hyparview.js';
+import { sendHLC, recvHLC } from './network/hlc.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, packDuelCommit, unpackDuelCommit,
     packActionLog, unpackActionLog, packTradeCommit, unpackTradeCommit,
     packPresenceBatch, unpackPresenceBatch,
     presenceSignaturePayload
-} from './packer.js';
+} from './network/packer.js';
 import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
 import { log, printStatus } from './ui.js';
 import { GAME_NAME } from './data.js';

@@ -3,7 +3,7 @@ import { MASTER_PUBLIC_KEY } from './constants.js';
 import { localPlayer } from './store.js';
 import { hashStr } from './rules.js';
 import { GAME_NAME } from './data.js';
-import { presenceSignaturePayload } from './packer.js';
+import { presenceSignaturePayload } from './network/packer.js';
 import { scopedStorageKey } from './runtime.js';
 
 export let playerKeys = null;

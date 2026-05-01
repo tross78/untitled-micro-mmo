@@ -1,9 +1,9 @@
 import { signMessage } from '../crypto.js';
 import { localPlayer, players, trackPlayer } from '../store.js';
-import { packPresence, unpackPresence, presenceSignaturePayload } from '../packer.js';
+import { packPresence, unpackPresence, presenceSignaturePayload } from './packer.js';
 import { playerKeys } from '../identity.js';
-import { Minisketch } from '../minisketch.js';
-import { selfId } from '../transport.js';
+import { Minisketch } from './minisketch.js';
+import { selfId } from './transport.js';
 
 export const buildSketch = () => {
     const ms = new Minisketch(32);

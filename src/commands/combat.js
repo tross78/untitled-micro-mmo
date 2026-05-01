@@ -3,7 +3,7 @@ import { world, ENEMIES, ITEMS, QUESTS } from '../data.js';
 import { hashStr, seededRNG, levelBonus, resolveAttack, rollLoot, xpToLevel, getTimeOfDay } from '../rules.js';
 import { log, triggerShake } from '../ui.js';
 import { bus } from '../eventbus.js';
-import { selfId } from '../transport.js';
+import { selfId } from '../network/transport.js';
 import { gameActions } from '../networking.js';
 import { signMessage } from '../crypto.js';
 import { playerKeys, myEntry } from '../identity.js';

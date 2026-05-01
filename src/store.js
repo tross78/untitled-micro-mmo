@@ -1,5 +1,5 @@
 // @ts-check
-import { selfId } from './transport.js';
+import { selfId } from './network/transport.js';
 import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from './data.js';
 import { deriveWorldState, xpToLevel } from './rules.js';
 import { world } from './data.js';
