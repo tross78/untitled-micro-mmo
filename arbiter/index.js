@@ -216,7 +216,7 @@ async function startArbiter() {
             const snapshot = Array.from(presenceCache.values())
                 .sort((a, b) => b.ts - a.ts)
                 .slice(0, 50)
-                .map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }));
+                .map(({ name, location, level, ph, ts, x, y }) => ({ name, location, level, ph, ts, x, y }));
 
             await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
                 method: 'PATCH',

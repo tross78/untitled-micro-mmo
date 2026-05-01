@@ -59,7 +59,6 @@ export const evictPlayer = (id) => {
 
 export const trackPlayer = (id, data) => {
     const isNew = !players.has(id);
-    if (players.has(id)) players.delete(id);
     players.set(id, data);
     
     if (isNew) {

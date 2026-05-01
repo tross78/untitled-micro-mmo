@@ -49,8 +49,8 @@ const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 
 const ROLLUP_INTERVAL = 10000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
-const NETWORK_STALL_MS = 20000;
-const NETWORK_HEAL_COOLDOWN_MS = 15000;
+const NETWORK_STALL_MS = 60000;
+const NETWORK_HEAL_COOLDOWN_MS = 30000;
 
 // Token bucket: max XP rate derived from the best enemy's XP value.
 // Bucket holds 60s of max-rate XP so tab-switches and network gaps don't false-positive.
@@ -146,13 +146,22 @@ const checkAndUpdateHlc = (peerId, incoming) => {
 export const seedFromSnapshot = (snapshot) => {
     if (!Array.isArray(snapshot)) return;
     const existingPhs = new Set(Array.from(players.values()).map(p => p.ph));
+    const now = Date.now();
     for (const entry of snapshot) {
         if (!entry.ph || !entry.location || existingPhs.has(entry.ph)) continue;
         // Store as ghost — no peerId, no publicKey. Keyed by ph (display only).
         // Real P2P presence will overwrite when it arrives.
         const ghostKey = 'ghost:' + entry.ph;
         if (!players.has(ghostKey)) {
-            trackPlayer(ghostKey, { ...entry, ghost: true, ts: entry.ts || Date.now() });
+            // Use current time if snapshot ts is old or missing to avoid instant eviction
+            const ts = entry.ts && (now - entry.ts < 300000) ? entry.ts : now;
+            trackPlayer(ghostKey, { 
+                ...entry, 
+                ghost: true, 
+                ts,
+                x: entry.x ?? 5,
+                y: entry.y ?? 5
+            });
         }
     }
 };
@@ -687,6 +696,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         const processPresenceSingle = async (buf, peerId) => {
             if (!buf) return;
+            lastPeerSeenAt = Date.now();
             const entry = players.get(peerId);
             if (!entry?.publicKey) {
                 _pendingPresence.set(peerId, buf);

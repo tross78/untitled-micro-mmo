@@ -24,10 +24,13 @@ export const sanitizePresenceEntry = (entry, now = Date.now()) => {
     const name = clampString(entry.name, MAX_NAME_LENGTH);
     const level = Number(entry.level);
     const ts = Number(entry.ts);
+    const x = Number(entry.x ?? 5);
+    const y = Number(entry.y ?? 5);
 
     if (!isHexPh(ph)) return null;
     if (!location || !shard || !name) return null;
     if (!Number.isFinite(level) || level < 1 || level > 999) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
 
     const safeTs = Number.isFinite(ts) && ts > 0
         ? Math.min(ts, now)
@@ -40,6 +43,8 @@ export const sanitizePresenceEntry = (entry, now = Date.now()) => {
         shard,
         level: Math.floor(level),
         ts: safeTs,
+        x,
+        y
     };
 };
 
@@ -79,5 +84,5 @@ export const listPeersForShard = (presenceCache, shard, now = Date.now()) => {
         .filter(entry => entry?.shard === shard && Number(entry.ts) >= cutoff)
         .sort((a, b) => b.ts - a.ts)
         .slice(0, MAX_PEER_SNAPSHOT)
-        .map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }));
+        .map(({ name, location, level, ph, ts, x, y }) => ({ name, location, level, ph, ts, x, y }));
 };

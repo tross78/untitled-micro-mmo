@@ -24,7 +24,9 @@ describe('arbiter presence cache helpers', () => {
             location: 'cellar',
             shard: 'hearthwick-cellar-v1-1',
             level: 3,
-            ts: now,
+            ts: 1000,
+            x: 5,
+            y: 5
         });
     });
 

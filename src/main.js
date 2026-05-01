@@ -42,7 +42,7 @@ const input = document.getElementById('input');
 const suggestionsEl = document.getElementById('suggestions');
 const output = document.getElementById('output');
 const E2E_MODE = isE2EMode();
-const HEARTBEAT_MS = 120000;
+const HEARTBEAT_MS = 30000;
 
 /**
  * Global UI refresh trigger. Call this whenever state changes.
@@ -417,7 +417,7 @@ const start = async () => {
             }
         }, HEARTBEAT_MS);
         
-        const PRESENCE_TTL = 300000;
+        const PRESENCE_TTL = 600000;
         setInterval(() => {
             pruneStale(PRESENCE_TTL);
             triggerLogicalRefresh();
