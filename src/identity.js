@@ -43,7 +43,7 @@ export const initIdentity = async (log) => {
 };
 
 export const myEntry = async () => {
-    if (!playerKeys) return null;
+    if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return null;
     const data = { 
         name: localPlayer.name, 
         location: localPlayer.location, 
