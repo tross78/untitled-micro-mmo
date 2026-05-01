@@ -13,7 +13,7 @@ const pidHash = (playerId) => playerId ? (hashStr(playerId) >>> 0).toString(16).
 
 export const initIdentity = async (log) => {
     try {
-        const KEYS_STORAGE_KEY = scopedStorageKey(`${GAME_NAME}_keys_v3`);
+        const KEYS_STORAGE_KEY = scopedStorageKey(`${GAME_NAME}_keys_v4`);
         arbiterPublicKey = await importKey(MASTER_PUBLIC_KEY, 'public');
         const savedKeys = localStorage.getItem(KEYS_STORAGE_KEY);
         if (savedKeys) {

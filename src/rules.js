@@ -21,21 +21,36 @@ export function seededRNG(seed) {
         return max === 4294967296 ? res : res % max;
     }
 }
-
 export function hashStr(val) {
-    let hash = 0;
-    if (val instanceof Uint8Array || Array.isArray(val)) {
-        for (let i = 0; i < val.length; i++) {
-            hash = ((hash << 5) - hash) + val[i];
-            hash |= 0;
-        }
+    let bytes;
+
+    if (val instanceof Uint8Array || ArrayBuffer.isView(val)) {
+        bytes = new Uint8Array(val.buffer, val.byteOffset, val.byteLength);
+    } else if (Array.isArray(val)) {
+        bytes = Uint8Array.from(val);
     } else {
         const str = String(val);
+        // Manual UTF-8 encoding to ensure consistency without TextEncoder dependency
+        const arr = [];
         for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash |= 0;
+            let code = str.charCodeAt(i);
+            if (code < 0x80) arr.push(code);
+            else if (code < 0x800) arr.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+            else if (code < 0xd800 || code >= 0xe000) {
+                arr.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+            } else {
+                i++;
+                code = 0x10000 + (((code & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
+                arr.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+            }
         }
+        bytes = arr;
+    }
+
+    let hash = 0;
+    for (let i = 0; i < bytes.length; i++) {
+        hash = ((hash << 5) - hash) + bytes[i];
+        hash |= 0;
     }
     return hash >>> 0;
 }

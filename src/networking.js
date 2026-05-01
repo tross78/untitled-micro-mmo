@@ -108,7 +108,12 @@ const isPresenceLike = (value) => value && typeof value === 'object'
 
 const unpackPresencePacket = (presence) => {
     if (isPresenceLike(presence)) return presence;
-    return unpackPresence(presence);
+    if (!presence) return null;
+    try {
+        return unpackPresence(presence);
+    } catch (e) {
+        return null;
+    }
 };
 
 // Returns true if the XP gain is within the token bucket allowance for this peer.
@@ -292,7 +297,9 @@ export const initNetworking = async (rtcConfig) => {
             const ph = (hashStr(packet.publicKey) >>> 0).toString(16).padStart(8, '0');
             trackPlayer(peerId, { ...entry, publicKey: packet.publicKey, ph, ts: Date.now() });
             if (gameActions.processPresence) {
-                await gameActions.processPresence(packet.presence, peerId);
+                // Ensure we pass a binary buffer to processPresence
+                const buf = (packet.presence instanceof Uint8Array) ? packet.presence : packPresence(packet.presence);
+                await gameActions.processPresence(buf, peerId);
             }
         });
 
@@ -699,10 +706,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const expectedPh = (hashStr(entry.publicKey) >>> 0).toString(16).padStart(8, '0');
             if (unpacked.ph !== expectedPh) {
                 console.warn(`[Security] ph mismatch for ${peerId.slice(0,8)}: got ${unpacked.ph}, expected ${expectedPh}`);
-                if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
-                    console.debug(`[Security] Key: ${entry.publicKey.slice(0,16)}...`);
-                    console.debug(`[Security] Key Hash (current hashStr): ${hashStr(entry.publicKey).toString(16).padStart(8, '0')}`);
-                }
                 return;
             }
 

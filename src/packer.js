@@ -8,6 +8,7 @@ import { world, ENEMIES } from './data.js';
 import { packHLC, unpackHLC } from './hlc.js';
 
 const toUint8Array = (buf) => {
+    if (!buf) return null;
     if (buf instanceof Uint8Array) return buf;
     if (buf instanceof ArrayBuffer) return new Uint8Array(buf);
     if (Array.isArray(buf)) return Uint8Array.from(buf);
@@ -28,7 +29,7 @@ const toUint8Array = (buf) => {
             return Uint8Array.from({ length: buf.length }, (_, i) => buf[i] ?? 0);
         }
     }
-    throw new TypeError('Expected binary buffer');
+    return null;
 };
 
 const textEncoder = new TextEncoder();
@@ -73,7 +74,7 @@ class SchemaBuffer {
 
 class SchemaReader {
     constructor(buf) {
-        this.buf = toUint8Array(buf);
+        this.buf = toUint8Array(buf) || new Uint8Array(0);
         this.view = new DataView(this.buf.buffer, this.buf.byteOffset, this.buf.byteLength);
         this.offset = 0;
     }

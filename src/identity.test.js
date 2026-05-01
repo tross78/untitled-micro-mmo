@@ -20,7 +20,7 @@ function makeStoredKeyPair() {
 }
 
 describe('identity lifecycle', () => {
-    const keyName = `${GAME_NAME}_keys_v3`;
+    const keyName = `${GAME_NAME}_keys_v4`;
     let originalCrypto;
 
     beforeAll(() => {
