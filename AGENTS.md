@@ -1406,6 +1406,8 @@ All O(1) or O(n) with small bounded n. No loops in hot paths.
 
 Target feel: ALttP / Link's Awakening. No visible text log during play. All feedback is spatial, animated, and momentary.
 
+*Architectural Note: Phase 8 must strictly build upon the Phase 7.9.9.1 architecture. All DOM interaction must go through adapters, all game loop tracking through the ECS runtime, and all data extensions through the Content Registries.*
+
 **Rendering foundation (from Phase 7.85):**
 Phase 7.85 lands the five rendering fixes (DPR, aspect-ratio, RAF loop, tile cache, tab blur). Phase 8 builds directly on top of that — do not start Phase 8 renderer work until those are complete and stable.
 
@@ -1416,9 +1418,9 @@ Phase 7.85 lands the five rendering fixes (DPR, aspect-ratio, RAF loop, tile cac
 
 **Collision / occupancy:**
 * Phase 8 adds explicit occupancy rules for tiles and entities. A tile can be `walkable`, `solid`, `interactive`, or `occupied`.
-* Movement must resolve collisions before movement tweening commits. That includes walls, scenery blocks, NPCs, enemies, doors, and temporary props.
-* Collision should stay deterministic and data-driven. `data.js` owns collision metadata; renderer and movement logic read the same source of truth.
-* Start with single-tile axis-aligned blocking. No physics engine, no float nudging, no broadphase complexity.
+* **Implementation:** Collision logic must be driven by the ECS runtime (`src/app/runtime.js`). Do not bake collision state directly into the renderer.
+* Movement must resolve collisions before movement tweening commits via the Event Bus.
+* Collision metadata must be registered natively via `defineRoom()` in `src/content/define.js`. Start with single-tile axis-aligned blocking. No physics engine.
 
 ---
 
@@ -1426,28 +1428,27 @@ Phase 7.85 lands the five rendering fixes (DPR, aspect-ratio, RAF loop, tile cac
 
 The core constraint: `worldState.seed` + `worldState.day` must produce the same world for every peer. This is already true for tile variation (seeded RNG per tile). Phase 8 extends this to room layout.
 
-*The problem.* Currently rooms are static — same `width`, `height`, `exits`, `scenery`, `staticEntities` every day. A player who has seen every room has seen the whole world. There's nothing to rediscover.
+*The problem.* Currently rooms are structurally static every day. There's nothing to rediscover.
 
-*The solution.* **Seasonal layout variation via the day seed.** Rooms stay structurally stable (exits never move — players need to rely on them) but their interior changes on a slow cadence.
+*The solution.* **Seasonal layout variation via the day seed.** Rooms stay structurally stable (exits never move) but their interior changes on a slow cadence.
 
 ```js
-// rules.js — new export
+// rules/world.js — new export
 export function roomDaySeed(roomKey, day) {
-    // Changes every 7 days (one in-game week), same for all peers
     const week = Math.floor(day / 7);
     return hashStr(roomKey) ^ (week * 0x9e3779b9);
 }
 ```
 
 Use `roomDaySeed` for:
-- **Scenery placement** — scatter barrels, trees, altars within the room bounds (avoid exits). Currently hardcoded in `data.js`; move to a `generateScenery(roomKey, day)` function in `rules.js`.
-- **Loot tile positions** — the tile with a pickup item moves each week. Players who know the room layout from last week still need to search.
-- **Enemy starting position** — already partially seeded; make it fully driven by `roomDaySeed`.
-- **Light sources** — which scenery objects are torches (affect Phase 8's dynamic lighting radius) varies by day.
+- **Scenery placement** — scatter barrels, trees, altars within the room bounds. **Must be defined via `defineRoom()` in the content registry.**
+- **Loot tile positions** — the tile with a pickup item moves each week.
+- **Enemy starting position** — make it fully driven by `roomDaySeed`.
+- **Light sources** — which scenery objects are torches varies by day.
 
 *What stays fixed.* Exit tile positions never change — they're defined in `data.js` and rooms are navigable day-to-day. Room dimensions never change. NPCs stay at their authored positions (wandering is cosmetic, not layout-changing).
 
-*Procedural dungeon floors.* For the new underground/cave rooms (sea cave, catacombs, etc.) go further — generate the room's `tileOverrides` array from `roomDaySeed`:
+*Procedural dungeon floors.* For new underground rooms, generate the room's `tileOverrides` array dynamically using the content pipeline (`defineRoom()`), seeded by `roomDaySeed`.
 
 ```js
 export function generateDungeonOverrides(roomKey, day, width, height) {
@@ -1486,51 +1487,41 @@ This is one overlay pass on the cached tile layer — essentially free.
 
 ---
 
-**Sprite system (hybrid designed + procedural):**
-* Character/enemy/NPC sprites are **authored** — palette-indexed pixel arrays defined in `graphics.js`, drawn onto `OffscreenCanvas` at init. No external image files; everything stays in the JS bundle.
-* Each designed sprite has 4 frames: idle, walk-A, walk-B, attack. Stored as parallel frame arrays per entity type.
-* Terrain tiles (grass, stone, water, brick) stay **fully procedural** seeded-RNG — they tile across hundreds of cells and authored art would be repetitive.
-* Scenery objects (barrel, crate, altar) get designed silhouettes but procedural color/position variation.
-* Unknown peer sprites fall back to the existing hash-identicon generator (`generateCharacterSprite`) — they should look alien/unknown, and that's intentional.
-* Palette swapping per instance — wolf sprite uses the wolf shape but color is tinted from `seededRNG(hashStr(entityId))`, giving variation while preserving the designed silhouette.
-* Borrow the useful ideas from small game libs rather than their dependency trees: Kontra-style animation primitives, object pooling, and self-stopping render loops are the target patterns.
-
-**Kontra.js-inspired patterns (no library — steal the ideas):**
-* `Animator` class (~25 lines) in `graphics.js` — holds frame array, fps, elapsed time; `update(dt)` advances; `frame()` returns current `OffscreenCanvas`. Used by renderer for all animated entities.
-* Idle RAF render loop (`startRenderLoop()` in `renderer.js`) — runs continuously only while animation state is active (tweens, particles, dialogue typewriter). Stops automatically when everything is settled, resuming on next state change. Keeps battery-friendliness of the current on-demand model.
-* Object pool (`src/pool.js`, ~20 lines) — fixed-size ring buffer for short-lived objects: floating text, weather particles, hit sparks. Avoids GC pressure during combat.
-* Sprite tween — renderer tracks `{ prevX, prevY, moveStart }` per entity. During the ~100ms tween window, draw position interpolates; logical position updates immediately (no gameplay impact).
+**Sprite system & ECS Integration:**
+* Character/enemy/NPC sprites are **authored** — palette-indexed pixel arrays defined in `graphics.js`, drawn onto `OffscreenCanvas`.
+* **ECS Driven:** Do not build bespoke tracking maps in `renderer.js`. Utilize the `appRuntime` ECS to track entity state. Create generic `Transform` and `Tweenable` components. The renderer should iterate over entities with these components to draw frames, decoupling game state from view state.
+* Terrain tiles stay **fully procedural** seeded-RNG.
+* Scenery objects get designed silhouettes but procedural color/position variation.
+* Unknown peer sprites fall back to the existing hash-identicon generator (`generateCharacterSprite`).
+* Object pool (`src/app/pool.js`) — use for short-lived ECS entities (floating text, particles).
 
 **Renderer / visuals:**
-* Smooth tile movement — tween player sprite across 1 tile in ~100ms. Other players interpolated the same way using their last two received positions.
-* Sparse tile overrides — `data.js` gets an optional `tileOverrides` array per room (e.g. `{x:3,y:4,type:'rug'}`). Renderer checks overrides before the procedural pass. Allows authored set-dressing without replacing the procedural system.
-* Dynamic lighting — at night, draw a `createRadialGradient` vignette (opaque dark → transparent) centered on player. Torches in `scenery` extend the lit radius. Drawn as a canvas overlay after the tile pass.
-* Weather layer — occasional rain or snow: short-lived particle objects from the pool, drawn as a final canvas pass. No game logic impact.
+* Smooth tile movement — ECS `Tweenable` component interpolates over ~100ms.
+* Sparse tile overrides — defined via `defineRoom` in `data.js`/`content`. Allows authored set-dressing.
+* Dynamic lighting — at night, draw a `createRadialGradient` vignette centered on player.
+* Weather layer — occasional rain/snow via short-lived ECS particle entities.
 * Collision readability — blocked tiles should be visually explainable, not mysterious. Use subtle blockers, doorway frames, and shadow cues so players can read why they cannot step there.
 * Orientation-aware layout — portrait can expose a taller action stack and shorter side gutters; landscape can expose a wider playfield and a compact side panel. The same room should feel intentionally laid out in both modes.
 
-**HUD (canvas-native, no HTML):**
-* Heart containers for HP (whole/half/empty, ALttP style) — drawn as designed pixel sprites, not emoji. Hearts drain/refill with a brief scale-pulse animation via `Animator`.
-* Rupee-style gold counter (bottom-left) — digit roll animation on change (Kontra-inspired `counter` tween).
-* ⚡ fight counter (bottom-right, dims to grey at 0).
-* Active status effect icons (poison skull, well-rested moon) with duration pip dots beneath.
-* `#status-bar` and `#ticker` HTML elements removed entirely. Canvas is the sole display.
+**HUD & DOM Shell cleanup:**
+* Phase 8 removes the legacy HTML elements (`#status-bar`, `#ticker`).
+* **Implementation:** Do not manually target these in JS. Update `SHELL_HTML` in `src/adapters/dom/shell.js` and remove them from `src/index.html`.
+* Heart containers for HP — drawn as designed pixel sprites on the canvas.
+* Rupee-style gold counter & ⚡ fight counter on canvas.
+* Active status effect icons on canvas.
 
 **Dialogue system (canvas-native):**
-* Bottom-of-canvas dialogue box: dark panel, NPC portrait sprite (left, from designed sprite set), name tag, text body.
-* Typewriter effect — character-by-character at ~30ms/char, driven by the RAF loop while active.
-* Multiple dialogue pages: ▼ advance prompt, Space/click/tap to continue. Already wired in Phase 7.75.
-* Quest accept/decline flows render inside the dialogue box as A/B choice prompts.
+* Bottom-of-canvas dialogue box, typewriter effect, A/B choice prompts.
+* Triggered via ECS/Bus, displayed entirely within `renderWorld` cycles.
 
 **Notification system:**
-* `showToast(message)` — already implemented in 7.75. Phase 8 adds icon sprite left of text.
-* `showItemFanfare(itemName)` — already implemented. Phase 8 upgrades to show the item's designed sprite centered above the text.
-* `showFloatingText(wx, wy, text, color)` — pooled object, floats upward ~1 tile over 800ms then fades. Used for "MISS", status effect names. No damage numbers.
+* `showItemFanfare(itemName)` shows designed sprite centered above text.
+* `showFloatingText` uses pooled ECS entities for "MISS" or status names.
 
 **Mobile controls:**
-* Virtual D-pad (bottom-left canvas overlay, touch only) — semi-transparent, fires `input:action` bus events. Rendered directly on canvas, not HTML.
-* Context "A" button (bottom-right) — interact/attack/confirm depending on what's adjacent.
-* Text input removed from primary flow. Chat is an explicit "Say 🗣️" button → native `prompt()` → P2P emote.
+* Virtual D-pad (bottom-left canvas overlay, touch only) — semi-transparent, fires `input:action` bus events.
+* Context "A" button (bottom-right).
+* **Chat Input:** Do not use `window.prompt`. Must use the DOM adapter port: `appRuntime.ports.ui.requestText({ placeholder: 'Say...' })`.
 
 **Audio:**
 * Zone BGM — `playBGM(zoneType)` builds a looping arpeggio/chord sequence via `setInterval` + 2-3 oscillators. Zone types: `grass`, `dungeon`, `town`. `stopBGM()` fades gain over 500ms; `playBGM(newZone)` fades in — crossfade on room transition.

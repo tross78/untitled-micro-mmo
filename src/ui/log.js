@@ -1,7 +1,6 @@
 import { bus } from '../state/eventbus.js';
 import { getHealthBar } from './helpers.js';
-
-const output = document.getElementById('output');
+import { getOutputEl } from '../adapters/dom/shell.js';
 
 let lastLogMsg = '';
 let lastLogColor = '';
@@ -9,6 +8,7 @@ let lastLogCount = 1;
 let lastLogEl = null;
 
 export const injectLog = (msg, color = '#0f0') => {
+    const output = getOutputEl();
     if (!output) {
         console.log(`[LOG] ${msg}`);
         return;
@@ -16,13 +16,13 @@ export const injectLog = (msg, color = '#0f0') => {
     if (msg === lastLogMsg && color === lastLogColor && lastLogEl) {
         lastLogCount++;
         const baseMsg = msg.replace(/\s+\(x\d+\)$/, '');
-        lastLogEl.innerHTML = `${baseMsg} (x${lastLogCount})`;
+        lastLogEl.textContent = `${baseMsg} (x${lastLogCount})`;
         return;
     }
     const line = document.createElement('div');
     line.className = 'log-line';
     line.style.color = color;
-    line.innerHTML = msg;
+    line.textContent = msg;
     output.appendChild(line);
     lastLogMsg = msg;
     lastLogColor = color;
@@ -37,7 +37,7 @@ export const injectLog = (msg, color = '#0f0') => {
 export const initLogHandlers = () => {
     bus.on('log', ({ msg, color }) => injectLog(msg, color));
     bus.on('combat:hit', ({ attacker, target, damage, crit, targetHP, targetMaxHP }) => {
-        let msg = crit ? `<b>CRITICAL HIT!</b> ${attacker} hit ${target} for ${damage}.` : `${attacker} hit ${target} for ${damage}.`;
+        let msg = crit ? `CRITICAL HIT! ${attacker} hit ${target} for ${damage}.` : `${attacker} hit ${target} for ${damage}.`;
         if (targetHP !== undefined) msg += ` ${getHealthBar(targetHP, targetMaxHP)}`;
         injectLog(msg, attacker === 'You' ? '#0f0' : '#f55');
     });

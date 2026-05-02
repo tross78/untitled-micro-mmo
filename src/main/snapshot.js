@@ -2,6 +2,7 @@ import { selfId } from '../network/transport.js';
 import { localPlayer, worldState, players, hasSyncedWithArbiter } from '../state/store.js';
 import { globalRooms, rooms } from '../network/index.js';
 import { isDialogueOpen } from '../graphics/renderer.js';
+import { getOutputEl } from '../adapters/dom/shell.js';
 
 export const buildTestSnapshot = () => ({
     selfId,
@@ -37,5 +38,5 @@ export const buildTestSnapshot = () => ({
         synced: hasSyncedWithArbiter,
     },
     dialogueOpen: isDialogueOpen(),
-    outputText: document.getElementById('output')?.textContent || '',
+    outputText: getOutputEl()?.textContent || '',
 });

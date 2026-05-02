@@ -6,7 +6,7 @@ import { worldState } from '../state/store.js';
 
 export const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-export const nameColor = (name, color) => `<span style="color:${color || '#fff'}">${escapeHtml(name)}</span>`;
+export const nameColor = (name, _color) => String(name);
 
 export const getTag = (ph) => ph ? ph.slice(0, 4) : '????';
 

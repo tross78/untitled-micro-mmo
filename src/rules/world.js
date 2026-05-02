@@ -86,3 +86,46 @@ export function deriveWorldState(worldSeed, day) {
         weather
     };
 }
+
+/**
+ * Deterministic seed for a specific room on a specific day.
+ * Changes every 7 days (one in-game week).
+ */
+export function roomDaySeed(roomKey, day) {
+    const week = Math.floor(day / 7);
+    return hashStr(roomKey) ^ (week * 0x9e3779b9);
+}
+
+/**
+ * Deterministically scatters scenery/items within a room based on the week's seed.
+ * @param {string} roomKey
+ * @param {number} day
+ * @param {any} roomDef
+ */
+export function getScatteredContent(roomKey, day, roomDef) {
+    const seed = roomDaySeed(roomKey, day);
+    const rng = seededRNG(seed);
+    const scattered = [];
+    
+    // If the room has scatter rules, apply them
+    if (roomDef.sceneryScatter) {
+        roomDef.sceneryScatter.forEach(rule => {
+            const count = rule.count[0] + rng(rule.count[1] - rule.count[0] + 1);
+            for (let i = 0; i < count; i++) {
+                const x = rng(roomDef.width);
+                const y = rng(roomDef.height);
+                
+                // Ensure not on an exit or occupied tile
+                const isExit = (roomDef.exitTiles || []).some(t => t.x === x && t.y === y);
+                const isOccupied = scattered.some(s => s.x === x && s.y === y);
+                const isStatic = (roomDef.staticEntities || []).some(e => e.x === x && e.y === y);
+                
+                if (!isExit && !isOccupied && !isStatic) {
+                    scattered.push({ x, y, type: rule.type, label: rule.label });
+                }
+            }
+        });
+    }
+    
+    return scattered;
+}

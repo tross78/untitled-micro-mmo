@@ -1,3 +1,5 @@
+import { ensureShell } from '../adapters/dom/shell.js';
+
 export const getHealthBar = (current, max, length = 10) => {
     const filledLength = Math.max(0, Math.min(length, Math.round((current / (max || 1)) * length)));
     const emptyLength = length - filledLength;
@@ -6,6 +8,7 @@ export const getHealthBar = (current, max, length = 10) => {
 
 let _shakeTimer = null;
 export const triggerShake = () => {
+    ensureShell();
     clearTimeout(_shakeTimer);
     document.body.classList.add('shake');
     _shakeTimer = setTimeout(() => {

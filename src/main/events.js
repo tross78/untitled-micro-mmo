@@ -1,13 +1,15 @@
 import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, hasSyncedWithArbiter, setPendingDuel, setPendingTrade } from '../state/store.js';
 import { world, NPCS, ENEMIES, ITEMS, QUESTS, GAME_NAME } from '../engine/data.js';
 import { getNPCLocation, getTimeOfDay } from '../rules/index.js';
-import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, playHit, playCrit, playDeath, playPickup, playLevelUp, showLevelUp, showItemFanfare, playPortal, showRoomBanner } from '../graphics/renderer.js';
+import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, showRoomBanner } from '../graphics/renderer.js';
+import { playHit, playCrit, playDeath, playPickup, playLevelUp, playPortal } from '../engine/audio.js';
 import { renderActionButtons, log } from '../ui/index.js';
 import { ACTION, inputManager } from '../engine/input.js';
 import { handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem } from '../commands/index.js';
 import { bus } from '../state/eventbus.js';
 import { stepPlayer } from './movement.js';
-import { gameActions, saveLocalState } from '../network/index.js';
+import { gameActions } from '../network/index.js';
+import { saveLocalState } from '../state/persistence.js';
 import { importKey, verifyMessage } from '../security/crypto.js';
 import { selfId } from '../network/transport.js';
 
@@ -68,6 +70,17 @@ export const setupGlobalEvents = () => {
     setVisualRefreshCallback(triggerVisualRefresh);
     setLogicalRefreshCallback(triggerLogicalRefresh);
 
+    // Tilde (~) key toggle for debug console
+    window.addEventListener('keydown', (e) => {
+        const isInput = e.target instanceof HTMLElement && e.target.matches('input,textarea');
+        if (e.key === '~' && !isInput) {
+            const consoleEl = document.getElementById('debug-console');
+            if (consoleEl) {
+                consoleEl.classList.toggle('is-hidden');
+            }
+        }
+    });
+
     bus.on('combat:hit', ({ _attacker, crit }) => {
         if (crit) playCrit(); else playHit();
         triggerHitFlash();
@@ -112,16 +125,16 @@ export const setupGlobalEvents = () => {
 
     bus.on('input:action', ({ action, type }) => {
         if (type !== 'down') return;
-        const STEP = {
-            [ACTION.MOVE_N]: [0, -1], [ACTION.MOVE_S]: [0, 1],
-            [ACTION.MOVE_E]: [1, 0],  [ACTION.MOVE_W]: [-1, 0],
-        };
-        if (STEP[action]) { stepPlayer(...STEP[action], triggerLogicalRefresh); return; }
+        
+        // These are now handled by ECS Systems (InputSystem -> Movement/CombatSystem)
+        const ECS_ACTIONS = new Set([
+            ACTION.MOVE_N, ACTION.MOVE_S, ACTION.MOVE_E, ACTION.MOVE_W,
+            ACTION.ATTACK, ACTION.INTERACT
+        ]);
+        if (ECS_ACTIONS.has(action)) return;
 
         let cmd = null;
         switch (action) {
-            case ACTION.ATTACK: cmd = 'attack'; break;
-            case ACTION.INTERACT: cmd = 'interact'; break;
             case ACTION.INVENTORY: cmd = 'inventory'; break;
             case ACTION.CANCEL: cmd = 'back'; break;
             case ACTION.CONFIRM: cmd = 'confirm'; break;

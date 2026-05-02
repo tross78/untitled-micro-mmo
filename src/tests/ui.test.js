@@ -24,6 +24,7 @@ function setupDOM() {
         <div id="status-left"></div>
         <div id="status-center"></div>
         <div id="status-right"></div>
+        <div id="debug-console" class="is-hidden"></div>
     `;
 }
 
@@ -62,10 +63,35 @@ function clickBtn(label) {
 // ── uiState bus wiring ────────────────────────────────────────────────────────
 
 describe('uiState bus wiring', () => {
-    beforeEach(() => { setupDOM(); _resetUiState(); });
+    beforeEach(() => { 
+        setupDOM(); 
+        _resetUiState(); 
+        // Need to ensure setupGlobalEvents is called if we want to test the actual listener,
+        // but here we just want to test if the toggle logic works.
+    });
 
     test('starts at root', () => {
         expect(_getUiState()).toBe('root');
+    });
+
+    test('Tilde (~) toggles debug-console visibility', () => {
+        const consoleEl = document.getElementById('debug-console');
+        // Initial state from shell.js (is-hidden by default)
+        consoleEl.classList.add('is-hidden');
+        
+        const event = new KeyboardEvent('keydown', { key: '~' });
+        
+        // Since setupGlobalEvents is a side-effect, we can manually trigger it
+        // or just test the logic. Let's test if the listener we added works.
+        // We need to re-import or trigger the setup.
+        const { setupGlobalEvents } = require('../main/events.js');
+        setupGlobalEvents();
+        
+        window.dispatchEvent(event);
+        expect(consoleEl.classList.contains('is-hidden')).toBe(false);
+        
+        window.dispatchEvent(event);
+        expect(consoleEl.classList.contains('is-hidden')).toBe(true);
     });
 
     test('ui:back resets to root from any state', () => {

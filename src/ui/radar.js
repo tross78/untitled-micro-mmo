@@ -1,19 +1,31 @@
-import { hashStr } from '../rules/index.js';
-
-const radarEl = document.getElementById('radar-container');
+import { hashStr, getScatteredContent } from '../rules/index.js';
+import { clearElement, getShellElement } from '../adapters/dom/shell.js';
 
 export const drawRadar = (ctx, onTileClick) => {
+    const radarEl = getShellElement('radar-container');
     if (!radarEl) return;
     const { localPlayer, world, players, shardEnemies, NPCS, getNPCLocation, worldState } = ctx;
     const loc = world[localPlayer.location];
     if (!loc) return;
-    radarEl.innerHTML = '';
+    clearElement(radarEl);
     radarEl.style.gridTemplateColumns = `repeat(${loc.width}, 1fr)`;
     radarEl.style.gridTemplateRows = `repeat(${loc.height}, 1fr)`;
     const grid = Array.from({ length: loc.height }, () => Array(loc.width).fill(null));
+
+    // 1. Static Scenery
     (loc.scenery || []).forEach(s => {
         if (s.x < loc.width && s.y < loc.height) grid[s.y][s.x] = { type: 'scenery', label: s.label || 'B' };
     });
+
+    // 2. Deterministic Scattered Scenery (Phase 7.9.9.2)
+    const scattered = getScatteredContent(localPlayer.location, worldState.day, loc);
+    scattered.forEach(s => {
+        if (s.x < loc.width && s.y < loc.height && !grid[s.y][s.x]) {
+            grid[s.y][s.x] = { type: s.type || 'scenery', label: s.label || 'S' };
+        }
+    });
+
+    // 3. Exits
     (loc.exitTiles || []).forEach(p => {
         if (p.x < loc.width && p.y < loc.height) grid[p.y][p.x] = { type: 'exit', label: '▸' };
     });

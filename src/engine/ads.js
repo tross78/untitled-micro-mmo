@@ -6,6 +6,7 @@
 import { ENABLE_ADS } from './data.js';
 import { log } from '../ui/index.js';
 import { seededRNG, hashStr } from '../rules/index.js';
+import { clearElement, getBannerAdEl } from '../adapters/dom/shell.js';
 
 let initialized = false;
 
@@ -17,17 +18,26 @@ export const initAds = () => {
 
 export const showBanner = () => {
     if (!ENABLE_ADS || !initialized) return;
-    const banner = document.getElementById('banner-ad');
+    const banner = getBannerAdEl();
     if (banner) {
-        banner.style.display = 'block';
-        banner.innerHTML = '<div style="background:#222; color:#555; text-align:center; padding:10px; border:1px solid #333; margin-top:5px;">[ Advertisement Placeholder ]</div>';
+        banner.classList.remove('is-hidden');
+        clearElement(banner);
+        const placeholder = document.createElement('div');
+        placeholder.textContent = '[ Advertisement Placeholder ]';
+        placeholder.style.background = '#222';
+        placeholder.style.color = '#555';
+        placeholder.style.textAlign = 'center';
+        placeholder.style.padding = '10px';
+        placeholder.style.border = '1px solid #333';
+        placeholder.style.marginTop = '5px';
+        banner.appendChild(placeholder);
     }
 };
 
 export const hideBanner = () => {
     if (!ENABLE_ADS) return;
-    const banner = document.getElementById('banner-ad');
-    if (banner) banner.style.display = 'none';
+    const banner = getBannerAdEl();
+    if (banner) banner.classList.add('is-hidden');
 };
 
 /**

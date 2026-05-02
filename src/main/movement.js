@@ -1,7 +1,8 @@
 import { localPlayer, shardEnemies } from '../state/store.js';
 import { world, QUESTS } from '../engine/data.js';
 import { saveLocalState } from '../state/persistence.js';
-import { gameActions, joinInstance, currentInstance, currentRtcConfig, preJoinShard } from '../network/index.js';
+import { gameActions, joinInstance, currentRtcConfig, preJoinShard } from '../network/index.js';
+import { getCurrentInstance } from '../network/shard.js';
 import { myEntry } from '../security/identity.js';
 import { bus } from '../state/eventbus.js';
 import { xpToLevel } from '../rules/index.js';
@@ -51,7 +52,7 @@ export const stepPlayer = async (stepX, stepY, triggerLogicalRefresh) => {
                 localPlayer.y = exit.destY ?? 5;
                 saveLocalState(localPlayer);
                 
-                await joinInstance(exit.dest, currentInstance, currentRtcConfig);
+                await joinInstance(exit.dest, getCurrentInstance(), currentRtcConfig);
                 
                 const entry = await myEntry();
                 if (entry && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);
@@ -81,7 +82,7 @@ export const stepPlayer = async (stepX, stepY, triggerLogicalRefresh) => {
         localPlayer.y = entryExit?.destY ?? Math.floor(world[destId].height / 2);
         saveLocalState(localPlayer);
         
-        await joinInstance(destId, currentInstance, currentRtcConfig);
+        await joinInstance(destId, getCurrentInstance(), currentRtcConfig);
         
         const entry = await myEntry();
         if (entry && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(entry);

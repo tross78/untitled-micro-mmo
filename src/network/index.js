@@ -245,7 +245,7 @@ export const initNetworking = async (rtcConfig) => {
     setInterval(async () => {
         if (!isProposer()) return;
         const leafData = buildLeafData();
-        const { createMerkleRoot } = await import('./crypto.js');
+        const { createMerkleRoot } = await import('../security/crypto.js');
         const root = await createMerkleRoot(leafData);
         if (!root) return;
         const rollup = { shard: getShardName(localPlayer.location, getCurrentInstance()), root, timestamp: Date.now(), count: leafData.length, proposerEpoch: Math.floor(Date.now() / ROLLUP_INTERVAL) };

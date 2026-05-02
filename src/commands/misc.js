@@ -2,8 +2,10 @@ import { localPlayer, players, worldState, hasSyncedWithArbiter } from '../state
 import { ITEMS } from '../engine/data.js';
 import { levelBonus, getShardName } from '../rules/index.js';
 import { log, printStatus } from '../ui/index.js';
-import { globalRooms, rooms, currentInstance } from '../network/index.js';
+import { globalRooms, rooms } from '../network/index.js';
+import { getCurrentInstance } from '../network/shard.js';
 import { escapeHtml, getTag } from './helpers.js';
+import { clearElement, getOutputEl } from '../adapters/dom/shell.js';
 
 export const handleMiscCommands = async (command, args) => {
     switch (command) {
@@ -22,7 +24,7 @@ export const handleMiscCommands = async (command, args) => {
         case 'net': {
             const gPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
             const sPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
-            const shardName = getShardName(localPlayer.location, currentInstance);
+            const shardName = getShardName(localPlayer.location, getCurrentInstance());
             log(`\n--- NETWORK STATUS ---`, '#0af');
             log(`Global Room: global (${gPeers} peers)`);
             log(`Shard Room: ${shardName} (${sPeers} peers)`);
@@ -70,8 +72,7 @@ export const handleMiscCommands = async (command, args) => {
         }
 
         case 'clear': {
-            const output = document.getElementById('output');
-            if (output) output.innerHTML = '';
+            clearElement(getOutputEl());
             return true;
         }
     }

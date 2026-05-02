@@ -3,6 +3,8 @@ import { ACTION } from '../engine/input.js';
 import { GAME_NAME } from '../engine/data.js';
 import { players } from '../state/store.js';
 import { refreshStatusBar } from './status.js';
+import { clearElement, getActionButtonsEl, getInputContainerEl, getInputEl } from '../adapters/dom/shell.js';
+import { requestTextInput } from '../adapters/dom/prompt.js';
 
 let uiState = 'root';
 let _lastAction = null;
@@ -22,9 +24,9 @@ export const initUIActions = (bus) => {
 
 export const renderActionButtons = (ctx, onAction) => {
     try {
-        const actionButtonsEl = document.getElementById('action-buttons');
+        const actionButtonsEl = getActionButtonsEl();
         if (!actionButtonsEl) return;
-        actionButtonsEl.innerHTML = '';
+        clearElement(actionButtonsEl);
         
         const { localPlayer, world, worldState, getNPCLocation, shardEnemies, pendingDuel } = ctx;
         if (!localPlayer || !world) return;
@@ -38,7 +40,7 @@ export const renderActionButtons = (ctx, onAction) => {
             const btn = document.createElement('button');
             btn.className = 'action-btn';
             btn.textContent = label;
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (typeof action === 'string') {
@@ -47,7 +49,7 @@ export const renderActionButtons = (ctx, onAction) => {
                     uiState = 'root';
                     renderActionButtons(ctx, onAction);
                 } else if (typeof action === 'function') {
-                    action();
+                    await action();
                     renderActionButtons(ctx, onAction);
                 }
             });
@@ -116,8 +118,8 @@ export const renderActionButtons = (ctx, onAction) => {
                 addButton('Craft ⚒️', () => { uiState = 'craft'; renderActionButtons(ctx, onAction); });
             }
 
-            addButton('Say 🗣️', () => {
-                const msg = window.prompt("What do you want to say?");
+            addButton('Say 🗣️', async () => {
+                const msg = await requestTextInput({ title: 'Say something', maxLength: 160, placeholder: 'type a message...' });
                 if (msg) onAction(`say ${msg}`);
             });
 
@@ -318,18 +320,24 @@ export const renderActionButtons = (ctx, onAction) => {
             addButton('Back ⬅️', ACTION.CANCEL);
 
         } else if (uiState === 'settings') {
-            const inputContainer = document.getElementById('input-container');
-            const isVisible = inputContainer && inputContainer.style.display !== 'none';
+            const inputContainer = getInputContainerEl();
+            const input = getInputEl();
+            const isVisible = !!inputContainer && !inputContainer.classList.contains('is-hidden');
             addButton(isVisible ? 'Hide Text Input' : 'Show Text Input', () => {
                 if (inputContainer) {
-                    inputContainer.style.display = isVisible ? 'none' : 'flex';
-                    if (!isVisible) inputContainer.querySelector('input').focus();
+                    inputContainer.classList.toggle('is-hidden', isVisible);
+                    if (!isVisible) input?.focus();
                 }
             });
             const debug = localStorage.getItem(`${GAME_NAME}_debug`) === 'true';
             addButton(debug ? 'Disable Net Debug' : 'Enable Net Debug', () => localStorage.setItem(`${GAME_NAME}_debug`, debug ? 'false' : 'true'));
-            addButton('Rename Character 👤', () => {
-                const name = window.prompt("Enter new name (max 14 chars):", localPlayer.name);
+            addButton('Rename Character 👤', async () => {
+                const name = await requestTextInput({
+                    title: 'Rename character',
+                    initialValue: localPlayer.name,
+                    maxLength: 14,
+                    placeholder: 'name...',
+                });
                 if (name) onAction(`rename ${name}`);
             });
             addButton('Score 🏆', 'score');

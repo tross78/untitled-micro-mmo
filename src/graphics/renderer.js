@@ -1,7 +1,8 @@
 import { drawTile, generateCharacterSprite, zoneTileType } from './graphics.js';
 import { drawRadar } from '../ui/index.js';
 import { VIEWPORT_W, VIEWPORT_H, TILE_PX } from '../infra/constants.js';
-import { getTimeOfDay } from '../rules/index.js';
+import { getTimeOfDay, getScatteredContent } from '../rules/index.js';
+import { getGameAreaEl, getShellElement } from '../adapters/dom/shell.js';
 
 const ARTICLES = new Set(['the', 'a', 'an']);
 const shortName = (name) => {
@@ -83,17 +84,14 @@ function hashStr(str) {
 
 function initCanvas() {
     if (_canvas) return;
-    _radarEl = document.getElementById('radar-container');
-    const container = document.getElementById('game-area');
+    _radarEl = getShellElement('radar-container');
+    const container = getGameAreaEl();
 
     _canvas = document.createElement('canvas');
     _canvas.id = 'game-canvas';
+    _canvas.className = 'game-canvas';
     _canvas.width = VP.CW;
     _canvas.height = VP.CH;
-    _canvas.style.cssText = `
-        display:block; image-rendering:pixelated; image-rendering:crisp-edges; 
-        margin: 0 auto; cursor:pointer; background:#000; border-bottom:1px solid #111;
-    `;
 
     const ctx = _canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
@@ -262,6 +260,21 @@ export function renderWorld(state, onTileClick) {
 
     // --- SCENERY ---
     (loc.scenery || []).forEach(sc => {
+        const sx = sc.x - camX;
+        const sy = sc.y - camY;
+        if (sx < -1 || sx >= VP.W || sy < -1 || sy >= VP.H) return;
+        ctx.fillStyle = '#2a3a2a';
+        ctx.fillRect(sx * VP.S + 2, sy * VP.S + 2, VP.S - 4, VP.S - 4);
+        ctx.fillStyle = '#668855';
+        ctx.font = `${Math.floor(VP.S * 0.55)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(sc.label || '■', sx * VP.S + VP.S / 2, sy * VP.S + VP.S / 2);
+    });
+
+    // --- SCATTERED SCENERY (Phase 7.9.9.2) ---
+    const scattered = getScatteredContent(localPlayer.location, worldState.day, loc);
+    scattered.forEach(sc => {
         const sx = sc.x - camX;
         const sy = sc.y - camY;
         if (sx < -1 || sx >= VP.W || sy < -1 || sy >= VP.H) return;

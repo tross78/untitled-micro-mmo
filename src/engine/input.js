@@ -1,4 +1,5 @@
 import { bus } from '../state/eventbus.js';
+import { getGameAreaEl } from '../adapters/dom/shell.js';
 
 export const ACTION = {
   MOVE_N: 'move_n', MOVE_S: 'move_s', MOVE_E: 'move_e', MOVE_W: 'move_w',
@@ -43,7 +44,7 @@ export class InputManager {
     });
 
     // D2: Touch swipe gestures
-    const canvas = document.getElementById('game-area');
+    const canvas = getGameAreaEl();
     if (canvas) {
       canvas.addEventListener('touchstart', (e) => {
         this.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };

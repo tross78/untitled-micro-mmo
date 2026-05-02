@@ -7,11 +7,16 @@ import { inputManager } from '../engine/input.js';
 import { setupGlobalEvents, triggerLogicalRefresh, triggerVisualRefresh } from './events.js';
 import { initCrossTabSync } from './sync.js';
 import { verifyMessage } from '../security/crypto.js';
-import { updateSimulation, initNetworking, gameActions, selfId } from '../network/index.js';
+import { updateSimulation, initNetworking, gameActions } from '../network/index.js';
 import { world, GAME_NAME } from '../engine/data.js';
 import { GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL } from '../infra/constants.js';
 import { saveLocalState } from '../state/persistence.js';
 import { setTicker, showDialogue, showToast } from '../graphics/renderer.js';
+import { ensureShell } from '../adapters/dom/shell.js';
+import { requestTextInput } from '../adapters/dom/prompt.js';
+import { validateContent } from '../content/validate.js';
+import { appRuntime } from '../app/runtime.js';
+import { selfId } from '../network/transport.js';
 
 const HEARTBEAT_MS = 30000;
 
@@ -26,7 +31,7 @@ export const processBeacon = async (packet, source) => {
         const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
         updateSimulation(stateObj);
         if (snapshot) {
-            const { seedFromSnapshot } = await import('../networking.js');
+            const { seedFromSnapshot } = await import('../network/index.js');
             const localLoc = localPlayer?.location;
             const filtered = localLoc
                 ? snapshot.filter(e => e.location === localLoc)
@@ -41,9 +46,28 @@ export const processBeacon = async (packet, source) => {
 
 export const start = async () => {
     try {
+        ensureShell();
+        const validation = validateContent();
+        if (!validation.ok) {
+            throw new Error(`Content validation failed: ${validation.problems.join('; ')}`);
+        }
+
         await loadLocalState(log);
         await initIdentity(log);
         await resolveBootstrapArbiterUrl();
+        appRuntime.configurePorts({
+            ui: {
+                showToast,
+                showDialogue,
+                requestText: requestTextInput,
+            },
+            storage: {
+                save: saveLocalState,
+            },
+        });
+        appRuntime.hydratePlayer(localPlayer);
+        appRuntime.initSystems(localPlayer);
+        appRuntime.start();
         
         const E2E_MODE = isE2EMode();
         if (E2E_MODE && getRuntimeParam('debugnet') === '1') {

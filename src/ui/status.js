@@ -2,11 +2,12 @@ import { levelBonus } from '../rules/index.js';
 import { ITEMS } from '../engine/data.js';
 import { worldState } from '../state/store.js';
 import { log } from './index.js';
+import { getShellElement } from '../adapters/dom/shell.js';
 
 export const refreshStatusBar = (localPlayer, world) => {
-    const statusLeft = document.getElementById('status-left');
-    const statusCenter = document.getElementById('status-center');
-    const statusRight = document.getElementById('status-right');
+    const statusLeft = getShellElement('status-left');
+    const statusCenter = getShellElement('status-center');
+    const statusRight = getShellElement('status-right');
     if (!statusLeft || !statusCenter || !statusRight) return;
 
     const loc = world[localPlayer.location];
@@ -16,7 +17,13 @@ export const refreshStatusBar = (localPlayer, world) => {
     const maxHp = (localPlayer.maxHp || 50) + (bonus.maxHp || 0) + (localPlayer.buffs?.rested ? 5 : 0);
     const hpPct = localPlayer.hp / maxHp;
     const hpColor = hpPct < 0.25 ? '#f55' : hpPct < 0.5 ? '#fa0' : '#0f0';
-    statusLeft.innerHTML = `Lvl ${localPlayer.level} <span style="color:${hpColor}">HP ${localPlayer.hp}/${maxHp}</span>`;
+    statusLeft.replaceChildren(
+        document.createTextNode(`Lvl ${localPlayer.level} `),
+        Object.assign(document.createElement('span'), {
+            textContent: `HP ${localPlayer.hp}/${maxHp}`,
+        })
+    );
+    /** @type {HTMLElement | null} */ (statusLeft.lastChild)?.style.setProperty('color', hpColor);
 
     const eqWepId = localPlayer.equipped?.weapon;
     const eqArmId = localPlayer.equipped?.armor;

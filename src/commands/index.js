@@ -1,7 +1,9 @@
 import { localPlayer } from '../state/store.js';
 import { log } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
-import { joinInstance, currentInstance, currentRtcConfig } from '../network/index.js';
+import { joinInstance, currentRtcConfig } from '../network/index.js';
+import { getCurrentInstance } from '../network/shard.js';
+import { getCommandDefinition, parseCommandInput } from './registry.js';
 
 import { handleCombatCommands } from './combat.js';
 import { handleSocialCommands } from './social.js';
@@ -18,10 +20,13 @@ export * from './duel.js';
 export const handleCommand = async (cmd) => {
     const raw = cmd.trim();
     if (!raw) return;
-    
-    const cleanCmd = raw.startsWith('/') ? raw.slice(1) : raw;
-    const args = cleanCmd.split(/\s+/);
-    const command = args[0].toLowerCase();
+
+    const parsed = parseCommandInput(raw);
+    const definition = getCommandDefinition(parsed.commandId);
+    const command = definition?.id || parsed.commandId;
+    const args = definition && definition.id !== parsed.commandId
+        ? [definition.id, ...parsed.args.slice(1)]
+        : parsed.args;
 
     // Try each command handler until one handles it
     const handlers = [
@@ -42,7 +47,7 @@ export const handleCommand = async (cmd) => {
                 if (result.type === 'move') {
                     await handleCommand(`move ${result.dir}`);
                 } else if (result.type === 'respawn' || result.type === 'join_instance') {
-                    await joinInstance(localPlayer.location, currentInstance, currentRtcConfig);
+                    await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
                 } else if (result.type === 'duel_accept') {
                     await startStateChannel(result.targetId, result.targetName, result.day);
                 } else if (result.type === 'recursive') {
@@ -53,7 +58,7 @@ export const handleCommand = async (cmd) => {
         }
     }
 
-    log(`Unknown command: ${command}.`);
+    log(`Unknown command: ${parsed.commandId}.`);
 };
 
 if (typeof window !== 'undefined') {

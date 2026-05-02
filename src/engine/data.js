@@ -279,6 +279,7 @@ export const ITEMS = {
     healing_elixir: { name: 'Healing Elixir', type: 'consumable',  heal: 50, price: 40, color: '#0f0' },
     strength_elixir: { name: 'Strength Elixir', type: 'buff',      atkBonus: 5, price: 60, color: '#fa0' },
     bandit_mask:    { name: 'Bandit Mask',    type: 'material',    price: 25, color: '#aaa' },
+    wheat:          { name: 'Wheat Bundle',   type: 'material', price: 2, color: '#ddc36b' },
     wood:           { name: 'Wood Bundle',    type: 'material', price: 2, color: '#aaa' },
     iron:           { name: 'Iron Ore',       type: 'material', price: 10, color: '#aaa' },
     leather_armor:  { name: 'Leather Armor',  type: 'armor',    bonus: 2,  price: 15,  color: '#8b4513' },
@@ -455,6 +456,10 @@ export const world = {
             { x: 3, y: 3, label: '🌲' }, { x: 15, y: 4, label: '🌲' },
             { x: 5, y: 16, label: '🌲' }, { x: 17, y: 14, label: '🌲' }
         ],
+        sceneryScatter: [
+            { type: 'flora', label: '🍄', count: [3, 8] },
+            { type: 'scenery', label: '🪨', count: [1, 3] }
+        ],
         enemy: 'forest_wolf',
         enemyX: 12, enemyY: 5
     },
@@ -473,6 +478,10 @@ export const world = {
         scenery: [
             { x: 5, y: 5, label: '🌲' }, { x: 18, y: 6, label: '🌲' },
             { x: 10, y: 15, label: '🌲' }, { x: 22, y: 20, label: '🌲' }
+        ],
+        sceneryScatter: [
+            { type: 'flora', label: '🌿', count: [5, 12] },
+            { type: 'scenery', label: '🪵', count: [2, 6] }
         ],
         enemy: 'goblin',
         enemyX: 15, enemyY: 15
