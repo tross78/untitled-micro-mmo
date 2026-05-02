@@ -19,14 +19,14 @@ export class MapRenderSystem {
 
     /**
      * @param {CanvasRenderingContext2D} ctx
-     * @param {object} state - { localPlayer, worldState }
+     * @param {object} state - { localPlayer, worldState, worldData }
      * @param {number} camX
      * @param {number} camY
      */
     draw(ctx, state, camX, camY) {
-        const { localPlayer, worldState } = state;
+        const { localPlayer, worldState, worldData } = state;
         const locId = localPlayer.location;
-        const loc = worldState.rooms?.[locId];
+        const loc = worldData[locId];
         if (!loc) return;
 
         const tileType = zoneTileType(locId);
@@ -52,7 +52,15 @@ export class MapRenderSystem {
             this.drawScenery(ctx, sx, sy, sc.label);
         });
 
-        // 4. Draw Scattered Content
+        // 4. Draw Exits (Phase 8)
+        (loc.exitTiles || []).forEach(ex => {
+            const sx = ex.x - camX;
+            const sy = ex.y - camY;
+            if (sx < -1 || sx >= this.VP.W || sy < -1 || sy >= this.VP.H) return;
+            drawTile(ctx, 'exit', sx * this.VP.S, sy * this.VP.S, 0, this.VP.S);
+        });
+
+        // 5. Draw Scattered Content
         const scattered = getScatteredContent(locId, worldState.day, loc);
         scattered.forEach(sc => {
             const sx = sc.x - camX;
@@ -60,6 +68,24 @@ export class MapRenderSystem {
             if (sx < -1 || sx >= this.VP.W || sy < -1 || sy >= this.VP.H) return;
             this.drawScenery(ctx, sx, sy, sc.label);
         });
+
+        // 6. Night Lighting Pass (Phase 8)
+        const { getTimeOfDay } = require('../rules/index.js');
+        if (getTimeOfDay() === 'night') {
+            const px = (localPlayer.x - camX) * this.VP.S + this.VP.S / 2;
+            const py = (localPlayer.y - camY) * this.VP.S + this.VP.S / 2;
+            const rad = this.VP.S * 4.5;
+            
+            ctx.save();
+            ctx.globalCompositeOperation = 'multiply';
+            const grad = ctx.createRadialGradient(px, py, this.VP.S, px, py, rad);
+            grad.addColorStop(0, 'rgba(255, 255, 230, 1)');
+            grad.addColorStop(0.3, 'rgba(100, 100, 150, 0.8)');
+            grad.addColorStop(1, 'rgba(10, 10, 40, 1)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
+            ctx.restore();
+        }
     }
 
     rebuildCache(loc, locKey, floorX, floorY, tileType) {

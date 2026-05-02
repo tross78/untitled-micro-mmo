@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { generateCharacterSprite } from '../graphics/graphics.js';
+import { generateCharacterSprite, getWalkPose } from '../graphics/graphics.js';
 
 /**
  * EntityRenderSystem draws all spatial entities (Players, NPCs, Enemies).
@@ -33,11 +33,13 @@ export class EntityRenderSystem {
 
             let drawX = transform.x;
             let drawY = transform.y;
+            let walkPose = { legOffset: 0, bodyY: 0 };
 
-            // Apply Tweening
+            // Apply Tweening & Animation (Zelda-style)
             if (tween) {
                 drawX = tween.startX + (tween.targetX - tween.startX) * tween.progress;
                 drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
+                walkPose = getWalkPose(Date.now());
             }
 
             const sx = drawX - camX;
@@ -48,18 +50,34 @@ export class EntityRenderSystem {
 
             // Draw Sprite
             const sprite = this.getSprite(spriteDef.seed, spriteDef.palette);
-            ctx.drawImage(sprite, sx * this.VP.S + Math.floor(this.VP.S * 0.15), sy * this.VP.S, Math.floor(this.VP.S * 0.7), this.VP.S);
+            // Apply bounce during walk
+            const bounceY = walkPose.bodyY;
+            ctx.drawImage(sprite, sx * this.VP.S + Math.floor(this.VP.S * 0.15), sy * this.VP.S + bounceY, Math.floor(this.VP.S * 0.7), this.VP.S);
 
-            // Health Bar
-            if (health && health.current < health.max) {
-                this.drawHealthBar(ctx, sx, sy, health.current / health.max);
-            }
+            // Name Label
+            ctx.font = `${Math.floor(this.VP.S * 0.28)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            
+            const identity = this.world.getComponent(id, 'Identity');
+            const name = identity?.name || '???';
 
-            // Selection indicator for player
             if (this.world.getComponent(id, Component.PlayerControlled)) {
+                ctx.fillStyle = '#00ff44';
+                ctx.fillText('You', sx * this.VP.S + this.VP.S / 2, sy * this.VP.S + bounceY);
+                
+                // Selection indicator
                 ctx.strokeStyle = '#00ff44';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(sx * this.VP.S + 1, sy * this.VP.S + 1, this.VP.S - 2, this.VP.S - 2);
+                ctx.strokeRect(sx * this.VP.S + 1, sy * this.VP.S + bounceY + 1, this.VP.S - 2, this.VP.S - 2);
+            } else {
+                ctx.fillStyle = spriteDef.palette === 'enemy' ? '#ff4444' : '#00aaff';
+                ctx.fillText(name, sx * this.VP.S + this.VP.S / 2, sy * this.VP.S + bounceY);
+
+                // Health Bar (for enemies)
+                if (health && health.current < health.max) {
+                    this.drawHealthBar(ctx, sx, sy + bounceY/this.VP.S, health.current / health.max);
+                }
             }
         }
     }

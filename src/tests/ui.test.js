@@ -12,6 +12,21 @@ jest.mock('@trystero-p2p/torrent', () => ({
     selfId: 'test-peer-id',
 }));
 
+jest.mock('../app/runtime.js', () => ({
+    appRuntime: {
+        world: {
+            getComponent: jest.fn(),
+            query: jest.fn(() => []),
+            createEntity: jest.fn(() => 999),
+            setComponent: jest.fn(),
+            components: {
+                get: jest.fn(() => ({ delete: jest.fn() }))
+            }
+        },
+        playerEntityId: 1
+    }
+}));
+
 import { bus } from '../state/eventbus.js';
 import { renderActionButtons, _getUiState, _resetUiState } from '../ui/index.js';
 import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../content/data.js';

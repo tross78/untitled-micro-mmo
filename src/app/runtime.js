@@ -51,6 +51,13 @@ class AppRuntime {
     /** @type {AudioSystem | null} */
     this.audioSystem = null;
 
+    // Viewport Config (Responsive Phase 8)
+    this.VP = { 
+        W: 20, H: 12, S: 48,
+        get CW() { return this.W * this.S; }, 
+        get CH() { return this.H * this.S; } 
+    };
+
     /** @type {GameLoop | null} */
     this.loop = null;
   }
@@ -69,6 +76,9 @@ class AppRuntime {
   initSystems(localPlayerStore, gameActions) {
     if (!this.playerEntityId) this.hydratePlayer(localPlayerStore);
     
+    this.updateViewport();
+    window.addEventListener('resize', () => this.updateViewport());
+
     this.syncSystem = new SyncSystem(this.world, localPlayerStore, this.playerEntityId);
     
     // Lazy access to stores to avoid circularity
@@ -89,17 +99,10 @@ class AppRuntime {
     this.dialogueSystem = new DialogueSystem(this.world);
     this.networkSystem = new NetworkSystem(this.world, gameActions);
 
-    // Viewport Config (Phase 8 Standard)
-    const VP = { 
-        W: 20, H: 12, S: 48,
-        get CW() { return this.W * this.S; }, 
-        get CH() { return this.H * this.S; } 
-    };
-
     // Initialize Render Systems
-    this.mapRender = new MapRenderSystem(this.world, VP);
-    this.entityRender = new EntityRenderSystem(this.world, VP);
-    this.uiRender = new UIRenderSystem(this.world, VP);
+    this.mapRender = new MapRenderSystem(this.world, this.VP);
+    this.entityRender = new EntityRenderSystem(this.world, this.VP);
+    this.uiRender = new UIRenderSystem(this.world, this.VP);
     this.audioSystem = new AudioSystem(this.world);
 
     this.loop = new GameLoop({
@@ -113,6 +116,28 @@ class AppRuntime {
           }
       },
     });
+  }
+
+  updateViewport() {
+    const isPortrait = window.innerHeight > window.innerWidth;
+    if (isPortrait) {
+        this.VP.W = 12;
+        this.VP.H = 20;
+    } else {
+        this.VP.W = 20;
+        this.VP.H = 12;
+    }
+    // Update systems that care about VP
+    if (this.mapRender) this.mapRender.VP = this.VP;
+    if (this.entityRender) this.entityRender.VP = this.VP;
+    if (this.uiRender) this.uiRender.VP = this.VP;
+
+    // Trigger canvas resize
+    const canvas = document.getElementById('game-canvas');
+    if (canvas instanceof HTMLCanvasElement) {
+        canvas.width = this.VP.CW;
+        canvas.height = this.VP.CH;
+    }
   }
 
   start() {
@@ -156,12 +181,12 @@ class AppRuntime {
     }
 
     // Camera follow
-    const camX = drawX - 10;
-    const camY = drawY - 6;
+    const camX = drawX - (this.VP.W / 2);
+    const camY = drawY - (this.VP.H / 2);
 
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     
-    this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState }, camX, camY);
+    this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY);
     this.entityRender.draw(ctx, camX, camY);
     this.uiRender.draw(ctx, localPlayerStore);
   }
@@ -184,6 +209,11 @@ class AppRuntime {
       mapId: player.location,
       x: player.x,
       y: player.y,
+    });
+    this.world.setComponent(this.playerEntityId, Component.Sprite, {
+      type: 'player',
+      palette: 'self',
+      seed: 0 // Local player uses standard hero palette
     });
     this.world.setComponent(this.playerEntityId, Component.Health, {
       current: player.hp,

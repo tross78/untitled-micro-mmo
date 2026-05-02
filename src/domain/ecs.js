@@ -52,4 +52,13 @@ export class WorldStore {
       rest.every((name) => this.components.get(name)?.has(entityId))
     );
   }
+
+  /**
+   * @param {number} entityId
+   */
+  deleteEntity(entityId) {
+    for (const store of this.components.values()) {
+      store.delete(entityId);
+    }
+  }
 }

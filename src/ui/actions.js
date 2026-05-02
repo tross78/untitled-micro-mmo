@@ -2,6 +2,7 @@ import { NPCS, ENEMIES, ITEMS, RECIPES, QUESTS } from '../content/data.js';
 import { ACTION } from '../engine/input.js';
 import { GAME_NAME } from '../content/data.js';
 import { players } from '../state/store.js';
+import { bus } from '../state/eventbus.js';
 import { refreshStatusBar } from './status.js';
 import { clearElement, getActionButtonsEl, getInputContainerEl, getInputEl } from '../adapters/dom/shell.js';
 import { requestTextInput } from '../adapters/dom/prompt.js';
@@ -137,7 +138,10 @@ export const renderActionButtons = (ctx, onAction) => {
                 addButton('Duel ⚔️', () => { uiState = 'duel_select'; renderActionButtons(ctx, onAction); });
             }
 
-            addButton('Quests 📜', () => { uiState = 'quests'; renderActionButtons(ctx, onAction); });
+            addButton('Quests 📜', () => { 
+                bus.emit('ui:menu', { type: 'quests' }); 
+                renderActionButtons(ctx, onAction); 
+            });
             addButton('Config ⚙️', () => { uiState = 'settings'; renderActionButtons(ctx, onAction); });
 
         } else if (uiState === 'trade_select') {

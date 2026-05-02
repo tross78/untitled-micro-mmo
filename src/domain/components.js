@@ -23,6 +23,9 @@ export const Component = {
   /** UI Overlays */
   UIOverlay: 'UIOverlay', // { type: 'toast'|'fanfare'|'banner', text: string, expires: number }
 
+  /** Full-screen Menu state */
+  Menu: 'Menu', // { type: 'inventory'|'quests'|'crafting', data: any }
+
   /** Camera State */
   Camera: 'Camera', // { x: number, y: number, zoom: number }
 

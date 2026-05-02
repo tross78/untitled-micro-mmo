@@ -65,16 +65,43 @@ export function renderWorld(state, onTileClick) {
     // In modular Phase 8, the GameLoop in appRuntime handles the calling of draw().
     // We just ensure the click handler is wired to the current camera.
     _canvas.onclick = (e) => {
+        const transform = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Transform);
+        const tween = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Tweenable);
+        if (!transform) return;
+
+        let drawX = transform.x;
+        let drawY = transform.y;
+        if (tween) {
+            drawX = tween.startX + (tween.targetX - tween.startX) * tween.progress;
+            drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
+        }
+
+        // Camera follow (same logic as AppRuntime.draw)
+        const camX = drawX - 10;
+        const camY = drawY - 6;
+
         const rect = _canvas.getBoundingClientRect();
         const scaleX = _canvas.width / rect.width;
         const scaleY = _canvas.height / rect.height;
         
-        // We need camX/camY. For now we use a simple projection or 
-        // pull it from the Camera component if we had one active.
-        // For Step 1, we just wire a basic click.
-        const tx = Math.floor((e.clientX - rect.left) * scaleX / 48); // hardcoded tile size for now
-        const ty = Math.floor((e.clientY - rect.top)  * scaleY / 48);
-        onTileClick(tx, ty, null);
+        // Final logical coordinate = (click_pos * scale / tile_size) + camera_offset
+        const tx = Math.floor(((e.clientX - rect.left) * scaleX) / 48 + camX);
+        const ty = Math.floor(((e.clientY - rect.top)  * scaleY) / 48 + camY);
+
+        // Find entity at logical coordinate
+        const entities = appRuntime.world.query([Component.Transform, Component.Sprite]);
+        let clickedEntity = null;
+        for (const id of entities) {
+            const t = appRuntime.world.getComponent(id, Component.Transform);
+            const s = appRuntime.world.getComponent(id, Component.Sprite);
+            const identity = appRuntime.world.getComponent(id, 'Identity');
+            if (t.x === tx && t.y === ty && !appRuntime.world.getComponent(id, Component.PlayerControlled)) {
+                clickedEntity = { id: identity?.id || id, type: s.type };
+                break;
+            }
+        }
+
+        onTileClick(tx, ty, clickedEntity);
     };
 }
 

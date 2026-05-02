@@ -2,9 +2,10 @@
 
 import { Component } from '../domain/components.js';
 import { applyPalette, PALETTES, getGrayscaleTemplate } from '../graphics/graphics.js';
+import { ITEMS, QUESTS } from '../content/data.js';
 
 /**
- * UIRenderSystem handles HUD, dialogue, and overlays (toasts, fanfare).
+ * UIRenderSystem handles HUD, dialogue, menus, and overlays.
  */
 export class UIRenderSystem {
     /**
@@ -26,6 +27,7 @@ export class UIRenderSystem {
         this.drawHUD(ctx, localPlayerStore);
         this.drawOverlays(ctx);
         this.drawDialogue(ctx);
+        this.drawMenu(ctx, localPlayerStore);
     }
 
     drawHUD(ctx, player) {
@@ -33,11 +35,9 @@ export class UIRenderSystem {
         const y = this.VP.CH - STRIP;
         const PAD = 8;
 
-        // semi-transparent strip
         ctx.fillStyle = 'rgba(0,0,0,0.75)';
         ctx.fillRect(0, y, this.VP.CW, STRIP);
 
-        // 1. HP (Hearts)
         if (!this.heartSprite) {
             const template = getGrayscaleTemplate('heart');
             if (template) {
@@ -65,12 +65,10 @@ export class UIRenderSystem {
         const fs = Math.floor(STRIP * 0.45);
         ctx.font = `bold ${fs}px monospace`;
 
-        // 2. Gold (Rupee)
         ctx.fillStyle = '#ffd700';
         ctx.textAlign = 'center';
         ctx.fillText(`◆ ${player.gold ?? 0}`, this.VP.CW / 2, mid);
 
-        // 3. Fights (Energy)
         const fights = player.forestFights ?? 0;
         ctx.fillStyle = fights > 0 ? '#aaffaa' : '#555';
         ctx.textAlign = 'right';
@@ -88,13 +86,9 @@ export class UIRenderSystem {
                 return;
             }
 
-            if (overlay.type === 'toast') {
-                this.drawToast(ctx, overlay.text, now, overlay.expires);
-            } else if (overlay.type === 'fanfare') {
-                this.drawFanfare(ctx, overlay.text, now, overlay.expires);
-            } else if (overlay.type === 'banner') {
-                this.drawBanner(ctx, overlay.text, now, overlay.expires);
-            }
+            if (overlay.type === 'toast') this.drawToast(ctx, overlay.text, now, overlay.expires);
+            else if (overlay.type === 'fanfare') this.drawFanfare(ctx, overlay.text, now, overlay.expires);
+            else if (overlay.type === 'banner') this.drawBanner(ctx, overlay.text, now, overlay.expires);
         });
     }
 
@@ -103,7 +97,6 @@ export class UIRenderSystem {
         ctx.fillStyle = `rgba(0,0,0,${0.7 * alpha})`;
         const bh = Math.floor(this.VP.S * 0.7);
         ctx.fillRect(0, 2, this.VP.CW, bh);
-
         ctx.fillStyle = `rgba(255,255,200,${alpha})`;
         ctx.font = `bold ${Math.floor(this.VP.S * 0.4)}px monospace`;
         ctx.textAlign = 'center';
@@ -118,7 +111,6 @@ export class UIRenderSystem {
         const tw = ctx.measureText(text).width + 24;
         const px = (this.VP.CW - tw) / 2;
         const py = Math.floor(this.VP.S * 0.8);
-
         ctx.fillStyle = `rgba(20,20,40,${0.85 * alpha})`;
         ctx.fillRect(px, py, tw, fs + 10);
         ctx.fillStyle = `rgba(200,230,255,${alpha})`;
@@ -133,7 +125,6 @@ export class UIRenderSystem {
         const bh = Math.floor(this.VP.CH * 0.35);
         const by = (this.VP.CH - bh) / 2;
         ctx.fillRect(0, by, this.VP.CW, bh);
-
         ctx.fillStyle = `rgba(255,230,100,${alpha})`;
         ctx.font = `bold ${Math.floor(this.VP.S * 0.55)}px monospace`;
         ctx.textAlign = 'center';
@@ -147,57 +138,84 @@ export class UIRenderSystem {
     drawDialogue(ctx) {
         const players = this.world.query([Component.Dialogue]);
         if (players.length === 0) return;
-
         const dialogue = this.world.getComponent(players[0], Component.Dialogue);
         const BOX_H = Math.floor(this.VP.CH * 0.35);
-        const BOX_Y = this.VP.CH - BOX_H - 40; // Offset from HUD
+        const BOX_Y = this.VP.CH - BOX_H - 40;
         const PAD = Math.floor(this.VP.S * 0.5);
-
-        // Dark panel
         ctx.fillStyle = 'rgba(10,10,30,0.95)';
         ctx.fillRect(10, BOX_Y, this.VP.CW - 20, BOX_H);
         ctx.strokeStyle = '#8866cc';
         ctx.lineWidth = 2;
         ctx.strokeRect(12, BOX_Y + 2, this.VP.CW - 24, BOX_H - 4);
-
-        // Speaker Name
         ctx.font = `bold ${Math.floor(this.VP.S * 0.35)}px monospace`;
         ctx.fillStyle = '#ffdd55';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(dialogue.speakerId.toUpperCase(), 10 + PAD, BOX_Y + PAD * 0.5);
-
-        // Wrapped Text
         ctx.font = `${Math.floor(this.VP.S * 0.3)}px monospace`;
         ctx.fillStyle = '#ddeeff';
         const visibleChars = Math.floor(dialogue.progress);
         const text = dialogue.text.slice(0, visibleChars);
-        
-        // Wrapped block
         const words = text.split(' ');
-        let curLine = '';
-        let lines = [];
+        let curLine = '', lines = [];
         for (const w of words) {
-            if ((curLine + w).length > 35) {
-                lines.push(curLine);
-                curLine = w + ' ';
-            } else {
-                curLine += w + ' ';
-            }
+            if ((curLine + w).length > 35) { lines.push(curLine); curLine = w + ' '; }
+            else { curLine += w + ' '; }
         }
         lines.push(curLine);
-        
         const lineH = Math.floor(this.VP.S * 0.4);
-        lines.forEach((line, i) => {
-            ctx.fillText(line, 10 + PAD, BOX_Y + PAD * 1.5 + i * lineH);
-        });
-        
-        // Pulse advance prompt if text finished
+        lines.forEach((line, i) => ctx.fillText(line, 10 + PAD, BOX_Y + PAD * 1.5 + i * lineH));
         if (visibleChars >= dialogue.text.length) {
             const alpha = 0.5 + Math.sin(Date.now() / 200) * 0.5;
             ctx.fillStyle = `rgba(204, 136, 255, ${alpha})`;
             ctx.textAlign = 'right';
             ctx.fillText('▼', this.VP.CW - 10 - PAD, BOX_Y + BOX_H - PAD * 0.5);
         }
+    }
+
+    drawMenu(ctx, player) {
+        const players = this.world.query([Component.PlayerControlled, Component.Menu]);
+        if (players.length === 0) return;
+        const menu = this.world.getComponent(players[0], Component.Menu);
+        
+        ctx.fillStyle = 'rgba(0,0,0,0.9)';
+        ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
+        ctx.strokeStyle = '#0f0';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(10, 10, this.VP.CW - 20, this.VP.CH - 20);
+
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.5)}px monospace`;
+        ctx.fillStyle = '#0f0';
+        ctx.textAlign = 'center';
+        ctx.fillText(menu.type.toUpperCase(), this.VP.CW / 2, 40);
+
+        ctx.font = `${Math.floor(this.VP.S * 0.3)}px monospace`;
+        ctx.textAlign = 'left';
+        let y = 80;
+
+        if (menu.type === 'inventory') {
+            const counts = {};
+            (player.inventory || []).forEach(id => counts[id] = (counts[id] || 0) + 1);
+            Object.entries(counts).forEach(([id, count]) => {
+                const item = ITEMS[id];
+                const label = item ? `${item.name}${count > 1 ? ' x' + count : ''}` : id;
+                ctx.fillText(`- ${label}`, 30, y);
+                y += 25;
+            });
+            if (Object.keys(counts).length === 0) ctx.fillText('(Pack is empty)', 30, y);
+        } else if (menu.type === 'quests') {
+            Object.entries(player.quests || {}).forEach(([qid, data]) => {
+                const q = QUESTS[qid];
+                if (!q) return;
+                const status = data.completed ? '✅' : `${data.progress}/${q.objective.count || 1}`;
+                ctx.fillText(`- ${q.name}: ${status}`, 30, y);
+                y += 25;
+            });
+            if (Object.keys(player.quests || {}).length === 0) ctx.fillText('(No active quests)', 30, y);
+        }
+
+        ctx.fillStyle = '#555';
+        ctx.textAlign = 'center';
+        ctx.fillText('Press BACK or CANCEL to close', this.VP.CW / 2, this.VP.CH - 40);
     }
 }

@@ -7,6 +7,8 @@ import { renderActionButtons, log } from '../ui/index.js';
 import { ACTION } from '../engine/input.js';
 import { handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem } from '../commands/index.js';
 import { bus } from '../state/eventbus.js';
+import { appRuntime } from '../app/runtime.js';
+import { Component } from '../domain/components.js';
 import { gameActions } from '../network/index.js';
 import { saveLocalState } from '../state/persistence.js';
 import { importKey, verifyMessage } from '../security/crypto.js';
@@ -127,6 +129,16 @@ export const setupGlobalEvents = () => {
         showDialogue(npcName, text);
     });
 
+    bus.on('ui:back', () => {
+        const menu = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+        if (menu) appRuntime.world.components.get(Component.Menu).delete(appRuntime.playerEntityId);
+        showDialogue(null, null);
+    });
+    
+    bus.on('ui:menu', ({ type }) => {
+        appRuntime.world.setComponent(appRuntime.playerEntityId, Component.Menu, { type });
+    });
+
     bus.on('log', ({ msg }) => {
         const cleanMsg = msg.replace(/<[^>]*>?/gm, '');
         showToast(cleanMsg);
@@ -144,8 +156,24 @@ export const setupGlobalEvents = () => {
 
         let cmd = null;
         switch (action) {
-            case ACTION.INVENTORY: cmd = 'inventory'; break;
-            case ACTION.CANCEL: cmd = 'back'; break;
+            case ACTION.INVENTORY: {
+                const existing = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+                if (existing && existing.type === 'inventory') {
+                    appRuntime.world.components.get(Component.Menu).delete(appRuntime.playerEntityId);
+                } else {
+                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.Menu, { type: 'inventory' });
+                }
+                return;
+            }
+            case ACTION.CANCEL: {
+                const menu = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+                if (menu) {
+                    appRuntime.world.components.get(Component.Menu).delete(appRuntime.playerEntityId);
+                    return;
+                }
+                cmd = 'back'; 
+                break;
+            }
             case ACTION.CONFIRM: cmd = 'confirm'; break;
             case ACTION.MENU: cmd = 'status'; break;
         }
