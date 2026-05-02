@@ -4,7 +4,7 @@
  * Declarative serialization for high-frequency messages.
  */
 
-import { world, ENEMIES } from '../data.js';
+import { world, ENEMIES } from '../engine/data.js';
 import { packHLC, unpackHLC } from './hlc.js';
 
 const toUint8Array = (buf) => {

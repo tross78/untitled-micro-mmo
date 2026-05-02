@@ -1,4 +1,4 @@
-import { hashStr } from '../rules.js';
+import { hashStr } from '../rules/index.js';
 
 const radarEl = document.getElementById('radar-container');
 

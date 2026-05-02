@@ -1,9 +1,9 @@
-import { worldState, localPlayer, setHasSyncedWithArbiter, hasSyncedWithArbiter, setBans, bansHash, WORLD_STATE_KEY } from '../store.js';
-import { deriveWorldState, getTimeOfDay } from '../rules.js';
-import { log, printStatus } from '../ui.js';
-import { bus } from '../eventbus.js';
-import { getArbiterUrl } from '../runtime.js';
-import { ARBITER_URL } from '../constants.js';
+import { worldState, localPlayer, setHasSyncedWithArbiter, hasSyncedWithArbiter, setBans, bansHash, WORLD_STATE_KEY } from '../state/store.js';
+import { deriveWorldState, getTimeOfDay } from '../rules/index.js';
+import { log, printStatus } from '../ui/index.js';
+import { bus } from '../state/eventbus.js';
+import { getArbiterUrl } from '../infra/runtime.js';
+import { ARBITER_URL } from '../infra/constants.js';
 
 const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 

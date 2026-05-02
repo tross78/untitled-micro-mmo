@@ -4,8 +4,8 @@
  */
 
 import { ENABLE_ADS } from './data.js';
-import { log } from './ui.js';
-import { seededRNG, hashStr } from './rules.js';
+import { log } from '../ui/index.js';
+import { seededRNG, hashStr } from '../rules/index.js';
 
 let initialized = false;
 

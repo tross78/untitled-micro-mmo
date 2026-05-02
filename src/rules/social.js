@@ -1,5 +1,5 @@
-import { NPCS, CORPORA } from '../data.js';
-import { generateSentence } from '../markov.js';
+import { NPCS, CORPORA } from '../engine/data.js';
+import { generateSentence } from '../engine/markov.js';
 import { seededRNG, hashStr } from './utils.js';
 
 export function getNPCLocation(npcId, worldSeed, day) {

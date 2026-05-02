@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { signMessage, verifyMessage } from '../crypto.js';
+import { signMessage, verifyMessage } from '../security/crypto.js';
 import {
     packMove, unpackMove, packEmote, unpackEmote,
     packPresence, unpackPresence, presenceSignaturePayload,
@@ -255,7 +255,7 @@ describe('Binary Packer', () => {
 
     test('ENEMY_MAP includes crab and matches data.js', () => {
         const { ENEMY_MAP } = require('../network/packer.js');
-        const { ENEMIES } = require('../data.js');
+        const { ENEMIES } = require('../engine/data.js');
         expect(ENEMY_MAP).toContain('crab');
         expect(ENEMY_MAP).toEqual(Object.keys(ENEMIES).sort());
     });

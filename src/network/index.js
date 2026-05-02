@@ -1,47 +1,47 @@
 // @ts-check
-import { joinRoom as joinTorrent, selfId } from './network/transport.js';
-import { getShardName, hashStr, seededRNG, xpToLevel, rollLoot, getTimeOfDay } from './rules.js';
-import { TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from './constants.js';
+import { joinRoom as joinTorrent, selfId } from './transport.js';
+import { getShardName, hashStr, seededRNG, xpToLevel, rollLoot, getTimeOfDay } from '../rules/index.js';
+import { TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from '../infra/constants.js';
 import { 
     worldState, localPlayer, hasSyncedWithArbiter,
     TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY,
     players, shadowPlayers, shardEnemies, trackPlayer, trackShadowPlayer, bansHash, bans,
     _presenceDelta, clearPresenceDelta, evictPlayer, evictShadowPlayer
-} from './store.js';
-import { INSTANCE_CAP, ENEMIES, world } from './data.js';
-import { verifyMessage, signMessage, exportKey, importKey } from './crypto.js';
-import { Minisketch } from './network/minisketch.js';
-import { HyParView } from './network/hyparview.js';
-import { sendHLC, recvHLC } from './network/hlc.js';
+} from '../state/store.js';
+import { INSTANCE_CAP, ENEMIES, world } from '../engine/data.js';
+import { verifyMessage, signMessage, exportKey, importKey } from '../security/crypto.js';
+import { Minisketch } from './minisketch.js';
+import { HyParView } from './hyparview.js';
+import { sendHLC, recvHLC } from './hlc.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, packDuelCommit, unpackDuelCommit,
     packActionLog, unpackActionLog, packTradeCommit, unpackTradeCommit,
     packPresenceBatch, unpackPresenceBatch,
     presenceSignaturePayload
-} from './network/packer.js';
-import { arbiterPublicKey, playerKeys, myEntry } from './identity.js';
-import { log, printStatus } from './ui.js';
-import { GAME_NAME } from './data.js';
-import { bus } from './eventbus.js';
-import { saveLocalState } from './persistence.js';
-import { getArbiterUrl } from './runtime.js';
+} from './packer.js';
+import { arbiterPublicKey, playerKeys, myEntry } from '../security/identity.js';
+import { log, printStatus } from '../ui/index.js';
+import { GAME_NAME } from '../engine/data.js';
+import { bus } from '../state/eventbus.js';
+import { saveLocalState } from '../state/persistence.js';
+import { getArbiterUrl } from '../infra/runtime.js';
 
 // Modular Networking Components
 import { 
     ROLLUP_INTERVAL, PROPOSER_GRACE_MS, NETWORK_STALL_MS, NETWORK_HEAL_COOLDOWN_MS,
     buildTorrentConfig, isUsingTurnFallback 
-} from './network/config.js';
+} from './config.js';
 import { 
     checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState 
-} from './network/security.js';
+} from './security.js';
 import { 
     buildSketch, packSignedPresence, unpackPresencePacket, seedFromSnapshot 
-} from './network/presence.js';
-import { updateSimulation } from './network/simulation.js';
+} from './presence.js';
+import { updateSimulation } from './simulation.js';
 import { 
     getCurrentInstance, setCurrentInstance, preJoinShard, getPreJoined, clearShardState 
-} from './network/shard.js';
+} from './shard.js';
 
 export { seedFromSnapshot, updateSimulation, preJoinShard, buildTorrentConfig, isProposer };
 

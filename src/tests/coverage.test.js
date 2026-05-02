@@ -5,7 +5,7 @@
  * - Small Room Camera Centering
  */
 
-import { isDialogueOpen, advanceDialogue } from '../renderer.js';
+import { isDialogueOpen, advanceDialogue } from '../graphics/renderer.js';
 
 describe('Phase 7.85 Feature Coverage', () => {
 

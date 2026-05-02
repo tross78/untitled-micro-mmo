@@ -1,17 +1,17 @@
-import { localPlayer, hasSyncedWithArbiter, worldState, TAB_CHANNEL, loadLocalState, pruneStale } from '../store.js';
-import { log, startTicker } from '../ui.js';
-import { initIdentity, arbiterPublicKey, myEntry } from '../identity.js';
-import { resolveBootstrapArbiterUrl, getRuntimeParam, isE2EMode, getArbiterUrl } from '../runtime.js';
-import { initAds, showBanner } from '../ads.js';
-import { inputManager } from '../input.js';
+import { localPlayer, hasSyncedWithArbiter, worldState, TAB_CHANNEL, loadLocalState, pruneStale } from '../state/store.js';
+import { log, startTicker } from '../ui/index.js';
+import { initIdentity, arbiterPublicKey, myEntry } from '../security/identity.js';
+import { resolveBootstrapArbiterUrl, getRuntimeParam, isE2EMode, getArbiterUrl } from '../infra/runtime.js';
+import { initAds, showBanner } from '../engine/ads.js';
+import { inputManager } from '../engine/input.js';
 import { setupGlobalEvents, triggerLogicalRefresh, triggerVisualRefresh } from './events.js';
 import { initCrossTabSync } from './sync.js';
-import { verifyMessage } from '../crypto.js';
-import { updateSimulation, initNetworking, gameActions, selfId } from '../networking.js';
-import { world, GAME_NAME } from '../data.js';
-import { GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL } from '../constants.js';
-import { saveLocalState } from '../persistence.js';
-import { setTicker, showDialogue, showToast } from '../renderer.js';
+import { verifyMessage } from '../security/crypto.js';
+import { updateSimulation, initNetworking, gameActions, selfId } from '../network/index.js';
+import { world, GAME_NAME } from '../engine/data.js';
+import { GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL } from '../infra/constants.js';
+import { saveLocalState } from '../state/persistence.js';
+import { setTicker, showDialogue, showToast } from '../graphics/renderer.js';
 
 const HEARTBEAT_MS = 30000;
 

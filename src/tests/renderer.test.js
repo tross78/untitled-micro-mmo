@@ -17,7 +17,7 @@ import {
     showRoomBanner,
     showToast,
     triggerHitFlash,
-} from '../renderer.js';
+} from '../graphics/renderer.js';
 
 describe('renderer public overlay API', () => {
     let visual;

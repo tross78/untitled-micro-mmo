@@ -1,4 +1,4 @@
-import { bus } from './eventbus.js';
+import { bus } from '../state/eventbus.js';
 
 export const ACTION = {
   MOVE_N: 'move_n', MOVE_S: 'move_s', MOVE_E: 'move_e', MOVE_W: 'move_w',

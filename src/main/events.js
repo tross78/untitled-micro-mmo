@@ -1,14 +1,14 @@
-import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, hasSyncedWithArbiter, setPendingDuel, setPendingTrade } from '../store.js';
-import { world, NPCS, ENEMIES, ITEMS, QUESTS, GAME_NAME } from '../data.js';
-import { getNPCLocation, getTimeOfDay } from '../rules.js';
-import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, playHit, playCrit, playDeath, playPickup, playLevelUp, showLevelUp, showItemFanfare, playPortal, showRoomBanner } from '../renderer.js';
-import { renderActionButtons, log } from '../ui.js';
-import { ACTION, inputManager } from '../input.js';
-import { handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem } from '../commands.js';
-import { bus } from '../eventbus.js';
+import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, hasSyncedWithArbiter, setPendingDuel, setPendingTrade } from '../state/store.js';
+import { world, NPCS, ENEMIES, ITEMS, QUESTS, GAME_NAME } from '../engine/data.js';
+import { getNPCLocation, getTimeOfDay } from '../rules/index.js';
+import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, playHit, playCrit, playDeath, playPickup, playLevelUp, showLevelUp, showItemFanfare, playPortal, showRoomBanner } from '../graphics/renderer.js';
+import { renderActionButtons, log } from '../ui/index.js';
+import { ACTION, inputManager } from '../engine/input.js';
+import { handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem } from '../commands/index.js';
+import { bus } from '../state/eventbus.js';
 import { stepPlayer } from './movement.js';
-import { gameActions, saveLocalState } from '../networking.js';
-import { importKey, verifyMessage } from '../crypto.js';
+import { gameActions, saveLocalState } from '../network/index.js';
+import { importKey, verifyMessage } from '../security/crypto.js';
 import { selfId } from '../network/transport.js';
 
 let _vRefreshTimer = null;

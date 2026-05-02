@@ -1,4 +1,4 @@
-import { bus } from '../eventbus.js';
+import { bus } from '../state/eventbus.js';
 import { getHealthBar } from './helpers.js';
 
 const output = document.getElementById('output');

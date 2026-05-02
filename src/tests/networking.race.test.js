@@ -12,8 +12,8 @@ jest.mock('../network/transport.js', () => ({
     selfId: 'race-peer-id',
 }));
 
-import { initNetworking, gameActions } from '../networking.js';
-import { localPlayer } from '../store.js';
+import { initNetworking, gameActions } from '../network/index.js';
+import { localPlayer } from '../state/store.js';
 import { joinRoom } from '../network/transport.js';
 
 describe('Networking Race Condition Simulation', () => {
@@ -63,7 +63,7 @@ describe('Networking Race Condition Simulation', () => {
         
         // 1. Seed as a ghost
         localPlayer.ph = 'self-ph'; // Avoid self-ghost filtering
-        const { trackPlayer, players } = require('../store.js');
+        const { trackPlayer, players } = require('../state/store.js');
         trackPlayer(peerId, { name: 'Alice', ph, location: 'cellar', ghost: true });
         expect(players.get(peerId).ghost).toBe(true);
         

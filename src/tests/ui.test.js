@@ -12,9 +12,9 @@ jest.mock('@trystero-p2p/torrent', () => ({
     selfId: 'test-peer-id',
 }));
 
-import { bus } from '../eventbus.js';
-import { renderActionButtons, _getUiState, _resetUiState } from '../ui.js';
-import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../data.js';
+import { bus } from '../state/eventbus.js';
+import { renderActionButtons, _getUiState, _resetUiState } from '../ui/index.js';
+import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../engine/data.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

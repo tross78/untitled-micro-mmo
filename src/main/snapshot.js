@@ -1,7 +1,7 @@
 import { selfId } from '../network/transport.js';
-import { localPlayer, worldState, players, hasSyncedWithArbiter } from '../store.js';
-import { globalRooms, rooms } from '../networking.js';
-import { isDialogueOpen } from '../renderer.js';
+import { localPlayer, worldState, players, hasSyncedWithArbiter } from '../state/store.js';
+import { globalRooms, rooms } from '../network/index.js';
+import { isDialogueOpen } from '../graphics/renderer.js';
 
 export const buildTestSnapshot = () => ({
     selfId,

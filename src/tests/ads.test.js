@@ -4,7 +4,7 @@ describe('ads disabled configuration', () => {
     test('showRewardedAd calls failure callback when ads are disabled', async () => {
         jest.resetModules();
 
-        const { initAds, showBanner, hideBanner, showRewardedAd } = await import('../ads.js');
+        const { initAds, showBanner, hideBanner, showRewardedAd } = await import('../engine/ads.js');
         const onReward = jest.fn();
         const onFail = jest.fn();
 
@@ -19,7 +19,7 @@ describe('ads disabled configuration', () => {
 
     test('banner functions are no-ops when ads are disabled', async () => {
         document.body.innerHTML = '<div id="banner-ad"></div>';
-        const { showBanner, hideBanner } = await import('../ads.js');
+        const { showBanner, hideBanner } = await import('../engine/ads.js');
         const banner = document.getElementById('banner-ad');
         showBanner();
         expect(banner.style.display).toBe('');

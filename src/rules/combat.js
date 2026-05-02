@@ -1,4 +1,4 @@
-import { ENEMIES } from '../data.js';
+import { ENEMIES } from '../engine/data.js';
 
 export function resolveAttack(attackStat, defenseStat, rng, isNight = false) {
     const isDodge = rng(100) < 7;

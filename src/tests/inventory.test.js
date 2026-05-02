@@ -1,21 +1,21 @@
-import { handleCommand, getBestGear } from '../commands.js';
-import { localPlayer, worldState } from '../store.js';
-import { bus } from '../eventbus.js';
-import { log } from '../ui.js';
+import { handleCommand, getBestGear } from '../commands/index.js';
+import { localPlayer, worldState } from '../state/store.js';
+import { bus } from '../state/eventbus.js';
+import { log } from '../ui/index.js';
 
 // Mocking dependencies
-jest.mock('../persistence.js', () => ({
+jest.mock('../state/persistence.js', () => ({
     saveLocalState: jest.fn()
 }));
 
-jest.mock('../ui.js', () => ({
+jest.mock('../ui/index.js', () => ({
     log: jest.fn(),
     printStatus: jest.fn(),
     triggerShake: jest.fn(),
     getHealthBar: jest.fn(() => '[HHH]')
 }));
 
-jest.mock('../networking.js', () => ({
+jest.mock('../network/index.js', () => ({
     gameActions: {
         sendMove: jest.fn(),
         sendEmote: jest.fn(),
@@ -28,8 +28,8 @@ jest.mock('../networking.js', () => ({
     currentRtcConfig: {}
 }));
 
-jest.mock('../rules.js', () => {
-    const original = jest.requireActual('../rules.js');
+jest.mock('../rules/index.js', () => {
+    const original = jest.requireActual('../rules/index.js');
     return {
         ...original,
         getNPCLocation: jest.fn((id) => {
@@ -69,7 +69,7 @@ describe('Inventory System (Phase 7.85)', () => {
     describe('pickup', () => {
         test('picking up an item in a room with loot adds it to inventory', async () => {
             localPlayer.location = 'cellar';
-            const { shardEnemies } = await import('../store.js');
+            const { shardEnemies } = await import('../state/store.js');
             shardEnemies.set('cellar', { hp: 0, loot: ['potion'] });
 
             await handleCommand('pickup');
@@ -84,7 +84,7 @@ describe('Inventory System (Phase 7.85)', () => {
         test('picking up gold adds directly to gold balance', async () => {
             localPlayer.location = 'cellar';
             localPlayer.gold = 10;
-            const { shardEnemies } = await import('../store.js');
+            const { shardEnemies } = await import('../state/store.js');
             shardEnemies.set('cellar', { hp: 0, loot: ['gold'] }); 
 
             await handleCommand('pickup');
@@ -94,7 +94,7 @@ describe('Inventory System (Phase 7.85)', () => {
 
         test('picking up in a room with no loot emits a not-found message', async () => {
             localPlayer.location = 'cellar';
-            const { shardEnemies } = await import('../store.js');
+            const { shardEnemies } = await import('../state/store.js');
             shardEnemies.delete('cellar');
             await handleCommand('pickup');
             expect(emitSpy).toHaveBeenCalledWith('log', expect.objectContaining({ msg: expect.stringMatching(/nothing/i) }));
@@ -200,7 +200,7 @@ describe('Inventory System (Phase 7.85)', () => {
     describe('fetch quests', () => {
         test('fetch quest progress updates when item is granted', async () => {
             localPlayer.quests['tome_collection'] = { progress: 0, completed: false };
-            const { grantItem } = await import('../commands.js');
+            const { grantItem } = await import('../commands/index.js');
             grantItem('old_tome');
             expect(localPlayer.quests['tome_collection'].progress).toBe(1);
         });

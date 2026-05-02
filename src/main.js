@@ -1,5 +1,5 @@
-import { localPlayer } from './store.js';
-import { flushSync } from './persistence.js';
+import { localPlayer } from './state/store.js';
+import { flushSync } from './state/persistence.js';
 import { start } from './main/bootstrap.js';
 
 // E1: Emergency Flush on tab close or backgrounding

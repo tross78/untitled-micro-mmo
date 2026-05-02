@@ -1,5 +1,5 @@
 import { STORAGE_KEY, SAVE_VERSION } from './store.js';
-import { scopedStorageKey } from './runtime.js';
+import { scopedStorageKey } from '../infra/runtime.js';
 
 let saveTimer = null;
 

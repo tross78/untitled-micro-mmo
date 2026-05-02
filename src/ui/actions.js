@@ -1,7 +1,7 @@
-import { NPCS, ENEMIES, ITEMS, RECIPES, QUESTS } from '../data.js';
-import { ACTION } from '../input.js';
-import { GAME_NAME } from '../data.js';
-import { players } from '../store.js';
+import { NPCS, ENEMIES, ITEMS, RECIPES, QUESTS } from '../engine/data.js';
+import { ACTION } from '../engine/input.js';
+import { GAME_NAME } from '../engine/data.js';
+import { players } from '../state/store.js';
 import { refreshStatusBar } from './status.js';
 
 let uiState = 'root';

@@ -1,6 +1,6 @@
-import { seededRNG, hashStr } from '../rules.js';
-import { CORPORA } from '../data.js';
-import { generateSentence } from '../markov.js';
+import { seededRNG, hashStr } from '../rules/index.js';
+import { CORPORA } from '../engine/data.js';
+import { generateSentence } from '../engine/markov.js';
 
 export const startTicker = (worldState, onTick) => {
     const updateTicker = () => {

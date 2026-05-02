@@ -1,19 +1,19 @@
-import { localPlayer } from './store.js';
-import { log } from './ui.js';
-import { bus } from './eventbus.js';
-import { joinInstance, currentInstance, currentRtcConfig } from './networking.js';
+import { localPlayer } from '../state/store.js';
+import { log } from '../ui/index.js';
+import { bus } from '../state/eventbus.js';
+import { joinInstance, currentInstance, currentRtcConfig } from '../network/index.js';
 
-import { handleCombatCommands } from './commands/combat.js';
-import { handleSocialCommands } from './commands/social.js';
-import { handleInventoryCommands } from './commands/inventory.js';
-import { handleMovementCommands } from './commands/movement.js';
-import { handleNPCCommands } from './commands/npc.js';
-import { handleAdminCommands } from './commands/admin.js';
-import { handleMiscCommands } from './commands/misc.js';
-import { startStateChannel } from './commands/duel.js';
+import { handleCombatCommands } from './combat.js';
+import { handleSocialCommands } from './social.js';
+import { handleInventoryCommands } from './inventory.js';
+import { handleMovementCommands } from './movement.js';
+import { handleNPCCommands } from './npc.js';
+import { handleAdminCommands } from './admin.js';
+import { handleMiscCommands } from './misc.js';
+import { startStateChannel } from './duel.js';
 
-export * from './commands/helpers.js';
-export * from './commands/duel.js';
+export * from './helpers.js';
+export * from './duel.js';
 
 export const handleCommand = async (cmd) => {
     const raw = cmd.trim();

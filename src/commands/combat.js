@@ -1,13 +1,13 @@
-import { localPlayer, worldState, shardEnemies } from '../store.js';
-import { world, ENEMIES, ITEMS, QUESTS } from '../data.js';
-import { hashStr, seededRNG, levelBonus, resolveAttack, rollLoot, xpToLevel, getTimeOfDay } from '../rules.js';
-import { log, triggerShake } from '../ui.js';
-import { bus } from '../eventbus.js';
+import { localPlayer, worldState, shardEnemies } from '../state/store.js';
+import { world, ENEMIES, ITEMS, QUESTS } from '../engine/data.js';
+import { hashStr, seededRNG, levelBonus, resolveAttack, rollLoot, xpToLevel, getTimeOfDay } from '../rules/index.js';
+import { log, triggerShake } from '../ui/index.js';
+import { bus } from '../state/eventbus.js';
 import { selfId } from '../network/transport.js';
-import { gameActions } from '../networking.js';
-import { signMessage } from '../crypto.js';
-import { playerKeys, myEntry } from '../identity.js';
-import { saveLocalState } from '../persistence.js';
+import { gameActions } from '../network/index.js';
+import { signMessage } from '../security/crypto.js';
+import { playerKeys, myEntry } from '../security/identity.js';
+import { saveLocalState } from '../state/persistence.js';
 import { nameColor, getBestGear, grantItem } from './helpers.js';
 
 export const handleCombatCommands = async (command, args) => {

@@ -1,7 +1,7 @@
-import { ENEMIES } from '../data.js';
+import { ENEMIES } from '../engine/data.js';
 import { cmpHLC, recvHLC } from './hlc.js';
 import { selfId } from './transport.js';
-import { localPlayer, players } from '../store.js';
+import { localPlayer, players } from '../state/store.js';
 
 const MAX_XP_PER_MS = Math.max(...Object.values(ENEMIES).map(e => e.xp || 0), 1) / 5000;
 const XP_BUCKET_CAPACITY = MAX_XP_PER_MS * 60000;

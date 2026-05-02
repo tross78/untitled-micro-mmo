@@ -1,11 +1,11 @@
-import { localPlayer, players, shardEnemies, worldState, pendingTrade, setPendingTrade } from '../store.js';
-import { world, QUESTS, ENEMIES, NPCS, ITEMS } from '../data.js';
-import { validateMove, xpToLevel } from '../rules.js';
-import { log, getHealthBar, printStatus } from '../ui.js';
-import { bus } from '../eventbus.js';
-import { saveLocalState } from '../persistence.js';
-import { gameActions } from '../networking.js';
-import { myEntry } from '../identity.js';
+import { localPlayer, players, shardEnemies, worldState, pendingTrade, setPendingTrade } from '../state/store.js';
+import { world, QUESTS, ENEMIES, NPCS, ITEMS } from '../engine/data.js';
+import { validateMove, xpToLevel } from '../rules/index.js';
+import { log, getHealthBar, printStatus } from '../ui/index.js';
+import { bus } from '../state/eventbus.js';
+import { saveLocalState } from '../state/persistence.js';
+import { gameActions } from '../network/index.js';
+import { myEntry } from '../security/identity.js';
 import { getPlayerName, getNPCsAt, nameColor, getTag, grantItem } from './helpers.js';
 
 export const handleMovementCommands = async (command, args) => {

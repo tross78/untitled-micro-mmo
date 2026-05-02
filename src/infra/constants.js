@@ -1,4 +1,4 @@
-import { GAME_NAME } from './data.js';
+import { GAME_NAME } from '../engine/data.js';
 
 export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
 

@@ -3,7 +3,7 @@ import {
     getArbiterUrl,
     resolveBootstrapArbiterUrl,
     setResolvedArbiterUrl,
-} from '../runtime.js';
+} from '../infra/runtime.js';
 
 describe('runtime bootstrap resolution', () => {
     beforeEach(() => {

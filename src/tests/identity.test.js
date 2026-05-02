@@ -5,12 +5,12 @@ jest.mock('@trystero-p2p/torrent', () => ({
     selfId: 'self-peer-id',
 }));
 
-import { initIdentity, myEntry } from '../identity.js';
-import { localPlayer } from '../store.js';
-import { GAME_NAME } from '../data.js';
-import { hashStr } from '../rules.js';
+import { initIdentity, myEntry } from '../security/identity.js';
+import { localPlayer } from '../state/store.js';
+import { GAME_NAME } from '../engine/data.js';
+import { hashStr } from '../rules/index.js';
 import { presenceSignaturePayload } from '../network/packer.js';
-import { setNode, verifyMessage } from '../crypto.js';
+import { setNode, verifyMessage } from '../security/crypto.js';
 
 function makeStoredKeyPair() {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');

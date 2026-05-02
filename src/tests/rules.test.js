@@ -5,11 +5,11 @@ import {
     getSeason, getSeasonNumber, rollScarcity,
     getMood, getThreatLevel, deriveWorldState,
     _resetMoodCache,
-} from '../rules.js';
+} from '../rules/index.js';
 
 import {
     world, MOOD_INITIAL, SCARCITY_ITEMS
-} from '../data.js';
+} from '../engine/data.js';
 
 beforeEach(() => _resetMoodCache());
 
@@ -581,7 +581,7 @@ describe('getTimeOfDay', () => {
         // Mock Date.now to 12:00 PM
         const noon = new Date('2026-04-27T12:00:00Z').getTime();
         jest.spyOn(Date, 'now').mockReturnValue(noon);
-        const { getTimeOfDay } = require('../rules.js');
+        const { getTimeOfDay } = require('../rules/index.js');
         expect(getTimeOfDay()).toBe('day');
         Date.now.mockRestore();
     });
@@ -590,7 +590,7 @@ describe('getTimeOfDay', () => {
         // Mock Date.now to 10:00 PM
         const night = new Date('2026-04-27T22:00:00Z').getTime();
         jest.spyOn(Date, 'now').mockReturnValue(night);
-        const { getTimeOfDay } = require('../rules.js');
+        const { getTimeOfDay } = require('../rules/index.js');
         expect(getTimeOfDay()).toBe('night');
         Date.now.mockRestore();
     });

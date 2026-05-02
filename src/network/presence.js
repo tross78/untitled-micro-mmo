@@ -1,7 +1,7 @@
-import { signMessage } from '../crypto.js';
-import { localPlayer, players, trackPlayer } from '../store.js';
+import { signMessage } from '../security/crypto.js';
+import { localPlayer, players, trackPlayer } from '../state/store.js';
 import { packPresence, unpackPresence, presenceSignaturePayload } from './packer.js';
-import { playerKeys } from '../identity.js';
+import { playerKeys } from '../security/identity.js';
 import { Minisketch } from './minisketch.js';
 import { selfId } from './transport.js';
 

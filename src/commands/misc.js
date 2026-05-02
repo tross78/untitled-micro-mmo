@@ -1,8 +1,8 @@
-import { localPlayer, players, worldState, hasSyncedWithArbiter } from '../store.js';
-import { ITEMS } from '../data.js';
-import { levelBonus, getShardName } from '../rules.js';
-import { log, printStatus } from '../ui.js';
-import { globalRooms, rooms, currentInstance } from '../networking.js';
+import { localPlayer, players, worldState, hasSyncedWithArbiter } from '../state/store.js';
+import { ITEMS } from '../engine/data.js';
+import { levelBonus, getShardName } from '../rules/index.js';
+import { log, printStatus } from '../ui/index.js';
+import { globalRooms, rooms, currentInstance } from '../network/index.js';
 import { escapeHtml, getTag } from './helpers.js';
 
 export const handleMiscCommands = async (command, args) => {

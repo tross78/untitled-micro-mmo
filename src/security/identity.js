@@ -1,10 +1,10 @@
 import { importKey, generateKeyPair, exportKey, signMessage } from './crypto.js';
-import { MASTER_PUBLIC_KEY } from './constants.js';
-import { localPlayer } from './store.js';
-import { hashStr } from './rules.js';
-import { GAME_NAME } from './data.js';
-import { presenceSignaturePayload } from './network/packer.js';
-import { scopedStorageKey } from './runtime.js';
+import { MASTER_PUBLIC_KEY } from '../infra/constants.js';
+import { localPlayer } from '../state/store.js';
+import { hashStr } from '../rules/index.js';
+import { GAME_NAME } from '../engine/data.js';
+import { presenceSignaturePayload } from '../network/packer.js';
+import { scopedStorageKey } from '../infra/runtime.js';
 
 export let playerKeys = null;
 export let arbiterPublicKey = null;

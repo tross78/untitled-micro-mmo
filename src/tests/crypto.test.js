@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { computeHash, createMerkleRoot, signMessage, verifyMessage } from '../crypto.js';
+import { computeHash, createMerkleRoot, signMessage, verifyMessage } from '../security/crypto.js';
 
 // Helpers: generate a real Ed25519 keypair and extract raw Base64 fields
 // that match the format our crypto module uses (raw 32-byte public, PKCS8 seed private).

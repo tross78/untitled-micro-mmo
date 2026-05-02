@@ -1,4 +1,4 @@
-import { signMessage, verifyMessage, computeHash, importKey, setNode } from '../crypto.js';
+import { signMessage, verifyMessage, computeHash, importKey, setNode } from '../security/crypto.js';
 
 describe('Crypto Node.js Implementation', () => {
     beforeAll(() => {

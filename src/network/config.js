@@ -1,4 +1,4 @@
-import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../constants.js';
+import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
 
 export const ROLLUP_INTERVAL = 10000;
 export const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;

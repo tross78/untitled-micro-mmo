@@ -1,4 +1,4 @@
-import * as audio from '../audio.js';
+import * as audio from '../engine/audio.js';
 
 // Mock AudioContext
 const mockOscillator = {

@@ -1,7 +1,7 @@
-import { levelBonus } from '../rules.js';
-import { ITEMS } from '../data.js';
-import { worldState } from '../store.js';
-import { log } from '../ui.js';
+import { levelBonus } from '../rules/index.js';
+import { ITEMS } from '../engine/data.js';
+import { worldState } from '../state/store.js';
+import { log } from './index.js';
 
 export const refreshStatusBar = (localPlayer, world) => {
     const statusLeft = document.getElementById('status-left');

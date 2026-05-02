@@ -26,23 +26,23 @@ if (typeof global.BroadcastChannel === 'undefined') {
 }
 
 // 1. Rules & Simulation
-import * as Rules from '../rules.js';
-import * as Data from '../data.js';
+import * as Rules from '../rules/index.js';
+import * as Data from '../engine/data.js';
 
 // 2. State & Identity
-import * as Store from '../store.js';
-import * as Persistence from '../persistence.js';
+import * as Store from '../state/store.js';
+import * as Persistence from '../state/persistence.js';
 
 // 3. Networking & Protocol
-import * as Networking from '../networking.js';
+import * as Networking from '../network/index.js';
 import * as Packer from '../network/packer.js';
-import * as Crypto from '../crypto.js';
+import * as Crypto from '../security/crypto.js';
 
 // 4. UI & Commands
-import * as Commands from '../commands.js';
-import * as UI from '../ui.js';
-import * as Ads from '../ads.js';
-import * as Autocomplete from '../autocomplete.js';
+import * as Commands from '../commands/index.js';
+import * as UI from '../ui/index.js';
+import * as Ads from '../engine/ads.js';
+import * as Autocomplete from '../engine/autocomplete.js';
 
 describe('Deep Import/Export Audit', () => {
 

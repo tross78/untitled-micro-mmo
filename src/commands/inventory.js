@@ -1,12 +1,12 @@
-import { localPlayer, players, pendingTrade, setPendingTrade, worldState } from '../store.js';
-import { ITEMS, QUESTS, RECIPES } from '../data.js';
-import { levelBonus, xpToLevel, getTimeOfDay } from '../rules.js';
-import { log } from '../ui.js';
-import { bus } from '../eventbus.js';
-import { saveLocalState } from '../persistence.js';
-import { gameActions } from '../networking.js';
-import { playerKeys } from '../identity.js';
-import { signMessage } from '../crypto.js';
+import { localPlayer, players, pendingTrade, setPendingTrade, worldState } from '../state/store.js';
+import { ITEMS, QUESTS, RECIPES } from '../engine/data.js';
+import { levelBonus, xpToLevel, getTimeOfDay } from '../rules/index.js';
+import { log } from '../ui/index.js';
+import { bus } from '../state/eventbus.js';
+import { saveLocalState } from '../state/persistence.js';
+import { gameActions } from '../network/index.js';
+import { playerKeys } from '../security/identity.js';
+import { signMessage } from '../security/crypto.js';
 import { getNPCsAt, grantItem } from './helpers.js';
 
 export const handleInventoryCommands = async (command, args) => {

@@ -1,21 +1,21 @@
-import { handleCommand, getBestGear } from '../commands.js';
-import { localPlayer, worldState } from '../store.js';
-import { QUESTS } from '../data.js';
-import { bus } from '../eventbus.js';
+import { handleCommand, getBestGear } from '../commands/index.js';
+import { localPlayer, worldState } from '../state/store.js';
+import { QUESTS } from '../engine/data.js';
+import { bus } from '../state/eventbus.js';
 
 // Mocking dependencies
-jest.mock('../persistence.js', () => ({
+jest.mock('../state/persistence.js', () => ({
     saveLocalState: jest.fn()
 }));
 
-jest.mock('../ui.js', () => ({
+jest.mock('../ui/index.js', () => ({
     log: jest.fn(),
     printStatus: jest.fn(),
     triggerShake: jest.fn(),
     getHealthBar: jest.fn(() => '[HHH]')
 }));
 
-jest.mock('../networking.js', () => ({
+jest.mock('../network/index.js', () => ({
     gameActions: {
         sendMove: jest.fn(),
         sendEmote: jest.fn(),
@@ -27,8 +27,8 @@ jest.mock('../networking.js', () => ({
     currentRtcConfig: {}
 }));
 
-jest.mock('../rules.js', () => {
-    const original = jest.requireActual('../rules.js');
+jest.mock('../rules/index.js', () => {
+    const original = jest.requireActual('../rules/index.js');
     return {
         ...original,
         getNPCLocation: jest.fn((id) => {
@@ -127,7 +127,7 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         });
 
         test('grantItem updates fetch quest progress', () => {
-            const { grantItem } = require('../commands.js');
+            const { grantItem } = require('../commands/index.js');
             localPlayer.quests['gather_wood'] = { progress: 0, completed: false };
             
             grantItem('wood');
@@ -212,7 +212,7 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         });
 
         test('forest_wolf cannot be attacked at night', async () => {
-            const { getTimeOfDay } = require('../rules.js');
+            const { getTimeOfDay } = require('../rules/index.js');
             getTimeOfDay.mockReturnValue('night');
             
             localPlayer.location = 'forest_edge';
@@ -238,7 +238,7 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         test('getNPCLocation works with empty seed and returns home for non-patrol NPCs', () => {
             // This is the offline case: worldState.seed starts as '' before arbiter connects.
             // Non-patrol NPCs must still appear at their home location.
-            const { getNPCLocation } = jest.requireActual('../rules.js');
+            const { getNPCLocation } = jest.requireActual('../rules/index.js');
             expect(getNPCLocation('barkeep', '', 0)).toBe('tavern');
             expect(getNPCLocation('merchant', '', 0)).toBe('market');
         });

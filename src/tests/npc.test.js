@@ -1,5 +1,5 @@
-import { getNPCLocation, getNPCDialogue } from '../rules.js';
-import { NPCS } from '../data.js';
+import { getNPCLocation, getNPCDialogue } from '../rules/index.js';
+import { NPCS } from '../engine/data.js';
 
 describe('Deterministic NPC Logic', () => {
     const seed = 'test-seed';

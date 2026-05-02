@@ -1,8 +1,8 @@
-import { players, localPlayer } from '../store.js';
-import { ITEMS, QUESTS, NPCS } from '../data.js';
-import { getNPCLocation } from '../rules.js';
-import { bus } from '../eventbus.js';
-import { worldState } from '../store.js';
+import { players, localPlayer } from '../state/store.js';
+import { ITEMS, QUESTS, NPCS } from '../engine/data.js';
+import { getNPCLocation } from '../rules/index.js';
+import { bus } from '../state/eventbus.js';
+import { worldState } from '../state/store.js';
 
 export const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 

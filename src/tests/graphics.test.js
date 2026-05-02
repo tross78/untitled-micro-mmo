@@ -1,4 +1,4 @@
-import { drawTile, generateCharacterSprite, getWalkPose, zoneTileType } from '../graphics.js';
+import { drawTile, generateCharacterSprite, getWalkPose, zoneTileType } from '../graphics/graphics.js';
 
 function makeCtx() {
     return {

@@ -1,4 +1,4 @@
-import { bus } from '../eventbus.js';
+import { bus } from '../state/eventbus.js';
 
 describe('EventBus', () => {
   test('emits events to multiple subscribers', () => {

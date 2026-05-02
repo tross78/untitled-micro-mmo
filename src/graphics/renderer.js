@@ -1,7 +1,7 @@
 import { drawTile, generateCharacterSprite, zoneTileType } from './graphics.js';
-import { drawRadar } from './ui.js';
-import { VIEWPORT_W, VIEWPORT_H, TILE_PX } from './constants.js';
-import { getTimeOfDay } from './rules.js';
+import { drawRadar } from '../ui/index.js';
+import { VIEWPORT_W, VIEWPORT_H, TILE_PX } from '../infra/constants.js';
+import { getTimeOfDay } from '../rules/index.js';
 
 const ARTICLES = new Set(['the', 'a', 'an']);
 const shortName = (name) => {

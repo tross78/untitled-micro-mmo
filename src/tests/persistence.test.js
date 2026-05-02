@@ -1,5 +1,5 @@
-import { saveLocalState, loadState } from '../persistence.js';
-import { STORAGE_KEY, SAVE_VERSION } from '../store.js';
+import { saveLocalState, loadState } from '../state/persistence.js';
+import { STORAGE_KEY, SAVE_VERSION } from '../state/store.js';
 
 // Mock IndexedDB
 const mockIDB = {

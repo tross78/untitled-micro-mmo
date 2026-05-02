@@ -1,5 +1,5 @@
-import { InputManager, inputManager, ACTION } from '../input.js';
-import { bus } from '../eventbus.js';
+import { InputManager, inputManager, ACTION } from '../engine/input.js';
+import { bus } from '../state/eventbus.js';
 
 describe('InputManager', () => {
   let emitSpy;

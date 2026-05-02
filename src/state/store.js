@@ -1,9 +1,9 @@
 // @ts-check
-import { selfId } from './network/transport.js';
-import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from './data.js';
-import { deriveWorldState, xpToLevel } from './rules.js';
-import { world } from './data.js';
-import { scopedStorageKey } from './runtime.js';
+import { selfId } from '../network/transport.js';
+import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from '../engine/data.js';
+import { deriveWorldState, xpToLevel } from '../rules/index.js';
+import { world } from '../engine/data.js';
+import { scopedStorageKey } from '../infra/runtime.js';
 
 export const WORLD_STATE_KEY = scopedStorageKey(`${GAME_NAME}_worldstate_v1`);
 export const STORAGE_KEY = scopedStorageKey(`${GAME_NAME}_state_v5`);

@@ -9,7 +9,7 @@ const mockSubtle = {
     digest: jest.fn(),
 };
 
-import { generateKeyPair, exportKey, importKey, signMessage, verifyMessage, computeHash, setNode, isNode } from '../crypto.js';
+import { generateKeyPair, exportKey, importKey, signMessage, verifyMessage, computeHash, setNode, isNode } from '../security/crypto.js';
 
 describe('Crypto Browser Path Mocked Tests', () => {
     let originalCrypto;

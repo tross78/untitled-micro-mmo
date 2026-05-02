@@ -1,8 +1,8 @@
-import { localPlayer } from '../store.js';
-import { xpToLevel } from '../rules.js';
-import { log } from '../ui.js';
-import { saveLocalState } from '../persistence.js';
-import { ITEMS } from '../data.js';
+import { localPlayer } from '../state/store.js';
+import { xpToLevel } from '../rules/index.js';
+import { log } from '../ui/index.js';
+import { saveLocalState } from '../state/persistence.js';
+import { ITEMS } from '../engine/data.js';
 import { grantItem, nameColor } from './helpers.js';
 
 export const handleAdminCommands = async (command, args) => {

@@ -1,6 +1,6 @@
-import { TAB_CHANNEL, arbiterPublicKey, hasSyncedWithArbiter, updateSimulation } from '../store.js';
-import { verifyMessage } from '../crypto.js';
-import { lastValidStatePacket } from '../networking.js';
+import { TAB_CHANNEL, arbiterPublicKey, hasSyncedWithArbiter, updateSimulation } from '../state/store.js';
+import { verifyMessage } from '../security/crypto.js';
+import { lastValidStatePacket } from '../network/index.js';
 import { triggerLogicalRefresh } from './events.js'; // Will be defined later
 
 export const initCrossTabSync = () => {

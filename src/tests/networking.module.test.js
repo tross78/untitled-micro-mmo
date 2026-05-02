@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 
 // Mock crypto and other dependencies
-jest.mock('../crypto.js', () => ({
+jest.mock('../security/crypto.js', () => ({
     importKey: jest.fn(),
     verifyMessage: jest.fn(),
     signMessage: jest.fn(),
@@ -31,9 +31,9 @@ jest.mock('@trystero-p2p/torrent', () => ({
     selfId: 'bbb',
 }));
 
-import { initNetworking, isProposer, seedFromSnapshot, updateSimulation, gameActions } from '../networking.js';
-import { buildTorrentConfig } from '../networking.js';
-import { hashStr } from '../rules.js';
+import { initNetworking, isProposer, seedFromSnapshot, updateSimulation, gameActions } from '../network/index.js';
+import { buildTorrentConfig } from '../network/index.js';
+import { hashStr } from '../rules/index.js';
 import {
     hasSyncedWithArbiter,
     localPlayer,
@@ -43,11 +43,11 @@ import {
     worldState,
     WORLD_STATE_KEY,
     trackPlayer,
-} from '../store.js';
-import { verifyMessage, importKey } from '../crypto.js';
+} from '../state/store.js';
+import { verifyMessage, importKey } from '../security/crypto.js';
 import { checkAndUpdateHlc } from '../network/hlc.js';
 import { joinRoom } from '@trystero-p2p/torrent';
-import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS } from '../constants.js';
+import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS } from '../infra/constants.js';
 
 describe('networking module hardening', () => {
     beforeEach(async () => {

@@ -1,6 +1,6 @@
 
-import { seedFromSnapshot } from '../networking.js';
-import { players, trackPlayer } from '../store.js';
+import { seedFromSnapshot } from '../network/index.js';
+import { players, trackPlayer } from '../state/store.js';
 
 describe('Ghost Presence Logic', () => {
     beforeEach(() => {

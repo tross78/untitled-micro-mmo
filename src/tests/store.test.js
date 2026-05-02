@@ -4,11 +4,11 @@ jest.mock('@trystero-p2p/torrent', () => ({
     selfId: 'self-peer-id',
 }));
 
-jest.mock('../persistence.js', () => ({
+jest.mock('../state/persistence.js', () => ({
     loadState: jest.fn(),
 }));
 
-import { loadState } from '../persistence.js';
+import { loadState } from '../state/persistence.js';
 import {
     _presenceDelta,
     bans,
@@ -26,7 +26,7 @@ import {
     trackShadowPlayer,
     worldState,
     WORLD_STATE_KEY,
-} from '../store.js';
+} from '../state/store.js';
 
 describe('store state helpers', () => {
     beforeEach(() => {

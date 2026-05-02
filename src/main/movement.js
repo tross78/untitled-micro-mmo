@@ -1,11 +1,11 @@
-import { localPlayer, shardEnemies } from '../store.js';
-import { world, QUESTS } from '../data.js';
-import { saveLocalState } from '../persistence.js';
-import { gameActions, joinInstance, currentInstance, currentRtcConfig, preJoinShard } from '../networking.js';
-import { myEntry } from '../identity.js';
-import { bus } from '../eventbus.js';
-import { xpToLevel } from '../rules.js';
-import { grantItem } from '../commands.js';
+import { localPlayer, shardEnemies } from '../state/store.js';
+import { world, QUESTS } from '../engine/data.js';
+import { saveLocalState } from '../state/persistence.js';
+import { gameActions, joinInstance, currentInstance, currentRtcConfig, preJoinShard } from '../network/index.js';
+import { myEntry } from '../security/identity.js';
+import { bus } from '../state/eventbus.js';
+import { xpToLevel } from '../rules/index.js';
+import { grantItem } from '../commands/index.js';
 
 let isMoving = false;
 
