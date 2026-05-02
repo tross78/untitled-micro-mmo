@@ -9,7 +9,7 @@ import {
 
 import {
     world, MOOD_INITIAL, SCARCITY_ITEMS
-} from '../engine/data.js';
+} from '../content/data.js';
 
 beforeEach(() => _resetMoodCache());
 

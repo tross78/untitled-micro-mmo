@@ -18,7 +18,7 @@ import {
   world,
   DEFAULT_PLAYER_STATS,
   INSTANCE_CAP,
-} from '../engine/data.js';
+} from './data.js';
 import { defineEnemy, defineItem, defineNpc, defineQuest, defineRecipe, defineRoom } from './define.js';
 import { Registry } from './registry.js';
 

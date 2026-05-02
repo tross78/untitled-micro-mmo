@@ -1,18 +1,18 @@
 // @ts-check
 import { joinRoom as joinTorrent, selfId } from './transport.js';
-import { getShardName, hashStr, seededRNG, xpToLevel, rollLoot, getTimeOfDay } from '../rules/index.js';
-import { TORRENT_TRACKERS, STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from '../infra/constants.js';
+import { getShardName, hashStr, seededRNG, xpToLevel, rollLoot } from '../rules/index.js';
+import { STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from '../infra/constants.js';
 import { 
     worldState, localPlayer, hasSyncedWithArbiter,
-    TAB_CHANNEL, activeChannels, setPendingDuel, WORLD_STATE_KEY,
-    players, shadowPlayers, shardEnemies, trackPlayer, trackShadowPlayer, bansHash, bans,
+    TAB_CHANNEL, activeChannels, setPendingDuel,
+    players, shadowPlayers, shardEnemies, trackPlayer, trackShadowPlayer, bans,
     _presenceDelta, clearPresenceDelta, evictPlayer, evictShadowPlayer
 } from '../state/store.js';
-import { INSTANCE_CAP, ENEMIES, world } from '../engine/data.js';
+import { INSTANCE_CAP, ENEMIES } from '../content/data.js';
 import { verifyMessage, signMessage, exportKey, importKey } from '../security/crypto.js';
 import { Minisketch } from './minisketch.js';
 import { HyParView } from './hyparview.js';
-import { sendHLC, recvHLC } from './hlc.js';
+import { sendHLC } from './hlc.js';
 import { 
     packMove, unpackMove, packEmote, unpackEmote, 
     packPresence, packDuelCommit, unpackDuelCommit,
@@ -21,8 +21,8 @@ import {
     presenceSignaturePayload
 } from './packer.js';
 import { arbiterPublicKey, playerKeys, myEntry } from '../security/identity.js';
-import { log, printStatus } from '../ui/index.js';
-import { GAME_NAME } from '../engine/data.js';
+import { log } from '../ui/index.js';
+import { GAME_NAME } from '../content/data.js';
 import { bus } from '../state/eventbus.js';
 import { saveLocalState } from '../state/persistence.js';
 import { getArbiterUrl } from '../infra/runtime.js';
@@ -33,7 +33,7 @@ import {
     buildTorrentConfig, isUsingTurnFallback 
 } from './config.js';
 import { 
-    checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState 
+    checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState, evictSecurityPeer 
 } from './security.js';
 import { 
     buildSketch, packSignedPresence, unpackPresencePacket, seedFromSnapshot 
@@ -129,7 +129,7 @@ export const initNetworking = async (rtcConfig) => {
         gameActions.submitRollup = (rollup) => sendRollup(rollup);
         gameActions.submitFraudProof = (proof) => sendFraud(proof);
 
-        getState(async (data, peerId) => {
+        getState(async (data, _peerId) => {
             const { state, signature } = data;
             const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
             try {
@@ -339,7 +339,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendTradeFinal, getTradeFinal] = r.makeAction('trade_finalized');
         const [sendSketch, getSketch] = r.makeAction('presence_sketch');
         const [sendRequest, getRequest] = r.makeAction('request_presence');
-        const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
+        const [sendIdentity] = r.makeAction('identity_handshake');
         const [sendPresenceDelta, getPresenceDelta] = r.makeAction('presence_delta');
         const [sendAnnounce, getAnnounce] = r.makeAction('presence_announce');
         const [sendCommit, getCommit] = r.makeAction('commit_action');
@@ -348,7 +348,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const hpv = new HyParView();
         const _pendingPresence = new Map();
 
-        getPresenceDelta(async ({ joined, left }) => {
+        getPresenceDelta(async ({ joined, left }, peerId) => {
             (left || []).forEach(id => { if (id !== selfId) evictPlayer(id); });
             const missing = (joined || []).filter(id => id !== selfId && !players.has(id));
             if (missing.length > 0) sendRequest(missing, [peerId]);
@@ -372,7 +372,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 const { signature, ...sigData } = unpacked;
                 const pubKey = await importKey(entry.publicKey, 'public');
                 if (!await verifyMessage(JSON.stringify(presenceSignaturePayload(sigData)), signature, pubKey)) return;
-            } catch { return; }
+            } catch (_e) { return; }
 
             if (unpacked.hlc && !checkAndUpdateHlc(peerId, unpacked.hlc)) return;
             if (unpacked.level !== xpToLevel(unpacked.xp)) return;
@@ -414,7 +414,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getSketch(async (remoteArr, peerId) => {
             const localMs = buildSketch();
             const remoteMs = Minisketch.fromSerialized(remoteArr);
-            const { added, removed, failure } = Minisketch.decode(localMs, remoteMs, localIds(), []);
+            const { added, removed, failure } = Minisketch.decode(localMs, remoteMs);
             if (failure) { sendRequest(localIds().map(String), [peerId]); return; }
             if (added.length > 32 || removed.length > 32) return;
             if (removed.length > 0) {
@@ -545,7 +545,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (data.from === data.to && entry.x !== undefined && (Math.abs(data.x - entry.x) + Math.abs(data.y - entry.y)) > 1) return;
                 trackPlayer(peerId, { ...entry, location: data.to, x: data.x, y: data.y, ts: Date.now() });
                 bus.emit('peer:move', { peerId, data });
-            } catch { }
+            } catch (_e) { /* ignore */ }
         });
 
         getEmote((buf, peerId) => bus.emit('peer:emote', { peerId, data: unpackEmote(buf) }));
@@ -556,13 +556,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         r.onPeerJoin(async peerId => {
             knownPeers.add(peerId); lastPeerSeenAt = Date.now(); hpv.onJoin(peerId);
-            try { sendSketch(buildSketch().serialize(), [peerId]); } catch { }
+            try { sendSketch(buildSketch().serialize(), [peerId]); } catch (_e) { /* ignore */ }
             const handshake = async () => {
                 if (!knownPeers.has(peerId) || !playerKeys) return;
                 try {
                     sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
                     const e = await myEntry(); if (e) sendPresenceSingle(e, [peerId]);
-                } catch { }
+                } catch (_e2) { /* ignore */ }
                 if (!players.get(peerId)?.publicKey) setTimeout(handshake, 3000);
             };
             setTimeout(handshake, 100);
@@ -570,7 +570,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         r.onPeerLeave(peerId => {
             bus.emit('peer:leave', { peerId }); knownPeers.delete(peerId); hpv.onLeave(peerId);
-            evictPlayer(peerId); evictShadowPlayer(peerId); xpBuckets.delete(peerId); peerHlc.delete(peerId);
+            evictPlayer(peerId); evictShadowPlayer(peerId); evictSecurityPeer(peerId);
             feedHeads.delete(peerId); pendingCommits.delete(peerId); _pendingPresence.delete(peerId);
             const c = activeChannels.get(peerId); if (c) { clearTimeout(c.timeoutId); activeChannels.delete(peerId); }
         });

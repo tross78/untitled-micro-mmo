@@ -1,4 +1,4 @@
-import { NPCS, CORPORA } from '../engine/data.js';
+import { NPCS, CORPORA } from '../content/data.js';
 import { generateSentence } from '../engine/markov.js';
 import { seededRNG, hashStr } from './utils.js';
 

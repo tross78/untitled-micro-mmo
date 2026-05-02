@@ -1,5 +1,5 @@
 import { players, localPlayer } from '../state/store.js';
-import { ITEMS, QUESTS, NPCS } from '../engine/data.js';
+import { ITEMS, QUESTS, NPCS } from '../content/data.js';
 import { getNPCLocation } from '../rules/index.js';
 import { bus } from '../state/eventbus.js';
 import { worldState } from '../state/store.js';

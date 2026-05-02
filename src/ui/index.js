@@ -1,5 +1,5 @@
 import { bus } from '../state/eventbus.js';
-import { initLogHandlers, injectLog } from './log.js';
+import { initLogHandlers } from './log.js';
 
 export * from './helpers.js';
 export * from './status.js';

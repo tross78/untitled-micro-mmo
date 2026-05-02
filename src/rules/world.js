@@ -1,4 +1,4 @@
-import { SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL } from '../engine/data.js';
+import { SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL } from '../content/data.js';
 import { seededRNG, hashStr } from './utils.js';
 
 export function getSeason(day) {

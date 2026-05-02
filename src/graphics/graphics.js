@@ -133,97 +133,195 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
     }
 }
 
-// --- AUTHORED SPRITE SILHOUETTES ---
-// 8x12 shapes (compact bitmask)
+// --- AUTHORED SPRITE BITMASKS ---
+// 8x12 grayscale templates (0: empty, 1: outline #000, 2: secondary #888, 3: primary #ccc, 4: accent #fff)
 const SHAPES = {
-    // Player: Heroic humanoid
     player: [
-        0x3C, 0x7E, 0x66, 0x7E, 0x3C, 0x3C, 0x7E, 0xDB, 0xDB, 0x7E, 0x66, 0x66
+        "00333300",
+        "03444430",
+        "03411430",
+        "03444430",
+        "00333300",
+        "00333300",
+        "03333330",
+        "32322323",
+        "32322323",
+        "03333330",
+        "03300330",
+        "03300330"
     ],
-    // Wolf: Quadruped with ears
     wolf: [
-        0x00, 0x00, 0x42, 0x24, 0x7E, 0xFF, 0xFF, 0xFF, 0xBD, 0x81, 0x81, 0xC3
+        "00000000",
+        "00000000",
+        "03000030",
+        "03300330",
+        "03333330",
+        "33333333",
+        "33433433",
+        "33333333",
+        "32333323",
+        "30300303",
+        "30300303",
+        "20200202"
     ],
-    // Guard: Humanoid with helmet/shield feel
     guard: [
-        0x3C, 0x7E, 0x7E, 0x7E, 0x3C, 0xBD, 0xFF, 0xFF, 0xFF, 0xFF, 0x66, 0x66
+        "00111100",
+        "01333310",
+        "01344310",
+        "01333310",
+        "00111100",
+        "02333320",
+        "23333332",
+        "23333332",
+        "23333332",
+        "23333332",
+        "02200220",
+        "02200220"
+    ],
+    potion: [
+        "00044000",
+        "00033000",
+        "00333300",
+        "03433430",
+        "03333330",
+        "03333330",
+        "00333300"
+    ],
+    heart: [
+        "00000000",
+        "03303300",
+        "34434430",
+        "34444430",
+        "34444430",
+        "03444300",
+        "00343000",
+        "00030000"
     ]
 };
 
-function drawSilhouette(ctx, type, pal) {
+/**
+ * Generates a grayscale template canvas for a shape.
+ * @param {string} type 
+ * @returns {OffscreenCanvas | null}
+ */
+export function getGrayscaleTemplate(type) {
     const shape = SHAPES[type];
-    if (!shape) return false;
+    if (!shape) return null;
     
-    ctx.fillStyle = pal.body;
+    const canvas = new OffscreenCanvas(16, 16);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const colors = {
+        '0': 'transparent',
+        '1': '#000000', // Outline
+        '2': '#888888', // Secondary
+        '3': '#cccccc', // Primary
+        '4': '#ffffff'  // Accent (Eyes/Highlights)
+    };
+
     shape.forEach((row, y) => {
-        for (let x = 0; x < 8; x++) {
-            if ((row >> (7 - x)) & 1) {
-                // Add some shading/texture based on row/column
-                ctx.fillStyle = (y < 5) ? pal.body : (x < 2 || x > 5) ? pal.dark : pal.body;
+        for (let x = 0; x < row.length; x++) {
+            const char = row[x];
+            if (char !== '0') {
+                ctx.fillStyle = colors[char];
                 ctx.fillRect(4 + x, 2 + y, 1, 1);
             }
         }
     });
-    // Eyes
-    ctx.fillStyle = pal.eye;
-    if (type === 'wolf') {
-        ctx.fillRect(6, 6, 1, 1);
-        ctx.fillRect(9, 6, 1, 1);
-    } else {
-        ctx.fillRect(6, 4, 1, 2);
-        ctx.fillRect(9, 4, 1, 2);
+    return canvas;
+}
+
+export const PALETTES = {
+    self:  { primary: '#00ff44', secondary: '#009922', outline: '#000000', accent: '#ffffff' },
+    peer:  { primary: '#00aaff', secondary: '#0066aa', outline: '#000000', accent: '#ffffff' },
+    npc:   { primary: '#ffdd00', secondary: '#aa8800', outline: '#000000', accent: '#ffffff' },
+    enemy: { primary: '#ff4444', secondary: '#aa1111', outline: '#000000', accent: '#ffff00' },
+};
+
+/**
+ * Utility to swap colors on a grayscale template canvas.
+ * Template rules: White (#fff) -> accent, Light Gray (#ccc) -> primary, 
+ * Mid Gray (#888) -> secondary, Black (#000) -> outline.
+ * @param {HTMLCanvasElement|OffscreenCanvas} template 
+ * @param {typeof PALETTES['self']} palette 
+ */
+export function applyPalette(template, palette) {
+    const canvas = new OffscreenCanvas(template.width, template.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return template;
+
+    ctx.drawImage(template, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    const hexToRgb = (hex) => {
+        const bigint = parseInt(hex.slice(1), 16);
+        return [ (bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255 ];
+    };
+
+    const p = hexToRgb(palette.primary);
+    const s = hexToRgb(palette.secondary);
+    const o = hexToRgb(palette.outline);
+    const a = hexToRgb(palette.accent);
+
+    for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], alpha = data[i+3];
+        if (alpha === 0) continue;
+        
+        // grayscale mapping based on R channel (since R=G=B in our template)
+        if (r === 255) { data[i]=a[0]; data[i+1]=a[1]; data[i+2]=a[2]; }
+        else if (r === 204) { data[i]=p[0]; data[i+1]=p[1]; data[i+2]=p[2]; }
+        else if (r === 136) { data[i]=s[0]; data[i+1]=s[1]; data[i+2]=s[2]; }
+        else if (r === 0) { data[i]=o[0]; data[i+1]=o[1]; data[i+2]=o[2]; }
     }
-    return true;
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
 }
 
 // Hash-identicon character sprite — 16×16, seeded from entity id
 export function generateCharacterSprite(seed, type) {
-    const colors = {
-        self:   { body: '#00ff44', dark: '#009922', eye: '#000000' },
-        peer:   { body: '#00aaff', dark: '#0066aa', eye: '#000000' },
-        npc:    { body: '#ffdd00', dark: '#aa8800', eye: '#000000' },
-        enemy:  { body: '#ff4444', dark: '#aa1111', eye: '#ffff00' },
-    };
-    const pal = colors[type] || colors.peer;
-    const rng = tileRng(seed);
-    const canvas = new OffscreenCanvas(16, 16);
-    const ctx = canvas.getContext('2d');
+    const pal = PALETTES[type] || PALETTES.peer;
+    const _rng = tileRng(seed);
 
-    // Attempt authored silhouette first
+    // 1. Attempt authored grayscale template
     let sType = null;
     if (type === 'self' || type === 'peer') sType = 'player';
     if (type === 'enemy') sType = 'wolf';
     if (type === 'npc') sType = 'guard';
 
-    if (sType && drawSilhouette(ctx, sType, pal)) {
-        return canvas;
+    const template = getGrayscaleTemplate(sType);
+    if (template) {
+        return applyPalette(template, pal);
     }
 
-    // Fallback to procedural identicon
-    // Head
-    ctx.fillStyle = pal.body;
+    // 2. Fallback to procedural identicon (colorized grayscale template)
+    const canvas = new OffscreenCanvas(16, 16);
+    const ctx = canvas.getContext('2d');
+    
+    // Head (#ccc)
+    ctx.fillStyle = '#cccccc';
     ctx.fillRect(5, 2, 6, 6);
-    // Eyes
-    ctx.fillStyle = pal.eye;
+    // Eyes (#fff)
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(6, 4, 1, 2);
     ctx.fillRect(9, 4, 1, 2);
-    // Body
-    ctx.fillStyle = pal.body;
+    // Body (#ccc)
+    ctx.fillStyle = '#cccccc';
     ctx.fillRect(5, 8, 6, 5);
-    // Arms
-    ctx.fillStyle = pal.dark;
+    // Arms (#888)
+    ctx.fillStyle = '#888888';
     ctx.fillRect(3, 8, 2, 4);
     ctx.fillRect(11, 8, 2, 4);
-    // Legs
-    ctx.fillStyle = pal.dark;
+    // Legs (#888)
+    ctx.fillStyle = '#888888';
     ctx.fillRect(5, 13, 2, 3);
     ctx.fillRect(9, 13, 2, 3);
-    // Random hair/hat detail
-    const hatColor = ['#aa4400', '#886622', '#224488', '#442266'][rng(4)];
-    ctx.fillStyle = hatColor;
+    // Hair (#000)
+    ctx.fillStyle = '#000000';
     ctx.fillRect(4, 1, 8, 2);
 
-    return canvas;
+    return applyPalette(canvas, pal);
 }
 
 // Walk cycle pose — used by Phase 8 sprite animation

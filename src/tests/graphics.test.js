@@ -7,6 +7,11 @@ function makeCtx() {
         arc: jest.fn(),
         fill: jest.fn(),
         fillRect: jest.fn(),
+        drawImage: jest.fn(),
+        getImageData: jest.fn(() => ({
+            data: new Uint8ClampedArray(16 * 16 * 4)
+        })),
+        putImageData: jest.fn(),
     };
 }
 
@@ -59,7 +64,10 @@ describe('graphics procedural primitives', () => {
             const canvas = generateCharacterSprite(123, type);
             expect(canvas.width).toBe(16);
             expect(canvas.height).toBe(16);
-            expect(canvas.ctx.fillRect).toHaveBeenCalled();
+            // Can be fillRect (fallback) or putImageData (bitmask + palette)
+            const wasDrawn = canvas.ctx.fillRect.mock.calls.length > 0 || 
+                             canvas.ctx.putImageData.mock.calls.length > 0;
+            expect(wasDrawn).toBe(true);
         });
     });
 

@@ -1,13 +1,12 @@
 import { selfId } from '../network/transport.js';
 import { activeChannels, localPlayer } from '../state/store.js';
 import { log } from '../ui/index.js';
-import { bus } from '../state/eventbus.js';
 import { hashStr, seededRNG, levelBonus, resolveAttack } from '../rules/index.js';
 import { gameActions } from '../network/index.js';
 import { playerKeys } from '../security/identity.js';
 import { signMessage } from '../security/crypto.js';
 import { saveLocalState } from '../state/persistence.js';
-import { DEFAULT_PLAYER_STATS } from '../engine/data.js';
+import { DEFAULT_PLAYER_STATS } from '../content/data.js';
 import { getPlayerEntry } from './helpers.js';
 
 export async function startStateChannel(targetId, targetName, day) {

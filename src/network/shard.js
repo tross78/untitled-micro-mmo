@@ -2,8 +2,6 @@ import { getShardName } from '../rules/index.js';
 import { localPlayer, shardEnemies, players, activeChannels } from '../state/store.js';
 import { joinRoom as joinTorrent } from './transport.js';
 import { buildTorrentConfig } from './config.js';
-import { INSTANCE_CAP } from '../engine/data.js';
-import { log } from '../ui/index.js';
 
 const preJoinCache = new Map();
 let currentInstance = 1;

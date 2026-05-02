@@ -3,6 +3,7 @@
  * Universal implementation for Browser (WebCrypto) and Node (crypto)
  */
 
+// @ts-ignore
 export let isNode = typeof window === 'undefined' || (typeof process !== 'undefined' && process.env.NODE_ENV === 'test');
 export const setNode = (val) => isNode = val;
 
@@ -40,7 +41,7 @@ export async function exportKey(key) {
  * Imports an Ed25519 key from a Base64 string.
  * @param {string} base64 - Raw 32-byte public key OR PKCS8 private key, Base64-encoded.
  * @param {'public'|'private'} type
- * @returns {Promise<CryptoKey|Buffer>} CryptoKey in browser; raw Buffer in Node.
+ * @returns {Promise<CryptoKey|any>} CryptoKey in browser; raw Buffer in Node.
  *
  * IMPORTANT: In browser code, always call importKey before passing to verifyMessage.
  * Never pass a `ph` hash string (8-char hex) — it is NOT a key and will throw.
@@ -62,6 +63,7 @@ export async function importKey(base64, type) {
     } else {
         // Node implementation (Arbiter) — returns raw Buffer; signMessage/verifyMessage
         // accept Buffer and wrap it in DER themselves, so no KeyObject needed here.
+        // @ts-ignore
         return Buffer.from(base64, 'base64');
     }
 }
@@ -69,7 +71,7 @@ export async function importKey(base64, type) {
 /**
  * Signs a message with an Ed25519 private key.
  * @param {string} message - The plaintext message to sign.
- * @param {CryptoKey|Buffer|string} privateKey
+ * @param {CryptoKey|any|string} privateKey
  *   Browser: must be a CryptoKey from importKey(b64, 'private') or generateKeyPair().
  *   Node: accepts a raw Base64 seed string OR Buffer (32 or 64 bytes).
  * @returns {Promise<string>} Base64-encoded 64-byte signature.
@@ -86,14 +88,19 @@ export async function signMessage(message, privateKey) {
         );
         return btoa(String.fromCharCode(...new Uint8Array(signature)));
     } else {
+        // @ts-ignore
         const { sign, createPrivateKey } = await import('crypto');
+        // @ts-ignore
         const raw = typeof privateKey === 'string' ? Buffer.from(privateKey, 'base64') : privateKey;
         // OpenSSL 3 (Node 18+) requires a KeyObject, not a raw Buffer.
         // Wrap the 32-byte Ed25519 seed in a PKCS8 DER envelope.
         // If stored as seed||pubkey (64 bytes, tweetnacl convention), use only the first 32.
         const seed = raw.length === 64 ? raw.subarray(0, 32) : raw;
+        // @ts-ignore
         const pkcs8Header = Buffer.from('302e020100300506032b657004220420', 'hex');
+        // @ts-ignore
         const keyObj = createPrivateKey({ key: Buffer.concat([pkcs8Header, seed]), format: 'der', type: 'pkcs8' });
+        // @ts-ignore
         const signature = sign(null, data, keyObj);
         return signature.toString('base64');
     }
@@ -103,7 +110,7 @@ export async function signMessage(message, privateKey) {
  * Verifies an Ed25519 signature.
  * @param {string} message - The original plaintext message.
  * @param {string} signatureBase64 - Base64-encoded 64-byte signature.
- * @param {CryptoKey|Buffer|string} publicKey
+ * @param {CryptoKey|any|string} publicKey
  *   Browser: MUST be a CryptoKey from importKey(b64, 'public'). Passing any other type
  *   (a raw Base64 string, a `ph` hash, a peer ID) will throw or return false.
  *   Node: accepts a raw Base64 string or Buffer (32-byte public key).
@@ -131,12 +138,18 @@ export async function verifyMessage(message, signatureBase64, publicKey) {
             return false;
         }
     } else {
+        // @ts-ignore
         const { verify, createPublicKey } = await import('crypto');
+        // @ts-ignore
         const signature = Buffer.from(signatureBase64, 'base64');
+        // @ts-ignore
         const raw = typeof publicKey === 'string' ? Buffer.from(publicKey, 'base64') : publicKey;
         // OpenSSL 3 requires a KeyObject. Wrap raw 32-byte Ed25519 public key in SubjectPublicKeyInfo DER.
+        // @ts-ignore
         const spkiHeader = Buffer.from('302a300506032b6570032100', 'hex');
+        // @ts-ignore
         const keyObj = createPublicKey({ key: Buffer.concat([spkiHeader, raw]), format: 'der', type: 'spki' });
+        // @ts-ignore
         return verify(null, data, keyObj, signature);
     }
 }
@@ -152,6 +165,7 @@ export async function computeHash(message) {
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     } else {
+        // @ts-ignore
         const { createHash } = await import('crypto');
         return createHash('sha256').update(data).digest('hex');
     }

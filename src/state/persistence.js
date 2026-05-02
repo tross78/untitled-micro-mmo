@@ -12,12 +12,12 @@ const DB_VERSION = 1;
 const getDB = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (e) => {
-        const db = e.target.result;
+        const db = (/** @type {any} */ (e.target)).result;
         if (!db.objectStoreNames.contains('player')) db.createObjectStore('player');
         if (!db.objectStoreNames.contains('world')) db.createObjectStore('world');
     };
-    request.onsuccess = (e) => resolve(e.target.result);
-    request.onerror = (e) => reject(e.target.error);
+    request.onsuccess = (e) => resolve((/** @type {any} */ (e.target)).result);
+    request.onerror = (e) => reject((/** @type {any} */ (e.target)).error);
 });
 
 const dbPut = async (store, key, val) => {
@@ -26,7 +26,7 @@ const dbPut = async (store, key, val) => {
         const tx = db.transaction(store, 'readwrite');
         tx.objectStore(store).put(val, key);
         tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e.target.error);
+        tx.onerror = (e) => reject((/** @type {any} */ (e.target)).error);
     });
 };
 
@@ -35,8 +35,8 @@ const dbGet = async (store, key) => {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(store, 'readonly');
         const req = tx.objectStore(store).get(key);
-        req.onsuccess = (e) => resolve(e.target.result);
-        req.onerror = (e) => reject(e.target.error);
+        req.onsuccess = (e) => resolve((/** @type {any} */ (e.target)).result);
+        req.onerror = (e) => reject((/** @type {any} */ (e.target)).error);
     });
 };
 

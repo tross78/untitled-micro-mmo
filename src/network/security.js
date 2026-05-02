@@ -1,4 +1,4 @@
-import { ENEMIES } from '../engine/data.js';
+import { ENEMIES } from '../content/data.js';
 import { cmpHLC, recvHLC } from './hlc.js';
 import { selfId } from './transport.js';
 import { localPlayer, players } from '../state/store.js';
@@ -46,4 +46,9 @@ export const buildLeafData = () => {
 export const clearSecurityState = () => {
     xpBuckets.clear();
     peerHlc.clear();
+};
+
+export const evictSecurityPeer = (peerId) => {
+    xpBuckets.delete(peerId);
+    peerHlc.delete(peerId);
 };

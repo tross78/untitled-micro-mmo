@@ -27,7 +27,7 @@ if (typeof global.BroadcastChannel === 'undefined') {
 
 // 1. Rules & Simulation
 import * as Rules from '../rules/index.js';
-import * as Data from '../engine/data.js';
+import * as Data from '../content/data.js';
 
 // 2. State & Identity
 import * as Store from '../state/store.js';

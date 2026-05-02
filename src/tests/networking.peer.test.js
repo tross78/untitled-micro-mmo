@@ -15,7 +15,7 @@ jest.mock('@trystero-p2p/torrent', () => ({
 }));
 
 import { packPresence, unpackPresence, ROOM_MAP } from '../network/packer.js';
-import { world } from '../engine/data.js';
+import { world } from '../content/data.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

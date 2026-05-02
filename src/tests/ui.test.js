@@ -14,7 +14,7 @@ jest.mock('@trystero-p2p/torrent', () => ({
 
 import { bus } from '../state/eventbus.js';
 import { renderActionButtons, _getUiState, _resetUiState } from '../ui/index.js';
-import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../engine/data.js';
+import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../content/data.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
-import { localPlayer, players, worldState, hasSyncedWithArbiter } from '../state/store.js';
-import { ITEMS } from '../engine/data.js';
+import { localPlayer, players, hasSyncedWithArbiter } from '../state/store.js';
+import { ITEMS } from '../content/data.js';
 import { levelBonus, getShardName } from '../rules/index.js';
 import { log, printStatus } from '../ui/index.js';
 import { globalRooms, rooms } from '../network/index.js';
@@ -7,7 +7,7 @@ import { getCurrentInstance } from '../network/shard.js';
 import { escapeHtml, getTag } from './helpers.js';
 import { clearElement, getOutputEl } from '../adapters/dom/shell.js';
 
-export const handleMiscCommands = async (command, args) => {
+export const handleMiscCommands = async (command, _args) => {
     switch (command) {
         case 'status':
             printStatus();

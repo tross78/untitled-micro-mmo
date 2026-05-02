@@ -1,11 +1,11 @@
-import { localPlayer, worldState, players } from '../state/store.js';
-import { ITEMS, NPCS, QUESTS, ENABLE_ADS } from '../engine/data.js';
+import { localPlayer, worldState } from '../state/store.js';
+import { ITEMS, NPCS, QUESTS, ENABLE_ADS } from '../content/data.js';
 import { getNPCDialogue, getTimeOfDay, xpToLevel } from '../rules/index.js';
 import { log } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
 import { saveLocalState } from '../state/persistence.js';
 import { showRewardedAd } from '../engine/ads.js';
-import { getNPCsAt, grantItem, nameColor } from './helpers.js';
+import { getNPCsAt, grantItem } from './helpers.js';
 
 export const handleNPCCommands = async (command, args) => {
     switch (command) {

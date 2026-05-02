@@ -9,7 +9,7 @@ import { ACTION } from '../engine/input.js';
 export class InputSystem {
   /**
    * @param {import('../domain/ecs.js').WorldStore} world
-   * @param {any} bus - Event bus
+   * @param {typeof import('../state/eventbus.js').bus} bus - Event bus
    */
   constructor(world, bus) {
     this.world = world;
@@ -42,6 +42,8 @@ export class InputSystem {
         intent.action = 'attack';
       } else if (action === ACTION.INTERACT) {
         intent.action = 'interact';
+      } else if (['die', 'flee', 'rest'].includes(action)) {
+        intent.action = action;
       }
       
       this.world.setComponent(playerEntityId, Component.Intent, intent);

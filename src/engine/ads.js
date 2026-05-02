@@ -3,7 +3,7 @@
  * Acts as a wrapper for future real ad network integrations (AdSense, AdMob, etc.)
  */
 
-import { ENABLE_ADS } from './data.js';
+import { ENABLE_ADS } from '../content/data.js';
 import { log } from '../ui/index.js';
 import { seededRNG, hashStr } from '../rules/index.js';
 import { clearElement, getBannerAdEl } from '../adapters/dom/shell.js';

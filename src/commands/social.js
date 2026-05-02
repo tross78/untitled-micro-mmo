@@ -1,9 +1,9 @@
-import { localPlayer, players, pendingDuel, setPendingDuel, worldState } from '../state/store.js';
+import { localPlayer, players, pendingDuel, setPendingDuel } from '../state/store.js';
 import { log } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
 import { gameActions } from '../network/index.js';
 import { saveLocalState } from '../state/persistence.js';
-import { getPlayerName, getTag, getPlayerEntry } from './helpers.js';
+import { getPlayerName, getPlayerEntry } from './helpers.js';
 
 export const handleSocialCommands = async (command, args) => {
     switch (command) {

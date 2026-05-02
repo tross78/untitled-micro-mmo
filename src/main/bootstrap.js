@@ -4,11 +4,11 @@ import { initIdentity, arbiterPublicKey, myEntry } from '../security/identity.js
 import { resolveBootstrapArbiterUrl, getRuntimeParam, isE2EMode, getArbiterUrl } from '../infra/runtime.js';
 import { initAds, showBanner } from '../engine/ads.js';
 import { inputManager } from '../engine/input.js';
-import { setupGlobalEvents, triggerLogicalRefresh, triggerVisualRefresh } from './events.js';
+import { setupGlobalEvents, triggerLogicalRefresh } from './events.js';
 import { initCrossTabSync } from './sync.js';
 import { verifyMessage } from '../security/crypto.js';
 import { updateSimulation, initNetworking, gameActions } from '../network/index.js';
-import { world, GAME_NAME } from '../engine/data.js';
+import { world, GAME_NAME } from '../content/data.js';
 import { GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL } from '../infra/constants.js';
 import { saveLocalState } from '../state/persistence.js';
 import { setTicker, showDialogue, showToast } from '../graphics/renderer.js';
@@ -66,7 +66,7 @@ export const start = async () => {
             },
         });
         appRuntime.hydratePlayer(localPlayer);
-        appRuntime.initSystems(localPlayer);
+        appRuntime.initSystems(localPlayer, gameActions);
         appRuntime.start();
         
         const E2E_MODE = isE2EMode();

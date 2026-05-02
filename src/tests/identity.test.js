@@ -7,7 +7,7 @@ jest.mock('@trystero-p2p/torrent', () => ({
 
 import { initIdentity, myEntry } from '../security/identity.js';
 import { localPlayer } from '../state/store.js';
-import { GAME_NAME } from '../engine/data.js';
+import { GAME_NAME } from '../content/data.js';
 import { hashStr } from '../rules/index.js';
 import { presenceSignaturePayload } from '../network/packer.js';
 import { setNode, verifyMessage } from '../security/crypto.js';

@@ -2,7 +2,7 @@ import { importKey, generateKeyPair, exportKey, signMessage } from './crypto.js'
 import { MASTER_PUBLIC_KEY } from '../infra/constants.js';
 import { localPlayer } from '../state/store.js';
 import { hashStr } from '../rules/index.js';
-import { GAME_NAME } from '../engine/data.js';
+import { GAME_NAME } from '../content/data.js';
 import { presenceSignaturePayload } from '../network/packer.js';
 import { scopedStorageKey } from '../infra/runtime.js';
 

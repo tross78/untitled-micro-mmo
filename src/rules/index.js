@@ -3,7 +3,7 @@
  * Modular re-exports of deterministic simulation logic.
  */
 
-import { world } from '../engine/data.js';
+import { world } from '../content/data.js';
 
 export { world };
 export * from './utils.js';

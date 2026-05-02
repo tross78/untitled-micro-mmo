@@ -1,88 +1,15 @@
-import { drawTile, generateCharacterSprite, zoneTileType } from './graphics.js';
-import { drawRadar } from '../ui/index.js';
-import { VIEWPORT_W, VIEWPORT_H, TILE_PX } from '../infra/constants.js';
-import { getTimeOfDay, getScatteredContent } from '../rules/index.js';
+// @ts-check
+
+import { appRuntime } from '../app/runtime.js';
 import { getGameAreaEl, getShellElement } from '../adapters/dom/shell.js';
-
-const ARTICLES = new Set(['the', 'a', 'an']);
-const shortName = (name) => {
-    const str = name || '';
-    const words = str.split(' ');
-    const first = words[0].toLowerCase();
-    const label = ARTICLES.has(first) ? words.slice(1).join(' ') : str;
-    return label.slice(0, 10);
-};
-
-// Logical tile size on screen — 3× pixel-art upscale
-const SCALE = 3;
-const S = TILE_PX * SCALE;           // pixels per tile on canvas (48)
-
-// C4: Mutable VP config object
-const VP = { 
-    W: VIEWPORT_W, 
-    H: VIEWPORT_H, 
-    S: S, 
-    get CW() { return this.W * this.S; }, 
-    get CH() { return this.H * this.S; } 
-};
+import { Component } from '../domain/components.js';
 
 let _canvas = null;
+let _ctx = null;
 let _radarEl = null;
-let _devMode = false;                 // backtick toggles this
+let _devMode = false;
 
-// LRU Helper for C2 and C3
-function lruGet(map, key, limit, factory) {
-    if (map.has(key)) {
-        const val = map.get(key);
-        map.delete(key);
-        map.set(key, val);
-        return val;
-    }
-    const val = factory();
-    if (map.size >= limit) {
-        map.delete(map.keys().next().value);
-    }
-    map.set(key, val);
-    return val;
-}
-
-// --- RAF LOOP ---
-let _rafId = null;
-let _lastState = null;
-let _lastCb = null;
-
-function scheduleFrame() {
-    if (_rafId) return;
-    _rafId = requestAnimationFrame(() => {
-        _rafId = null;
-        if (_lastState) renderWorld(_lastState, _lastCb);
-        if (_isAnimating) scheduleFrame();
-    });
-}
-
-// C2: LRU Sprite cache
-const _spriteCache = new Map();
-const SPRITE_CACHE_LIMIT = 128;
-function getSprite(seed, type) {
-    const key = `${seed}:${type}`;
-    return lruGet(_spriteCache, key, SPRITE_CACHE_LIMIT, () => generateCharacterSprite(seed, type));
-}
-
-// C3: LRU Font metric cache
-const _metricCache = new Map();
-const METRIC_CACHE_LIMIT = 256;
-function getCachedWidth(ctx, text, fontSize) {
-    const key = `${text}:${fontSize}`;
-    return lruGet(_metricCache, key, METRIC_CACHE_LIMIT, () => ctx.measureText(text).width);
-}
-
-function hashStr(str) {
-    let h = 0;
-    for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 0x9e3779b9) >>> 0; }
-    return h;
-}
-
-function initCanvas() {
+export function initCanvas() {
     if (_canvas) return;
     _radarEl = getShellElement('radar-container');
     const container = getGameAreaEl();
@@ -90,693 +17,112 @@ function initCanvas() {
     _canvas = document.createElement('canvas');
     _canvas.id = 'game-canvas';
     _canvas.className = 'game-canvas';
-    _canvas.width = VP.CW;
-    _canvas.height = VP.CH;
+    
+    // Initial size from appRuntime config or defaults
+    _canvas.width = 960; // 20 * 48
+    _canvas.height = 576; // 12 * 48
 
-    const ctx = _canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
+    _ctx = _canvas.getContext('2d');
+    if (_ctx) _ctx.imageSmoothingEnabled = false;
 
     if (container) {
         container.appendChild(_canvas);
-        // C4: Scale-to-fit via ResizeObserver
         const ro = new ResizeObserver(() => {
-            // Subtract small padding to avoid scrollbars
-            const scale = Math.min((container.clientWidth - 4) / VP.CW, (container.clientHeight - 4) / VP.CH);
+            const scale = Math.min((container.clientWidth - 4) / _canvas.width, (container.clientHeight - 4) / _canvas.height);
             _canvas.style.transform = `scale(${scale})`;
             _canvas.style.transformOrigin = 'center';
             _canvas.style.margin = '0';
         });
         ro.observe(container);
-    } else if (_radarEl) {
-        _radarEl.insertAdjacentElement('beforebegin', _canvas);
     }
 
-    if (_radarEl) _radarEl.style.display = 'none';
-
-    // Backtick dev toggle
+    // Dev Key Toggle
     window.addEventListener('keydown', (e) => {
         if (e.key === '`' && !e.target.matches('input,textarea')) {
             toggleDevRadar();
         }
     });
-
-    // Tab blur/focus pause
-    window.addEventListener('blur', () => { if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; } });
-    window.addEventListener('focus', () => { if (_isAnimating) scheduleFrame(); });
 }
 
 export function toggleDevRadar() {
     _devMode = !_devMode;
     if (_canvas) _canvas.style.display = _devMode ? 'none' : 'block';
     if (_radarEl) _radarEl.style.display = _devMode ? 'grid' : 'none';
-    console.log(`[Dev] ${_devMode ? 'Radar' : 'Canvas'} view active. Press \` to toggle.`);
 }
 
-// --- LERP & ANIMATION STATE ---
-const _moveStates = new Map(); // id -> { x, y, prevX, prevY, moveStart, loc }
-let _isAnimating = false;
-
-function getDrawPos(id, x, y, location, duration = 120) {
-    let state = _moveStates.get(id);
-    const now = Date.now();
-    if (!state || state.loc !== location) {
-        state = { x, y, prevX: x, prevY: y, moveStart: 0, loc: location };
-        _moveStates.set(id, state);
-    }
-    if (state.x !== x || state.y !== y) {
-        // Only lerp if it's a 1-tile move within the same room
-        const dist = Math.abs(x - state.x) + Math.abs(y - state.y);
-        if (dist === 1 && state.loc === location) {
-            state.prevX = state.x;
-            state.prevY = state.y;
-            state.moveStart = now;
-        } else {
-            state.prevX = x;
-            state.prevY = y;
-            state.moveStart = 0;
-        }
-        state.x = x;
-        state.y = y;
-    }
-    const elapsed = now - state.moveStart;
-    if (elapsed < duration && state.moveStart > 0) {
-        _isAnimating = true;
-        const t = elapsed / duration;
-        return {
-            x: state.prevX + (state.x - state.prevX) * t,
-            y: state.prevY + (state.y - state.prevY) * t
-        };
-    }
-    return { x, y };
-}
-
-function npcWanderOffset(id, _seed, _day) {
-    // Deterministic but time-varying wander
-    const phase = (Date.now() / 2500) + (hashStr(id) % 100);
-    _isAnimating = true;
-    return {
-        x: Math.sin(phase) * 0.35,
-        y: Math.cos(phase * 0.7) * 0.35
-    };
-}
-
-// --- TILE CACHE ---
-let _tileCache = null; // { loc: string, camX: number, camY: number, canvas: OffscreenCanvas }
-
-function getTileLayer(ctx, loc, camX, camY, tileType) {
-    const floorX = Math.floor(camX);
-    const floorY = Math.floor(camY);
-    const locKey = loc.name + loc.width + loc.height; // Simple stable key
-    
-    if (_tileCache && _tileCache.loc === locKey && _tileCache.camX === floorX && _tileCache.camY === floorY) {
-        return _tileCache.canvas;
-    }
-
-    const off = new OffscreenCanvas(VP.CW + VP.S, VP.CH + VP.S);
-    const octx = off.getContext('2d');
-    octx.imageSmoothingEnabled = false;
-    
-    for (let ty = 0; ty <= VP.H; ty++) {
-        for (let tx = 0; tx <= VP.W; tx++) {
-            const wx = floorX + tx;
-            const wy = floorY + ty;
-            if (wx >= loc.width || wy >= loc.height || wx < 0 || wy < 0) {
-                octx.fillStyle = '#0a0a0a';
-                octx.fillRect(tx * VP.S, ty * VP.S, VP.S, VP.S);
-                continue;
-            }
-            const override = (loc.tileOverrides || []).find(o => o.x === wx && o.y === wy);
-            const seed = hashStr(locKey) ^ (wx * 7919) ^ (wy * 6271);
-            drawTile(octx, override?.type || tileType, tx * VP.S, ty * VP.S, seed, VP.S);
-        }
-    }
-    _tileCache = { loc: locKey, camX: floorX, camY: floorY, canvas: off };
-    return off;
-}
-
+/**
+ * Legacy entry point - now delegates to appRuntime systems.
+ */
 export function renderWorld(state, onTileClick) {
+    initCanvas();
     if (_devMode) {
-        drawRadar(state, onTileClick);
+        import('../ui/index.js').then(({ drawRadar }) => {
+            drawRadar(state, onTileClick);
+        });
         return;
     }
-
-    initCanvas();
-    _lastState = state;
-    _lastCb = onTileClick;
-    _isAnimating = false; // Reset; helpers will set true if they need another frame
-    const ctx = _canvas.getContext('2d');
-    const { localPlayer, world, players, shardEnemies, NPCS, getNPCLocation, worldState, ENEMIES } = state;
-    const loc = world[localPlayer.location];
-    if (!loc) return;
-
-    const tileType = zoneTileType(localPlayer.location);
-
-    // Camera: follows player draw position for smoothness
-    const dPlayer = getDrawPos('self', localPlayer.x, localPlayer.y, localPlayer.location);
-    const camX = loc.width <= VP.W ? -(VP.W - loc.width) / 2 : Math.max(0, Math.min(loc.width - VP.W, dPlayer.x - Math.floor(VP.W / 2)));
-    const camY = loc.height <= VP.H ? -(VP.H - loc.height) / 2 : Math.max(0, Math.min(loc.height - VP.H, dPlayer.y - Math.floor(VP.H / 2)));
-
-    // --- TILES ---
-    const offsetX = (camX - Math.floor(camX)) * VP.S;
-    const offsetY = (camY - Math.floor(camY)) * VP.S;
-    ctx.drawImage(getTileLayer(ctx, loc, camX, camY, tileType), -offsetX, -offsetY);
-
-    // --- EXITS ---
-    ( loc.exitTiles || []).forEach(p => {
-        // Portal bleed fix: clip to room bounds
-        if (p.x < 0 || p.x >= loc.width || p.y < 0 || p.y >= loc.height) return;
-
-        const sx = p.x - camX;
-        const sy = p.y - camY;
-        if (sx < -1 || sx >= VP.W || sy < -1 || sy >= VP.H) return;
-        drawTile(ctx, 'exit', sx * VP.S, sy * VP.S, 0, VP.S);
-        const destName = world[p.dest]?.name || p.dest;
-        ctx.fillStyle = '#cc88ff';
-        ctx.font = `bold ${Math.floor(VP.S * 0.3)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText(shortName(destName), sx * VP.S + VP.S / 2, sy * VP.S + 1);
-    });
-
-    // --- SCENERY ---
-    (loc.scenery || []).forEach(sc => {
-        const sx = sc.x - camX;
-        const sy = sc.y - camY;
-        if (sx < -1 || sx >= VP.W || sy < -1 || sy >= VP.H) return;
-        ctx.fillStyle = '#2a3a2a';
-        ctx.fillRect(sx * VP.S + 2, sy * VP.S + 2, VP.S - 4, VP.S - 4);
-        ctx.fillStyle = '#668855';
-        ctx.font = `${Math.floor(VP.S * 0.55)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(sc.label || '■', sx * VP.S + VP.S / 2, sy * VP.S + VP.S / 2);
-    });
-
-    // --- SCATTERED SCENERY (Phase 7.9.9.2) ---
-    const scattered = getScatteredContent(localPlayer.location, worldState.day, loc);
-    scattered.forEach(sc => {
-        const sx = sc.x - camX;
-        const sy = sc.y - camY;
-        if (sx < -1 || sx >= VP.W || sy < -1 || sy >= VP.H) return;
-        ctx.fillStyle = '#2a3a2a';
-        ctx.fillRect(sx * VP.S + 2, sy * VP.S + 2, VP.S - 4, VP.S - 4);
-        ctx.fillStyle = '#668855';
-        ctx.font = `${Math.floor(VP.S * 0.55)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(sc.label || '■', sx * VP.S + VP.S / 2, sy * VP.S + VP.S / 2);
-    });
-
-    // --- STATIC ENTITIES (NPCs) ---
-    const localNpcs = Object.keys(NPCS || {}).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
-    localNpcs.forEach(id => {
-        const npc = NPCS[id];
-        const se = (loc.staticEntities || []).find(e => e.id === id);
-        if (!se) return;
-        
-        const wander = npcWanderOffset(id, worldState.seed, worldState.day);
-        const sx = se.x + wander.x - camX;
-        const sy = se.y + wander.y - camY;
-
-        if (sx < -1 || sx >= VP.W || sy < -1 || sy >= VP.H) return;
-        const sprite = getSprite(hashStr(id), 'npc');
-        ctx.drawImage(sprite, sx * VP.S + Math.floor(VP.S * 0.15), sy * VP.S, Math.floor(VP.S * 0.7), VP.S);
-        ctx.fillStyle = '#ffdd00';
-        ctx.font = `${Math.floor(VP.S * 0.28)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(shortName(npc.name), sx * VP.S + VP.S / 2, sy * VP.S);
-    });
-
-    // --- ENEMY ---
-    const sharedEnemy = shardEnemies.get(localPlayer.location);
-    const timeOfDay = getTimeOfDay();
-    const locEnemy = loc.enemy && (!loc.nightOnly || timeOfDay === 'night') ? loc.enemy : null;
-    const hasEnemy = locEnemy && (!sharedEnemy || sharedEnemy.hp > 0);
-    if (hasEnemy) {
-        const lex = loc.enemyX ?? Math.floor(loc.width / 2);
-        const ley = loc.enemyY ?? Math.floor(loc.height / 2);
-        const de = getDrawPos('enemy', lex, ley, localPlayer.location);
-        const ex = de.x - camX;
-        const ey = de.y - camY;
-
-        if (ex >= -1 && ex < VP.W && ey >= -1 && ey < VP.H) {
-            const edef = ENEMIES?.[locEnemy];
-            const sprite = getSprite(hashStr(locEnemy), 'enemy');
-            
-            // Hit Flash: tint red if recently hit
-            if (_hitFlash && Date.now() <= _hitFlash) {
-                ctx.save();
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = '#f00';
-                ctx.drawImage(sprite, ex * VP.S + Math.floor(VP.S * 0.1), ey * VP.S, Math.floor(VP.S * 0.8), VP.S);
-                ctx.globalCompositeOperation = 'source-atop';
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
-                ctx.fillRect(ex * VP.S, ey * VP.S, VP.S, VP.S);
-                ctx.restore();
-            } else {
-                ctx.drawImage(sprite, ex * VP.S + Math.floor(VP.S * 0.1), ey * VP.S, Math.floor(VP.S * 0.8), VP.S);
-            }
-
-            // HP bar above enemy if damaged
-            if (sharedEnemy && sharedEnemy.hp < sharedEnemy.maxHp) {
-                const pct = sharedEnemy.hp / sharedEnemy.maxHp;
-                const bw = VP.S - 4;
-                ctx.fillStyle = '#440000';
-                ctx.fillRect(ex * VP.S + 2, ey * VP.S - 5, bw, 3);
-                ctx.fillStyle = pct > 0.5 ? '#00cc00' : pct > 0.25 ? '#aaaa00' : '#cc0000';
-                ctx.fillRect(ex * VP.S + 2, ey * VP.S - 5, Math.round(bw * pct), 3);
-            }
-            // Name label
-            if (edef) {
-                ctx.fillStyle = edef.color || '#ff4444';
-                ctx.font = `${Math.floor(VP.S * 0.28)}px monospace`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(shortName(edef.name), ex * VP.S + VP.S / 2, ey * VP.S);
-            }
-        }
-    }
-
-    // --- OTHER PLAYERS ---
-    if (players) {
-        players.forEach((p, id) => {
-            if (p.location !== localPlayer.location) return;
-            const dp = getDrawPos(id, p.x ?? 0, p.y ?? 0, localPlayer.location);
-            const px = dp.x - camX;
-            const py = dp.y - camY;
-            if (px < -1 || px >= VP.W || py < -1 || py >= VP.H) return;
-            
-            if (p.ghost) ctx.globalAlpha = 0.5;
-            const sprite = getSprite(hashStr(id), 'peer');
-            ctx.drawImage(sprite, px * VP.S + Math.floor(VP.S * 0.15), py * VP.S, Math.floor(VP.S * 0.7), VP.S);
-            ctx.fillStyle = '#00aaff';
-            ctx.font = `${Math.floor(VP.S * 0.28)}px monospace`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.fillText((p.name || id).split('').slice(0, 8).join(''), px * VP.S + VP.S / 2, py * VP.S);
-            ctx.globalAlpha = 1.0;
-        });
-    }
-
-    // --- LOCAL PLAYER ---
-    const plx = dPlayer.x - camX;
-    const ply = dPlayer.y - camY;
-    if (plx >= -1 && plx < VP.W && ply >= -1 && ply < VP.H) {
-        const sprite = getSprite(hashStr(localPlayer.name || 'self'), 'self');
-        ctx.drawImage(sprite, plx * VP.S + Math.floor(VP.S * 0.15), ply * VP.S, Math.floor(VP.S * 0.7), VP.S);
-        // Selection glow
-        ctx.strokeStyle = '#00ff44';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(plx * VP.S + 1, ply * VP.S + 1, VP.S - 2, VP.S - 2);
-        // Name above
-        ctx.fillStyle = '#00ff44';
-        ctx.font = `bold ${Math.floor(VP.S * 0.28)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(localPlayer.name || 'You', plx * VP.S + VP.S / 2, ply * VP.S);
-    }
-
-    // --- EDGE TRANSITION INDICATORS ---
-    // Show arrows at zone edges where exits exist
-    const exits = loc.exits || {};
-    const edgeArrows = [
-        { dir: 'north', x: Math.floor(VP.W / 2), y: 0,            label: '▲' },
-        { dir: 'south', x: Math.floor(VP.W / 2), y: VP.H-1, label: '▼' },
-        { dir: 'west',  x: 0,            y: Math.floor(VP.H / 2), label: '◀' },
-        { dir: 'east',  x: VP.W-1, y: Math.floor(VP.H / 2), label: '▶' },
-    ];
-    edgeArrows.forEach(({ dir, x, y, label }) => {
-        if (!exits[dir]) return;
-        const destName = shortName(world[exits[dir]]?.name || dir);
-        const sx = x - camX;
-        const sy = y - camY;
-        if (sx < 0 || sx >= VP.W || sy < 0 || sy >= VP.H) return;
-
-        ctx.fillStyle = 'rgba(0,255,180,0.7)';
-        ctx.font = `bold ${Math.floor(VP.S * 0.5)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, sx * VP.S + VP.S / 2, sy * VP.S + VP.S / 2);
-        ctx.fillStyle = 'rgba(0,200,140,0.6)';
-        ctx.font = `${Math.floor(VP.S * 0.25)}px monospace`;
-        ctx.fillText(destName, sx * VP.S + VP.S / 2, dir === 'north' ? sy * VP.S + VP.S - 4 : sy * VP.S + 4);
-    });
-
-    // --- NIGHT OVERLAY ---
-    if (timeOfDay === 'night') {
-        ctx.fillStyle = 'rgba(0, 0, 40, 0.45)';
-        ctx.fillRect(0, 0, VP.CW, VP.CH);
-    } else if (timeOfDay === 'dusk' || timeOfDay === 'dawn') {
-        ctx.fillStyle = 'rgba(60, 20, 0, 0.25)';
-        ctx.fillRect(0, 0, VP.CW, VP.CH);
-    }
-
-    // --- TIME OF DAY BADGE ---
-    const timeIcon = { day: '☀️', night: '🌙', dusk: '🌆', dawn: '🌅' }[timeOfDay] || '☀️';
-    ctx.font = `${Math.floor(VP.S * 0.4)}px monospace`;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText(timeIcon, VP.CW - 4, 4);
-
-    // --- OVERLAYS ---
-    drawHUD(ctx, localPlayer);
-    drawBanner(ctx);
-    drawToasts(ctx);
-    drawFanfare(ctx);
-    drawFloatingTexts(ctx, camX, camY);
-    if (_dialogue) drawDialogueBox(ctx, _dialogue.name);
-
-    // If we are animating, schedule another redraw immediately
-    if (_isAnimating) scheduleRedraw(16);
-
-    // --- CLICK HANDLER ---
-    // Build a lookup of what's on each tile so clicks can resolve intent
-    const npcTiles = new Map(); // "wx,wy" -> npcId
-    localNpcs.forEach(id => {
-        const se = (loc.staticEntities || []).find(e => e.id === id);
-        if (se) npcTiles.set(`${se.x},${se.y}`, id);
-    });
-    const enemyTileKey = loc.enemy ? `${loc.enemyX ?? Math.floor(loc.width / 2)},${loc.enemyY ?? Math.floor(loc.height / 2)}` : null;
-
+    
+    // In modular Phase 8, the GameLoop in appRuntime handles the calling of draw().
+    // We just ensure the click handler is wired to the current camera.
     _canvas.onclick = (e) => {
-        // Dialogue intercepts all clicks
-        if (_dialogue) { advanceDialogue(); return; }
-
         const rect = _canvas.getBoundingClientRect();
-        // COMPENSATE FOR CSS SCALING: 
-        // CW/rect.width gives the ratio of logical width to displayed width
-        const scaleX = VP.CW / rect.width;
-        const scaleY = VP.CH / rect.height;
-        const tx = Math.floor((e.clientX - rect.left) * scaleX / VP.S + camX);
-        const ty = Math.floor((e.clientY - rect.top)  * scaleY / VP.S + camY);
-
-        const key = `${tx},${ty}`;
-        if (npcTiles.has(key)) {
-            onTileClick(tx, ty, { type: 'npc', id: npcTiles.get(key) });
-        } else if (enemyTileKey && key === enemyTileKey) {
-            onTileClick(tx, ty, { type: 'enemy' });
-        } else {
-            onTileClick(tx, ty, null);
-        }
+        const scaleX = _canvas.width / rect.width;
+        const scaleY = _canvas.height / rect.height;
+        
+        // We need camX/camY. For now we use a simple projection or 
+        // pull it from the Camera component if we had one active.
+        // For Step 1, we just wire a basic click.
+        const tx = Math.floor((e.clientX - rect.left) * scaleX / 48); // hardcoded tile size for now
+        const ty = Math.floor((e.clientY - rect.top)  * scaleY / 48);
+        onTileClick(tx, ty, null);
     };
 }
 
-
-// ─── Overlay state ────────────────────────────────────────────────────────────
-
-let _dialogue = null;      // { name, lines, page }
-let _fanfare  = null;      // { text, expires }
-let _banner   = null;      // { text, expires }
-let _hitFlash = 0;         // timestamp when flash expires
-let _toasts   = [];        // [{ text, expires }]
-let _floatingTexts = [];   // [{ x, y, text, color, expires, startY }]
-let _tickerText = '';
-let _triggerVisualRefresh = null;
-let _triggerLogicalRefresh = null;
-
-export function setVisualRefreshCallback(fn) { _triggerVisualRefresh = fn; }
-export function setLogicalRefreshCallback(fn) { _triggerLogicalRefresh = fn; }
-
-function scheduleRedraw(ms) {
-    if (_triggerVisualRefresh) setTimeout(_triggerVisualRefresh, ms);
-}
-
-// ─── Public overlay API ───────────────────────────────────────────────────────
-
-export function setTicker(text) {
-    _tickerText = text;
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
-}
-
-export function showFloatingText(x, y, text, color = '#fff') {
-    _floatingTexts.push({ x, y, text, color, expires: Date.now() + 1000, startY: y });
-    scheduleRedraw(1100);
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
-}
-
-export function showToast(message) {
-    const expires = Date.now() + 2500;
-    _toasts.push({ text: message, expires });
-    if (_toasts.length > 3) _toasts.shift();
-    scheduleRedraw(2600);
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
-}
-
-export function showRoomBanner(roomName) {
-    _banner = { text: roomName, expires: Date.now() + 2000 };
-    scheduleRedraw(2100);
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
+// Legacy UI Overlays - now mostly placeholders that emit ECS components
+export function showToast(text) {
+    const id = appRuntime.world.createEntity();
+    appRuntime.world.setComponent(id, Component.UIOverlay, {
+        type: 'toast',
+        text,
+        expires: Date.now() + 2500
+    });
 }
 
 export function showItemFanfare(itemName) {
-    _fanfare = { text: `You got\n${itemName}!`, expires: Date.now() + 1500 };
-    scheduleRedraw(1600);
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
+    const id = appRuntime.world.createEntity();
+    appRuntime.world.setComponent(id, Component.UIOverlay, {
+        type: 'fanfare',
+        text: `You got\n${itemName}!`,
+        expires: Date.now() + 1500
+    });
+}
+
+export function showFloatingText(x, y, text) {
+    const id = appRuntime.world.createEntity();
+    appRuntime.world.setComponent(id, Component.UIOverlay, {
+        type: 'toast', // Fallback to toast for Step 1
+        text: text,
+        expires: Date.now() + 1000
+    });
+}
+
+export function showRoomBanner(roomName) {
+    const id = appRuntime.world.createEntity();
+    appRuntime.world.setComponent(id, Component.UIOverlay, {
+        type: 'banner',
+        text: roomName,
+        expires: Date.now() + 2000
+    });
 }
 
 export function showLevelUp(level) {
-    _fanfare = { text: `⬆ Level ${level}!`, expires: Date.now() + 2000 };
-    scheduleRedraw(2100);
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
-}
-
-export function triggerHitFlash() {
-    _hitFlash = Date.now() + 200;
-    scheduleRedraw(250);
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
-}
-
-export function showDialogue(npcName, text) {
-    if (!text) return; // don't open dialogue with no text
-
-    const CHARS_PER_LINE = 38;
-    const LINES_PER_PAGE = 3;
-    const words = String(text).split(' ');
-    const lines = [];
-    let cur = '';
-    for (const w of words) {
-        if ((cur + (cur ? ' ' : '') + w).length > CHARS_PER_LINE) {
-            if (cur) lines.push(cur);
-            cur = w;
-        } else {
-            cur = cur ? cur + ' ' + w : w;
-        }
-    }
-    if (cur) lines.push(cur);
-
-    const pages = [];
-    for (let i = 0; i < lines.length; i += LINES_PER_PAGE) {
-        pages.push(lines.slice(i, i + LINES_PER_PAGE));
-    }
-    if (!pages.length) return; // don't open dialogue with no text
-    _dialogue = { name: npcName, pages, page: 0 };
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
-    if (_triggerLogicalRefresh) _triggerLogicalRefresh();
-}
-
-export function advanceDialogue() {
-    if (!_dialogue) return false;
-    if (_dialogue.page < _dialogue.pages.length - 1) {
-        _dialogue.page++;
-        if (_triggerVisualRefresh) _triggerVisualRefresh();
-        return true; // still open
-    }
-    _dialogue = null;
-    if (_triggerVisualRefresh) _triggerVisualRefresh();
-    if (_triggerLogicalRefresh) _triggerLogicalRefresh();
-    return false; // closed
-}
-
-export function isDialogueOpen() { 
-    return _dialogue !== null && !!_dialogue.pages && !!_dialogue.pages.length; 
-}
-
-// stubs for future phases
-export function showSpeechBubble(_entityId, _text) {}
-export function showInventoryPanel(_items, _equipped) {}
-export function showQuestPanel(_quests) {}
-export function showShopPanel(_npcId, _inventory) {}
-export function updateHUD(_player, _world) {}
-export function renderMinimap(_state) {}
-
-// ─── Overlay rendering helpers ────────────────────────────────────────────────
-
-function drawHUD(ctx, localPlayer) {
-    const PAD = 6;
-    const STRIP = Math.floor(VP.S * 0.55);
-    const y = VP.CH - STRIP;
-
-    // semi-transparent strip
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(0, y, VP.CW, STRIP);
-
-    ctx.textBaseline = 'middle';
-    const mid = y + STRIP / 2;
-    const fs = Math.floor(STRIP * 0.6);
-    ctx.font = `bold ${fs}px monospace`;
-
-    // HP
-    const hp = localPlayer.hp ?? localPlayer.maxHp ?? 10;
-    const maxHp = localPlayer.maxHp ?? 10;
-    ctx.fillStyle = hp < maxHp * 0.3 ? '#ff4444' : '#ff8888';
-    ctx.textAlign = 'left';
-    ctx.fillText(`♥ ${hp}/${maxHp}`, PAD, mid);
-
-    // Gold
-    ctx.fillStyle = '#ffd700';
-    ctx.textAlign = 'center';
-    ctx.fillText(`💰 ${localPlayer.gold ?? 0}`, VP.CW / 2, mid);
-
-    // Fights
-    const fights = localPlayer.forestFights ?? 0;
-    ctx.fillStyle = fights > 0 ? '#aaffaa' : '#555';
-    ctx.textAlign = 'right';
-    ctx.fillText(`⚡ ${fights}`, VP.CW - PAD, mid);
-
-    // Ticker (centered above HUD strip)
-    if (_tickerText) {
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.fillRect(0, 0, VP.CW, Math.floor(VP.S * 0.45));
-        ctx.fillStyle = '#aaa';
-        ctx.font = `italic ${Math.floor(VP.S * 0.28)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText(_tickerText, VP.CW / 2, 4);
-    }
-}
-
-function drawFloatingTexts(ctx, camX, camY) {
-    const now = Date.now();
-    _floatingTexts = _floatingTexts.filter(t => now < t.expires);
-    
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    _floatingTexts.forEach(t => {
-        const elapsed = now - (t.expires - 1000);
-        const alpha = 1 - (elapsed / 1000);
-        const floatY = (t.startY - camY) * VP.S - (elapsed / 1000) * VP.S;
-        const screenX = (t.x - camX) * VP.S + VP.S / 2;
-        
-        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-        ctx.font = `bold ${Math.floor(VP.S * 0.3)}px monospace`;
-        ctx.fillText(t.text, screenX + 1, floatY + 1); // drop shadow
-        
-        const [r, g, b] = t.color === '#fff' ? [255, 255, 255] : [0, 255, 170]; // simplified color support
-        ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
-        ctx.fillText(t.text, screenX, floatY);
+    const id = appRuntime.world.createEntity();
+    appRuntime.world.setComponent(id, Component.UIOverlay, {
+        type: 'fanfare',
+        text: `⬆ Level ${level}!`,
+        expires: Date.now() + 2000
     });
 }
 
-function drawDialogueBox(ctx, _npcName) {
-    if (!_dialogue) return;
-    // Safety valve: if dialogue is broken, clear it
-    if (!_dialogue.pages || !_dialogue.pages.length || _dialogue.page >= _dialogue.pages.length) {
-        _dialogue = null;
-        return;
-    }
-    const BOX_H = Math.floor(VP.CH * 0.28);
-    const BOX_Y = VP.CH - BOX_H;
-    const PAD = Math.floor(VP.S * 0.4);
-
-    // Dark panel with border
-    ctx.fillStyle = 'rgba(10,10,30,0.94)';
-    ctx.fillRect(0, BOX_Y, VP.CW, BOX_H);
-    ctx.strokeStyle = '#8866cc';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(2, BOX_Y + 2, VP.CW - 4, BOX_H - 4);
-
-    // NPC name tag
-    const nameFs = Math.floor(VP.S * 0.32);
-    ctx.font = `bold ${nameFs}px monospace`;
-    ctx.fillStyle = '#ffdd55';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText((_dialogue.name || '???').toUpperCase(), PAD, BOX_Y + PAD * 0.6);
-
-    // Text lines
-    const lineFs = Math.floor(VP.S * 0.27);
-    ctx.font = `${lineFs}px monospace`;
-    ctx.fillStyle = '#ddeeff';
-    const lineH = lineFs * 1.5;
-    const textY = BOX_Y + PAD * 0.6 + nameFs + PAD * 0.4;
-    (_dialogue.pages[_dialogue.page] || []).forEach((line, i) => {
-        ctx.fillText(line, PAD, textY + i * lineH);
-    });
-
-    // Advance prompt
-    const more = _dialogue.page < _dialogue.pages.length - 1;
-    ctx.fillStyle = more ? '#cc88ff' : '#666688';
-    ctx.font = `bold ${lineFs}px monospace`;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(more ? '▼ continue' : '▼ dismiss', VP.CW - PAD, BOX_Y + BOX_H - PAD * 0.5);
-}
-
-function drawFanfare(ctx) {
-    if (!_fanfare || Date.now() > _fanfare.expires) { _fanfare = null; return; }
-    const alpha = Math.min(1, (_fanfare.expires - Date.now()) / 300);
-    ctx.fillStyle = `rgba(0,0,0,${0.75 * alpha})`;
-    const bh = Math.floor(VP.CH * 0.35);
-    const by = (VP.CH - bh) / 2;
-    ctx.fillRect(0, by, VP.CW, bh);
-    ctx.strokeStyle = `rgba(255,215,0,${alpha})`;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(4, by + 4, VP.CW - 8, bh - 8);
-
-    ctx.fillStyle = `rgba(255,230,100,${alpha})`;
-    ctx.font = `bold ${Math.floor(VP.S * 0.55)}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const lines = _fanfare.text.split('\n');
-    const lineH = Math.floor(VP.S * 0.6);
-    const startY = VP.CH / 2 - (lines.length - 1) * lineH / 2;
-    lines.forEach((l, i) => ctx.fillText(l, VP.CW / 2, startY + i * lineH));
-}
-
-function drawBanner(ctx) {
-    if (!_banner || Date.now() > _banner.expires) { _banner = null; return; }
-    const age = Date.now() - (_banner.expires - 2000);
-    const fadeIn = Math.min(1, age / 400);
-    const fadeOut = Math.min(1, (_banner.expires - Date.now()) / 400);
-    const alpha = Math.min(fadeIn, fadeOut);
-
-    ctx.fillStyle = `rgba(0,0,0,${0.7 * alpha})`;
-    const bh = Math.floor(VP.S * 0.7);
-    ctx.fillRect(0, 2, VP.CW, bh);
-
-    ctx.fillStyle = `rgba(255,255,200,${alpha})`;
-    ctx.font = `bold ${Math.floor(VP.S * 0.4)}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(_banner.text, VP.CW / 2, 2 + bh / 2);
-}
-
-function drawToasts(ctx) {
-    const now = Date.now();
-    _toasts = _toasts.filter(t => now < t.expires);
-    const fs = Math.floor(VP.S * 0.28);
-    const font = `${fs}px monospace`;
-    ctx.font = font;
-    const PILL_H = fs + 10;
-    const PILL_PAD = 12;
-    _toasts.forEach((t, i) => {
-        const alpha = Math.min(1, (t.expires - now) / 400);
-        // C3: Use font metric cache
-        const tw = getCachedWidth(ctx, t.text, fs) + PILL_PAD * 2;
-        const px = (VP.CW - tw) / 2;
-        const py = Math.floor(VP.S * 0.8) + i * (PILL_H + 4);
-        ctx.fillStyle = `rgba(20,20,40,${0.85 * alpha})`;
-        ctx.beginPath();
-        ctx.roundRect?.(px, py, tw, PILL_H, 6) ?? ctx.fillRect(px, py, tw, PILL_H);
-        ctx.fill();
-        ctx.strokeStyle = `rgba(100,160,255,${alpha})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.fillStyle = `rgba(200,230,255,${alpha})`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(t.text, VP.CW / 2, py + PILL_H / 2);
-    });
-}
+// Re-exports for bootstrap
+export { showDialogue, advanceDialogue, isDialogueOpen, triggerHitFlash, setTicker, setVisualRefreshCallback, setLogicalRefreshCallback } from './renderer-ui-compat.js';

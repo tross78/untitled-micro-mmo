@@ -4,18 +4,28 @@ import { bus } from '../state/eventbus.js';
 import { joinInstance, currentRtcConfig } from '../network/index.js';
 import { getCurrentInstance } from '../network/shard.js';
 import { getCommandDefinition, parseCommandInput } from './registry.js';
-
-import { handleCombatCommands } from './combat.js';
 import { handleSocialCommands } from './social.js';
 import { handleInventoryCommands } from './inventory.js';
-import { handleMovementCommands } from './movement.js';
 import { handleNPCCommands } from './npc.js';
 import { handleAdminCommands } from './admin.js';
 import { handleMiscCommands } from './misc.js';
 import { startStateChannel } from './duel.js';
+import { ACTION } from '../engine/input.js';
 
 export * from './helpers.js';
 export * from './duel.js';
+
+const SIM_COMMANDS = {
+    'attack': ACTION.ATTACK,
+    'interact': ACTION.INTERACT,
+    'pickup': ACTION.INTERACT,
+    'north': ACTION.MOVE_N, 'n': ACTION.MOVE_N,
+    'south': ACTION.MOVE_S, 's': ACTION.MOVE_S,
+    'east': ACTION.MOVE_E,  'e': ACTION.MOVE_E,
+    'west': ACTION.MOVE_W,  'w': ACTION.MOVE_W,
+    'up': ACTION.MOVE_N,    'down': ACTION.MOVE_S,
+    'die': 'die', 'flee': 'flee', 'rest': 'rest'
+};
 
 export const handleCommand = async (cmd) => {
     const raw = cmd.trim();
@@ -28,12 +38,21 @@ export const handleCommand = async (cmd) => {
         ? [definition.id, ...parsed.args.slice(1)]
         : parsed.args;
 
-    // Try each command handler until one handles it
+    // 1. Check for simulation commands (handled by ECS)
+    if (SIM_COMMANDS[command]) {
+        bus.emit('input:action', { action: SIM_COMMANDS[command], type: 'down' });
+        return;
+    }
+    // Handle 'move north' etc
+    if (command === 'move' && args[1] && SIM_COMMANDS[args[1]]) {
+        bus.emit('input:action', { action: SIM_COMMANDS[args[1]], type: 'down' });
+        return;
+    }
+
+    // 2. Try each UI/Admin command handler
     const handlers = [
-        handleCombatCommands,
         handleSocialCommands,
         handleInventoryCommands,
-        handleMovementCommands,
         handleNPCCommands,
         handleAdminCommands,
         handleMiscCommands
@@ -41,6 +60,7 @@ export const handleCommand = async (cmd) => {
 
     for (const handler of handlers) {
         const result = await handler(command, args);
+
         if (result) {
             // Handle cross-cutting concerns returned by handlers (e.g. room changes)
             if (typeof result === 'object') {
@@ -62,8 +82,9 @@ export const handleCommand = async (cmd) => {
 };
 
 if (typeof window !== 'undefined') {
-    window.devReset = () => {
+    /** @type {any} */(window).devReset = () => {
         localStorage.clear();
-        window.location.reload();
+        location.reload();
     };
+
 }

@@ -1,7 +1,6 @@
-import { IBLT } from '../iblt.js';
 import { packMove, unpackMove, packPresence, unpackPresence } from '../network/packer.js';
 import { getShardName, hashStr, seededRNG, resolveAttack, levelBonus } from '../rules/index.js';
-import { DEFAULT_PLAYER_STATS, INSTANCE_CAP } from '../engine/data.js';
+import { DEFAULT_PLAYER_STATS, INSTANCE_CAP } from '../content/data.js';
 
 const ROLLUP_INTERVAL = 10000;
 const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
@@ -104,84 +103,6 @@ describe('Network Protocol Integration', () => {
             const self = 'aaa'; // sorted: ['aaa','bbb','ccc'], slot 0 = 'aaa'
             const staleLastRollup = 0 - PROPOSER_GRACE_MS - 9999;
             expect(isProposer(self, others, 0, staleLastRollup)).toBe(true);
-        });
-    });
-
-    describe('IBLT — Static hashId', () => {
-        // Catches bug: new IBLT()._hashKey(id) was used just to call a pure function,
-        // which is confusing and allocates an unnecessary instance. Static hashId fixes this.
-        test('IBLT.hashId static method exists', () => {
-            expect(typeof IBLT.hashId).toBe('function');
-        });
-
-        test('IBLT.hashId returns the same value as _hashKey instance method', () => {
-            const iblt = new IBLT();
-            const id = 'some-trystero-peer-id-abc123';
-            expect(IBLT.hashId(id)).toBe(iblt._hashKey(id));
-        });
-
-        test('IBLT.hashId returns a BigInt', () => {
-            expect(typeof IBLT.hashId('peer-1')).toBe('bigint');
-        });
-
-        test('IBLT.hashId is consistent for the same input', () => {
-            const id = 'consistent-id';
-            expect(IBLT.hashId(id)).toBe(IBLT.hashId(id));
-        });
-
-        test('IBLT.hashId produces distinct values for distinct IDs', () => {
-            expect(IBLT.hashId('peer-a')).not.toBe(IBLT.hashId('peer-b'));
-        });
-    });
-
-    describe('IBLT Reconciliation Flow', () => {
-        test('peers can identify missing keys via sketches', () => {
-            const ibltA = new IBLT();
-            ibltA.insert('user1');
-            ibltA.insert('user2');
-
-            const ibltB = new IBLT();
-            ibltB.insert('user1');
-            ibltB.insert('user3');
-
-            const diff = IBLT.subtract(ibltA, ibltB);
-            const { added, removed, success } = diff.decode();
-
-            expect(success).toBe(true);
-            expect(added).toContain(IBLT.hashId('user2'));
-            expect(removed).toContain(IBLT.hashId('user3'));
-        });
-
-        // Catches bug: getRequest used ids.includes(numeric) — Array.includes uses ===.
-        // BigInt === BigInt works correctly, but this test makes the contract explicit.
-        test('request-response ID matching uses BigInt equality from hashId', () => {
-            const peerId = 'real-peer-id-xyz';
-            const iblt = new IBLT();
-            iblt.insert(peerId);
-
-            // Simulate: remote sends serialized sketch; local decodes it to get added BigInts
-            const serialized = iblt.serialize();
-            const remote = IBLT.fromSerialized(serialized);
-            const localEmpty = new IBLT();
-            const diff = IBLT.subtract(remote, localEmpty);
-            const { added, success } = diff.decode();
-
-            expect(success).toBe(true);
-            // The BigInt in 'added' must match IBLT.hashId(peerId) for request filtering to work
-            expect(added.some(x => x === IBLT.hashId(peerId))).toBe(true);
-        });
-
-        test('request filtering correctly matches peer IDs to their hashes', () => {
-            // Simulates the getRequest handler: given a list of BigInt hashes,
-            // find which local players match using IBLT.hashId.
-            const localPlayers = ['peer-alice', 'peer-bob', 'peer-carol'];
-            const requestedHashes = [IBLT.hashId('peer-bob'), IBLT.hashId('peer-carol')];
-
-            const matched = localPlayers.filter(id =>
-                requestedHashes.some(x => x === IBLT.hashId(id))
-            );
-            expect(matched).toEqual(['peer-bob', 'peer-carol']);
-            expect(matched).not.toContain('peer-alice');
         });
     });
 

@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 // Mock transport to control the timing of joinRoom
 jest.mock('../network/transport.js', () => ({
     joinRoom: jest.fn(() => ({
-        makeAction: jest.fn((name) => [jest.fn(), jest.fn()]),
+        makeAction: jest.fn((_name) => [jest.fn(), jest.fn()]),
         getPeers: jest.fn(() => ({})),
         leave: jest.fn(),
         onPeerJoin: jest.fn(),

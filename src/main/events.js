@@ -1,13 +1,12 @@
-import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, hasSyncedWithArbiter, setPendingDuel, setPendingTrade } from '../state/store.js';
-import { world, NPCS, ENEMIES, ITEMS, QUESTS, GAME_NAME } from '../engine/data.js';
-import { getNPCLocation, getTimeOfDay } from '../rules/index.js';
+import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, setPendingTrade } from '../state/store.js';
+import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../content/data.js';
+import { getNPCLocation } from '../rules/index.js';
 import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, showRoomBanner } from '../graphics/renderer.js';
 import { playHit, playCrit, playDeath, playPickup, playLevelUp, playPortal } from '../engine/audio.js';
 import { renderActionButtons, log } from '../ui/index.js';
-import { ACTION, inputManager } from '../engine/input.js';
+import { ACTION } from '../engine/input.js';
 import { handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem } from '../commands/index.js';
 import { bus } from '../state/eventbus.js';
-import { stepPlayer } from './movement.js';
 import { gameActions } from '../network/index.js';
 import { saveLocalState } from '../state/persistence.js';
 import { importKey, verifyMessage } from '../security/crypto.js';
@@ -31,7 +30,17 @@ export const triggerVisualRefresh = () => {
             if (dx === 0 && dy === 0) return;
             const stepX = dx !== 0 ? (dx > 0 ? 1 : -1) : 0;
             const stepY = stepX === 0 && dy !== 0 ? (dy > 0 ? 1 : -1) : 0;
-            stepPlayer(stepX, stepY, triggerLogicalRefresh);
+            
+            let action = null;
+            if (stepX === 1) action = ACTION.MOVE_E;
+            else if (stepX === -1) action = ACTION.MOVE_W;
+            else if (stepY === 1) action = ACTION.MOVE_S;
+            else if (stepY === -1) action = ACTION.MOVE_N;
+
+            if (action) {
+                bus.emit('input:action', { action, type: 'down' });
+                setTimeout(triggerLogicalRefresh, 150);
+            }
         });
     });
 };

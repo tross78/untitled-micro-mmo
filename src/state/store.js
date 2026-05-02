@@ -1,8 +1,8 @@
 // @ts-check
 import { selfId } from '../network/transport.js';
-import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from '../engine/data.js';
+import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from '../content/data.js';
 import { deriveWorldState, xpToLevel } from '../rules/index.js';
-import { world } from '../engine/data.js';
+import { world } from '../content/data.js';
 import { scopedStorageKey } from '../infra/runtime.js';
 
 export const WORLD_STATE_KEY = scopedStorageKey(`${GAME_NAME}_worldstate_v1`);

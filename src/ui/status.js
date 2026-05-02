@@ -1,5 +1,5 @@
 import { levelBonus } from '../rules/index.js';
-import { ITEMS } from '../engine/data.js';
+import { ITEMS } from '../content/data.js';
 import { worldState } from '../state/store.js';
 import { log } from './index.js';
 import { getShellElement } from '../adapters/dom/shell.js';

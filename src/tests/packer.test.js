@@ -255,7 +255,7 @@ describe('Binary Packer', () => {
 
     test('ENEMY_MAP includes crab and matches data.js', () => {
         const { ENEMY_MAP } = require('../network/packer.js');
-        const { ENEMIES } = require('../engine/data.js');
+        const { ENEMIES } = require('../content/data.js');
         expect(ENEMY_MAP).toContain('crab');
         expect(ENEMY_MAP).toEqual(Object.keys(ENEMIES).sort());
     });
