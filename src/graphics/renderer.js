@@ -3,8 +3,9 @@
 import { appRuntime } from '../app/runtime.js';
 import { getGameAreaEl, getShellElement } from '../adapters/dom/shell.js';
 import { Component } from '../domain/components.js';
-import { advanceDialogue, isDialogueOpen } from './renderer-ui-compat.js';
+import { isDialogueOpen } from './renderer-ui-compat.js';
 import { bus } from '../state/eventbus.js';
+import { ACTION } from '../engine/input.js';
 
 let _canvas = null;
 let _ctx = null;
@@ -68,9 +69,27 @@ export function renderWorld(state, onTileClick) {
     
     // In modular Phase 8, the GameLoop in appRuntime handles the calling of draw().
     // We just ensure the click handler is wired to the current camera.
+    _canvas.onmousemove = (e) => {
+        const menu = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+        if (!menu || !appRuntime.uiRender) return;
+        const rect = _canvas.getBoundingClientRect();
+        const cx = (e.clientX - rect.left) * (_canvas.width / rect.width);
+        const cy = (e.clientY - rect.top)  * (_canvas.height / rect.height);
+        const idx = appRuntime.uiRender.resolveMenuClick(cx, cy);
+        if (idx !== -1 && idx !== menu.selectedIndex && !menu.entries[idx]?.disabled)
+            menu.selectedIndex = idx;
+    };
+
+    _canvas.onwheel = (e) => {
+        const menu = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+        if (!menu) return;
+        e.preventDefault();
+        bus.emit('input:action', { action: e.deltaY > 0 ? ACTION.PAGE_DOWN : ACTION.PAGE_UP, type: 'down' });
+    };
+
     _canvas.onclick = (e) => {
         if (isDialogueOpen()) {
-            advanceDialogue();
+            bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' });
             return;
         }
 

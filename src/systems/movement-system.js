@@ -63,7 +63,10 @@ export class MovementSystem {
     const ny = transform.y + dy;
 
     // 1. Active Portal Detection
-    const exitTile = (loc.exitTiles || []).find(t => t.x === nx && t.y === ny);
+    const exitTile = (loc.exitTiles || []).find(t =>
+        nx >= t.x && nx < t.x + (t.w || 1) &&
+        ny >= t.y && ny < t.y + (t.h || 1)
+    );
     if (exitTile) {
         await this.performTransition(entityId, transform, exitTile.dest, exitTile.destX, exitTile.destY);
         return;
@@ -158,7 +161,10 @@ export class MovementSystem {
     const target = this.getFacingTarget(transform);
     
     // 1. Check for Portals
-    const exitTile = (loc?.exitTiles || []).find(t => t.x === transform.x && t.y === transform.y);
+    const exitTile = (loc?.exitTiles || []).find(t =>
+        transform.x >= t.x && transform.x < t.x + (t.w || 1) &&
+        transform.y >= t.y && transform.y < t.y + (t.h || 1)
+    );
     if (exitTile) {
         await this.performTransition(entityId, transform, exitTile.dest, exitTile.destX, exitTile.destY);
         return;

@@ -52,12 +52,16 @@ export class MapRenderSystem {
             this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY, sc.w || 1, sc.h || 1, sc.x, sc.y);
         });
 
-        // 4. Draw Exits (Phase 8)
+        // 4. Draw Exits — portals glow, stairs get sprite, door/edge are invisible (wall gap is the visual)
         (loc.exitTiles || []).forEach(ex => {
             const sx = ex.x - camX;
             const sy = ex.y - camY;
-            if (sx < -1 || sx >= this.VP.W || sy < -1 || sy >= this.VP.H) return;
-            drawTile(ctx, 'exit', screenOffsetX + sx * this.VP.S, screenOffsetY + sy * this.VP.S, 0, this.VP.S);
+            if (sx < -(ex.w || 1) || sx >= this.VP.W || sy < -(ex.h || 1) || sy >= this.VP.H) return;
+            if (ex.type === 'portal') {
+                drawTile(ctx, 'exit', screenOffsetX + sx * this.VP.S, screenOffsetY + sy * this.VP.S, 0, this.VP.S);
+            } else if (ex.type === 'stairs' || ex.type === 'up' || ex.type === 'down') {
+                this.drawScenery(ctx, sx, sy, 'stairs', screenOffsetX, screenOffsetY);
+            }
         });
 
         // 5. Draw Scattered Content
@@ -69,18 +73,19 @@ export class MapRenderSystem {
             this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY);
         });
 
-        // 6. Night Lighting Pass (Phase 8)
+        // 6. Night Lighting Pass
         if (getTimeOfDay() === 'night') {
             const px = (localPlayer.x - camX) * this.VP.S + this.VP.S / 2;
             const py = (localPlayer.y - camY) * this.VP.S + this.VP.S / 2;
-            const rad = this.VP.S * 4.5;
-            
+            const rad = this.VP.S * 7;
+
             ctx.save();
-            ctx.globalCompositeOperation = 'multiply';
-            const grad = ctx.createRadialGradient(px, py, this.VP.S, px, py, rad);
-            grad.addColorStop(0, 'rgba(255, 255, 230, 1)');
-            grad.addColorStop(0.3, 'rgba(100, 100, 150, 0.8)');
-            grad.addColorStop(1, 'rgba(10, 10, 40, 1)');
+            ctx.globalCompositeOperation = 'source-over';
+            const grad = ctx.createRadialGradient(px, py, this.VP.S * 0.5, px, py, rad);
+            grad.addColorStop(0,   'rgba(0,0,0,0)');
+            grad.addColorStop(0.4, 'rgba(0,0,20,0.15)');
+            grad.addColorStop(0.7, 'rgba(0,0,30,0.55)');
+            grad.addColorStop(1,   'rgba(0,0,20,0.88)');
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
             ctx.restore();

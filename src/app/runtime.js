@@ -119,23 +119,21 @@ class AppRuntime {
   }
 
   updateViewport() {
-    const width = Math.max(1, window.innerWidth);
+    const width  = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
     const isPortrait = height > width;
-    const aspect = width / height;
-    if (isPortrait) {
-        this.VP.W = 12;
-        this.VP.H = Math.max(18, Math.min(26, Math.round(this.VP.W / aspect)));
-    } else {
-        this.VP.H = 14;
-        this.VP.W = Math.max(20, Math.min(30, Math.round(this.VP.H * aspect)));
-    }
-    // Update systems that care about VP
+    const targetW = isPortrait ? 12 : 20;
+    const targetH = isPortrait ? 20 : 13;
+    const sFromW = Math.floor(width  / targetW);
+    const sFromH = Math.floor(height / targetH);
+    this.VP.S = Math.max(40, Math.min(72, Math.min(sFromW, sFromH)));
+    this.VP.W = Math.floor(width  / this.VP.S);
+    this.VP.H = Math.floor(height / this.VP.S);
+
     if (this.mapRender) this.mapRender.VP = this.VP;
     if (this.entityRender) this.entityRender.VP = this.VP;
     if (this.uiRender) this.uiRender.VP = this.VP;
 
-    // Trigger canvas resize
     const canvas = document.getElementById('game-canvas');
     if (canvas instanceof HTMLCanvasElement) {
         canvas.width = this.VP.CW;

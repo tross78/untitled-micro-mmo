@@ -3,13 +3,15 @@ import { getGameAreaEl } from '../adapters/dom/shell.js';
 
 export const ACTION = {
   MOVE_N: 'move_n', MOVE_S: 'move_s', MOVE_E: 'move_e', MOVE_W: 'move_w',
-  INTERACT: 'interact',   // talk to NPC / pick up item / use portal
-  ATTACK: 'attack',       // engage nearest enemy
-  INVENTORY: 'inventory', // open inventory panel
-  MENU: 'menu',           // open action menu / pause
-  CONFIRM: 'confirm',     // select highlighted option
-  CANCEL: 'cancel',       // back / close panel
-  SPRINT: 'sprint',       // hold to move faster (Phase 8: smooth scroll)
+  INTERACT: 'interact',
+  ATTACK: 'attack',
+  INVENTORY: 'inventory',
+  MENU: 'menu',
+  CONFIRM: 'confirm',
+  CANCEL: 'cancel',
+  SPRINT: 'sprint',
+  PAGE_UP: 'page_up',
+  PAGE_DOWN: 'page_down',
 };
 
 const KEY_MAP = {
@@ -22,7 +24,9 @@ const KEY_MAP = {
   'i': ACTION.INVENTORY, 'I': ACTION.INVENTORY, 'Tab': ACTION.INVENTORY,
   'Escape': ACTION.CANCEL,
   'Enter': ACTION.CONFIRM,
-  'Shift': ACTION.SPRINT
+  'Shift': ACTION.SPRINT,
+  'm': ACTION.MENU, 'M': ACTION.MENU,
+  'PageUp': ACTION.PAGE_UP, 'PageDown': ACTION.PAGE_DOWN,
 };
 
 export class InputManager {
@@ -113,15 +117,17 @@ export class InputManager {
 
         // Button mapping (standard layout)
         const buttons = [
-          { idx: 0, action: ACTION.INTERACT },  // A / Cross — interact first; falls back to confirm in handler
-          { idx: 1, action: ACTION.CANCEL },    // B / Circle
-          { idx: 2, action: ACTION.ATTACK },    // X / Square
-          { idx: 3, action: ACTION.INVENTORY }, // Y / Triangle
+          { idx: 0, action: ACTION.INTERACT },
+          { idx: 1, action: ACTION.CANCEL },
+          { idx: 2, action: ACTION.ATTACK },
+          { idx: 3, action: ACTION.INVENTORY },
+          { idx: 4, action: ACTION.PAGE_UP },   // LB / L1
+          { idx: 5, action: ACTION.PAGE_DOWN }, // RB / R1
           { idx: 9, action: ACTION.MENU },      // Start
-          { idx: 12, action: ACTION.MOVE_N },   // D-pad Up
-          { idx: 13, action: ACTION.MOVE_S },   // D-pad Down
-          { idx: 14, action: ACTION.MOVE_W },   // D-pad Left
-          { idx: 15, action: ACTION.MOVE_E },   // D-pad Right
+          { idx: 12, action: ACTION.MOVE_N },
+          { idx: 13, action: ACTION.MOVE_S },
+          { idx: 14, action: ACTION.MOVE_W },
+          { idx: 15, action: ACTION.MOVE_E },
         ];
 
         buttons.forEach(b => {

@@ -21,8 +21,8 @@ export const defineRoom = (id, definition) => {
     // Compression parsing (Phase 7.9.9.4)
     if (typeof definition.exitTiles === 'string') {
         definition.exitTiles = definition.exitTiles.split('|').map(s => {
-            const [x, y, dest, destX, destY, type] = s.split(',');
-            return { x: +x, y: +y, dest, destX: +destX, destY: +destY, type: type || 'edge' };
+            const [x, y, dest, destX, destY, type, w = '1', h = '1'] = s.split(',');
+            return { x: +x, y: +y, dest, destX: +destX, destY: +destY, type: type || 'edge', w: +w, h: +h };
         });
     }
     if (typeof definition.scenery === 'string') {

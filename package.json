@@ -17,7 +17,8 @@
     "validate:content": "node scripts/validate-content.js",
     "format": "prettier --write src/*.js",
     "verify": "npm run build && npm test && npm run typecheck && npm run validate:content",
-    "diagnose": "bash scripts/diagnose.sh"
+    "diagnose": "bash scripts/diagnose.sh",
+    "editor": "npx --yes serve . -l 3001 --no-clipboard & sleep 1 && open http://localhost:3001/tools/editor.html"
   },
   "keywords": [],
   "author": "",

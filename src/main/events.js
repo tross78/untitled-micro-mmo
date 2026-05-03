@@ -261,6 +261,14 @@ export const setupGlobalEvents = () => {
                 triggerVisualRefresh();
                 return;
             }
+            if (action === ACTION.PAGE_UP || action === ACTION.PAGE_DOWN) {
+                const delta = action === ACTION.PAGE_UP ? -1 : 1;
+                let idx = menu.selectedIndex || 0;
+                for (let i = 0; i < 5; i++) idx = findNearestEnabledIndex(menu.entries, idx, delta);
+                menu.selectedIndex = idx;
+                triggerVisualRefresh();
+                return;
+            }
             if (action === ACTION.CANCEL) {
                 goBackMenu();
                 return;
