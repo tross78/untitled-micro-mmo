@@ -111,13 +111,41 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
     });
 
     describe('Interactions', () => {
+        test('talk works for static room NPCs even when patrol location differs', async () => {
+            const rules = await import('../rules/index.js');
+            rules.getNPCLocation.mockImplementation((id) => {
+                if (id === 'sage') return 'forest_edge';
+                if (id === 'guard') return 'hallway';
+                if (id === 'barkeep') return 'tavern';
+                if (id === 'bard') return 'tavern';
+                if (id === 'merchant') return 'market';
+                return null;
+            });
+
+            localPlayer.location = 'ruins';
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('talk sage');
+
+            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Sage' }));
+        });
+
         test('interact command talks to NPC if present', async () => {
             localPlayer.location = 'hallway'; // Guard is here
             appRuntime.hydratePlayer(localPlayer);
             
             await handleCommand('interact');
             step();
-            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Guard' }));
+            expect(emitSpy).toHaveBeenCalledWith('ui:menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'guard' }) }));
+        });
+
+        test('talking to a merchant opens the selectable npc menu', async () => {
+            localPlayer.location = 'market';
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('talk merchant');
+
+            expect(emitSpy).toHaveBeenCalledWith('ui:menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'merchant' }) }));
         });
 
         test('interact command uses portal if no NPC present', async () => {
@@ -129,10 +157,25 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             step();
             expect(localPlayer.location).toBe('hallway');
         });
+
+        test('walking into an NPC does not overlap and opens interaction', async () => {
+            localPlayer.location = 'hallway';
+            localPlayer.x = 1;
+            localPlayer.y = 2;
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('move east');
+            step();
+            step();
+
+            expect(localPlayer.x).toBe(1);
+            expect(localPlayer.y).toBe(2);
+            expect(emitSpy).toHaveBeenCalledWith('ui:menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'guard' }) }));
+        });
     });
 
     describe('Kill Quest Tracking (combat regression)', () => {
-        test('attack command in enemy location emits a combat event', async () => {
+        test('attack command in enemy location damages the room enemy', async () => {
             localPlayer.location = 'forest_edge';
             localPlayer.forestFights = 5;
             appRuntime.hydratePlayer(localPlayer);
@@ -140,9 +183,14 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             await handleCommand('attack');
             step();
             
-            const allEvents = emitSpy.mock.calls.map(c => c[0]);
-            const hasCombatEvent = allEvents.some(e => e.startsWith('combat:') || e.startsWith('monster:') || e === 'log');
-            expect(hasCombatEvent).toBe(true);
+            const enemy = shardEnemies.get('forest_edge');
+            expect(enemy).toBeTruthy();
+            expect(enemy.type).toBe('forest_wolf');
+            expect(enemy.hp).toBeLessThan(enemy.maxHp);
+            expect(emitSpy).toHaveBeenCalledWith('combat:hit', expect.objectContaining({
+                attacker: 'You',
+                target: 'Forest Wolf'
+            }));
         });
     });
 

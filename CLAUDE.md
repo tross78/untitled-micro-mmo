@@ -12,6 +12,7 @@
 ## Codebase Standards
 
 *   **No Dependencies:** Strictly adhere to ADR-009. No new npm dependencies. Use native browser APIs (Web Audio, Canvas, IndexedDB, Ed25519).
+*   **Bundle Size Limit:** 250KB (minified). Flag if build exceeds this.
 *   **Procedural Assets:** All graphics and audio must be generated at runtime. No external image or sound files.
 *   **P2P Architecture:** The game is serverless (Arbiter on Pi Zero). Player state lives on the client. Trust is established via Ed25519 signatures and deterministic simulation.
 *   **Event-Driven:** Use the `bus` (`src/eventbus.js`) for all cross-module communication.

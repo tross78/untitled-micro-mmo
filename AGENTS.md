@@ -1635,3 +1635,35 @@ const slot \= Math.floor(Date.now() / ROLLUP\_INTERVAL) % all.length;
 * Peer join: sends state only to the new peer (sendState(packet, \[peerId\])), not a full broadcast.  
 * Maps lastRollupTime and fraudCounts are purged hourly to prevent unbounded growth on Pi Zero.  
 * doReset() clears fraudCounts and lastRollupTime. 
+
+---
+
+### **Phase 8.2: Unified Procedural Tilemap & Map Editor — COMPLETE**
+
+**Tile art pass:**
+* Replaced emoji scenery labels in `rooms.js` with string keys (`'tree'`, `'rock'`, `'crate'`, etc.) — no emoji rendering in the canvas pipeline (ADR-011).
+* Extended `TILE_PAL` in `graphics.js` with richer LttP/Stardew-inspired palettes for all existing tile types.
+* Added three new tile types: `dungeon` (blue-grey interlocking tiles, LttP dungeon style), `cave` (earthy cobblestone, Stardew mine style), `ice` (pale blue-white frost with hairline cracks).
+* Added 13 new sprite shapes to `SHAPES`: `scroll`, `barrel`, `stall`, `sign`, `wheel`, `torch`, `bones`, `anchor`, `snowflake`, `crown`, `ladder`, `shell`, `candle`, `door_arch`.
+* Added `getSceneryPalette(label)` to `graphics.js` — compact grouped palette lookup, no per-scenery object overhead.
+* Updated `zoneTileType()` to map all 27 rooms to appropriate tile types including the new `dungeon`, `cave`, `ice` types.
+* Simplified `drawScenery()` in `map-render-system.js` — direct string key lookup, no emoji map, no emoji fallback text.
+
+**Portal system:**
+* Edge exits now use LttP-style full-side boundary crossing (ADR-013) — player position preserved along the edge.
+* Movement system uses `loc.exits[dir]` + boundary check for edge transitions; position offset clamped to destination dimensions.
+* `door` type exits remain specific-tile walk-through portals.
+
+**DSL extension:**
+* `defineRoom()` in `define.js` now parses an optional `tiles` row-string array — single char per tile (`W`, `G`, `I`, etc.) for compact hand-authored tile overrides (ADR-012).
+
+**Map editor tool (`tools/editor.html` + `tools/editor.js`):**
+* Standalone browser tool — zero dependencies, import via `<script type="module">`.
+* Left panel: world graph canvas — all 27 rooms as labeled nodes, edges drawn (dashed red = orphaned/non-reciprocal exit).
+* Right panel: tile grid editor — click to paint tile types, right-click to place/clear scenery sprites.
+* Bottom: live DSL output (copy to clipboard → paste into `rooms.js`).
+* Resize rooms with +Row/-Row/+Col/-Col toolbar buttons.
+* Editor state persisted to `localStorage` between sessions.
+* Scenery picker shows rendered sprite previews using the same `getGrayscaleTemplate` + `applyPalette` pipeline as the game.
+
+**Bundle:** 215KB — within the updated 250KB limit.

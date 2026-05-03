@@ -11,6 +11,12 @@ const define = (kind, id, definition) => ({ ...definition, id, kind });
 
 export const defineItem = (id, definition) => define('item', id, definition);
 export const defineEnemy = (id, definition) => define('enemy', id, definition);
+// Tile char → tile type name
+const TILE_CHAR_MAP = {
+    '.': null, 'W': 'wall', 'G': 'grass', 'I': 'interior',
+    'V': 'water', 'S': 'stone_floor', 'D': 'dungeon', 'C': 'cave', 'Z': 'ice'
+};
+
 export const defineRoom = (id, definition) => {
     // Compression parsing (Phase 7.9.9.4)
     if (typeof definition.exitTiles === 'string') {
@@ -21,9 +27,21 @@ export const defineRoom = (id, definition) => {
     }
     if (typeof definition.scenery === 'string') {
         definition.scenery = definition.scenery.split('|').map(s => {
-            const [x, y, label] = s.split(',');
-            return { x: +x, y: +y, label };
+            const [x, y, label, w = '1', h = '1'] = s.split(',');
+            return { x: +x, y: +y, label, w: +w, h: +h };
         });
+    }
+    // Parse tile grid (Phase 8.2) — overrides tileOverrides where char != '.'
+    if (Array.isArray(definition.tiles)) {
+        const extras = [];
+        definition.tiles.forEach((row, wy) => {
+            for (let wx = 0; wx < row.length; wx++) {
+                const type = TILE_CHAR_MAP[row[wx]];
+                if (type) extras.push({ x: wx, y: wy, type });
+            }
+        });
+        definition.tileOverrides = (definition.tileOverrides || []).concat(extras);
+        delete definition.tiles;
     }
     return define('room', id, definition);
 };

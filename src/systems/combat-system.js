@@ -17,14 +17,16 @@ import { playerKeys, myEntry } from '../security/identity.js';
 export class CombatSystem {
   /**
    * @param {import('../domain/ecs.js').WorldStore} world
-   * @param {any} stores - { localPlayer, worldState, shardEnemies }
+    * @param {any} stores - { localPlayer, worldState, shardEnemies }
+   * @param {Record<string, any>} worldData
    * @param {any} gameActions - Network actions
    */
-  constructor(world, stores, gameActions) {
+  constructor(world, stores, worldData, gameActions) {
     this.world = world;
     this.localPlayer = stores.localPlayer;
     this.worldState = stores.worldState;
     this.shardEnemies = stores.shardEnemies;
+    this.worldData = worldData;
     this.gameActions = gameActions;
   }
 
@@ -74,7 +76,7 @@ export class CombatSystem {
             if (health) health.current -= enemyRes.damage;
             bus.emit('ui:shake');
             bus.emit('log', { msg: `${enemyDef.name} hits you for ${enemyRes.damage}!`, color: '#f55' });
-            if (this.localPlayer.hp <= 0) this.handlePlayerDeath(entityId);
+            if (health && health.current <= 0) this.handlePlayerDeath(entityId);
         }
     }
   }
@@ -114,11 +116,16 @@ export class CombatSystem {
     if (!transform || !health) return;
 
     const locId = transform.mapId;
-    const roomDef = this.worldState.rooms?.[locId] || {}; 
+    const roomDef = this.worldData?.[locId] || {};
     const enemyType = roomDef.enemy;
 
     if (!enemyType) {
       bus.emit('log', { msg: `There is nothing to fight here.`, color: '#f55' });
+      return;
+    }
+
+    if (roomDef.nightOnly && getTimeOfDay() !== 'night') {
+      bus.emit('log', { msg: `Nothing stirs here until nightfall.`, color: '#aaa' });
       return;
     }
 
@@ -163,10 +170,21 @@ export class CombatSystem {
     const enemyRes = resolveAttack(scaledAtk, this.localPlayer.defense + bonus.defense + gear.defenseBonus, rng, isNight);
 
     // 3. Apply Player Attack
+    this.world.setComponent(entityId, Component.AttackAnimation, { dir: transform.facing || 's', progress: 0 });
+
     if (playerRes.isDodge) {
       bus.emit('combat:dodge', { attacker: 'You', target: enemyDef.name });
     } else {
       sharedEnemy.hp -= playerRes.damage;
+      
+      const enemyEid = this.world.query([Component.Transform, Component.Sprite]).find(id => {
+          const t = this.world.getComponent(id, Component.Transform);
+          return t.mapId === locId && !this.world.getComponent(id, Component.PlayerControlled);
+      });
+      if (enemyEid) {
+          this.world.setComponent(enemyEid, Component.VisualEffect, { type: 'hit_flash', expires: Date.now() + 150 });
+      }
+
       bus.emit('combat:hit', { 
         attacker: 'You', 
         target: enemyDef.name, 
@@ -186,6 +204,8 @@ export class CombatSystem {
         bus.emit('combat:dodge', { attacker: enemyDef.name, target: 'You' });
       } else {
         health.current -= enemyRes.damage;
+        this.world.setComponent(entityId, Component.VisualEffect, { type: 'hit_flash', expires: Date.now() + 150 });
+
         const maxHp = this.localPlayer.maxHp + bonus.maxHp + (this.localPlayer.buffs?.rested ? 5 : 0);
         bus.emit('combat:hit', { 
           attacker: enemyDef.name, 

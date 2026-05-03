@@ -1,11 +1,13 @@
 // @ts-check
 
+import { appRuntime } from '../app/runtime.js';
+import { Component } from '../domain/components.js';
+
 /**
  * Temporary compatibility layer for legacy UI functions that haven't 
  * been fully moved into ECS components yet.
  */
 
-let _dialogue = null;
 let _hitFlash = 0;
 let _tickerText = '';
 let _banner = null;
@@ -16,49 +18,50 @@ export function setVisualRefreshCallback(fn) { _triggerVisualRefresh = fn; }
 export function setLogicalRefreshCallback(fn) { _triggerLogicalRefresh = fn; }
 
 export function showDialogue(npcName, text) {
-    if (!text) return;
-
-    const CHARS_PER_LINE = 38;
-    const LINES_PER_PAGE = 3;
-    const words = String(text).split(' ');
-    const lines = [];
-    let cur = '';
-    for (const w of words) {
-        if ((cur + (cur ? ' ' : '') + w).length > CHARS_PER_LINE) {
-            if (cur) lines.push(cur);
-            cur = w;
-        } else {
-            cur = cur ? cur + ' ' + w : w;
-        }
+    if (!text) {
+        appRuntime.world.components.get(Component.Dialogue)?.delete(appRuntime.playerEntityId);
+        return;
     }
-    if (cur) lines.push(cur);
 
-    const pages = [];
-    for (let i = 0; i < lines.length; i += LINES_PER_PAGE) {
-        pages.push(lines.slice(i, i + LINES_PER_PAGE));
-    }
-    if (!pages.length) return;
+    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.Dialogue, {
+        speakerId: npcName,
+        text,
+        progress: 0,
+        page: 0
+    });
     
-    _dialogue = { name: npcName, pages, page: 0 };
     if (_triggerVisualRefresh) _triggerVisualRefresh();
     if (_triggerLogicalRefresh) _triggerLogicalRefresh();
 }
 
 export function advanceDialogue() {
-    if (!_dialogue) return false;
-    if (_dialogue.page < (_dialogue.pages?.length || 0) - 1) {
-        _dialogue.page++;
+    const players = appRuntime.world.query([Component.Dialogue]);
+    if (players.length === 0) return false;
+
+    const dialogue = appRuntime.world.getComponent(players[0], Component.Dialogue);
+    const isFinished = dialogue.progress >= dialogue.text.length;
+
+    if (isFinished) {
+        appRuntime.world.components.get(Component.Dialogue).delete(players[0]);
         if (_triggerVisualRefresh) _triggerVisualRefresh();
         if (_triggerLogicalRefresh) _triggerLogicalRefresh();
-        return true;
+        return false;
     }
-    _dialogue = null;
+    
+    // Otherwise, fast-forward typing
+    dialogue.progress = dialogue.text.length;
     if (_triggerVisualRefresh) _triggerVisualRefresh();
-    if (_triggerLogicalRefresh) _triggerLogicalRefresh();
-    return false;
+    return true;
 }
 
-export function isDialogueOpen() { return _dialogue !== null; }
+export function isDialogueOpen() {
+    return appRuntime.world.query([Component.Dialogue]).length > 0;
+}
+
+export function getTickerText() {
+    return _tickerText;
+}
+
 export function triggerHitFlash() { 
     _hitFlash = Date.now() + 200; 
     if (_triggerVisualRefresh) _triggerVisualRefresh();
@@ -68,6 +71,11 @@ export function setTicker(text) {
     if (_triggerVisualRefresh) _triggerVisualRefresh();
 }
 export function showRoomBanner(text) { 
-    _banner = { text, expires: Date.now() + 2000 }; 
+    const id = appRuntime.world.createEntity();
+    appRuntime.world.setComponent(id, Component.UIOverlay, {
+        type: 'banner',
+        text,
+        expires: Date.now() + 2000
+    });
     if (_triggerVisualRefresh) _triggerVisualRefresh();
 }

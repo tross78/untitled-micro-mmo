@@ -2,9 +2,8 @@ import { defineRoom } from '../define.js';
 
 /**
  * Open-World SNES Zelda-Style Room Definitions
- * Uses compressed string format to save bundle size (Phase 7.9.9.4)
- * Exit Format: "x,y,dest,destX,destY,type" (type: edge|door|stairs|up|down)
- * Scenery Format: "x,y,label"
+ * Scenery Format: "x,y,key,w,h" (w,h optional, default 1×1)
+ * Tiles Format: array of row strings (. W G I V S D C Z)
  */
 export const rooms = {
     cellar: defineRoom('cellar', {
@@ -13,7 +12,19 @@ export const rooms = {
         width: 10, height: 10,
         exits: { north: 'hallway' },
         exitTiles: "5,0,hallway,5,8,door",
-        scenery: "2,2,📦|8,7,📦|1,8,📦",
+        tiles: [
+            "WWWWW.WWWW",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "WWWWWWWWWW",
+        ],
+        scenery: "1,1,barrel,2,2|7,1,barrel,2,2|1,7,crate|3,7,crate|6,7,crate|8,7,crate|8,3,crate",
     }),
     hallway: defineRoom('hallway', {
         name: 'The Hallway',
@@ -22,7 +33,19 @@ export const rooms = {
         exits: { south: 'cellar', north: 'tavern', east: 'forest_edge', west: 'library' },
         exitTiles: "5,9,cellar,5,1,door|5,0,tavern,5,8,door|10,5,forest_edge,1,5,edge|0,5,library,9,5,edge",
         staticEntities: [{ id: 'guard', x: 2, y: 2 }],
-        scenery: "4,4,🏛|6,4,🏛",
+        tiles: [
+            "WWWWW.WWWWW",
+            "W.........W",
+            "W.........W",
+            "W.........W",
+            "W.........W",
+            "...........",
+            "W.........W",
+            "W.........W",
+            "W.........W",
+            "WWWWW.WWWWW",
+        ],
+        scenery: "2,2,torch|8,2,torch|2,7,torch|8,7,torch|4,4,pillar|6,4,pillar",
     }),
     library: defineRoom('library', {
         name: 'The Great Library',
@@ -30,14 +53,20 @@ export const rooms = {
         width: 11, height: 11,
         exits: { east: 'hallway' },
         exitTiles: "10,5,hallway,1,5,edge",
-        scenery: "5,2,📜",
-        tileOverrides: [
-            { x: 3, y: 2, type: 'wall' }, { x: 3, y: 3, type: 'wall' }, { x: 3, y: 4, type: 'wall' },
-            { x: 7, y: 2, type: 'wall' }, { x: 7, y: 3, type: 'wall' }, { x: 7, y: 4, type: 'wall' },
-            { x: 3, y: 6, type: 'wall' }, { x: 3, y: 7, type: 'wall' }, { x: 3, y: 8, type: 'wall' },
-            { x: 7, y: 6, type: 'wall' }, { x: 7, y: 7, type: 'wall' }, { x: 7, y: 8, type: 'wall' },
-            { x: 5, y: 5, type: 'interior' }
+        tiles: [
+            "WWWWWWWWWWW",
+            "W.........W",
+            "W.........W",
+            "W.........W",
+            "W.........W",
+            "W.........." ,
+            "W.........W",
+            "W.........W",
+            "W.........W",
+            "W.........W",
+            "WWWWWWWWWWW",
         ],
+        scenery: "1,1,bookshelf,3,2|7,1,bookshelf,3,2|1,7,bookshelf,3,2|7,7,bookshelf,3,2|5,1,fireplace|5,5,scroll|2,4,chair|8,4,chair|2,6,chair|8,6,chair",
     }),
     tavern: defineRoom('tavern', {
         name: 'The Rusty Flagon',
@@ -45,8 +74,20 @@ export const rooms = {
         width: 12, height: 10,
         exits: { south: 'hallway', east: 'market' },
         exitTiles: "5,9,hallway,5,1,door|11,5,market,1,5,door",
-        staticEntities: [{ id: 'barkeep', x: 10, y: 2 }, { id: 'bard', x: 2, y: 2 }],
-        scenery: "4,4,🍺|8,4,🍺|4,6,🍺|8,6,🍺",
+        staticEntities: [{ id: 'barkeep', x: 10, y: 2 }, { id: 'bard', x: 2, y: 6 }],
+        tiles: [
+            "WWWWWWWWWWWW",
+            "WIIIIIIIIIIW",
+            "WIIIIIIIIIIW",
+            "WIIIIIIIIIIW",
+            "WIIIIIIIIIIW",
+            "WIIIIIIIIII.",
+            "WIIIIIIIIIIW",
+            "WIIIIIIIIIIW",
+            "WIIIIIIIIIIW",
+            "WWWWW.WWWWWW",
+        ],
+        scenery: "6,1,counter,4,1|10,1,fireplace|3,3,table|8,3,table|3,7,table|8,7,table|2,3,chair|4,3,chair|7,3,chair|9,3,chair|2,7,chair|4,7,chair|7,7,chair|9,7,chair|1,1,barrel|1,8,barrel",
     }),
     market: defineRoom('market', {
         name: 'The Market Square',
@@ -55,7 +96,7 @@ export const rooms = {
         exits: { west: 'tavern', south: 'crossroads' },
         exitTiles: "0,7,tavern,10,5,door|7,14,crossroads,5,1,edge",
         staticEntities: [{ id: 'merchant', x: 8, y: 8 }],
-        scenery: "5,5,🏪|11,5,🏪|5,11,🏪|11,11,🏪|8,2,⛲",
+        scenery: "1,2,stall,3,2|11,2,stall,3,2|1,11,stall,3,2|11,11,stall,3,2|7,7,altar,2,2|3,1,barrel|11,1,barrel|3,13,barrel|11,13,barrel",
     }),
     crossroads: defineRoom('crossroads', {
         name: 'The Crossroads',
@@ -63,7 +104,7 @@ export const rooms = {
         width: 11, height: 11,
         exits: { north: 'market', west: 'mill', south: 'herbalist_hut', east: 'frozen_lake' },
         exitTiles: "5,0,market,7,13,edge|0,5,mill,9,5,edge|5,10,herbalist_hut,4,1,edge|10,5,frozen_lake,1,5,edge",
-        scenery: "5,5,🪧",
+        scenery: "5,5,sign|1,1,tree,3,3|7,1,tree,3,3|1,7,tree,3,3|7,7,tree,3,3",
     }),
     mill: defineRoom('mill', {
         name: 'The Old Mill',
@@ -71,7 +112,19 @@ export const rooms = {
         width: 10, height: 10,
         exits: { east: 'crossroads' },
         exitTiles: "9,5,crossroads,1,5,edge",
-        scenery: "5,5,⚙️",
+        tiles: [
+            "WWWWWWWWWW",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W.........",
+            "W........W",
+            "W........W",
+            "W........W",
+            "WWWWWWWWWW",
+        ],
+        scenery: "3,4,wheel,2,2|1,1,crate|8,1,crate|1,7,crate|7,2,barrel,2,2",
     }),
     herbalist_hut: defineRoom('herbalist_hut', {
         name: "Herbalist's Hut",
@@ -80,7 +133,17 @@ export const rooms = {
         exits: { north: 'crossroads' },
         exitTiles: "4,0,crossroads,5,9,edge",
         staticEntities: [{ id: 'herbalist', x: 4, y: 4 }],
-        scenery: "2,2,🌿",
+        tiles: [
+            "WWWW.WWW",
+            "W......W",
+            "W......W",
+            "W......W",
+            "W......W",
+            "W......W",
+            "W......W",
+            "WWWWWWWW",
+        ],
+        scenery: "1,3,cauldron,2,2|4,2,table|5,3,scroll|1,1,shrub|5,1,shrub|6,5,barrel|1,6,mushroom|3,6,mushroom|5,6,mushroom",
     }),
     frozen_lake: defineRoom('frozen_lake', {
         name: 'The Frozen Lake',
@@ -88,8 +151,19 @@ export const rooms = {
         width: 25, height: 10,
         exits: { west: 'crossroads' },
         exitTiles: "0,5,crossroads,9,5,edge",
-        scenery: "12,5,❄️",
-        tileOverrides: [{ x: 10, y: 5, type: 'water' }],
+        tiles: [
+            ".........................",
+            ".........................",
+            ".........................",
+            ".........................",
+            ".....VVVVVVVVVVVVVV......",
+            ".....VVVVVVVVVVVVVV......",
+            ".....VVVVVVVVVVVVVV......",
+            ".........................",
+            ".........................",
+            ".........................",
+        ],
+        scenery: "12,1,snowflake|6,8,snowflake|18,8,snowflake|1,5,rock|23,5,rock|10,2,rock|15,2,rock",
         enemy: 'skeleton', enemyX: 15, enemyY: 5
     }),
     forest_edge: defineRoom('forest_edge', {
@@ -98,8 +172,12 @@ export const rooms = {
         width: 20, height: 20,
         exits: { west: 'hallway', north: 'ruins', south: 'cave', east: 'forest_depths' },
         exitTiles: "0,10,hallway,9,5,edge|10,0,ruins,10,18,edge|10,19,cave,5,1,door|19,10,forest_depths,1,12,edge",
-        scenery: "3,3,🌲|15,4,🌲|5,16,🌲|17,14,🌲",
-        sceneryScatter: [{ type: 'flora', label: '🍄', count: [3, 8] }, { type: 'scenery', label: '🪨', count: [1, 3] }],
+        scenery: "1,1,tree,3,3|15,1,tree,3,3|1,14,tree,3,3|15,14,tree,3,3|5,1,tree,3,3|12,1,tree,3,3|1,7,tree,3,3|16,6,tree,3,3|1,11,tree,3,3|16,11,tree,3,3",
+        sceneryScatter: [
+            { type: 'flora', label: 'mushroom', count: [8, 15] },
+            { type: 'scenery', label: 'rock', count: [4, 8] },
+            { type: 'flora', label: 'shrub', count: [5, 10] }
+        ],
         enemy: 'forest_wolf', enemyX: 12, enemyY: 5
     }),
     forest_depths: defineRoom('forest_depths', {
@@ -108,8 +186,12 @@ export const rooms = {
         width: 25, height: 25,
         exits: { west: 'forest_edge', east: 'lake_shore', north: 'bandit_camp', south: 'cemetery' },
         exitTiles: "0,12,forest_edge,18,10,edge|24,12,lake_shore,1,10,edge|12,0,bandit_camp,10,13,edge|12,24,cemetery,10,1,edge",
-        scenery: "5,5,🌲|18,6,🌲|10,15,🌲|22,20,🌲",
-        sceneryScatter: [{ type: 'flora', label: '🌿', count: [5, 12] }, { type: 'scenery', label: '🪵', count: [2, 6] }],
+        scenery: "1,1,tree,3,3|5,1,tree,3,3|10,2,tree,3,3|16,1,tree,3,3|21,1,tree,3,3|1,7,tree,3,3|20,8,tree,3,3|1,14,tree,3,3|22,14,tree,3,3|8,10,tree,3,3|15,10,tree,3,3|1,20,tree,3,3|10,20,tree,3,3|20,20,tree,3,3",
+        sceneryScatter: [
+            { type: 'flora', label: 'shrub', count: [15, 25] },
+            { type: 'scenery', label: 'shrub', count: [8, 15] },
+            { type: 'flora', label: 'mushroom', count: [5, 12] }
+        ],
         enemy: 'goblin', enemyX: 15, enemyY: 15
     }),
     cemetery: defineRoom('cemetery', {
@@ -118,7 +200,29 @@ export const rooms = {
         width: 20, height: 20,
         exits: { north: 'forest_depths', south: 'catacombs' },
         exitTiles: "10,0,forest_depths,12,23,edge|10,19,catacombs,7,2,stairs",
-        scenery: "5,5,🪦|15,15,🪦",
+        tiles: [
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+            ".........SS.........",
+        ],
+        scenery: "3,3,grave|6,3,grave|3,6,grave|6,6,grave|13,3,grave|16,3,grave|13,6,grave|16,6,grave|3,13,grave|6,13,grave|13,13,grave|16,13,grave|1,1,tree,3,3|16,1,tree,3,3|1,16,tree,3,3|16,16,tree,3,3",
         enemy: 'wraith', nightOnly: true, enemyX: 10, enemyY: 10
     }),
     lake_shore: defineRoom('lake_shore', {
@@ -127,7 +231,29 @@ export const rooms = {
         width: 20, height: 20,
         exits: { west: 'forest_depths', north: 'mountain_pass', east: 'harbour' },
         exitTiles: "0,10,forest_depths,23,12,edge|10,0,mountain_pass,10,28,edge|19,10,harbour,1,7,edge",
-        scenery: "5,5,🌊|6,5,🌊",
+        tiles: [
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "IIIIIIIII...........",
+            "IIIIIIIII...........",
+            "IIIIIIIII...........",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+            "....................",
+        ],
+        scenery: "1,1,tree,3,3|16,1,tree,3,3|8,1,tree,3,3|2,9,rock|2,11,rock|5,5,rock|15,5,rock|5,15,rock|15,15,rock",
     }),
     harbour: defineRoom('harbour', {
         name: 'The Harbour',
@@ -135,8 +261,25 @@ export const rooms = {
         width: 15, height: 15,
         exits: { west: 'lake_shore', south: 'sea_cave', east: 'smuggler_den' },
         exitTiles: "0,7,lake_shore,18,10,edge|7,14,sea_cave,6,1,door|14,7,smuggler_den,1,4,door",
-        staticEntities: [{ id: 'merchant', x: 10, y: 5 }], 
-        scenery: "5,7,⚓",
+        staticEntities: [{ id: 'merchant', x: 10, y: 5 }],
+        tiles: [
+            "...............",
+            ".....IIIII.....",
+            ".....IIIII.....",
+            ".....IIIII.....",
+            ".....IIIII.....",
+            ".....IIIII.....",
+            ".IIIIIIIIIIIII.",
+            ".IIIIIIIIIIIII.",
+            ".IIIIIIIIIIIII.",
+            "...............",
+            "...............",
+            "...............",
+            "...............",
+            "...............",
+            "...............",
+        ],
+        scenery: "5,7,anchor|8,7,anchor|3,4,crate,2,2|10,4,crate,2,2|1,10,rock|13,10,rock",
     }),
     sea_cave: defineRoom('sea_cave', {
         name: 'The Sea Cave',
@@ -144,8 +287,11 @@ export const rooms = {
         width: 12, height: 12,
         exits: { north: 'harbour' },
         exitTiles: "6,0,harbour,7,13,door",
-        scenery: "3,3,🐚",
-        tileOverrides: [{ x: 0, y: 0, type: 'water' }, { x: 11, y: 0, type: 'water' }, { x: 0, y: 11, type: 'water' }, { x: 11, y: 11, type: 'water' }],
+        scenery: "2,3,shell|9,3,shell|2,8,mushroom|9,8,mushroom|5,5,rock|6,5,rock|4,8,rock",
+        tileOverrides: [
+            { x: 0, y: 0, type: 'water' }, { x: 11, y: 0, type: 'water' },
+            { x: 0, y: 11, type: 'water' }, { x: 11, y: 11, type: 'water' }
+        ],
         enemy: 'crab', enemyX: 6, enemyY: 6
     }),
     smuggler_den: defineRoom('smuggler_den', {
@@ -155,7 +301,17 @@ export const rooms = {
         exits: { west: 'harbour' },
         exitTiles: "0,4,harbour,13,7,door",
         staticEntities: [{ id: 'merchant', x: 4, y: 4 }],
-        scenery: "2,2,📦",
+        tiles: [
+            "WWWWWWWW",
+            "W......W",
+            "W......W",
+            "W......W",
+            "........",
+            "W......W",
+            "W......W",
+            "WWWWWWWW",
+        ],
+        scenery: "1,2,crate,2,2|5,2,crate,2,2|1,5,barrel,2,2|5,5,barrel",
     }),
     bandit_camp: defineRoom('bandit_camp', {
         name: 'The Bandit Camp',
@@ -163,7 +319,7 @@ export const rooms = {
         width: 15, height: 15,
         exits: { south: 'forest_depths' },
         exitTiles: "7,14,forest_depths,12,1,edge",
-        scenery: "7,7,🔥",
+        scenery: "7,7,torch|4,4,torch|10,4,torch|4,10,torch|10,10,torch|2,3,crate,2,2|11,3,crate,2,2|2,10,crate,2,2|11,10,crate,2,2|5,1,tree,3,3|7,2,rock",
         enemy: 'bandit', enemyX: 10, enemyY: 5
     }),
     mountain_pass: defineRoom('mountain_pass', {
@@ -172,7 +328,14 @@ export const rooms = {
         width: 20, height: 30,
         exits: { south: 'lake_shore', north: 'watchtower' },
         exitTiles: "10,29,lake_shore,10,1,edge|10,0,watchtower,3,18,edge",
-        scenery: "5,10,🪨|15,20,🪨",
+        tileOverrides: (() => {
+            const o = [];
+            for (let y = 0; y < 30; y++)
+                for (let x = 8; x <= 11; x++)
+                    o.push({ x, y, type: 'stone_floor' });
+            return o;
+        })(),
+        scenery: "2,5,rock,2,2|15,5,rock,2,2|2,15,rock,2,2|15,15,rock,2,2|2,25,rock,2,2|15,25,rock,2,2",
         enemy: 'mountain_troll', enemyX: 10, enemyY: 10
     }),
     watchtower: defineRoom('watchtower', {
@@ -182,7 +345,15 @@ export const rooms = {
         exits: { south: 'mountain_pass' },
         exitTiles: "3,19,mountain_pass,10,1,edge",
         staticEntities: [{ id: 'guard', x: 3, y: 3 }],
-        scenery: "3,10,🪜",
+        tiles: [
+            "WWWWWW",
+            "WSSSSW", "WSSSSW", "WSSSSW", "WSSSSW", "WSSSSW",
+            "WSSSSW", "WSSSSW", "WSSSSW", "WSSSSW", "WSSSSW",
+            "WSSSSW", "WSSSSW", "WSSSSW", "WSSSSW", "WSSSSW",
+            "WSSSSW", "WSSSSW", "WSSSSW",
+            "WWW.WW",
+        ],
+        scenery: "2,5,torch|3,10,ladder|2,15,torch",
     }),
     ruins: defineRoom('ruins', {
         name: 'The Old Ruins',
@@ -190,8 +361,30 @@ export const rooms = {
         width: 20, height: 20,
         exits: { south: 'forest_edge', north: 'ruins_descent' },
         exitTiles: "10,19,forest_edge,10,1,edge|10,0,ruins_descent,5,8,stairs",
-        staticEntities: [{ id: 'sage', x: 10, y: 10 }],
-        scenery: "5,5,🏛|15,15,🏛",
+        staticEntities: [{ id: 'sage', x: 10, y: 12 }],
+        tiles: [
+            "WWWWWWWWWW.WWWWWWWWW",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "W..................W",
+            "WWWWWWWWWW.WWWWWWWWW",
+        ],
+        scenery: "8,8,altar,2,2|3,3,pillar|16,3,pillar|3,16,pillar|16,16,pillar|3,9,torch|16,9,torch|9,3,torch|9,16,torch|6,6,pillar|13,6,pillar|6,13,pillar|13,13,pillar",
         enemy: 'ruin_shade', enemyX: 5, enemyY: 10
     }),
     ruins_descent: defineRoom('ruins_descent', {
@@ -200,7 +393,19 @@ export const rooms = {
         width: 10, height: 10,
         exits: { south: 'ruins', down: 'catacombs' },
         exitTiles: "5,9,ruins,10,1,stairs|5,0,catacombs,5,13,down",
-        scenery: "2,5,🪜",
+        tiles: [
+            "WWWWW.WWWW",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "WWWWW.WWWW",
+        ],
+        scenery: "4,4,ladder,2,3|1,1,rock|8,1,rock|1,8,torch|8,8,torch",
         enemy: 'skeleton', enemyX: 8, enemyY: 5
     }),
     catacombs: defineRoom('catacombs', {
@@ -209,7 +414,28 @@ export const rooms = {
         width: 15, height: 15,
         exits: { up: 'ruins_descent', north: 'dungeon_cell', south: 'cemetery' },
         exitTiles: "7,14,ruins_descent,5,1,up|7,0,dungeon_cell,5,8,edge|7,2,cemetery,10,18,stairs",
-        scenery: "3,3,☠|12,12,☠",
+        tiles: [
+            "WWWWWWW.WWWWWWW",
+            "WWWWWWWWWWWWWWW",
+            "WWWWWWW.WWWWWWW",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "WWWWWWW.WWWWWWW",
+        ],
+        tileOverrides: [
+            { x:2,y:1,type:'wall' }, { x:5,y:1,type:'wall' }, { x:8,y:1,type:'wall' }, { x:11,y:1,type:'wall' },
+            { x:2,y:13,type:'wall' }, { x:5,y:13,type:'wall' }, { x:8,y:13,type:'wall' }, { x:11,y:13,type:'wall' },
+        ],
+        scenery: "3,4,bones,2,2|10,4,bones,2,2|3,10,bones,2,2|10,10,bones,2,2|1,5,candle|1,9,candle|13,5,candle|13,9,candle|7,7,altar",
         enemy: 'wraith', enemyX: 7, enemyY: 7
     }),
     dungeon_cell: defineRoom('dungeon_cell', {
@@ -218,7 +444,19 @@ export const rooms = {
         width: 10, height: 10,
         exits: { south: 'catacombs', east: 'throne_room' },
         exitTiles: "5,9,catacombs,7,1,edge|9,5,throne_room,1,5,door",
-        scenery: "1,1,⛓",
+        tiles: [
+            "WWWWWWWWWW",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W........W",
+            "W.........",
+            "W........W",
+            "W........W",
+            "W........W",
+            "WWWWW.WWWW",
+        ],
+        scenery: "2,2,rock|7,2,rock|2,7,mushroom|7,7,mushroom|1,4,bed,3,2",
         enemy: 'skeleton', enemyX: 5, enemyY: 5
     }),
     throne_room: defineRoom('throne_room', {
@@ -227,7 +465,31 @@ export const rooms = {
         width: 15, height: 15,
         exits: { west: 'dungeon_cell' },
         exitTiles: "0,7,dungeon_cell,8,5,door",
-        scenery: "7,2,👑",
+        tiles: [
+            "WWWWWWWWWWWWWWW",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "..............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "W.............W",
+            "WWWWWWWWWWWWWWW",
+        ],
+        tileOverrides: (() => {
+            const o = [];
+            for (let y = 1; y <= 4; y++)
+                for (let x = 5; x <= 9; x++)
+                    o.push({ x, y, type: 'stone_floor' });
+            return o;
+        })(),
+        scenery: "6,2,crown,3,2|2,2,torch|12,2,torch|2,12,torch|12,12,torch|1,6,pillar|13,6,pillar|6,7,chair,2,2",
         enemy: 'wraith', enemyX: 7, enemyY: 10
     }),
     cave: defineRoom('cave', {
@@ -236,7 +498,13 @@ export const rooms = {
         width: 12, height: 12,
         exits: { north: 'forest_edge' },
         exitTiles: "6,0,forest_edge,10,18,door",
-        scenery: "3,3,💧",
+        tileOverrides: [
+            { x:3,y:5,type:'water' }, { x:4,y:5,type:'water' },
+            { x:3,y:6,type:'water' }, { x:4,y:6,type:'water' },
+            { x:7,y:5,type:'water' }, { x:8,y:5,type:'water' },
+            { x:7,y:6,type:'water' }, { x:8,y:6,type:'water' },
+        ],
+        scenery: "1,1,rock,2,2|9,1,rock,2,2|1,9,mushroom,2,2|9,9,mushroom,2,2|5,3,mushroom|6,3,mushroom|5,8,rock|6,8,rock",
         enemy: 'cave_troll', enemyX: 6, enemyY: 6
     }),
 };

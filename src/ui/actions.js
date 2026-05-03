@@ -3,9 +3,10 @@ import { ACTION } from '../engine/input.js';
 import { GAME_NAME } from '../content/data.js';
 import { players } from '../state/store.js';
 import { bus } from '../state/eventbus.js';
-import { refreshStatusBar } from './status.js';
 import { clearElement, getActionButtonsEl, getInputContainerEl, getInputEl } from '../adapters/dom/shell.js';
 import { requestTextInput } from '../adapters/dom/prompt.js';
+import { getNPCsAt } from '../commands/helpers.js';
+import { getTimeOfDay } from '../rules/index.js';
 
 let uiState = 'root';
 let _lastAction = null;
@@ -29,13 +30,11 @@ export const renderActionButtons = (ctx, onAction) => {
         if (!actionButtonsEl) return;
         clearElement(actionButtonsEl);
         
-        const { localPlayer, world, worldState, getNPCLocation, shardEnemies, pendingDuel } = ctx;
+        const { localPlayer, world, shardEnemies, pendingDuel } = ctx;
         if (!localPlayer || !world) return;
 
         const loc = world[localPlayer.location];
         if (!loc) return;
-
-        refreshStatusBar(localPlayer, world);
 
         const addButton = (label, action) => {
             const btn = document.createElement('button');
@@ -57,33 +56,35 @@ export const renderActionButtons = (ctx, onAction) => {
             actionButtonsEl.appendChild(btn);
         };
 
-        const localNpcs = Object.keys(NPCS || {}).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location);
+        const localNpcs = getNPCsAt(localPlayer.location);
+        const timeOfDay = getTimeOfDay();
+        const roomEnemyId = loc.enemy;
+        const roomEnemyDef = roomEnemyId ? ENEMIES[roomEnemyId] : null;
+        const sharedEnemy = shardEnemies?.get(localPlayer.location);
+        const enemyDead = !!sharedEnemy && sharedEnemy.hp <= 0;
+        const enemyVisible = !!roomEnemyDef
+            && !enemyDead
+            && (!loc.nightOnly || timeOfDay === 'night')
+            && !(roomEnemyId === 'forest_wolf' && timeOfDay === 'night');
 
         if (uiState === 'root') {
             if (pendingDuel && Date.now() <= pendingDuel.expiresAt) {
                 addButton(`Accept Duel vs ${pendingDuel.challengerName} ⚔️`, 'accept');
                 addButton('Decline Duel', 'decline');
             }
-            if (_lastAction === 'attack' && loc.enemy && localPlayer.currentEnemy) {
+            if (_lastAction === 'attack' && enemyVisible && localPlayer.currentEnemy) {
                 addButton('Attack Again ⚔️', ACTION.ATTACK);
             }
 
             addButton('Move 🧭', () => { uiState = 'move'; renderActionButtons(ctx, onAction); });
             
-            if (loc.enemy) {
-                const enemyDef = ENEMIES[loc.enemy];
-                if (enemyDef) {
-                    const sharedEnemy = shardEnemies?.get(localPlayer.location);
-                    const enemyDead = sharedEnemy && sharedEnemy.hp <= 0;
-                    if (!(enemyDead && localPlayer.forestFights <= 0)) {
-                        const label = (localPlayer.currentEnemy && localPlayer.currentEnemy.hp > 0)
-                            ? `Strike ${enemyDef.name} ⚔️`
-                            : `Attack ${enemyDef.name} ⚔️`;
-                        addButton(label, ACTION.ATTACK);
-                    }
-                    if (localPlayer.currentEnemy) {
-                        addButton('Flee 🏃', 'flee');
-                    }
+            if (enemyVisible) {
+                const label = (localPlayer.currentEnemy && localPlayer.currentEnemy.hp > 0)
+                    ? `Strike ${roomEnemyDef.name} ⚔️`
+                    : `Attack ${roomEnemyDef.name} ⚔️`;
+                addButton(label, ACTION.ATTACK);
+                if (localPlayer.currentEnemy) {
+                    addButton('Flee 🏃', 'flee');
                 }
             }
 
@@ -95,7 +96,6 @@ export const renderActionButtons = (ctx, onAction) => {
                 }
             }
 
-            const sharedEnemy = shardEnemies?.get(localPlayer.location);
             if (sharedEnemy && sharedEnemy.hp <= 0 && sharedEnemy.loot && sharedEnemy.loot.length > 0) {
                 addButton('Pickup 📦', ACTION.INTERACT);
             }
@@ -103,7 +103,11 @@ export const renderActionButtons = (ctx, onAction) => {
             if (localNpcs.length > 0) {
                 addButton('Talk 💬', () => { uiState = 'talk'; renderActionButtons(ctx, onAction); });
                 if (localNpcs.some(id => NPCS[id]?.role === 'shop')) {
-                    addButton('Buy 💰', () => { uiState = 'buy'; renderActionButtons(ctx, onAction); });
+                    addButton('Buy 💰', () => { 
+                        bus.emit('ui:menu', { type: 'shop' }); 
+                        uiState = 'buy';
+                        renderActionButtons(ctx, onAction); 
+                    });
                     if (localPlayer.inventory.some(id => ITEMS[id] && ITEMS[id].type !== 'gold' && ITEMS[id].price > 0)) {
                         addButton('Sell 💵', () => { uiState = 'sell'; renderActionButtons(ctx, onAction); });
                     }
@@ -116,7 +120,11 @@ export const renderActionButtons = (ctx, onAction) => {
 
             const craftableHere = (RECIPES || []).filter(r => r.location === localPlayer.location);
             if (craftableHere.length > 0 && !localPlayer.currentEnemy) {
-                addButton('Craft ⚒️', () => { uiState = 'craft'; renderActionButtons(ctx, onAction); });
+                addButton('Craft ⚒️', () => { 
+                    bus.emit('ui:menu', { type: 'crafting' }); 
+                    uiState = 'craft';
+                    renderActionButtons(ctx, onAction); 
+                });
             }
 
             addButton('Say 🗣️', async () => {
@@ -140,6 +148,7 @@ export const renderActionButtons = (ctx, onAction) => {
 
             addButton('Quests 📜', () => { 
                 bus.emit('ui:menu', { type: 'quests' }); 
+                uiState = 'quests';
                 renderActionButtons(ctx, onAction); 
             });
             addButton('Config ⚙️', () => { uiState = 'settings'; renderActionButtons(ctx, onAction); });

@@ -1,11 +1,6 @@
 // @ts-check
 
 const SHELL_HTML = `
-  <div id="status-bar">
-    <div id="status-left"></div>
-    <div id="status-center"></div>
-    <div id="status-right"></div>
-  </div>
   <div id="game-area">
     <div id="radar-container"></div>
   </div>
@@ -35,10 +30,6 @@ Searching for peers in the BitTorrent DHT...</div>
 `;
 
 const REQUIRED_IDS = [
-  'status-bar',
-  'status-left',
-  'status-center',
-  'status-right',
   'game-area',
   'side-panel',
   'action-buttons',

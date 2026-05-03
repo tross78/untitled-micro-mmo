@@ -95,6 +95,7 @@ class CdpClient {
         this.nextId = 1;
         this.pending = new Map();
         this.eventWaiters = [];
+        this.consoleLogs = [];
     }
 
     async connect() {
@@ -111,6 +112,12 @@ class CdpClient {
                     if (msg.error) pending.reject(new Error(msg.error.message));
                     else pending.resolve(msg.result);
                     return;
+                }
+                if (msg.method === 'Runtime.consoleAPICalled') {
+                    const type = msg.params?.type || 'log';
+                    const args = (msg.params?.args || []).map(arg => arg.value ?? arg.description ?? '').join(' ');
+                    this.consoleLogs.push(`[${type}] ${args}`.trim());
+                    if (this.consoleLogs.length > 200) this.consoleLogs.shift();
                 }
                 this.eventWaiters = this.eventWaiters.filter(waiter => {
                     if (waiter.method !== msg.method) return true;
@@ -194,6 +201,12 @@ const issueCommand = (client, cmd) =>
 const step = (client, dx, dy) =>
     client.evaluate(`window.__HEARTHWICK_TEST__.step(${JSON.stringify(dx)}, ${JSON.stringify(dy)})`);
 
+const moveMany = async (client, cmd, count) => {
+    for (let i = 0; i < count; i++) {
+        await issueCommand(client, cmd);
+    }
+};
+
 const assert = (cond, msg) => {
     if (!cond) throw new Error(msg);
 };
@@ -243,14 +256,21 @@ try {
     }, 5000);
     assert(!!moved, 'peer movement did not propagate');
 
+    await moveMany(pageA, 'move north', 5);
+    await issueCommand(pageA, 'move west');
     await issueCommand(pageA, 'move north');
-    await issueCommand(pageA, 'move north');
+    await waitFor('room transition to hallway', async () => {
+        const snapA = await getSnapshot(pageA);
+        return snapA.localPlayer.location === 'hallway';
+    }, 5000);
+
+    await moveMany(pageA, 'move north', 8);
     await waitFor('room transition to tavern', async () => {
         const snapA = await getSnapshot(pageA);
         return snapA.localPlayer.location === 'tavern';
     }, 5000);
 
-    await issueCommand(pageA, 'talk barkeep');
+    await issueCommand(pageA, 'talk bard');
     const dialogue = await waitFor('dialogue render', async () => {
         const snapA = await getSnapshot(pageA);
         return snapA.dialogueOpen === true;
@@ -258,6 +278,15 @@ try {
     assert(dialogue, 'local gameplay command did not open dialogue');
 
     console.log('Two-peer browser E2E passed.');
+} catch (err) {
+    const snapA = await pageA?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);
+    const snapB = await pageB?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);
+    console.error(JSON.stringify({
+        error: err.message,
+        peerA: { snapshot: snapA, console: pageA?.consoleLogs?.slice(-80) || [] },
+        peerB: { snapshot: snapB, console: pageB?.consoleLogs?.slice(-80) || [] }
+    }, null, 2));
+    throw err;
 } finally {
     await pageA?.close();
     await pageB?.close();

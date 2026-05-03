@@ -3,11 +3,22 @@
 import { appRuntime } from '../app/runtime.js';
 import { getGameAreaEl, getShellElement } from '../adapters/dom/shell.js';
 import { Component } from '../domain/components.js';
+import { advanceDialogue, isDialogueOpen } from './renderer-ui-compat.js';
+import { bus } from '../state/eventbus.js';
 
 let _canvas = null;
 let _ctx = null;
 let _radarEl = null;
 let _devMode = false;
+
+export function resolveCanvasTile(clientX, clientY, rect, canvasWidth, canvasHeight, tileSize, camX, camY) {
+    const scaleX = canvasWidth / rect.width;
+    const scaleY = canvasHeight / rect.height;
+    return {
+        tx: Math.floor(((clientX - rect.left) * scaleX) / tileSize + camX),
+        ty: Math.floor(((clientY - rect.top) * scaleY) / tileSize + camY)
+    };
+}
 
 export function initCanvas() {
     if (_canvas) return;
@@ -27,13 +38,6 @@ export function initCanvas() {
 
     if (container) {
         container.appendChild(_canvas);
-        const ro = new ResizeObserver(() => {
-            const scale = Math.min((container.clientWidth - 4) / _canvas.width, (container.clientHeight - 4) / _canvas.height);
-            _canvas.style.transform = `scale(${scale})`;
-            _canvas.style.transformOrigin = 'center';
-            _canvas.style.margin = '0';
-        });
-        ro.observe(container);
     }
 
     // Dev Key Toggle
@@ -65,6 +69,11 @@ export function renderWorld(state, onTileClick) {
     // In modular Phase 8, the GameLoop in appRuntime handles the calling of draw().
     // We just ensure the click handler is wired to the current camera.
     _canvas.onclick = (e) => {
+        if (isDialogueOpen()) {
+            advanceDialogue();
+            return;
+        }
+
         const transform = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Transform);
         const tween = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Tweenable);
         if (!transform) return;
@@ -76,21 +85,48 @@ export function renderWorld(state, onTileClick) {
             drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
         }
 
-        // Camera follow (same logic as AppRuntime.draw)
-        const camX = drawX - 10;
-        const camY = drawY - 6;
+        const room = state.world?.[transform.mapId];
+        const { camX, camY, screenOffsetX, screenOffsetY } = appRuntime.getViewportTransform(drawX, drawY, transform.mapId);
 
         const rect = _canvas.getBoundingClientRect();
-        const scaleX = _canvas.width / rect.width;
-        const scaleY = _canvas.height / rect.height;
-        
-        // Final logical coordinate = (click_pos * scale / tile_size) + camera_offset
-        const tx = Math.floor(((e.clientX - rect.left) * scaleX) / 48 + camX);
-        const ty = Math.floor(((e.clientY - rect.top)  * scaleY) / 48 + camY);
+        const canvasX = (e.clientX - rect.left) * (_canvas.width / rect.width);
+        const canvasY = (e.clientY - rect.top) * (_canvas.height / rect.height);
+
+        if (appRuntime.uiRender) {
+            const menuIndex = appRuntime.uiRender.resolveMenuClick(canvasX, canvasY);
+            if (menuIndex !== -1) {
+                bus.emit('ui:menu-select', { index: menuIndex });
+                return;
+            }
+        }
+
+        const localCanvasX = canvasX - screenOffsetX;
+        const localCanvasY = canvasY - screenOffsetY;
+        if (room) {
+            const roomWidthPx = room.width * appRuntime.VP.S;
+            const roomHeightPx = room.height * appRuntime.VP.S;
+            if (localCanvasX < 0 || localCanvasY < 0 || localCanvasX >= roomWidthPx || localCanvasY >= roomHeightPx) {
+                return;
+            }
+        }
+
+        const { tx, ty } = resolveCanvasTile(
+            rect.left + (localCanvasX / (_canvas.width / rect.width)),
+            rect.top + (localCanvasY / (_canvas.height / rect.height)),
+            { left: rect.left, top: rect.top, width: _canvas.width / (_canvas.width / rect.width), height: _canvas.height / (_canvas.height / rect.height) },
+            _canvas.width,
+            _canvas.height,
+            appRuntime.VP.S,
+            camX,
+            camY
+        );
 
         // Find entity at logical coordinate
         const entities = appRuntime.world.query([Component.Transform, Component.Sprite]);
         let clickedEntity = null;
+        if (tx === transform.x && ty === transform.y) {
+            clickedEntity = { id: 'self', type: 'self' };
+        }
         for (const id of entities) {
             const t = appRuntime.world.getComponent(id, Component.Transform);
             const s = appRuntime.world.getComponent(id, Component.Sprite);
@@ -152,4 +188,4 @@ export function showLevelUp(level) {
 }
 
 // Re-exports for bootstrap
-export { showDialogue, advanceDialogue, isDialogueOpen, triggerHitFlash, setTicker, setVisualRefreshCallback, setLogicalRefreshCallback } from './renderer-ui-compat.js';
+export { showDialogue, advanceDialogue, isDialogueOpen, getTickerText, triggerHitFlash, setTicker, setVisualRefreshCallback, setLogicalRefreshCallback } from './renderer-ui-compat.js';

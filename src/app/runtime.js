@@ -94,7 +94,7 @@ class AppRuntime {
     }, worldData);
     this.inputSystem = new InputSystem(this.world, bus);
     this.movementSystem = new MovementSystem(this.world, worldData, gameActions);
-    this.combatSystem = new CombatSystem(this.world, { localPlayer: localPlayerStore, worldState, shardEnemies }, gameActions);
+    this.combatSystem = new CombatSystem(this.world, { localPlayer: localPlayerStore, worldState, shardEnemies }, worldData, gameActions);
     this.tweenSystem = new TweenSystem(this.world);
     this.dialogueSystem = new DialogueSystem(this.world);
     this.networkSystem = new NetworkSystem(this.world, gameActions);
@@ -102,7 +102,7 @@ class AppRuntime {
     // Initialize Render Systems
     this.mapRender = new MapRenderSystem(this.world, this.VP);
     this.entityRender = new EntityRenderSystem(this.world, this.VP);
-    this.uiRender = new UIRenderSystem(this.world, this.VP);
+    this.uiRender = new UIRenderSystem(this.world, this.VP, worldData);
     this.audioSystem = new AudioSystem(this.world);
 
     this.loop = new GameLoop({
@@ -119,13 +119,16 @@ class AppRuntime {
   }
 
   updateViewport() {
-    const isPortrait = window.innerHeight > window.innerWidth;
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+    const isPortrait = height > width;
+    const aspect = width / height;
     if (isPortrait) {
         this.VP.W = 12;
-        this.VP.H = 20;
+        this.VP.H = Math.max(18, Math.min(26, Math.round(this.VP.W / aspect)));
     } else {
-        this.VP.W = 20;
-        this.VP.H = 12;
+        this.VP.H = 14;
+        this.VP.W = Math.max(20, Math.min(30, Math.round(this.VP.H * aspect)));
     }
     // Update systems that care about VP
     if (this.mapRender) this.mapRender.VP = this.VP;
@@ -172,6 +175,8 @@ class AppRuntime {
     const transform = this.world.getComponent(this.playerEntityId, Component.Transform);
     const tween = this.world.getComponent(this.playerEntityId, Component.Tweenable);
     if (!transform || !this.mapRender || !this.entityRender || !this.uiRender) return;
+    const room = worldData[transform.mapId];
+    if (!room) return;
 
     let drawX = transform.x;
     let drawY = transform.y;
@@ -180,15 +185,39 @@ class AppRuntime {
         drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
     }
 
-    // Camera follow
-    const camX = drawX - (this.VP.W / 2);
-    const camY = drawY - (this.VP.H / 2);
+    const { camX, camY, screenOffsetX, screenOffsetY } = this.getViewportTransform(drawX, drawY, transform.mapId);
 
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     
-    this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY);
-    this.entityRender.draw(ctx, camX, camY);
+    this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY);
+    this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY);
     this.uiRender.draw(ctx, localPlayerStore);
+  }
+
+  getViewportTransform(drawX, drawY, mapId) {
+    const room = worldData[mapId];
+    if (!room) return { camX: 0, camY: 0, screenOffsetX: 0, screenOffsetY: 0 };
+
+    const roomFitsX = room.width <= this.VP.W;
+    const roomFitsY = room.height <= this.VP.H;
+
+    const camX = roomFitsX
+      ? 0
+      : Math.max(0, Math.min(room.width - this.VP.W, drawX - (this.VP.W / 2)));
+
+    const camY = roomFitsY
+      ? 0
+      : Math.max(0, Math.min(room.height - this.VP.H, drawY - (this.VP.H / 2)));
+
+    const screenOffsetX = roomFitsX ? Math.floor(((this.VP.W - room.width) * this.VP.S) / 2) : 0;
+    const screenOffsetY = roomFitsY ? Math.floor(((this.VP.H - room.height) * this.VP.S) / 2) : 0;
+
+    return { camX, camY, screenOffsetX, screenOffsetY };
+  }
+
+  getCamera(drawX, drawY, mapId) {
+    const { camX, camY } = this.getViewportTransform(drawX, drawY, mapId);
+    return { camX, camY };
   }
 
   /**
@@ -209,6 +238,7 @@ class AppRuntime {
       mapId: player.location,
       x: player.x,
       y: player.y,
+      facing: 's'
     });
     this.world.setComponent(this.playerEntityId, Component.Sprite, {
       type: 'player',

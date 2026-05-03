@@ -7,6 +7,7 @@
 import {
     advanceDialogue,
     isDialogueOpen,
+    resolveCanvasTile,
     setLogicalRefreshCallback,
     setTicker,
     setVisualRefreshCallback,
@@ -59,7 +60,7 @@ describe('renderer public overlay API', () => {
         expect(visual).toHaveBeenCalled();
         expect(logical).toHaveBeenCalled();
 
-        expect(advanceDialogue()).toBe(false);
+        while (advanceDialogue());
         expect(isDialogueOpen()).toBe(false);
     });
 
@@ -189,6 +190,12 @@ describe('Out-of-bounds tile rendering guard', () => {
 
 // --- Canvas click entity resolution ---
 describe('Canvas click entity detection logic', () => {
+    test('resolveCanvasTile uses runtime viewport values instead of fixed landscape assumptions', () => {
+        const rect = { left: 0, top: 0, width: 288, height: 480 };
+        const result = resolveCanvasTile(144, 240, rect, 576, 960, 48, 3.5, 7.5);
+        expect(result).toEqual({ tx: 9, ty: 17 });
+    });
+
     // Reproduces the logic from renderer.js click handler
     function resolveClick(tx, ty, { npcTiles, enemyTileKey }) {
         const key = `${tx},${ty}`;

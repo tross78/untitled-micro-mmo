@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hearthwick Map Editor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #1a1a1a; color: #ccc; font: 12px/1.4 monospace; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+#toolbar { background: #222; border-bottom: 1px solid #444; padding: 6px 10px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+#toolbar h1 { font-size: 13px; color: #88ccaa; letter-spacing: 1px; }
+#toolbar select, #toolbar button { background: #333; color: #ccc; border: 1px solid #555; padding: 3px 8px; font: inherit; cursor: pointer; }
+#toolbar button:hover { background: #444; }
+#toolbar .info { color: #888; font-size: 11px; }
+#main { display: flex; flex: 1; overflow: hidden; }
+#graph-panel { width: 280px; flex-shrink: 0; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; }
+#graph-panel h2 { font-size: 11px; color: #888; padding: 6px 8px; border-bottom: 1px solid #333; text-transform: uppercase; letter-spacing: 1px; }
+#graph-canvas { flex: 1; cursor: grab; }
+#editor-panel { flex: 1; display: flex; flex-direction: column; background: #1a1a1a; overflow: hidden; }
+#palette-bar { background: #222; border-bottom: 1px solid #333; padding: 6px 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+#palette-bar span { font-size: 10px; color: #666; margin-right: 4px; }
+.tile-btn { width: 24px; height: 24px; border: 2px solid #555; cursor: pointer; position: relative; }
+.tile-btn.active { border-color: #88ccaa; }
+.tile-btn[title]:hover::after { content: attr(title); position: absolute; top: 28px; left: 0; background: #333; border: 1px solid #555; padding: 2px 6px; white-space: nowrap; z-index: 10; pointer-events: none; font-size: 10px; }
+#tile-canvas-wrap { flex: 1; overflow: auto; display: flex; align-items: flex-start; padding: 16px; }
+#tile-canvas { image-rendering: pixelated; cursor: crosshair; }
+#scenery-modal { display: none; position: fixed; background: #222; border: 1px solid #555; padding: 10px; z-index: 100; }
+#scenery-modal h3 { font-size: 11px; color: #888; margin-bottom: 8px; }
+#scenery-grid { display: grid; grid-template-columns: repeat(6, 40px); gap: 4px; }
+.scenery-btn { width: 40px; height: 40px; background: #333; border: 1px solid #555; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; color: #888; }
+.scenery-btn canvas { image-rendering: pixelated; }
+.scenery-btn:hover { border-color: #88ccaa; }
+#dsl-panel { background: #111; border-top: 1px solid #333; flex-shrink: 0; }
+#dsl-panel h2 { font-size: 11px; color: #888; padding: 4px 10px; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 8px; }
+#dsl-panel h2 button { font: 10px monospace; background: #33aa55; color: #fff; border: none; padding: 2px 8px; cursor: pointer; }
+#dsl-out { width: 100%; height: 80px; background: #111; color: #6a8; border: none; padding: 8px 10px; font: 11px/1.5 monospace; resize: none; outline: none; }
+#status { position: fixed; bottom: 90px; right: 10px; background: #333; border: 1px solid #555; padding: 4px 8px; font-size: 10px; color: #888; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <h1>⬡ HEARTHWICK MAP EDITOR</h1>
+  <select id="room-select"></select>
+  <button id="btn-add-row">+Row</button>
+  <button id="btn-add-col">+Col</button>
+  <button id="btn-del-row">-Row</button>
+  <button id="btn-del-col">-Col</button>
+  <span class="info" id="room-size"></span>
+  <button id="btn-copy" style="margin-left:auto; background:#33aa55; color:#fff; border-color:#33aa55">Copy DSL</button>
+</div>
+<div id="main">
+  <div id="graph-panel">
+    <h2>World Graph</h2>
+    <canvas id="graph-canvas"></canvas>
+  </div>
+  <div id="editor-panel">
+    <div id="palette-bar">
+      <span>TILE:</span>
+    </div>
+    <div id="tile-canvas-wrap">
+      <canvas id="tile-canvas"></canvas>
+    </div>
+    <div id="dsl-panel">
+      <h2>DSL Output <button id="btn-copy2">Copy</button></h2>
+      <textarea id="dsl-out" readonly></textarea>
+    </div>
+  </div>
+</div>
+<div id="scenery-modal">
+  <h3>Place Scenery (right-click tile)</h3>
+  <div id="scenery-grid"></div>
+  <div style="margin-top:8px;display:flex;gap:8px">
+    <button id="btn-scenery-clear" style="background:#aa3333;color:#fff;border:none;padding:3px 8px;cursor:pointer;font:inherit">Clear</button>
+    <button id="btn-scenery-cancel" style="background:#333;color:#ccc;border:1px solid #555;padding:3px 8px;cursor:pointer;font:inherit">Cancel</button>
+  </div>
+</div>
+<div id="status"></div>
+<script type="module" src="./editor.js"></script>
+</body>
+</html>

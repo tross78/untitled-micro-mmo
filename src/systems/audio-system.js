@@ -17,7 +17,7 @@ export class AudioSystem {
 
         // SFX Listeners
         bus.on('combat:hit', ({ crit }) => { if (crit) playCrit(); else playHit(); });
-        bus.on('combat:death', ({ entity }) => { if (entity === 'You') playDeath(); });
+        bus.on('combat:death', ({ entity }) => { if (entity === 'You') playDeath(); else playPickup(); });
         bus.on('item:pickup', () => playPickup());
         bus.on('player:levelup', () => playLevelUp());
         bus.on('player:move', ({ from, to }) => { if (from !== to) playPortal(); });

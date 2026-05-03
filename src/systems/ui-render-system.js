@@ -2,7 +2,8 @@
 
 import { Component } from '../domain/components.js';
 import { applyPalette, PALETTES, getGrayscaleTemplate } from '../graphics/graphics.js';
-import { ITEMS, QUESTS } from '../content/data.js';
+import { levelBonus } from '../rules/index.js';
+import { getTickerText } from '../graphics/renderer.js';
 
 /**
  * UIRenderSystem handles HUD, dialogue, menus, and overlays.
@@ -11,12 +12,15 @@ export class UIRenderSystem {
     /**
      * @param {import('../domain/ecs.js').WorldStore} world
      * @param {object} vp - Viewport metrics
+     * @param {any} worldData
      */
-    constructor(world, vp) {
+    constructor(world, vp, worldData) {
         this.world = world;
         this.VP = vp;
+        this.worldData = worldData;
         this.heartSprite = null;
         this.emptyHeartSprite = null;
+        this.menuHitRegions = [];
     }
 
     /**
@@ -24,10 +28,27 @@ export class UIRenderSystem {
      * @param {object} localPlayerStore
      */
     draw(ctx, localPlayerStore) {
+        this.drawEnvironmentBar(ctx, localPlayerStore);
         this.drawHUD(ctx, localPlayerStore);
+        this.drawTicker(ctx);
         this.drawOverlays(ctx);
         this.drawDialogue(ctx);
         this.drawMenu(ctx, localPlayerStore);
+    }
+
+    drawEnvironmentBar(ctx, player) {
+        const room = this.worldData?.[player.location];
+        if (!room) return;
+
+        const STRIP = 24;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(0, 0, this.VP.CW, STRIP);
+        
+        ctx.font = `italic ${Math.floor(this.VP.S * 0.25)}px monospace`;
+        ctx.fillStyle = '#aaa';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(room.description, 10, STRIP / 2);
     }
 
     drawHUD(ctx, player) {
@@ -47,7 +68,9 @@ export class UIRenderSystem {
         }
 
         const hp = player.hp ?? 10;
-        const maxHp = player.maxHp ?? 10;
+        const bonus = levelBonus(player.level ?? 1);
+        const rested = !!player.statusEffects?.find(s => s.id === 'well_rested');
+        const maxHp = (player.maxHp ?? 10) + (bonus.maxHp ?? 0) + (rested ? 5 : 0);
         const heartsCount = Math.ceil(maxHp / 10);
         const fullHearts = Math.floor(hp / 10);
 
@@ -73,6 +96,21 @@ export class UIRenderSystem {
         ctx.fillStyle = fights > 0 ? '#aaffaa' : '#555';
         ctx.textAlign = 'right';
         ctx.fillText(`⚡ ${fights}`, this.VP.CW - PAD, mid);
+    }
+
+    drawTicker(ctx) {
+        const text = getTickerText();
+        if (!text) return;
+
+        const barY = Math.floor(this.VP.S * 0.7);
+        const barH = Math.max(20, Math.floor(this.VP.S * 0.45));
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(0, barY, this.VP.CW, barH);
+        ctx.font = `italic ${Math.floor(this.VP.S * 0.24)}px monospace`;
+        ctx.fillStyle = '#9ab0c2';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, this.VP.CW / 2, barY + barH / 2);
     }
 
     drawOverlays(ctx) {
@@ -173,49 +211,120 @@ export class UIRenderSystem {
         }
     }
 
-    drawMenu(ctx, player) {
+    drawMenu(ctx) {
         const players = this.world.query([Component.PlayerControlled, Component.Menu]);
+        this.menuHitRegions = [];
         if (players.length === 0) return;
         const menu = this.world.getComponent(players[0], Component.Menu);
-        
-        ctx.fillStyle = 'rgba(0,0,0,0.9)';
+
+        const panel = this.getMenuLayout(menu);
+        const titleSize = Math.max(20, Math.floor(this.VP.S * 0.42));
+        const bodySize = Math.max(14, Math.floor(this.VP.S * 0.28));
+        const detailSize = Math.max(12, Math.floor(this.VP.S * 0.22));
+
+        ctx.fillStyle = 'rgba(7, 12, 10, 0.88)';
         ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
-        ctx.strokeStyle = '#0f0';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(10, 10, this.VP.CW - 20, this.VP.CH - 20);
 
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.5)}px monospace`;
-        ctx.fillStyle = '#0f0';
-        ctx.textAlign = 'center';
-        ctx.fillText(menu.type.toUpperCase(), this.VP.CW / 2, 40);
+        ctx.fillStyle = 'rgba(27, 38, 24, 0.96)';
+        ctx.fillRect(panel.x, panel.y, panel.w, panel.h);
+        ctx.strokeStyle = '#c8d8b0';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(panel.x + 1, panel.y + 1, panel.w - 2, panel.h - 2);
 
-        ctx.font = `${Math.floor(this.VP.S * 0.3)}px monospace`;
+        ctx.fillStyle = 'rgba(56, 78, 48, 0.9)';
+        ctx.fillRect(panel.x, panel.y, panel.w, panel.headerH);
+
+        ctx.font = `bold ${titleSize}px monospace`;
+        ctx.fillStyle = '#f6edc5';
         ctx.textAlign = 'left';
-        let y = 80;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(menu.title || menu.type.toUpperCase(), panel.x + panel.pad, panel.y + panel.headerH / 2);
 
-        if (menu.type === 'inventory') {
-            const counts = {};
-            (player.inventory || []).forEach(id => counts[id] = (counts[id] || 0) + 1);
-            Object.entries(counts).forEach(([id, count]) => {
-                const item = ITEMS[id];
-                const label = item ? `${item.name}${count > 1 ? ' x' + count : ''}` : id;
-                ctx.fillText(`- ${label}`, 30, y);
-                y += 25;
-            });
-            if (Object.keys(counts).length === 0) ctx.fillText('(Pack is empty)', 30, y);
-        } else if (menu.type === 'quests') {
-            Object.entries(player.quests || {}).forEach(([qid, data]) => {
-                const q = QUESTS[qid];
-                if (!q) return;
-                const status = data.completed ? '✅' : `${data.progress}/${q.objective.count || 1}`;
-                ctx.fillText(`- ${q.name}: ${status}`, 30, y);
-                y += 25;
-            });
-            if (Object.keys(player.quests || {}).length === 0) ctx.fillText('(No active quests)', 30, y);
+        if (menu.message) {
+            ctx.font = `${bodySize}px monospace`;
+            ctx.fillStyle = '#d7e2c7';
+            this.drawWrappedText(ctx, menu.message, panel.x + panel.pad, panel.y + panel.headerH + panel.pad * 0.85, panel.w - panel.pad * 2, Math.max(18, Math.floor(bodySize * 1.35)));
         }
 
-        ctx.fillStyle = '#555';
+        menu.entries.forEach((entry, index) => {
+            const row = panel.rows[index];
+            if (!row) return;
+            const selected = index === (menu.selectedIndex || 0);
+            if (selected) {
+                ctx.fillStyle = entry.disabled ? 'rgba(98, 88, 54, 0.6)' : 'rgba(142, 172, 95, 0.78)';
+                ctx.fillRect(row.x, row.y, row.w, row.h);
+                ctx.strokeStyle = entry.disabled ? '#7a7044' : '#f6edc5';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(row.x + 1, row.y + 1, row.w - 2, row.h - 2);
+            } else {
+                ctx.fillStyle = entry.disabled ? 'rgba(33, 42, 32, 0.9)' : 'rgba(18, 24, 20, 0.88)';
+                ctx.fillRect(row.x, row.y, row.w, row.h);
+            }
+
+            ctx.font = `${bodySize}px monospace`;
+            ctx.fillStyle = entry.disabled ? '#86917d' : (selected ? '#1c1e14' : '#edf3dc');
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(entry.label || '...', row.x + panel.pad * 0.75, row.y + 8);
+
+            if (entry.detail) {
+                ctx.font = `${detailSize}px monospace`;
+                ctx.fillStyle = entry.disabled ? '#687060' : (selected ? '#344126' : '#adc39d');
+                ctx.fillText(entry.detail, row.x + panel.pad * 0.75, row.y + 8 + bodySize + 4);
+            }
+            this.menuHitRegions.push({ index, ...row });
+        });
+
+        ctx.font = `${detailSize}px monospace`;
+        ctx.fillStyle = '#b6c39d';
         ctx.textAlign = 'center';
-        ctx.fillText('Press BACK or CANCEL to close', this.VP.CW / 2, this.VP.CH - 40);
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Tap to choose • Arrows/Swipe to move • Enter/Space to confirm • Esc to back', panel.x + panel.w / 2, panel.y + panel.h - panel.pad * 0.85);
+    }
+
+    getMenuLayout(menu) {
+        const pad = Math.max(14, Math.floor(this.VP.S * 0.32));
+        const x = Math.floor(this.VP.CW * 0.08);
+        const y = Math.floor(this.VP.CH * 0.08);
+        const w = Math.floor(this.VP.CW * 0.84);
+        const h = Math.floor(this.VP.CH * 0.84);
+        const headerH = Math.max(48, Math.floor(this.VP.S * 0.95));
+        const messageH = menu.message ? Math.max(52, Math.floor(this.VP.S * 1.8)) : 0;
+        const footerH = Math.max(30, Math.floor(this.VP.S * 0.7));
+        const rowsTop = y + headerH + messageH + pad * 0.4;
+        const availableH = h - headerH - messageH - footerH - pad * 1.2;
+        const rowGap = Math.max(6, Math.floor(this.VP.S * 0.12));
+        const rowH = Math.max(44, Math.floor((availableH - rowGap * Math.max(0, menu.entries.length - 1)) / Math.max(1, menu.entries.length)));
+        const rows = menu.entries.map((_, index) => ({
+            x: x + pad,
+            y: rowsTop + index * (rowH + rowGap),
+            w: w - pad * 2,
+            h: rowH,
+        }));
+        return { x, y, w, h, pad, headerH, rows };
+    }
+
+    drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
+        const words = String(text).split(/\s+/);
+        let line = '';
+        let drawY = y;
+        words.forEach((word) => {
+            const test = line ? `${line} ${word}` : word;
+            if (ctx.measureText(test).width > maxWidth && line) {
+                ctx.fillText(line, x, drawY);
+                line = word;
+                drawY += lineHeight;
+            } else {
+                line = test;
+            }
+        });
+        if (line) ctx.fillText(line, x, drawY);
+    }
+
+    resolveMenuClick(x, y) {
+        const players = this.world.query([Component.PlayerControlled, Component.Menu]);
+        if (players.length === 0 || !this.menuHitRegions.length) return -1;
+        const hit = this.menuHitRegions.find((row) => x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h);
+        return hit ? hit.index : -1;
     }
 }

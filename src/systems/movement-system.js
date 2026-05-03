@@ -7,8 +7,9 @@ import { getCurrentInstance } from '../network/shard.js';
 import { myEntry } from '../security/identity.js';
 import { shardEnemies, localPlayer, worldState } from '../state/store.js';
 import { ITEMS, NPCS } from '../content/data.js';
+import { getScatteredContent, getNPCDialogue } from '../rules/index.js';
 import { getNPCsAt } from '../commands/helpers.js';
-import { getNPCDialogue } from '../rules/index.js';
+import { ACTION } from '../engine/input.js';
 
 /**
  * MovementSystem handles spatial logic, collision detection, and room transitions.
@@ -61,43 +62,60 @@ export class MovementSystem {
     const nx = transform.x + dx;
     const ny = transform.y + dy;
 
-    // 1. Active Portal Detection (Phase 7.9.9.4)
+    // 1. Active Portal Detection
     const exitTile = (loc.exitTiles || []).find(t => t.x === nx && t.y === ny);
     if (exitTile) {
         await this.performTransition(entityId, transform, exitTile.dest, exitTile.destX, exitTile.destY);
         return;
     }
 
-    // 2. Check Bounds
+    // 2. Check Bounds — LttP-style full-edge transitions, preserving player position offset
     if (nx < 0 || nx >= loc.width || ny < 0 || ny >= loc.height) {
       const destId = loc.exits?.[this.dirToKey(dir)];
       if (destId) {
         const destRoom = this.worldData[destId];
-        const destExitTile = (destRoom.exitTiles || []).find(t => t.dest === transform.mapId);
-        
-        let tx = destExitTile?.destX ?? nx;
-        let ty = destExitTile?.destY ?? ny;
-        
-        if (dir === 'n') ty = destRoom.height - 1;
-        if (dir === 's') ty = 0;
-        if (dir === 'e') tx = 0;
-        if (dir === 'w') tx = destRoom.width - 1;
-
+        if (!destRoom) return;
+        let tx, ty;
+        // Preserve the player's position along the edge they crossed
+        if (dir === 'n') { ty = destRoom.height - 1; tx = Math.min(transform.x, destRoom.width - 1); }
+        else if (dir === 's') { ty = 0; tx = Math.min(transform.x, destRoom.width - 1); }
+        else if (dir === 'e') { tx = 0; ty = Math.min(transform.y, destRoom.height - 1); }
+        else if (dir === 'w') { tx = destRoom.width - 1; ty = Math.min(transform.y, destRoom.height - 1); }
+        else { tx = 0; ty = 0; }
         await this.performTransition(entityId, transform, destId, tx, ty);
       }
       return;
     }
 
-    // 3. Check Static Collisions
+    // 3. Check entity occupants first (NPCs/enemies take priority over scenery)
+    const occupant = this.getOccupantAt(transform.mapId, nx, ny, entityId);
+    if (occupant) {
+        transform.facing = dir;
+        if (occupant.type === 'npc') {
+            this.openNpcInteraction(occupant.id);
+        } else if (occupant.type === 'enemy') {
+            bus.emit('input:action', { action: ACTION.ATTACK, type: 'down' });
+        }
+        return;
+    }
+
+    // 4. Check Static Collisions
     const isWall = (loc.tileOverrides || []).some(t => t.x === nx && t.y === ny && t.type === 'wall');
-    const isScenery = (loc.scenery || []).some(s => s.x === nx && s.y === ny);
-    if (isWall || isScenery) return;
+    const isScenery = (loc.scenery || []).some(s =>
+        nx >= s.x && nx < s.x + (s.w || 1) &&
+        ny >= s.y && ny < s.y + (s.h || 1)
+    );
+    if (isWall || isScenery) {
+        transform.facing = dir;
+        return;
+    }
 
     // 4. Update Transform
     const oldX = transform.x;
     const oldY = transform.y;
     transform.x = nx;
     transform.y = ny;
+    transform.facing = dir;
 
     // 5. Add Tweenable for visual interpolation
     this.world.setComponent(entityId, Component.Tweenable, {
@@ -134,42 +152,95 @@ export class MovementSystem {
    * @param {number} entityId
    * @param {any} transform
    */
-  handleInteract(entityId, transform) {
+  async handleInteract(entityId, transform) {
     const locId = transform.mapId;
     const loc = this.worldData[locId];
+    const target = this.getFacingTarget(transform);
     
-    // 1. Check for Portals (Phase 7.9.9.4)
+    // 1. Check for Portals
     const exitTile = (loc?.exitTiles || []).find(t => t.x === transform.x && t.y === transform.y);
     if (exitTile) {
-        this.performTransition(entityId, transform, exitTile.dest, exitTile.destX, exitTile.destY);
+        await this.performTransition(entityId, transform, exitTile.dest, exitTile.destX, exitTile.destY);
         return;
     }
 
-    // 2. Check for Loot
-    const sharedEnemy = shardEnemies.get(locId);
+    const occupant = this.getOccupantAt(locId, target.x, target.y, entityId);
+    if (occupant?.type === 'npc') {
+        this.openNpcInteraction(occupant.id);
+        return;
+    }
+    if (occupant?.type === 'enemy') {
+        bus.emit('input:action', { action: ACTION.ATTACK, type: 'down' });
+        return;
+    }
+
+    // 2. Check for Foraging (Phase 8.1)
+    const scattered = getScatteredContent(locId, worldState.day, loc);
+    const itemAtFeet = scattered.find(s => s.x === transform.x && s.y === transform.y && s.type === 'flora');
     
+    if (itemAtFeet) {
+        const itemId = itemAtFeet.label === 'mushroom' ? 'red_mushroom' : 'herbs';
+        localPlayer.inventory.push(itemId);
+        bus.emit('item:pickup', { item: { name: itemAtFeet.label } });
+        bus.emit('log', { msg: `You foraged a ${itemAtFeet.label}!`, color: '#0f0' });
+        return;
+    }
+
+    // 3. Check for Loot
+    const sharedEnemy = shardEnemies.get(locId);
     if (sharedEnemy && sharedEnemy.hp <= 0 && sharedEnemy.loot && sharedEnemy.loot.length > 0) {
       const loot = [...sharedEnemy.loot];
       sharedEnemy.loot = [];
-      
       loot.forEach(itemId => {
         const item = ITEMS[itemId];
         if (item?.type === 'gold') localPlayer.gold += item.amount;
         else localPlayer.inventory.push(itemId);
         bus.emit('item:pickup', { item });
       });
-      
       bus.emit('log', { msg: `Picked up: ${loot.join(', ')}`, color: '#ff0' });
-    } else {
-        const npcs = getNPCsAt(locId);
-        if (npcs.length > 0) {
-            const npcId = npcs[0];
-            const text = getNPCDialogue(npcId, localPlayer, worldState);
-            bus.emit('npc:speak', { npcName: NPCS[npcId].name, text });
-        } else {
-            bus.emit('log', { msg: `Nothing to pick up.` });
-        }
+      return;
     }
+
+    // 4. Fallback: NPC Interaction
+    const npcs = getNPCsAt(locId);
+    if (npcs.length > 0) {
+        const npcId = npcs[0];
+        this.openNpcInteraction(npcId);
+    } else {
+        bus.emit('log', { msg: `Nothing to pick up.` });
+    }
+  }
+
+  getFacingTarget(transform) {
+    const facing = transform.facing || 's';
+    const dx = facing === 'e' ? 1 : facing === 'w' ? -1 : 0;
+    const dy = facing === 's' ? 1 : facing === 'n' ? -1 : 0;
+    return { x: transform.x + dx, y: transform.y + dy };
+  }
+
+  getOccupantAt(mapId, x, y, excludeEntityId) {
+    const entities = this.world.query([Component.Transform, Component.Sprite]);
+    for (const id of entities) {
+      if (id === excludeEntityId) continue;
+      const transform = this.world.getComponent(id, Component.Transform);
+      const sprite = this.world.getComponent(id, Component.Sprite);
+      if (!transform || !sprite || transform.mapId !== mapId) continue;
+      if (transform.x !== x || transform.y !== y) continue;
+      const identity = this.world.getComponent(id, 'Identity');
+      return { entityId: id, type: sprite.type, id: identity?.id || sprite.type };
+    }
+    return null;
+  }
+
+  openNpcInteraction(npcId) {
+    if (!NPCS[npcId]) return;
+    const text = getNPCDialogue(npcId, worldState.seed, worldState.day, worldState.mood);
+    const role = NPCS[npcId].role;
+    if (role === 'shop' || role === 'quest') {
+      bus.emit('ui:menu', { type: 'npc', context: { npcId, text } });
+      return;
+    }
+    bus.emit('npc:speak', { npcName: NPCS[npcId].name, text });
   }
 
   processProactiveSharding() {

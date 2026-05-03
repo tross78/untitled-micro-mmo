@@ -31,6 +31,7 @@ export class WorldSyncSystem {
         // 1. Sync NPCs in current room
         const { getNPCLocation } = require('../rules/index.js');
         const { worldState } = require('../state/store.js');
+        const { getTimeOfDay } = require('../rules/index.js');
 
         Object.keys(NPCS).forEach(id => {
             const staticEntry = (roomData.staticEntities || []).find(se => se.id === id);
@@ -80,7 +81,8 @@ export class WorldSyncSystem {
         const enemyId = `enemy_${currentLoc}`;
         
         // Show if room has enemy and (no shared state yet OR shared hp > 0)
-        if (enemyType && (!enemy || enemy.hp > 0)) {
+        const enemyAllowed = !roomData.nightOnly || getTimeOfDay() === 'night';
+        if (enemyType && enemyAllowed && (!enemy || enemy.hp > 0)) {
             activeIds.add(enemyId);
             let eid = this.entityMap.get(enemyId);
             if (!eid) {

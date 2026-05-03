@@ -12,6 +12,11 @@ jest.mock('@trystero-p2p/torrent', () => ({
     selfId: 'test-peer-id',
 }));
 
+jest.mock('../rules/index.js', () => {
+    const original = jest.requireActual('../rules/index.js');
+    return { ...original, getTimeOfDay: jest.fn(() => 'day') };
+});
+
 jest.mock('../app/runtime.js', () => ({
     appRuntime: {
         world: {
@@ -185,6 +190,11 @@ describe('renderActionButtons DOM output', () => {
     test('no Buy button in rooms with no shop NPC', () => {
         renderActionButtons(makeCtx('forest_edge'), jest.fn());
         expect(actionButtons()).not.toContain('Buy 💰');
+    });
+
+    test('enemy rooms show attack button consistently on root', () => {
+        renderActionButtons(makeCtx('forest_edge'), jest.fn());
+        expect(actionButtons().some(label => label.startsWith('Attack Forest Wolf'))).toBe(true);
     });
 
     test('move submenu lists room exits with Back', () => {

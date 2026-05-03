@@ -1,5 +1,5 @@
 import { players, localPlayer } from '../state/store.js';
-import { ITEMS, QUESTS, NPCS } from '../content/data.js';
+import { ITEMS, QUESTS, NPCS, world } from '../content/data.js';
 import { getNPCLocation } from '../rules/index.js';
 import { bus } from '../state/eventbus.js';
 import { worldState } from '../state/store.js';
@@ -21,7 +21,14 @@ export const getPlayerName = (id) => {
 };
 
 export const getNPCsAt = (location) => {
-    return Object.keys(NPCS).filter(id => getNPCLocation(id, worldState.seed, worldState.day) === location);
+    const room = world[location];
+    const staticIds = new Set((room?.staticEntities || []).map(entry => entry.id));
+    Object.keys(NPCS).forEach(id => {
+        if (getNPCLocation(id, worldState.seed, worldState.day) === location) {
+            staticIds.add(id);
+        }
+    });
+    return Array.from(staticIds);
 };
 
 export const getBestGear = () => {

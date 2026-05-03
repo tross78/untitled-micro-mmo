@@ -1,9 +1,9 @@
 import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, setPendingTrade } from '../state/store.js';
 import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../content/data.js';
 import { getNPCLocation } from '../rules/index.js';
-import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, showRoomBanner } from '../graphics/renderer.js';
-import { playHit, playCrit, playDeath, playPickup, playLevelUp, playPortal } from '../engine/audio.js';
+import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, showRoomBanner, advanceDialogue, isDialogueOpen } from '../graphics/renderer.js';
 import { renderActionButtons, log } from '../ui/index.js';
+import { triggerShake } from '../ui/helpers.js';
 import { ACTION } from '../engine/input.js';
 import { handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem } from '../commands/index.js';
 import { bus } from '../state/eventbus.js';
@@ -13,8 +13,96 @@ import { gameActions } from '../network/index.js';
 import { saveLocalState } from '../state/persistence.js';
 import { importKey, verifyMessage } from '../security/crypto.js';
 import { selfId } from '../network/transport.js';
+import { buildCanvasMenu, findNearestEnabledIndex } from '../ui/canvas-menu.js';
+import { getNPCsAt } from '../commands/helpers.js';
+import { getTimeOfDay } from '../rules/index.js';
 
 let _vRefreshTimer = null;
+const getMenuCtx = () => ({
+    localPlayer,
+    world,
+    worldState,
+    getNPCsAt,
+    getTimeOfDay,
+});
+
+const setMenuState = (menu) => {
+    if (!appRuntime.playerEntityId) return;
+    if (!menu) {
+        appRuntime.world.components.get(Component.Menu)?.delete(appRuntime.playerEntityId);
+        return;
+    }
+    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.Menu, menu);
+};
+
+const rebuildMenu = (menuType, context = {}, parent = null, selectedIndex = 0) => {
+    const menu = buildCanvasMenu(menuType, context, getMenuCtx());
+    if (!menu) return null;
+    menu.context = context;
+    menu.parent = parent;
+    menu.selectedIndex = Math.min(selectedIndex, Math.max(0, menu.entries.length - 1));
+    if (menu.entries[menu.selectedIndex]?.disabled) {
+        menu.selectedIndex = findNearestEnabledIndex(menu.entries, menu.selectedIndex, 1);
+    }
+    return menu;
+};
+
+const openMenu = (menuType, context = {}, parent = null, selectedIndex = 0) => {
+    setMenuState(rebuildMenu(menuType, context, parent, selectedIndex));
+    triggerLogicalRefresh();
+};
+
+const getOpenMenu = () => appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+
+const closeMenu = () => {
+    setMenuState(null);
+    triggerLogicalRefresh();
+};
+
+const goBackMenu = () => {
+    const menu = getOpenMenu();
+    if (!menu?.parent) {
+        closeMenu();
+        return;
+    }
+    openMenu(menu.parent.type, menu.parent.context || {}, menu.parent.parent || null, menu.parent.selectedIndex || 0);
+};
+
+const activateMenuEntry = async (index = null) => {
+    const menu = getOpenMenu();
+    if (!menu || !menu.entries?.length) return false;
+    const selectedIndex = index == null ? menu.selectedIndex || 0 : index;
+    const entry = menu.entries[selectedIndex];
+    if (!entry || entry.disabled || !entry.action) return false;
+
+    if (entry.action.kind === 'menu') {
+        openMenu(entry.action.menuType, entry.action.context || {}, {
+            type: menu.type,
+            context: menu.context || {},
+            parent: menu.parent || null,
+            selectedIndex,
+        });
+        return true;
+    }
+    if (entry.action.kind === 'back') {
+        goBackMenu();
+        return true;
+    }
+    if (entry.action.kind === 'close') {
+        closeMenu();
+        return true;
+    }
+    if (entry.action.kind === 'command') {
+        await handleCommand(entry.action.command);
+        const refreshed = rebuildMenu(menu.type, menu.context || {}, menu.parent || null, selectedIndex);
+        if (refreshed) setMenuState(refreshed);
+        else closeMenu();
+        triggerLogicalRefresh();
+        return true;
+    }
+    return false;
+};
+
 export const triggerVisualRefresh = () => {
     if (_vRefreshTimer) return;
     _vRefreshTimer = requestAnimationFrame(() => {
@@ -25,6 +113,10 @@ export const triggerVisualRefresh = () => {
         renderWorld(ctx, (tx, ty, entity) => {
             const loc = world[localPlayer.location];
             if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
+            if (entity?.type === 'self') {
+                openMenu('root');
+                return;
+            }
             if (entity?.type === 'npc') { handleCommand(`talk ${entity.id}`).then(triggerLogicalRefresh); return; }
             if (entity?.type === 'enemy') { handleCommand('attack').then(triggerLogicalRefresh); return; }
             const dx = tx - localPlayer.x;
@@ -92,10 +184,7 @@ export const setupGlobalEvents = () => {
         }
     });
 
-    bus.on('combat:hit', ({ _attacker, crit }) => {
-        if (crit) playCrit(); else playHit();
-        triggerHitFlash();
-    });
+    bus.on('combat:hit', () => triggerHitFlash());
     bus.on('combat:dodge', ({ target }) => {
         if (target === 'You') {
             showFloatingText(localPlayer.x, localPlayer.y, 'DODGE', '#0fa');
@@ -106,37 +195,38 @@ export const setupGlobalEvents = () => {
             showFloatingText(ex, ey, 'MISS', '#fff');
         }
     });
-    bus.on('combat:death', ({ entity }) => {
-        if (entity === 'You') playDeath();
-        else playPickup();
-    });
-    bus.on('player:levelup', ({ level }) => {
-        playLevelUp();
-        showLevelUp(level);
-    });
+    bus.on('combat:death', () => {});
+    bus.on('player:levelup', ({ level }) => showLevelUp(level));
     bus.on('item:pickup', ({ item }) => {
-        playPickup();
         if (item?.name) showItemFanfare(item.name);
     });
     bus.on('player:move', ({ to, from }) => {
         if (to !== from) {
-            playPortal();
             const roomName = world[to]?.name;
             if (roomName) showRoomBanner(roomName);
         }
+        closeMenu();
+        triggerLogicalRefresh();
     });
     bus.on('npc:speak', ({ npcName, text }) => {
         showDialogue(npcName, text);
     });
 
     bus.on('ui:back', () => {
-        const menu = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
-        if (menu) appRuntime.world.components.get(Component.Menu).delete(appRuntime.playerEntityId);
+        const menu = getOpenMenu();
+        if (menu) {
+            goBackMenu();
+            return;
+        }
         showDialogue(null, null);
     });
     
-    bus.on('ui:menu', ({ type }) => {
-        appRuntime.world.setComponent(appRuntime.playerEntityId, Component.Menu, { type });
+    bus.on('ui:menu', ({ type, context }) => {
+        openMenu(type, context || {});
+    });
+
+    bus.on('ui:menu-select', ({ index }) => {
+        activateMenuEntry(index);
     });
 
     bus.on('log', ({ msg }) => {
@@ -144,8 +234,42 @@ export const setupGlobalEvents = () => {
         showToast(cleanMsg);
     });
 
+    bus.on('ui:shake', () => triggerShake());
+
     bus.on('input:action', ({ action, type }) => {
         if (type !== 'down') return;
+
+        if (isDialogueOpen() && (action === ACTION.INTERACT || action === ACTION.CONFIRM || action === ACTION.CANCEL)) {
+            if (action === ACTION.CANCEL) {
+                bus.emit('ui:back', {});
+            } else {
+                advanceDialogue();
+            }
+            triggerLogicalRefresh();
+            return;
+        }
+
+        const menu = getOpenMenu();
+        if (menu) {
+            if ([ACTION.MOVE_N, ACTION.MOVE_W].includes(action)) {
+                menu.selectedIndex = findNearestEnabledIndex(menu.entries, menu.selectedIndex || 0, -1);
+                triggerVisualRefresh();
+                return;
+            }
+            if ([ACTION.MOVE_S, ACTION.MOVE_E].includes(action)) {
+                menu.selectedIndex = findNearestEnabledIndex(menu.entries, menu.selectedIndex || 0, 1);
+                triggerVisualRefresh();
+                return;
+            }
+            if (action === ACTION.CANCEL) {
+                goBackMenu();
+                return;
+            }
+            if ([ACTION.INTERACT, ACTION.CONFIRM, ACTION.ATTACK].includes(action)) {
+                activateMenuEntry();
+                return;
+            }
+        }
         
         // These are now handled by ECS Systems (InputSystem -> Movement/CombatSystem)
         const ECS_ACTIONS = new Set([
@@ -159,23 +283,25 @@ export const setupGlobalEvents = () => {
             case ACTION.INVENTORY: {
                 const existing = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
                 if (existing && existing.type === 'inventory') {
-                    appRuntime.world.components.get(Component.Menu).delete(appRuntime.playerEntityId);
+                    closeMenu();
                 } else {
-                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.Menu, { type: 'inventory' });
+                    openMenu('inventory');
                 }
                 return;
             }
             case ACTION.CANCEL: {
-                const menu = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
-                if (menu) {
-                    appRuntime.world.components.get(Component.Menu).delete(appRuntime.playerEntityId);
+                const open = getOpenMenu();
+                if (open) {
+                    goBackMenu();
                     return;
                 }
                 cmd = 'back'; 
                 break;
             }
             case ACTION.CONFIRM: cmd = 'confirm'; break;
-            case ACTION.MENU: cmd = 'status'; break;
+            case ACTION.MENU:
+                openMenu('root');
+                return;
         }
         if (cmd) {
             if (cmd === 'back') {

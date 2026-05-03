@@ -85,7 +85,7 @@ These decisions are final. Do not relitigate them without explicit instruction.
 **Status:** Non-negotiable
 **Do not:** Run `npm install <anything>` without explicit approval.
 
-**Why:** Bundle size limit is 175KB. Every new dependency risks exceeding it. Trystero (nostr + torrent), esbuild, and jest are the full dependency set by design.
+**Why:** Bundle size limit is 250KB (raised from 175KB in Phase 8.2 to accommodate procedural tile art and shape data). Every new dependency risks exceeding it. Trystero (nostr + torrent), esbuild, and jest are the full dependency set by design.
 
 ---
 
@@ -95,3 +95,30 @@ These decisions are final. Do not relitigate them without explicit instruction.
 **Do not:** Mix endianness or omit the `false` argument to DataView methods.
 
 **Why:** Consistency. All `setUint32` / `getUint32` calls explicitly pass `false` (big-endian). Omitting this flag relies on the DataView default (which is big-endian), but implicit defaults have caused bugs. Always be explicit.
+
+---
+
+## ADR-011: Scenery labels are string keys, not emoji characters
+
+**Status:** Decided (Phase 8.2)
+**Do not:** Use emoji characters as scenery labels in rooms.js or scatter definitions.
+
+**Why:** Emojis are platform-dependent (render differently per OS), cannot be reliably matched in string comparisons across environments, and fall back to Canvas `fillText` rendering which bypasses the procedural sprite system. All scenery is now identified by a string key (`'tree'`, `'rock'`, `'crate'`, etc.) that maps directly to a SHAPES entry in `graphics.js`.
+
+---
+
+## ADR-012: Room data format stays as pipe-delimited DSL
+
+**Status:** Decided (Phase 8.2)
+**Do not:** Migrate room definitions to JSON, TOML, or any external format file.
+
+**Why:** Evaluated Tiled (TMX/TMJ), LDtk, Ogmo, RON, and TOML. All require either a parser library (violates ADR-009), have no JS implementation, or produce files too verbose for the bundle constraints. The current pipe-delimited strings in `defineRoom()` are already ~50% more compact than equivalent JSON and parse with a one-liner split. Extended in Phase 8.2 with a `tiles` row-string grid format for hand-authored tile overrides.
+
+---
+
+## ADR-013: Edge room transitions use LttP-style full-side portals
+
+**Status:** Decided (Phase 8.2)
+**Do not:** Require players to stand on a specific tile coordinate to trigger an edge (overworld) transition.
+
+**Why:** The previous system required exact exitTile coordinates for edge-type transitions, making room connections feel like point teleporters rather than natural overworld movement. The movement system now triggers on room boundary crossing (x < 0, x ≥ width, etc.) using `loc.exits[dir]`, and preserves the player's position offset along the crossed edge (Y preserved when going E/W, X preserved when going N/S), clamped to destination room dimensions. Door and stairs transitions remain coordinate-specific.

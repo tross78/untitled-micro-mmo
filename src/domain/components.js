@@ -6,10 +6,16 @@
 
 export const Component = {
   /** Logical grid coordinates and current map */
-  Transform: 'Transform', // { x: number, y: number, mapId: string }
+  Transform: 'Transform', // { x: number, y: number, mapId: string, facing: 'n'|'s'|'e'|'w' }
   
   /** Visual interpolation state */
   Tweenable: 'Tweenable', // { startX: number, startY: number, targetX: number, targetY: number, progress: number }
+  
+  /** Temporary visual effects */
+  VisualEffect: 'VisualEffect', // { type: 'hit_flash'|'shake', expires: number }
+
+  /** Attack Animation state */
+  AttackAnimation: 'AttackAnimation', // { dir: 'n'|'s'|'e'|'w', progress: number }
   
   /** Movement intent */
   Intent: 'Intent', // { action: 'move' | 'attack' | 'interact', dir?: string, targetId?: string }
@@ -23,8 +29,8 @@ export const Component = {
   /** UI Overlays */
   UIOverlay: 'UIOverlay', // { type: 'toast'|'fanfare'|'banner', text: string, expires: number }
 
-  /** Full-screen Menu state */
-  Menu: 'Menu', // { type: 'inventory'|'quests'|'crafting', data: any }
+  /** Full-screen interactive menu state */
+  Menu: 'Menu', // { type: string, title: string, message?: string, entries: Array<{label,detail?,disabled?,action?}>, selectedIndex: number, context?: any, parent?: any }
 
   /** Camera State */
   Camera: 'Camera', // { x: number, y: number, zoom: number }

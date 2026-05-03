@@ -17,7 +17,11 @@ export const handleNPCCommands = async (command, args) => {
             
             const npc = NPCS[targetId];
             const dialogue = getNPCDialogue(targetId, worldState.seed, worldState.day, worldState.mood);
-            bus.emit('npc:speak', { npcName: npc.name, text: dialogue });
+            if (npc.role === 'shop' || npc.role === 'quest') {
+                bus.emit('ui:menu', { type: 'npc', context: { npcId: targetId, text: dialogue } });
+            } else {
+                bus.emit('npc:speak', { npcName: npc.name, text: dialogue });
+            }
 
             const availableQuests = Object.values(QUESTS).filter(q => q.giver === targetId && !localPlayer.quests[q.id]);
             availableQuests.forEach(q => {
