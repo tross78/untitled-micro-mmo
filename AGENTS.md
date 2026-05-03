@@ -1667,3 +1667,33 @@ const slot \= Math.floor(Date.now() / ROLLUP\_INTERVAL) % all.length;
 * Scenery picker shows rendered sprite previews using the same `getGrayscaleTemplate` + `applyPalette` pipeline as the game.
 
 **Bundle:** 215KB — within the updated 250KB limit.
+
+---
+
+### **Phase 8.3: Room Art Direction & Multi-Tile Sprites — COMPLETE**
+
+**Multi-tile sprite system:**
+* `define.js` already parsed `w,h` from scenery DSL (Phase 8.2 foundation). Phase 8.3 confirmed all 27 rooms use it correctly.
+* `map-render-system.drawScenery` scales sprite to `w*S × h*S`; calls `drawLargeTree` when `label === 'tree' && w > 1`.
+* `drawLargeTree(ctx, cx, cy, wPx, hPx, seed)` — procedural circular canopy, seeded tufts, trunk with shadow rim.
+* `MovementSystem.handleMove` — entity occupants (NPC/enemy) checked BEFORE scenery to prevent scenery at same tile silently blocking NPC interaction (bug fix: hallway torch at 2,2 was blocking the guard).
+
+**New SHAPES (all used in room layouts):** `bookshelf`, `fireplace`, `chair`, `counter`, `cauldron`, `pillar`, `table`, `bed`, `altar`, `anchor`, `bones`, `candle`, `crown`, `grave`, `ladder`, `scroll`, `shell`, `sign`, `snowflake`, `stall`, `torch`, `wheel` — full set of 22 sprite shapes.
+
+**Room art direction (all 27 rooms):**
+* Indoor rooms: perimeter wall (`W`) border with exit tiles left open; warm `interior` or `stone_floor` default.
+* `market`: stone path in + shape (center column and row `S` tiles) against interior default — visual distinction between plaza and stall areas.
+* `tavern`: bar counter (4×1) across north wall, 4 tables with chairs, fireplace NE corner, barkeep + bard NPCs.
+* `library`: four 3×2 bookshelf clusters on wall alcoves, reading chairs, central scroll, north fireplace.
+* `herbalist_hut`: dominant 2×2 cauldron left-center, work table + scroll, herb plants, mushrooms.
+* `catacombs`: tomb alcoves via tileOverrides, bone piles in quadrants, candle perimeter, central altar.
+* `throne_room`: stone_floor dais (tileOverrides rows 1-4 cols 5-9), 3×2 crown on dais, pillar flanks, 2×2 throne chair.
+* `forest_edge` / `forest_depths`: 10 and 14 large 3×3 tree canopies respectively; scattered mushroom/rock/shrub via `sceneryScatter`.
+* `cemetery`: 12 graves in 4 quadrant clusters, stone_floor N-S path (tileOverrides), 4 corner trees.
+* `mountain_pass`: narrow stone_floor path (tileOverrides center columns x=8-11) through wall-tile cliff.
+
+**Test fixes:**
+* `getTimeOfDay` mocked in `ui.test.js` — prevents flaky "Attack Forest Wolf" button test failing at night.
+* NPC-before-scenery collision fix ensures `commands.test.js` "walking into NPC" test is deterministic.
+
+**Bundle:** 223.4KB — within the 250KB limit.
