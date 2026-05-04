@@ -1,7 +1,6 @@
 import { jest } from '@jest/globals';
 import { UIRenderSystem } from '../systems/ui-render-system.js';
 import { inputManager } from '../engine/input.js';
-import { Component } from '../domain/components.js';
 
 // Mock graphics to avoid OffscreenCanvas issues
 jest.mock('../graphics/graphics.js', () => ({
@@ -85,7 +84,6 @@ describe('UIRenderSystem Input Mode Hints', () => {
     });
 
     test('updates hint to touch on touchstart', () => {
-        const canvas = document.querySelector('div'); // mocked canvas
         const event = new CustomEvent('touchstart');
         // @ts-ignore
         event.touches = [{ clientX: 0, clientY: 0 }];
