@@ -24,6 +24,7 @@ jest.mock('../app/runtime.js', () => ({
             query: jest.fn(() => []),
             createEntity: jest.fn(() => 999),
             setComponent: jest.fn(),
+            removeComponent: jest.fn(),
             components: {
                 get: jest.fn(() => ({ delete: jest.fn() }))
             }
@@ -145,11 +146,14 @@ describe('uiState bus wiring', () => {
 describe('renderActionButtons DOM output', () => {
     beforeEach(() => { setupDOM(); _resetUiState(); });
 
-    test('root state always includes Move and Say', () => {
+    test('root state exposes the core loop actions', () => {
         renderActionButtons(makeCtx('tavern'), jest.fn());
         const btns = actionButtons();
         expect(btns).toContain('Move 🧭');
-        expect(btns).toContain('Say 🗣️');
+        expect(btns).toContain('Quests 📜');
+        expect(btns).not.toContain('Say 🗣️');
+        expect(btns).not.toContain('Trade 🤝');
+        expect(btns).not.toContain('Duel ⚔️');
     });
 
     test('talk submenu in tavern shows NPC names then Back', () => {
@@ -170,21 +174,6 @@ describe('renderActionButtons DOM output', () => {
         const btns = actionButtons();
         expect(btns.some(b => b.startsWith('Iron Sword'))).toBe(true);
         expect(btns).toContain('Back ⬅️');
-    });
-
-    test('pending duel renders accept and decline buttons on root', () => {
-        renderActionButtons(makeCtx('tavern', {}, {
-            pendingDuel: {
-                challengerId: 'peer-123',
-                challengerName: 'Rival',
-                expiresAt: Date.now() + 60000,
-                day: 1,
-            }
-        }), jest.fn());
-
-        const btns = actionButtons();
-        expect(btns.some(b => b.startsWith('Accept Duel vs Rival'))).toBe(true);
-        expect(btns).toContain('Decline Duel');
     });
 
     test('no Buy button in rooms with no shop NPC', () => {
@@ -228,7 +217,7 @@ describe('renderActionButtons DOM output', () => {
         renderActionButtons(makeCtx('tavern'), jest.fn());
         const btns = actionButtons();
         expect(btns).toContain('Move 🧭');
-        expect(btns).toContain('Say 🗣️');
+        expect(btns).toContain('Quests 📜');
         expect(btns).toContain('Rest 💤');
     });
 });

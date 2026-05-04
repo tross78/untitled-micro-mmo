@@ -19,7 +19,7 @@ export function setLogicalRefreshCallback(fn) { _triggerLogicalRefresh = fn; }
 
 export function showDialogue(npcName, text) {
     if (!text) {
-        appRuntime.world.components.get(Component.Dialogue)?.delete(appRuntime.playerEntityId);
+        appRuntime.world.removeComponent(appRuntime.playerEntityId, Component.Dialogue);
         return;
     }
 
@@ -42,7 +42,7 @@ export function advanceDialogue() {
     const isFinished = dialogue.progress >= dialogue.text.length;
 
     if (isFinished) {
-        appRuntime.world.components.get(Component.Dialogue).delete(players[0]);
+        appRuntime.world.removeComponent(players[0], Component.Dialogue);
         if (_triggerVisualRefresh) _triggerVisualRefresh();
         if (_triggerLogicalRefresh) _triggerLogicalRefresh();
         return false;

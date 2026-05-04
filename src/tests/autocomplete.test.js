@@ -50,8 +50,7 @@ describe('Autocomplete — Command Completion', () => {
     });
 
     test('no-arg commands are immediate', () => {
-        const immediate = ['look', 'attack', 'rest', 'stats', 'inventory',
-                           'wave', 'bow', 'cheer', 'accept', 'decline', 'who'];
+        const immediate = ['look', 'attack', 'rest', 'stats', 'inventory', 'who'];
         for (const cmd of immediate) {
             const results = getSuggestions(cmd, ctx());
             expect(results[0]?.immediate).toBe(true);
@@ -59,7 +58,7 @@ describe('Autocomplete — Command Completion', () => {
     });
 
     test('arg-taking commands are not immediate and append a space', () => {
-        for (const cmd of ['use', 'move', 'duel', 'rename']) {
+        for (const cmd of ['use', 'move', 'rename']) {
             const results = getSuggestions(cmd, ctx());
             const match = results.find(r => r.display === cmd);
             expect(match).toBeDefined();
@@ -164,44 +163,6 @@ describe('Autocomplete — /move <dir>', () => {
 
     test('unknown room returns empty gracefully', () => {
         const results = getSuggestions('move ', ctx({ location: 'nonexistent' }));
-        expect(results).toEqual([]);
-    });
-});
-
-describe('Autocomplete — /duel <player>', () => {
-    test('duel + space shows all visible players', () => {
-        const results = getSuggestions('duel ', ctx());
-        expect(results.length).toBeGreaterThan(0);
-        expect(results.map(r => r.display)).toContain('Alice');
-        expect(results.map(r => r.display)).toContain('Bob');
-    });
-
-    test('duel + partial filters by name prefix (case-insensitive)', () => {
-        const results = getSuggestions('duel al', ctx());
-        // Matches Alice and Alicia
-        expect(results).toHaveLength(2);
-        expect(results.map(r => r.display)).toContain('Alice');
-        expect(results.map(r => r.display)).toContain('Alicia');
-    });
-
-    test('fill value is lowercase player name', () => {
-        const results = getSuggestions('duel al', ctx());
-        const alice = results.find(r => r.display === 'Alice');
-        expect(alice.fill).toBe('duel alice');
-    });
-
-    test('duel suggestions are not immediate', () => {
-        const results = getSuggestions('duel ', ctx());
-        results.forEach(r => expect(r.immediate).toBe(false));
-    });
-
-    test('no matching players returns empty', () => {
-        const results = getSuggestions('duel zzz', ctx());
-        expect(results).toEqual([]);
-    });
-
-    test('empty players map returns empty', () => {
-        const results = getSuggestions('duel ', ctx({ players: new Map() }));
         expect(results).toEqual([]);
     });
 });

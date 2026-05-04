@@ -28,7 +28,7 @@ export class DialogueSystem {
     bus.on('ui:back', () => {
       const players = this.world.query([Component.PlayerControlled]);
       if (players.length > 0) {
-        this.world.components.get(Component.Dialogue)?.delete(players[0]);
+        this.world.removeComponent(players[0], Component.Dialogue);
       }
     });
   }

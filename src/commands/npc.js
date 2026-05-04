@@ -1,11 +1,10 @@
 import { localPlayer, worldState } from '../state/store.js';
-import { ITEMS, NPCS, QUESTS, ENABLE_ADS } from '../content/data.js';
+import { ITEMS, NPCS, QUESTS } from '../content/data.js';
 import { getNPCDialogue, getTimeOfDay, xpToLevel } from '../rules/index.js';
 import { log } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
 import { saveLocalState } from '../state/persistence.js';
-import { showRewardedAd } from '../engine/ads.js';
-import { getNPCsAt, grantItem } from './helpers.js';
+import { getNPCsAt, getBuyPrice, getSellPrice, grantItem } from './helpers.js';
 
 export const handleNPCCommands = async (command, args) => {
     switch (command) {
@@ -33,7 +32,7 @@ export const handleNPCCommands = async (command, args) => {
             const returnableQuests = Object.values(QUESTS).filter(q => q.receiver === targetId && localPlayer.quests[q.id] && !localPlayer.quests[q.id].completed);
             returnableQuests.forEach(q => {
                 const pq = localPlayer.quests[q.id];
-                const count = q.objective.count || 0;
+                const count = q.objective.count || 1;
                 if (pq.progress >= count) {
                     log(`[Quest] ${npc.name}: "I see you have finished your task: ${q.name}. Well done!"`, '#0f0');
                 } else {
@@ -55,21 +54,23 @@ export const handleNPCCommands = async (command, args) => {
         }
 
         case 'buy': {
-            if (getTimeOfDay() === 'night') {
-                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
-                return true;
-            }
             const query = args.slice(1).join(' ').toLowerCase();
             const npcs = getNPCsAt(localPlayer.location);
             const shopNpc = npcs.find(id => NPCS[id].role === 'shop');
             if (!shopNpc) { log(`There is no shop here.`); return true; }
+            if (shopNpc === 'merchant' && getTimeOfDay() === 'night') {
+                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
+                return true;
+            }
 
             const npc = NPCS[shopNpc];
             if (!query) {
                 log(`\n--- ${npc.name}'s Shop ---`, '#ffa500');
                 npc.shop.forEach(id => {
                     const item = ITEMS[id];
-                    log(`${item.name} - ${item.price} Gold`, '#ffa500');
+                    const price = getBuyPrice(id);
+                    const scarcityTag = worldState.scarcity.includes(id) ? ' ⚠️' : '';
+                    log(`${item.name} - ${price} Gold${scarcityTag}`, '#ffa500');
                 });
                 log(`------------------------\n`, '#ffa500');
                 log(`Usage: /buy <item name>`);
@@ -80,9 +81,10 @@ export const handleNPCCommands = async (command, args) => {
             if (!itemId) { log(`They don't sell that.`); return true; }
             
             const item = ITEMS[itemId];
-            if (localPlayer.gold < item.price) { log(`You can't afford that!`); return true; }
+            const price = getBuyPrice(itemId);
+            if (localPlayer.gold < price) { log(`You can't afford that!`); return true; }
             
-            localPlayer.gold -= item.price;
+            localPlayer.gold -= price;
             grantItem(itemId);
             bus.emit('item:pickup', { item });
             saveLocalState(localPlayer, true);
@@ -90,14 +92,14 @@ export const handleNPCCommands = async (command, args) => {
         }
 
         case 'sell': {
-            if (getTimeOfDay() === 'night') {
-                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
-                return true;
-            }
             const query = args.slice(1).join(' ').toLowerCase();
             const npcs = getNPCsAt(localPlayer.location);
             const shopNpcId = npcs.find(id => NPCS[id].role === 'shop');
             if (!shopNpcId) { log(`There is no shop here.`); return true; }
+            if (shopNpcId === 'merchant' && getTimeOfDay() === 'night') {
+                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
+                return true;
+            }
 
             if (!query) { log(`Usage: /sell <item name>`); return true; }
 
@@ -108,7 +110,7 @@ export const handleNPCCommands = async (command, args) => {
             const item = ITEMS[itemId];
             if (!item || item.type === 'gold' || item.price === 0) { log(`They aren't interested in that.`); return true; }
 
-            const sellPrice = Math.floor(item.price * 0.4);
+            const sellPrice = getSellPrice(itemId);
             localPlayer.gold += sellPrice;
             localPlayer.inventory.splice(invIdx, 1);
             bus.emit('log', { msg: `[System] You sold ${item.name} for ${sellPrice} Gold.`, color: '#ff0' });
@@ -163,6 +165,10 @@ export const handleNPCCommands = async (command, args) => {
                 const q = QUESTS[id];
                 const npcs = getNPCsAt(localPlayer.location);
                 if (!npcs.includes(q.giver)) { log(`Nobody here can give you that quest.`); return true; }
+                if (q.prerequisite && !localPlayer.quests[q.prerequisite]?.completed) {
+                    log(`You need to finish ${QUESTS[q.prerequisite]?.name || q.prerequisite} first.`);
+                    return true;
+                }
                 
                 if (localPlayer.quests[id]) { log(`You already have that quest.`); return true; }
                 localPlayer.quests[id] = { progress: 0, completed: false };
@@ -176,7 +182,7 @@ export const handleNPCCommands = async (command, args) => {
                 const q = QUESTS[id];
                 if (localPlayer.quests[id].completed) { log(`Already completed.`); return true; }
                 
-                if (localPlayer.quests[id].progress < (q.objective.count || 0)) { log(`Quest not finished yet.`); return true; }
+                if (localPlayer.quests[id].progress < (q.objective.count || 1)) { log(`Quest not finished yet.`); return true; }
                 
                 const npcs = getNPCsAt(localPlayer.location);
                 if (q.receiver !== null && !npcs.includes(q.receiver)) { log(`Return to the receiver to complete this.`); return true; }
@@ -222,25 +228,6 @@ export const handleNPCCommands = async (command, args) => {
                 log(`\n--- THE CELLAR BANK ---`, '#ffa500');
                 log(`Your Wallet: ${localPlayer.gold} Gold`);
                 log(`Bank Balance: ${localPlayer.bankedGold} Gold`);
-            }
-            return true;
-        }
-
-        case 'vision': {
-            if (localPlayer.location !== 'tavern') { log(`Strange visions only appear in the haze of the Tavern.`); return true; }
-            if ((localPlayer.forestFights ?? 15) > 0) { log(`You don't feel the pull of visions yet — you still have energy to burn.`); return true; }
-            if (ENABLE_ADS) {
-                showRewardedAd(() => {
-                    localPlayer.forestFights += 5;
-                    log(`[Vision] You feel a surge of energy! (+5 Daily Fights)`, '#0f0');
-                    saveLocalState(localPlayer);
-                }, (err) => {
-                    log(`[System] ${err}`, '#f55');
-                });
-            } else {
-                localPlayer.forestFights += 3;
-                log(`[Vision] The ale and firelight blur into a waking dream... You feel restored. (+3 Daily Fights)`, '#f0f');
-                saveLocalState(localPlayer);
             }
             return true;
         }

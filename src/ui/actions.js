@@ -6,10 +6,12 @@ import { bus } from '../state/eventbus.js';
 import { clearElement, getActionButtonsEl, getInputContainerEl, getInputEl } from '../adapters/dom/shell.js';
 import { requestTextInput } from '../adapters/dom/prompt.js';
 import { getNPCsAt } from '../commands/helpers.js';
+import { getBuyPrice, getSellPrice } from '../commands/helpers.js';
 import { getTimeOfDay } from '../rules/index.js';
 
 let uiState = 'root';
 let _lastAction = null;
+const MOVE_DIRECTIONS = new Set(['north', 'south', 'east', 'west', 'up', 'down']);
 
 export const _resetUiState = () => { uiState = 'root'; };
 export const _getUiState   = () => uiState;
@@ -30,7 +32,7 @@ export const renderActionButtons = (ctx, onAction) => {
         if (!actionButtonsEl) return;
         clearElement(actionButtonsEl);
         
-        const { localPlayer, world, shardEnemies, pendingDuel } = ctx;
+        const { localPlayer, world, shardEnemies } = ctx;
         if (!localPlayer || !world) return;
 
         const loc = world[localPlayer.location];
@@ -68,10 +70,6 @@ export const renderActionButtons = (ctx, onAction) => {
             && !(roomEnemyId === 'forest_wolf' && timeOfDay === 'night');
 
         if (uiState === 'root') {
-            if (pendingDuel && Date.now() <= pendingDuel.expiresAt) {
-                addButton(`Accept Duel vs ${pendingDuel.challengerName} ⚔️`, 'accept');
-                addButton('Decline Duel', 'decline');
-            }
             if (_lastAction === 'attack' && enemyVisible && localPlayer.currentEnemy) {
                 addButton('Attack Again ⚔️', ACTION.ATTACK);
             }
@@ -127,23 +125,8 @@ export const renderActionButtons = (ctx, onAction) => {
                 });
             }
 
-            addButton('Say 🗣️', async () => {
-                const msg = await requestTextInput({ title: 'Say something', maxLength: 160, placeholder: 'type a message...' });
-                if (msg) onAction(`say ${msg}`);
-            });
-
             if (!localPlayer.currentEnemy) {
                 addButton('Rest 💤', 'rest');
-            }
-
-            if (localPlayer.location === 'tavern' && (localPlayer.forestFights ?? 15) <= 0) {
-                addButton('Vision 🔮', 'vision');
-            }
-
-            const localPeers = Array.from(players.keys()).filter(id => !players.get(id)?.ghost && players.get(id)?.location === localPlayer.location);
-            if (localPeers.length > 0) {
-                addButton('Trade 🤝', () => { uiState = 'trade_select'; renderActionButtons(ctx, onAction); });
-                addButton('Duel ⚔️', () => { uiState = 'duel_select'; renderActionButtons(ctx, onAction); });
             }
 
             addButton('Quests 📜', () => { 
@@ -153,63 +136,8 @@ export const renderActionButtons = (ctx, onAction) => {
             });
             addButton('Config ⚙️', () => { uiState = 'settings'; renderActionButtons(ctx, onAction); });
 
-        } else if (uiState === 'trade_select') {
-            const localPeers = Array.from(players.keys()).filter(id => !players.get(id)?.ghost && players.get(id)?.location === localPlayer.location);
-            localPeers.forEach(id => {
-                const name = players.get(id).name || `Peer-${id.slice(0, 4)}`;
-                addButton(`${name}`, () => {
-                    onAction(`trade ${id}`);
-                    uiState = 'trade_session';
-                });
-            });
-            addButton('Back ⬅️', ACTION.CANCEL);
-
-        } else if (uiState === 'duel_select') {
-            const localPeers = Array.from(players.keys()).filter(id => !players.get(id)?.ghost && players.get(id)?.location === localPlayer.location);
-            localPeers.forEach(id => {
-                const name = players.get(id).name || `Peer-${id.slice(0, 4)}`;
-                addButton(`⚔️ ${name}`, () => {
-                    onAction(`duel ${id}`);
-                    uiState = 'root';
-                });
-            });
-            addButton('Back ⬅️', ACTION.CANCEL);
-
-        } else if (uiState === 'trade_session') {
-            const { pendingTrade } = ctx;
-            if (!pendingTrade) {
-                addButton('Waiting...', () => { uiState = 'root'; renderActionButtons(ctx, onAction); });
-                addButton('Cancel', () => { uiState = 'root'; renderActionButtons(ctx, onAction); });
-            } else {
-                addButton(`Offer Gold (${pendingTrade.myOffer.gold})`, () => { uiState = 'trade_offer_gold'; renderActionButtons(ctx, onAction); });
-                addButton(`Offer Items (${pendingTrade.myOffer.items.length})`, () => { uiState = 'trade_offer_items'; renderActionButtons(ctx, onAction); });
-                const canSign = pendingTrade.myOffer.gold > 0 || pendingTrade.myOffer.items.length > 0 || pendingTrade.partnerOffer.gold > 0 || pendingTrade.partnerOffer.items.length > 0;
-                if (canSign) {
-                    addButton(pendingTrade.signatures.me ? '✅ Signed' : 'Sign Trade 📝', () => onAction('trade commit'));
-                }
-                addButton('Cancel Trade', () => { onAction('trade cancel'); uiState = 'root'; });
-            }
-
-        } else if (uiState === 'trade_offer_gold') {
-            [10, 50, 100].forEach(amt => {
-                if (localPlayer.gold >= amt) addButton(`${amt} Gold`, () => { onAction(`trade offer gold ${amt}`); uiState = 'trade_session'; });
-            });
-            addButton('Back ⬅️', () => { uiState = 'trade_session'; renderActionButtons(ctx, onAction); });
-
-        } else if (uiState === 'trade_offer_items') {
-            const { pendingTrade } = ctx;
-            if (pendingTrade) {
-                localPlayer.inventory.forEach((id) => {
-                    const item = ITEMS[id];
-                    if (item && !pendingTrade.myOffer.items.includes(id)) {
-                        addButton(item.name, () => { onAction(`trade offer item ${id}`); uiState = 'trade_session'; });
-                    }
-                });
-            }
-            addButton('Back ⬅️', () => { uiState = 'trade_session'; renderActionButtons(ctx, onAction); });
-
         } else if (uiState === 'move') {
-            Object.keys(loc.exits || {}).forEach(dir => {
+            Object.keys(loc.exits || {}).filter(dir => MOVE_DIRECTIONS.has(dir)).forEach(dir => {
                 const dirEmoji = { north: '⬆️', south: '⬇️', east: '➡️', west: '⬅️', up: '⤴️', down: '⤵️' }[dir] || '➡️';
                 addButton(`${dir.charAt(0).toUpperCase() + dir.slice(1)} ${dirEmoji}`, `move ${dir}`);
             });
@@ -254,7 +182,8 @@ export const renderActionButtons = (ctx, onAction) => {
                 NPCS[shopNpc].shop.forEach(itemId => {
                     const item = ITEMS[itemId];
                     if (item) {
-                        let label = `${item.name} (${item.price}g)`;
+                        const price = getBuyPrice(itemId);
+                        let label = `${item.name} (${price}g)`;
                         if (item.bonus) label += ` (+${item.bonus}atk)`;
                         if (item.heal) label += ` (+${item.heal}hp)`;
                         addButton(label, `buy ${item.name.toLowerCase()}`);
@@ -272,7 +201,7 @@ export const renderActionButtons = (ctx, onAction) => {
                     if (seen.has(id)) return;
                     seen.add(id);
                     const item = ITEMS[id];
-                    const price = Math.floor(item.price * 0.4);
+                    const price = getSellPrice(id);
                     addButton(`${item.name} (${price}g)`, `sell ${item.name.toLowerCase()}`);
                 });
             }

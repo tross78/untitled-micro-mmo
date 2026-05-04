@@ -1,6 +1,7 @@
 # Architecture Decision Records — Hearthwick
 
 These decisions are final. Do not relitigate them without explicit instruction.
+This file is an ADR archive, not a roadmap or implementation checklist. If current product guidance and historical notes appear to conflict, follow `AGENTS.md` for current direction and use this file to understand why underlying constraints exist.
 
 ---
 
@@ -122,3 +123,48 @@ These decisions are final. Do not relitigate them without explicit instruction.
 **Do not:** Require players to stand on a specific tile coordinate to trigger an edge (overworld) transition.
 
 **Why:** The previous system required exact exitTile coordinates for edge-type transitions, making room connections feel like point teleporters rather than natural overworld movement. The movement system now triggers on room boundary crossing (x < 0, x ≥ width, etc.) using `loc.exits[dir]`, and preserves the player's position offset along the crossed edge (Y preserved when going E/W, X preserved when going N/S), clamped to destination room dimensions. Door and stairs transitions remain coordinate-specific.
+
+---
+
+## ADR-014: `player:move` is reserved for room transitions only
+
+**Status:** Decided (Phase 8.3 hardening)
+**Do not:** Emit `player:move` for same-room tile steps, camera nudges, or generic "position changed" updates.
+
+**Why:** UI and audio consumers treat `player:move` as a room transition event. Overloading it for ordinary tile motion caused duplicate room banners, incorrect menu resets, and event payload drift. Same-room motion must use a distinct event (`player:step`) so listeners can opt into the lower-level signal explicitly.
+
+---
+
+## ADR-015: Authored exit aliases may exist in content but not in directional UI by default
+
+**Status:** Decided (Phase 8.3 hardening)
+**Do not:** Surface arbitrary exit keys such as `mill`, `hallway`, `northwest`, or other authored aliases as direct move buttons/autocomplete unless the command parser and movement rules explicitly support them.
+
+**Why:** The room graph may need non-cardinal aliases for reciprocity, secret links, or authored topology, but the primary movement grammar remains `north/south/east/west/up/down`. UI that blindly mirrors `loc.exits` creates false affordances and breaks player trust. Content topology and player-facing movement affordances are related but not identical.
+
+---
+
+## ADR-016: Referential content integrity is mandatory
+
+**Status:** Decided (Phase 8.3 hardening)
+**Do not:** Introduce item ids, quest targets, NPC ids, enemy ids, or room references in authored content unless they resolve to a defined entity and are covered by validation or tests.
+
+**Why:** Several regressions came from authored data referencing nonexistent items or from room prose/UI/runtime disagreeing about the same room. Content is code in this project: if IDs do not resolve cleanly, the build may still pass while gameplay silently degrades. Validation and regression tests must be updated in the same change that introduces new authored references.
+
+---
+
+## ADR-017: The default public command surface is intentionally smaller than the internal command/runtime surface
+
+**Status:** Decided (Phase 8.4)
+**Do not:** Assume every implemented command or protocol path belongs in the player-facing UI, help text, or autocomplete.
+
+**Why:** Commands such as `say`, `wave`, `bow`, `cheer`, and `vision` added complexity without improving the current core loop. Trade and duel also remain implemented but are not first-class product features yet. The default surface should prioritize the adventure loop: movement, combat, inventory/use/equip, crafting, quests, shops, bank, map, status, and stats.
+
+---
+
+## ADR-018: Daily world-state must have visible mechanical impact when surfaced prominently
+
+**Status:** Decided (Phase 8.4)
+**Do not:** Highlight world-state fields such as scarcity, surplus, or threat in UI/status without wiring them to meaningful gameplay consequences.
+
+**Why:** Decorative state reads as broken state once it is shown repeatedly to the player. Scarcity and `market_surplus` now affect shop pricing, and threat continues to scale enemies. Flavor state such as mood and weather may still exist, but it should not compete with the mechanical state unless it materially changes play.

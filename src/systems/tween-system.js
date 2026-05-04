@@ -26,7 +26,7 @@ export class TweenSystem {
       const tween = this.world.getComponent(entityId, Component.Tweenable);
       if (!tween) continue;
       tween.progress += dt * TWEEN_SPEED;
-      if (tween.progress >= 1.0) this.world.components.get(Component.Tweenable).delete(entityId);
+      if (tween.progress >= 1.0) this.world.removeComponent(entityId, Component.Tweenable);
     }
 
     // 2. Process Attack Animations
@@ -36,7 +36,7 @@ export class TweenSystem {
         const anim = this.world.getComponent(entityId, Component.AttackAnimation);
         if (!anim) continue;
         anim.progress += dt * ATTACK_SPEED;
-        if (anim.progress >= 1.0) this.world.components.get(Component.AttackAnimation).delete(entityId);
+        if (anim.progress >= 1.0) this.world.removeComponent(entityId, Component.AttackAnimation);
     }
 
     // 3. Process Visual Effects (Hit Flashes)
@@ -44,7 +44,7 @@ export class TweenSystem {
     for (const entityId of effects) {
         const fx = this.world.getComponent(entityId, Component.VisualEffect);
         if (!fx || now > fx.expires) {
-            this.world.components.get(Component.VisualEffect).delete(entityId);
+            this.world.removeComponent(entityId, Component.VisualEffect);
         }
     }
   }

@@ -12,13 +12,13 @@ export const NPCS = {
         name: 'The Bard',
         home: 'tavern',
         role: 'flavor',
-        baseDialogue: "I sing of other worlds... would you like to hear a /vision?"
+        baseDialogue: "The old songs still carry the shape of this land. Sit a while and listen."
     }),
     merchant: defineNpc('merchant', { 
         name: 'Merchant', 
         home: 'market', 
         role: 'shop', 
-        shop: ['iron_sword', 'wood', 'iron'],
+        shop: ['iron_sword', 'wood', 'iron', 'wheat'],
         baseDialogue: "Finest wares in the realm, or at least in this square."
     }),
     herbalist: defineNpc('herbalist', {

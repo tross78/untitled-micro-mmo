@@ -71,10 +71,33 @@ export const QUESTS = {
         reward: { xp: 50, gold: 0, item: 'iron_sword' }, chain: 'trade'
     }),
     market_recovery: defineQuest('market_recovery', {
-        id: 'market_recovery', name: 'Market Recovery', giver: 'merchant', receiver: 'merchant', type: 'deliver',
-        description: 'Sell 3 items to the Merchant.', lore: 'Keep the trade flowing in Hearthwick.',
-        objective: { type: 'deliver', target: 'merchant', count: 3 }, prerequisite: 'craft_sword',
-        reward: { xp: 40, gold: 25 }, chain: 'trade'
+        id: 'market_recovery', name: 'Market Recovery', giver: 'merchant', receiver: 'merchant', type: 'fetch',
+        description: 'Bake 2 loaves of bread at the Old Mill and bring them back to the Market.',
+        lore: 'The market can recover only if the roads and ovens both stay busy.',
+        objective: { type: 'fetch', target: 'bread', count: 2 }, prerequisite: 'craft_sword',
+        reward: { xp: 60, gold: 30 }, chain: 'trade'
+    }),
+    // The Herbalist Chain
+    herb_gathering: defineQuest('herb_gathering', {
+        id: 'herb_gathering', name: 'Herb Gathering', giver: 'herbalist', receiver: 'herbalist', type: 'fetch',
+        description: 'Bring 3 bundles of herbs to the Herbalist.',
+        lore: 'The Herbalist needs fresh greens from beyond the safety of the crossroads.',
+        objective: { type: 'fetch', target: 'herbs', count: 3 }, prerequisite: null,
+        reward: { xp: 30, gold: 10, item: 'potion' }, chain: 'herbalist'
+    }),
+    mushroom_study: defineQuest('mushroom_study', {
+        id: 'mushroom_study', name: 'Mushroom Study', giver: 'herbalist', receiver: 'herbalist', type: 'fetch',
+        description: 'Bring 2 red mushrooms to the Herbalist.',
+        lore: 'Not every mushroom is poison, but the Herbalist would prefer not to guess.',
+        objective: { type: 'fetch', target: 'red_mushroom', count: 2 }, prerequisite: 'herb_gathering',
+        reward: { xp: 45, gold: 15, item: 'healing_elixir' }, chain: 'herbalist'
+    }),
+    field_tonic: defineQuest('field_tonic', {
+        id: 'field_tonic', name: 'Field Tonic', giver: 'herbalist', receiver: 'herbalist', type: 'craft',
+        description: 'Brew a healing elixir in the Herbalist\'s Hut.',
+        lore: 'A proper adventurer should know how to make something stronger than tavern fare.',
+        objective: { type: 'craft', target: 'healing_elixir', count: 1 }, prerequisite: 'mushroom_study',
+        reward: { xp: 70, gold: 20, item: 'strength_elixir' }, chain: 'herbalist'
     }),
     // Barkeep's Requests
     tavern_regular: defineQuest('tavern_regular', {

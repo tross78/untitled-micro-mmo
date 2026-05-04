@@ -14,7 +14,7 @@ import { Minisketch } from './minisketch.js';
 import { HyParView } from './hyparview.js';
 import { sendHLC } from './hlc.js';
 import { 
-    packMove, unpackMove, packEmote, unpackEmote, 
+    packMove, unpackMove,
     packPresence, packDuelCommit, unpackDuelCommit,
     packActionLog, unpackActionLog, packTradeCommit, unpackTradeCommit,
     packPresenceBatch, unpackPresenceBatch,
@@ -323,7 +323,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
     const setupShard = (r) => {
         const [sendMove, getMove] = r.makeAction('move');
-        const [sendEmote, getEmote] = r.makeAction('emote');
         const [sendMonsterDmg, getMonsterDmg] = r.makeAction('monster_damage');
         const [sendPresenceSingle, getPresenceSingle] = r.makeAction('presence_single');
         const [sendPresenceBatch, getPresenceBatch] = r.makeAction('presence_batch');
@@ -548,7 +547,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             } catch (_e) { /* ignore */ }
         });
 
-        getEmote((buf, peerId) => bus.emit('peer:emote', { peerId, data: unpackEmote(buf) }));
         getMonsterDmg((data) => {
             const s = shardEnemies.get(data.roomId);
             if (s) { s.hp = Math.max(0, s.hp - data.damage); s.lastUpdate = Date.now(); bus.emit('monster:damaged', { roomId: data.roomId, damage: data.damage }); }
@@ -576,7 +574,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         return {
-            sendMove, sendEmote, sendMonsterDmg, sendPresenceSingle, sendPresenceBatch,
+            sendMove, sendMonsterDmg, sendPresenceSingle, sendPresenceBatch,
             sendRelay, sendRollupLocal, sendSketch, sendRequest,
             sendDuelChallenge, sendDuelAccept, sendDuelCommit,
             sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
@@ -601,7 +599,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: Date.now() };
             r.sendMove(packMove({ ...moveData, signature: await signMessage(JSON.stringify(moveData), playerKeys.privateKey) }));
         },
-        sendEmote: (data) => r.sendEmote(packEmote(data.text)),
         sendMonsterDmg: (data) => r.sendMonsterDmg(data),
         sendActionLog: (data) => r.sendActionLog(packActionLog(data)),
         sendPresenceSingle: (data, target) => {

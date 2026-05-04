@@ -37,16 +37,16 @@ export class CombatSystem {
       const intent = this.world.getComponent(entityId, Component.Intent);
       if (intent.action === 'attack') {
         this.handleAttack(entityId);
-        this.world.components.get(Component.Intent).delete(entityId);
+        this.world.removeComponent(entityId, Component.Intent);
       } else if (intent.action === 'die') {
         this.handlePlayerDeath(entityId);
-        this.world.components.get(Component.Intent).delete(entityId);
+        this.world.removeComponent(entityId, Component.Intent);
       } else if (intent.action === 'flee') {
         this.handleFlee(entityId);
-        this.world.components.get(Component.Intent).delete(entityId);
+        this.world.removeComponent(entityId, Component.Intent);
       } else if (intent.action === 'rest') {
         this.handleRest(entityId);
-        this.world.components.get(Component.Intent).delete(entityId);
+        this.world.removeComponent(entityId, Component.Intent);
       }
     }
   }
@@ -98,13 +98,28 @@ export class CombatSystem {
     const restMsg = (this.localPlayer.location === 'tavern' && isNight) 
         ? `You sleep until dawn and recover ${healed} HP.` 
         : `You rest and recover ${healed} HP.`;
-    bus.emit('log', { msg: `${restMsg} (HP: ${this.localPlayer.hp}/${cap})`, color: '#0f0' });
+    const nextHp = Math.min(cap, health?.current ?? this.localPlayer.hp);
+    bus.emit('log', { msg: `${restMsg} (HP: ${nextHp}/${cap})`, color: '#0f0' });
 
     if (this.localPlayer.location === 'tavern' && !hasRestedBuff) {
         if (!this.localPlayer.statusEffects) this.localPlayer.statusEffects = [];
         this.localPlayer.statusEffects.push({ id: 'well_rested', duration: 100 });
         bus.emit('log', { msg: `The Tavern comfort makes you Well Rested! (+5 Max HP)`, color: '#0af' });
     }
+
+    Object.entries(this.localPlayer.quests || {}).forEach(([qid, progress]) => {
+      const quest = QUESTS[qid];
+      if (!quest || progress.completed || quest.type !== 'rest') return;
+      if (this.localPlayer.location !== 'tavern') return;
+      if (progress.lastRestDay === this.worldState.day) return;
+      progress.lastRestDay = this.worldState.day;
+      progress.progress = Math.min(quest.objective?.count || 1, (progress.progress || 0) + 1);
+      bus.emit('quest:progress', {
+        name: quest.name,
+        current: progress.progress,
+        total: quest.objective?.count || 1
+      });
+    });
   }
 
   /**
@@ -189,9 +204,7 @@ export class CombatSystem {
         attacker: 'You', 
         target: enemyDef.name, 
         damage: playerRes.damage, 
-        crit: playerRes.isCrit,
-        targetHP: Math.max(0, sharedEnemy.hp),
-        targetMaxHP: sharedEnemy.maxHp
+        crit: playerRes.isCrit
       });
       if (this.gameActions.sendMonsterDmg) {
         this.gameActions.sendMonsterDmg({ roomId: locId, damage: playerRes.damage });
@@ -206,14 +219,11 @@ export class CombatSystem {
         health.current -= enemyRes.damage;
         this.world.setComponent(entityId, Component.VisualEffect, { type: 'hit_flash', expires: Date.now() + 150 });
 
-        const maxHp = this.localPlayer.maxHp + bonus.maxHp + (this.localPlayer.buffs?.rested ? 5 : 0);
         bus.emit('combat:hit', { 
           attacker: enemyDef.name, 
           target: 'You', 
           damage: enemyRes.damage, 
-          crit: enemyRes.isCrit,
-          targetHP: Math.max(0, health.current),
-          targetMaxHP: maxHp
+          crit: enemyRes.isCrit
         });
         if (enemyRes.damage > 0) {
           bus.emit('ui:shake');
@@ -290,10 +300,12 @@ export class CombatSystem {
     }
 
     loot.forEach(itemId => {
-      if (ITEMS[itemId]?.type === 'gold') this.localPlayer.gold += ITEMS[itemId].amount;
+      const item = ITEMS[itemId];
+      if (item?.type === 'gold') this.localPlayer.gold += item.amount;
       else {
         this.localPlayer.inventory.push(itemId);
       }
+      if (item) bus.emit('item:pickup', { item });
     });
 
     bus.emit('combat:death', { entity: enemyDef.name, loot });

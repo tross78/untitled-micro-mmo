@@ -11,7 +11,7 @@ export const moodMarkov = {
     'joyful':  { fearful: 10, weary: 20, joyful: 70 }
 };
 
-export const SCARCITY_ITEMS = ['wheat', 'medicine', 'wood', 'iron', 'bread', 'cloth'];
+export const SCARCITY_ITEMS = ['wheat', 'wood', 'iron', 'bread', 'herbs', 'red_mushroom'];
 
 export const MOOD_INITIAL = 'weary';
 

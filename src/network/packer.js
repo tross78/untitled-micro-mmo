@@ -121,18 +121,19 @@ const truncateName = (str, maxBytes) => {
     return decoder.decode(buf.subarray(0, maxBytes)).replace(/\0/g, '');
 };
 
-const EMOTE_MAP = ['waves hello.', 'bows respectfully.', 'cheers loudly!'];
 const ACTION_TYPES = ['attack', 'kill', 'loot'];
 const ITEM_MAP = [
     'wolf_pelt', 'old_tome', 'iron_key', 'gold', 'potion', 'ale', 'bread',
     'iron_sword', 'steel_sword', 'magic_staff', 'healing_elixir', 'strength_elixir',
-    'bandit_mask', 'wood', 'iron', 'leather_armor', 'iron_armor', 'warm_cloak'
+    'bandit_mask', 'wheat', 'wood', 'iron', 'herbs', 'red_mushroom',
+    'leather_armor', 'iron_armor', 'warm_cloak'
 ];
 const QUEST_MAP = [
     'find_tavern', 'wolf_hunt', 'bandit_sweep', 'cave_troll_bounty',
     'ruins_survey', 'tome_collection', 'catacomb_delve', 'wraith_banish',
     'gather_wood', 'iron_supply', 'craft_sword', 'market_recovery',
-    'tavern_regular', 'courier_run', 'mountain_trial'
+    'tavern_regular', 'courier_run', 'mountain_trial',
+    'herb_gathering', 'mushroom_study', 'field_tonic'
 ];
 
 export const presenceSignaturePayload = (p) => {
@@ -183,15 +184,6 @@ export const unpackMove = (buf) => {
         signature: r.sig(),
     };
 };
-
-export const packEmote = (emoteText) => {
-    const idx = EMOTE_MAP.indexOf(emoteText);
-    return new Uint8Array([idx === -1 ? 255 : idx]);
-};
-
-export const unpackEmote = (buf) => ({
-    text: EMOTE_MAP[buf[0]] ?? 'gestures vaguely.'
-});
 
 export const packPresence = (p) => {
     const s = new SchemaBuffer(160); // Increased size

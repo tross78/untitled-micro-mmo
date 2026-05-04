@@ -112,7 +112,7 @@ describe('Deep Import/Export Audit', () => {
     });
 
     describe('packer.js (Binary)', () => {
-        const pairs = ['Move', 'Emote', 'Presence', 'DuelCommit'];
+        const pairs = ['Move', 'Presence', 'DuelCommit'];
         pairs.forEach(p => {
             test(`exports pack${p} and unpack${p}`, () => {
                 expect(typeof Packer[`pack${p}`]).toBe('function');

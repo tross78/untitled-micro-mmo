@@ -232,6 +232,7 @@ describe('networking exported module behavior', () => {
         localPlayer.forestFights = 0;
         localPlayer.combatRound = 9;
         localPlayer.buffs = { rested: true, activeElixir: 'strength_elixir' };
+        localPlayer.statusEffects = [{ id: 'well_rested', duration: 100 }];
 
         updateSimulation({ world_seed: 'new-seed', day: 2, last_tick: 1 });
 
@@ -239,6 +240,7 @@ describe('networking exported module behavior', () => {
         expect(localPlayer.forestFights).toBe(15);
         expect(localPlayer.combatRound).toBe(0);
         expect(localPlayer.buffs).toEqual({ rested: false, activeElixir: null });
+        expect(localPlayer.statusEffects).toEqual([]);
     });
 
     test('buildTorrentConfig uses relayUrls for Trystero torrent strategy', () => {

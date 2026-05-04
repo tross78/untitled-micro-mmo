@@ -38,11 +38,13 @@ const state = {
     roomId: Object.keys(rooms)[0],
     grid: [],          // 2D array of chars (tile type chars)
     scenery: [],       // [{x,y,label}]
-    exits: [],         // parsed exit objects
+    exits: {},         // logical exits {north: 'id'}
+    exitTiles: [],     // parsed exit objects [{x,y,dest,...}]
     activeTile: '.',   // currently selected tile char
     graphOffset: { x: 0, y: 0 },
     graphZoom: 1,
     graphDrag: null,
+    nodeDrag: null,    // {id, startX, startY, initPos}
     roomPositions: {}, // {roomId: {x,y}} for graph layout
     pendingSceneryPos: null,
 };
@@ -51,13 +53,192 @@ const state = {
 
 function init() {
     buildRoomSelect();
+    buildDestSelect();
     buildPalette();
     buildSceneryModal();
+    loadEditorState(); // must come before computeGraphLayout to use saved positions
     computeGraphLayout();
-    loadEditorState(); // must come before loadRoom so _savedGrids/_savedScenery are populated
     setupGraphCanvas();
     setupTileCanvas();
     setupToolbar();
+    setupExitHandlers();
+}
+
+function buildDestSelect() {
+    const sel = document.getElementById('new-exit-dest');
+    for (const id of Object.keys(rooms)) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = rooms[id].name || id;
+        sel.appendChild(opt);
+    }
+}
+
+const REVERSE_DIR = {
+    north: 'south', south: 'north', east: 'west', west: 'east',
+    north_east: 'south_west', south_west: 'north_east',
+    north_west: 'south_east', south_east: 'north_west',
+    up: 'down', down: 'up'
+};
+
+function setupExitHandlers() {
+    document.getElementById('btn-add-exit').addEventListener('click', () => {
+        const dir = document.getElementById('new-exit-dir').value;
+        const dest = document.getElementById('new-exit-dest').value;
+        const type = document.getElementById('new-exit-type').value;
+        const x = parseInt(document.getElementById('new-exit-x').value) || 0;
+        const y = parseInt(document.getElementById('new-exit-y').value) || 0;
+        const dx = parseInt(document.getElementById('new-exit-dx').value) || 5;
+        const dy = parseInt(document.getElementById('new-exit-dy').value) || 5;
+        const reciprocal = document.getElementById('chk-reciprocal').checked;
+
+        if (dest === state.roomId) return;
+        
+        // 1. Update this room
+        state.exits[dir] = dest;
+        const existing = state.exitTiles.find(e => e.dest === dest);
+        if (existing) {
+            existing.x = x; existing.y = y; existing.type = type;
+            existing.destX = dx; existing.destY = dy;
+        } else {
+            state.exitTiles.push({ x, y, dest, destX: dx, destY: dy, type, w: 1, h: 1 });
+        }
+
+        // 2. Handle reciprocal
+        if (reciprocal) {
+            const revDir = REVERSE_DIR[dir];
+            if (revDir) {
+                const destSavedExits = state._savedExits[dest] || { ...(rooms[dest]?.exits || {}) };
+                destSavedExits[revDir] = state.roomId;
+                state._savedExits[dest] = destSavedExits;
+                
+                const destSavedTiles = state._savedExitTiles[dest] || (Array.isArray(rooms[dest]?.exitTiles) ? [...rooms[dest].exitTiles] : []);
+                if (!destSavedTiles.find(e => e.dest === state.roomId)) {
+                    destSavedTiles.push({ x: dx, y: dy, dest: state.roomId, destX: x, destY: y, type, w: 1, h: 1 });
+                }
+                state._savedExitTiles[dest] = destSavedTiles;
+            }
+        }
+        
+        renderExitsUI();
+        renderGraph();
+        renderDSL();
+        saveEditorState();
+    });
+
+    document.getElementById('btn-revert').addEventListener('click', () => {
+        if (!confirm(`Revert ${state.roomId} to original data? All local changes will be lost.`)) return;
+        delete state._savedGrids[state.roomId];
+        delete state._savedScenery[state.roomId];
+        delete state._savedExits[state.roomId];
+        delete state._savedExitTiles[state.roomId];
+        loadRoom(state.roomId);
+    });
+}
+function renderExitsUI() {
+    const list = document.getElementById('exits-list');
+    list.innerHTML = '';
+    Object.entries(state.exits).forEach(([dir, destId]) => {
+        const row = document.createElement('div');
+        row.className = 'exit-row';
+        row.style.display = 'flex';
+        row.style.justifyContent = 'space-between';
+        row.style.alignItems = 'center';
+        row.style.marginBottom = '4px';
+        row.style.padding = '4px 8px';
+        row.style.fontSize = '11px';
+        row.style.background = '#2a2a2a';
+        row.style.cursor = 'pointer';
+
+        // Check if destination exists back to us
+        const otherExits = state._savedExits[destId] || rooms[destId]?.exits || {};
+        const isReciprocal = Object.values(otherExits).includes(state.roomId);
+        row.style.borderLeft = isReciprocal ? '3px solid #33aa55' : '3px solid #aa3333';
+
+        const label = document.createElement('span');
+        label.textContent = `${dir.toUpperCase()}: ${destId}`;
+        label.addEventListener('click', () => {
+            document.getElementById('new-exit-dir').value = dir;
+            document.getElementById('new-exit-dest').value = destId;
+            const tile = state.exitTiles.find(e => e.dest === destId);
+            if (tile) {
+                document.getElementById('new-exit-x').value = tile.x;
+                document.getElementById('new-exit-y').value = tile.y;
+                document.getElementById('new-exit-dx').value = tile.destX;
+                document.getElementById('new-exit-dy').value = tile.destY;
+                document.getElementById('new-exit-type').value = tile.type;
+            }
+        });
+
+        const btn = document.createElement('button');
+        btn.textContent = '×';
+        btn.style.background = '#aa3333';
+        btn.style.color = '#fff';
+        btn.style.border = 'none';
+        btn.style.padding = '0 6px';
+        btn.style.cursor = 'pointer';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            delete state.exits[dir];
+            state.exitTiles = state.exitTiles.filter(e => e.dest !== destId);
+            renderExitsUI();
+            renderGraph();
+            renderDSL();
+            saveEditorState();
+        });
+        
+        row.appendChild(label);
+        row.appendChild(btn);
+        list.appendChild(row);
+    });
+
+    // Handle Inbound
+    const inboundList = document.getElementById('inbound-list');
+    inboundList.innerHTML = '';
+    Object.keys(rooms).forEach(id => {
+        if (id === state.roomId) return;
+        const exits = state._savedExits[id] || rooms[id]?.exits || {};
+        Object.entries(exits).forEach(([dir, destId]) => {
+            if (destId === state.roomId) {
+                const div = document.createElement('div');
+                div.textContent = `← ${id} (${dir})`;
+                div.style.padding = '2px 0';
+                inboundList.appendChild(div);
+            }
+        });
+    });
+}
+
+function drawArrow(ctx, x1, y1, x2, y2, color, isDashed) {
+    const headlen = 8;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const angle = Math.atan2(dy, dx);
+    
+    // Offset ends slightly to not touch node center
+    const off = 10;
+    const sx = x1 + off * Math.cos(angle);
+    const sy = y1 + off * Math.sin(angle);
+    const ex = x2 - off * Math.cos(angle);
+    const ey = y2 - off * Math.sin(angle);
+
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.strokeStyle = color;
+    if (isDashed) ctx.setLineDash([4, 3]);
+    else ctx.setLineDash([]);
+    ctx.stroke();
+    
+    // Arrow head
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - headlen * Math.cos(angle - Math.PI / 6), ey - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(ex - headlen * Math.cos(angle + Math.PI / 6), ey - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
 }
 
 // ── Room Select ──────────────────────────────────────────────────────────────
@@ -101,13 +282,22 @@ function loadRoom(id) {
 
     state.scenery = state._savedScenery?.[id]
         ? state._savedScenery[id]
-        : (room.scenery || []).map(s => ({ ...s }));
-    state.exits = (room.exitTiles || []);
+        : (Array.isArray(room.scenery) ? room.scenery.map(s => ({ ...s })) : []);
+
+    state.exits = state._savedExits?.[id]
+        ? state._savedExits[id]
+        : { ...(room.exits || {}) };
+
+    state.exitTiles = state._savedExitTiles?.[id]
+        ? state._savedExitTiles[id]
+        : (Array.isArray(room.exitTiles) ? room.exitTiles.map(e => ({ ...e })) : []);
 
     document.getElementById('room-select').value = id;
-    document.getElementById('room-size').textContent = `${w}×${h}`;
+    document.getElementById('inp-width').value = w;
+    document.getElementById('inp-height').value = h;
 
     renderTileCanvas();
+    renderExitsUI();
     renderDSL();
     renderGraph();
     saveEditorState();
@@ -182,7 +372,7 @@ function renderTileCanvas() {
     }
 
     // Draw exit overlays
-    (state.exits || []).forEach(ex => {
+    (state.exitTiles || []).forEach(ex => {
         if (ex.x < 0 || ex.y < 0) return;
         ctx.fillStyle = 'rgba(80,200,120,0.35)';
         ctx.fillRect(ex.x * S, ex.y * S, S, S);
@@ -331,52 +521,74 @@ function buildSceneryModal() {
     });
 }
 
-// ── DSL Generator ─────────────────────────────────────────────────────────────
+function getRoomDSL(id) {
+    const room = rooms[id];
+    if (!room) return '';
 
-function renderDSL() {
-    const room = rooms[state.roomId];
-    if (!room) return;
-
-    const id = state.roomId;
+    const grid = state._savedGrids[id] || [];
+    const scenery = state._savedScenery[id] || (Array.isArray(room.scenery) ? room.scenery : []);
+    const exits = state._savedExits[id] || room.exits || {};
+    const exitTiles = state._savedExitTiles[id] || (Array.isArray(room.exitTiles) ? room.exitTiles : []);
     const w = room.width;
     const h = room.height;
 
-    // Compute tileOverrides from grid (only non-default cells)
+    // Compute tileOverrides if we don't have a full ASCII grid saved
     const overrides = [];
-    for (let ty = 0; ty < h; ty++) {
-        for (let tx = 0; tx < w; tx++) {
-            const char = state.grid[ty]?.[tx] || '.';
-            if (char !== '.') {
-                overrides.push(`{ x: ${tx}, y: ${ty}, type: '${CHAR_TO_TYPE[char]}' }`);
+    if (grid.length === 0) {
+        (room.tileOverrides || []).forEach(o => {
+            overrides.push(`{ x: ${o.x}, y: ${o.y}, type: '${o.type}' }`);
+        });
+    } else {
+        for (let ty = 0; ty < h; ty++) {
+            for (let tx = 0; tx < w; tx++) {
+                const char = grid[ty]?.[tx] || '.';
+                if (char !== '.') {
+                    overrides.push(`{ x: ${tx}, y: ${ty}, type: '${CHAR_TO_TYPE[char]}' }`);
+                }
             }
         }
     }
 
-    // Scenery DSL
-    const sceneryStr = state.scenery.map(s => `${s.x},${s.y},${s.label}`).join('|');
-
-    // Exits DSL (read from original room, not editable in this MVP)
-    const exitStr = (room.exitTiles || []).map(ex =>
-        `${ex.x},${ex.y},${ex.dest},${ex.destX},${ex.destY},${ex.type}`
-    ).join('|');
-
-    // Tile grid rows (compact ASCII grid)
-    const tileRows = state.grid.map(row => `    '${row.join('')}'`).join(',\n');
-    const hasTiles = state.grid.some(row => row.some(c => c !== '.'));
+    const sceneryStr = scenery.map(s => `${s.x},${s.y},${s.label}`).join('|');
+    const exitStr = exitTiles.map(ex => `${ex.x},${ex.y},${ex.dest},${ex.destX},${ex.destY},${ex.type}`).join('|');
+    const tileRows = grid.map(row => `            '${row.join('')}'`).join(',\n');
+    const hasTiles = grid.some(row => row.some(c => c !== '.'));
 
     const parts = [
-        `    name: '${room.name}',`,
-        `    description: '${(room.description || '').replace(/'/g, "\\'")}',`,
-        `    width: ${w}, height: ${h},`,
-        room.exits ? `    exits: ${JSON.stringify(room.exits)},` : null,
-        exitStr ? `    exitTiles: "${exitStr}",` : null,
-        sceneryStr ? `    scenery: "${sceneryStr}",` : null,
-        hasTiles ? `    tiles: [\n${tileRows}\n    ],` : null,
-        overrides.length > 0 && !hasTiles ? `    tileOverrides: [\n        ${overrides.join(',\n        ')}\n    ],` : null,
+        `        name: '${room.name}',`,
+        `        description: '${(room.description || '').replace(/'/g, "\\'")}',`,
+        `        width: ${w}, height: ${h},`,
+        Object.keys(exits).length > 0 ? `        exits: ${JSON.stringify(exits)},` : null,
+        exitStr ? `        exitTiles: "${exitStr}",` : null,
+        sceneryStr ? `        scenery: "${sceneryStr}",` : null,
+        hasTiles ? `        tiles: [\n${tileRows}\n        ],` : null,
+        overrides.length > 0 && !hasTiles ? `        tileOverrides: [\n            ${overrides.join(',\n            ')}\n        ],` : null,
     ].filter(Boolean).join('\n');
 
-    const dsl = `${id}: defineRoom('${id}', {\n${parts}\n}),`;
+    return `    ${id}: defineRoom('${id}', {\n${parts}\n    }),`;
+}
+
+function renderDSL() {
+    const dsl = getRoomDSL(state.roomId);
     document.getElementById('dsl-out').value = dsl;
+}
+
+function exportAll() {
+    const header = "import { defineRoom } from '../define.js';\n\nexport const rooms = {\n";
+    const footer = "};\n";
+    const body = Object.keys(rooms).map(id => getRoomDSL(id)).join('\n\n');
+    const fullContent = header + body + footer;
+
+    const blob = new Blob([fullContent], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'rooms.js';
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    document.getElementById('status').textContent = 'Project exported! Replace src/content/data/rooms.js with this file.';
+    setTimeout(() => document.getElementById('status').textContent = '', 5000);
 }
 
 // ── World Graph ───────────────────────────────────────────────────────────────
@@ -386,43 +598,81 @@ function computeGraphLayout() {
     const ids = Object.keys(rooms);
     const visited = new Set();
     const positions = {};
-    const spacing = 80;
+    const spacing = 140; // Increased spacing for better legibility
+
+    const dirOffsets = { 
+        north: [0, -1], 
+        north_east: [0.7, -0.7],
+        east: [1, 0], 
+        south_east: [0.7, 0.7],
+        south: [0, 1], 
+        south_west: [-0.7, 0.7],
+        west: [-1, 0], 
+        north_west: [-0.7, -0.7],
+        up: [-0.4, -0.4], 
+        down: [0.4, 0.4] 
+    };
+
+    const isOccupied = (x, y) => {
+        return Object.values(positions).some(p => Math.hypot(p.x - x, p.y - y) < spacing * 0.4);
+    };
 
     // BFS from first room
     const queue = [{ id: ids[0], x: 0, y: 0 }];
     visited.add(ids[0]);
     while (queue.length > 0) {
         const { id, x, y } = queue.shift();
-        positions[id] = { x, y };
+        
+        let nx = x, ny = y;
+        let nudgeAttempt = 0;
+        while (isOccupied(nx, ny) && nudgeAttempt < 8) {
+            nx += 30;
+            ny += 20;
+            nudgeAttempt++;
+        }
+
+        positions[id] = { x: nx, y: ny };
         const room = rooms[id];
         const dirs = room.exits || {};
-        const dirOffsets = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0], up: [0, -1], down: [0, 1] };
         for (const [dir, destId] of Object.entries(dirs)) {
             if (!visited.has(destId) && rooms[destId]) {
                 visited.add(destId);
                 const [dx, dy] = dirOffsets[dir] || [0, 0];
-                queue.push({ id: destId, x: x + dx * spacing, y: y + dy * spacing });
+                queue.push({ id: destId, x: nx + dx * spacing, y: ny + dy * spacing });
             }
         }
     }
 
-    // Any orphans
-    ids.forEach((id, i) => {
-        if (!positions[id]) positions[id] = { x: (i % 5) * spacing, y: Math.floor(i / 5) * spacing };
+    // Any orphans (placed in a separate grid to avoid tangles)
+    let orphanIdx = 0;
+    ids.forEach((id) => {
+        if (!positions[id]) {
+            positions[id] = { x: 800 + (orphanIdx % 3) * spacing, y: Math.floor(orphanIdx / 3) * spacing };
+            orphanIdx++;
+        }
     });
 
-    // Normalize to start from positive coords
+    // Normalize and center
     const minX = Math.min(...Object.values(positions).map(p => p.x));
     const minY = Math.min(...Object.values(positions).map(p => p.y));
-    Object.values(positions).forEach(p => { p.x -= minX - 30; p.y -= minY - 30; });
+    Object.values(positions).forEach((p, i) => { 
+        const id = ids[i];
+        if (state.roomPositions[id]) {
+            p.x = state.roomPositions[id].x;
+            p.y = state.roomPositions[id].y;
+        } else {
+            p.x -= minX - 40; 
+            p.y -= minY - 40; 
+        }
+    });
 
-    state.roomPositions = positions;
+    state.roomPositions = { ...positions, ...state.roomPositions };
 }
 
 function renderGraph() {
     const canvas = document.getElementById('graph-canvas');
     const panel = document.getElementById('graph-panel');
-    canvas.width = panel.clientWidth || 280;
+    canvas.width = panel.clientWidth || 400;
     canvas.height = panel.clientHeight || 400;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#1e1e1e';
@@ -432,27 +682,42 @@ function renderGraph() {
     const z = state.graphZoom;
 
     // Draw edges
-    const drawn = new Set();
-    Object.entries(rooms).forEach(([id, room]) => {
+    Object.keys(rooms).forEach((id) => {
         const pos = state.roomPositions[id];
         if (!pos) return;
-        Object.entries(room.exits || {}).forEach(([dir, destId]) => {
-            const key = [id, destId].sort().join('|');
-            if (drawn.has(key)) return;
-            drawn.add(key);
+
+        // Use active state for current room, or static data for others
+        const exits = id === state.roomId ? state.exits : (state._savedExits[id] || rooms[id]?.exits || {});
+
+        Object.entries(exits).forEach(([dir, destId]) => {
             const dest = state.roomPositions[destId];
             if (!dest) return;
 
-            // Check reciprocal exit
-            const reciprocal = Object.values(rooms[destId]?.exits || {}).includes(id);
-            ctx.beginPath();
-            ctx.moveTo(pos.x * z + ox, pos.y * z + oy);
-            ctx.lineTo(dest.x * z + ox, dest.y * z + oy);
-            ctx.strokeStyle = reciprocal ? '#2a5a3a' : '#aa3333';
-            ctx.lineWidth = reciprocal ? 1.5 : 1;
-            ctx.setLineDash(reciprocal ? [] : [4, 3]);
-            ctx.stroke();
-            ctx.setLineDash([]);
+            // Check reciprocal exit (accounting for active state)
+            const otherExits = destId === state.roomId ? state.exits : (state._savedExits[destId] || rooms[destId]?.exits || {});
+            const reciprocal = Object.values(otherExits).includes(id);
+
+            const x1 = pos.x * z + ox;
+            const y1 = pos.y * z + oy;
+            const x2 = dest.x * z + ox;
+            const y2 = dest.y * z + oy;
+
+            if (reciprocal) {
+                // Draw single solid green line for bidirectional
+                if (id < destId) { // Only draw once
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.strokeStyle = (id === state.roomId || destId === state.roomId) ? '#55cc77' : '#2a5a3a';
+                    ctx.lineWidth = (id === state.roomId || destId === state.roomId) ? 3 : 1.5;
+                    ctx.setLineDash([]);
+                    ctx.stroke();
+                }
+            } else {
+                // Draw red arrow for one-way
+                const color = (id === state.roomId || destId === state.roomId) ? '#ff4444' : '#aa3333';
+                drawArrow(ctx, x1, y1, x2, y2, color, true);
+            }
         });
     });
 
@@ -473,10 +738,11 @@ function renderGraph() {
         ctx.stroke();
 
         ctx.fillStyle = isActive ? '#fff' : '#aaa';
-        ctx.font = `${Math.min(10, Math.max(7, 9 * z))}px monospace`;
+        ctx.font = `${Math.max(9, Math.floor(10 * z))}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText(id.replace(/_/g, '·'), x, y + r + 2);
+        const label = id.replace(/_/g, ' ');
+        ctx.fillText(label, x, y + r + 4);
     });
 }
 
@@ -485,7 +751,7 @@ function setupGraphCanvas() {
     const resizeObs = new ResizeObserver(() => renderGraph());
     resizeObs.observe(document.getElementById('graph-panel'));
 
-    canvas.addEventListener('click', (e) => {
+    canvas.addEventListener('mousedown', (e) => {
         const r = canvas.getBoundingClientRect();
         const mx = e.clientX - r.left;
         const my = e.clientY - r.top;
@@ -495,7 +761,8 @@ function setupGraphCanvas() {
         for (const [id, pos] of Object.entries(state.roomPositions)) {
             const px = pos.x * z + ox;
             const py = pos.y * z + oy;
-            if (Math.hypot(mx - px, my - py) < 12) {
+            if (Math.hypot(mx - px, my - py) < 15) {
+                state.nodeDrag = { id, startX: mx, startY: my, initPos: { ...pos } };
                 loadRoom(id);
                 return;
             }
@@ -505,13 +772,31 @@ function setupGraphCanvas() {
     });
 
     canvas.addEventListener('mousemove', (e) => {
+        const r = canvas.getBoundingClientRect();
+        const mx = e.clientX - r.left;
+        const my = e.clientY - r.top;
+        const z = state.graphZoom;
+
+        if (state.nodeDrag) {
+            const dx = (mx - state.nodeDrag.startX) / z;
+            const dy = (my - state.nodeDrag.startY) / z;
+            state.roomPositions[state.nodeDrag.id].x = state.nodeDrag.initPos.x + dx;
+            state.roomPositions[state.nodeDrag.id].y = state.nodeDrag.initPos.y + dy;
+            renderGraph();
+            return;
+        }
+
         if (!state.graphDrag) return;
         state.graphOffset.x = e.clientX - state.graphDrag.startX;
         state.graphOffset.y = e.clientY - state.graphDrag.startY;
         renderGraph();
     });
 
-    window.addEventListener('mouseup', () => { state.graphDrag = null; });
+    window.addEventListener('mouseup', () => { 
+        state.graphDrag = null; 
+        state.nodeDrag = null;
+        saveEditorState();
+    });
 
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
@@ -532,41 +817,54 @@ function setupToolbar() {
     };
     document.getElementById('btn-copy').addEventListener('click', copy);
     document.getElementById('btn-copy2').addEventListener('click', copy);
+    document.getElementById('btn-export').addEventListener('click', exportAll);
+
+    const updateSize = () => {
+        const room = rooms[state.roomId];
+        const nw = parseInt(document.getElementById('inp-width').value) || 2;
+        const nh = parseInt(document.getElementById('inp-height').value) || 2;
+        room.width = nw;
+        room.height = nh;
+        
+        // Adjust grid
+        while (state.grid.length < nh) state.grid.push(Array(nw).fill('.'));
+        state.grid = state.grid.slice(0, nh).map(row => {
+            while (row.length < nw) row.push('.');
+            return row.slice(0, nw);
+        });
+        
+        renderTileCanvas(); renderDSL(); saveEditorState();
+    };
+
+    document.getElementById('inp-width').addEventListener('change', updateSize);
+    document.getElementById('inp-height').addEventListener('change', updateSize);
 
     document.getElementById('btn-add-row').addEventListener('click', () => {
-        const room = rooms[state.roomId];
-        if (!room) return;
-        room.height++;
-        state.grid.push(Array(room.width).fill('.'));
-        document.getElementById('room-size').textContent = `${room.width}×${room.height}`;
-        renderTileCanvas(); renderDSL(); saveEditorState();
+        const h = parseInt(document.getElementById('inp-height').value);
+        document.getElementById('inp-height').value = h + 1;
+        updateSize();
     });
 
     document.getElementById('btn-del-row').addEventListener('click', () => {
-        const room = rooms[state.roomId];
-        if (!room || room.height <= 2) return;
-        room.height--;
-        state.grid.pop();
-        document.getElementById('room-size').textContent = `${room.width}×${room.height}`;
-        renderTileCanvas(); renderDSL(); saveEditorState();
+        const h = parseInt(document.getElementById('inp-height').value);
+        if (h > 2) {
+            document.getElementById('inp-height').value = h - 1;
+            updateSize();
+        }
     });
 
     document.getElementById('btn-add-col').addEventListener('click', () => {
-        const room = rooms[state.roomId];
-        if (!room) return;
-        room.width++;
-        state.grid.forEach(row => row.push('.'));
-        document.getElementById('room-size').textContent = `${room.width}×${room.height}`;
-        renderTileCanvas(); renderDSL(); saveEditorState();
+        const w = parseInt(document.getElementById('inp-width').value);
+        document.getElementById('inp-width').value = w + 1;
+        updateSize();
     });
 
     document.getElementById('btn-del-col').addEventListener('click', () => {
-        const room = rooms[state.roomId];
-        if (!room || room.width <= 2) return;
-        room.width--;
-        state.grid.forEach(row => row.pop());
-        document.getElementById('room-size').textContent = `${room.width}×${room.height}`;
-        renderTileCanvas(); renderDSL(); saveEditorState();
+        const w = parseInt(document.getElementById('inp-width').value);
+        if (w > 2) {
+            document.getElementById('inp-width').value = w - 1;
+            updateSize();
+        }
     });
 }
 
@@ -576,14 +874,20 @@ const LS_KEY = 'hearthwick_editor_v1';
 
 function saveEditorState() {
     try {
-        const existing = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+        // Update in-memory saved maps immediately so other rooms (renderGraph) see them
+        state._savedGrids[state.roomId] = state.grid;
+        state._savedScenery[state.roomId] = state.scenery;
+        state._savedExits[state.roomId] = state.exits;
+        state._savedExitTiles[state.roomId] = state.exitTiles;
+
         const data = {
             roomId: state.roomId,
-            grids: { ...(existing.grids || {}) },
-            sceneryMap: { ...(existing.sceneryMap || {}) },
+            grids: state._savedGrids,
+            sceneryMap: state._savedScenery,
+            exitsMap: state._savedExits,
+            exitTilesMap: state._savedExitTiles,
+            roomPositions: state.roomPositions,
         };
-        data.grids[state.roomId] = state.grid;
-        data.sceneryMap[state.roomId] = state.scenery;
         localStorage.setItem(LS_KEY, JSON.stringify(data));
     } catch {}
 }
@@ -593,6 +897,9 @@ function loadEditorState() {
         const data = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
         state._savedGrids = data.grids || {};
         state._savedScenery = data.sceneryMap || {};
+        state._savedExits = data.exitsMap || {};
+        state._savedExitTiles = data.exitTilesMap || {};
+        state.roomPositions = data.roomPositions || {};
         const startRoom = (data.roomId && rooms[data.roomId]) ? data.roomId : state.roomId;
         loadRoom(startRoom);
     } catch {

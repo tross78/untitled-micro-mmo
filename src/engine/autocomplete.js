@@ -5,17 +5,17 @@
 
 const TOP_COMMANDS = [
     'look', 'move', 'attack', 'rest', 'stats', 'inventory',
-    'use', 'who', 'status', 'wave', 'bow', 'cheer',
-    'duel', 'accept', 'decline', 'rename', 'map', 'clear', 'help',
-    'talk', 'buy', 'sell', 'quest', 'bank', 'say'
+    'use', 'who', 'status', 'rename', 'map', 'clear', 'help',
+    'talk', 'buy', 'sell', 'quest', 'bank'
 ];
 
 // Commands that take no argument — tapping their chip runs them immediately.
 const NO_ARG_COMMANDS = new Set([
     'look', 'attack', 'rest', 'stats', 'inventory', 'who',
-    'status', 'wave', 'bow', 'cheer', 'accept', 'decline',
-    'map', 'clear', 'help', 'quest', 'bank'
+    'status', 'map', 'clear', 'help', 'quest', 'bank'
 ]);
+
+const MOVE_DIRECTIONS = new Set(['north', 'south', 'east', 'west', 'up', 'down']);
 
 /**
  * Returns up to 4 autocomplete suggestions for the current input.
@@ -49,13 +49,11 @@ function getArgSuggestions(cmd, arg, ctx) {
     switch (cmd) {
         case 'use':    return getItemSuggestions(arg, ctx);
         case 'move':   return getMoveSuggestions(arg, ctx);
-        case 'duel':   return getPlayerSuggestions(arg, ctx);
         case 'talk':   return getNPCSuggestions(arg, ctx);
         case 'buy':    return getShopSuggestions(arg, ctx);
         case 'sell':   return getSellSuggestions(arg, ctx);
         case 'quest':  return getQuestSuggestions(arg, ctx);
         case 'bank':   return getBankSuggestions(arg, ctx);
-        case 'say':    return [];
         default:       return [];
     }
 }
@@ -76,7 +74,7 @@ function getItemSuggestions(arg, { inventory, ITEMS }) {
 }
 
 function getMoveSuggestions(arg, { location, world }) {
-    const exits = Object.keys(world[location]?.exits || {});
+    const exits = Object.keys(world[location]?.exits || {}).filter(dir => MOVE_DIRECTIONS.has(dir));
     return exits
         .filter(dir => dir.startsWith(arg))
         .slice(0, 4)
@@ -85,22 +83,6 @@ function getMoveSuggestions(arg, { location, world }) {
             fill: 'move ' + dir,
             immediate: true,
         }));
-}
-
-function getPlayerSuggestions(arg, { players }) {
-    const results = [];
-    for (const entry of players.values()) {
-        const name = entry.name || '';
-        if (name.toLowerCase().startsWith(arg)) {
-            results.push({
-                display: name,
-                fill: 'duel ' + name.toLowerCase(),
-                immediate: false,
-            });
-            if (results.length >= 4) break;
-        }
-    }
-    return results;
 }
 
 function getNPCSuggestions(arg, { location, NPCS, worldState, getNPCLocation }) {

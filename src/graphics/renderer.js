@@ -12,15 +12,6 @@ let _ctx = null;
 let _radarEl = null;
 let _devMode = false;
 
-export function resolveCanvasTile(clientX, clientY, rect, canvasWidth, canvasHeight, tileSize, camX, camY) {
-    const scaleX = canvasWidth / rect.width;
-    const scaleY = canvasHeight / rect.height;
-    return {
-        tx: Math.floor(((clientX - rect.left) * scaleX) / tileSize + camX),
-        ty: Math.floor(((clientY - rect.top) * scaleY) / tileSize + camY)
-    };
-}
-
 export function initCanvas() {
     if (_canvas) return;
     _radarEl = getShellElement('radar-container');
@@ -30,15 +21,29 @@ export function initCanvas() {
     _canvas.id = 'game-canvas';
     _canvas.className = 'game-canvas';
     
-    // Initial size from appRuntime config or defaults
-    _canvas.width = 960; // 20 * 48
-    _canvas.height = 576; // 12 * 48
+    // Initial size from appRuntime config
+    _canvas.width = appRuntime.VP.CW;
+    _canvas.height = appRuntime.VP.CH;
 
     _ctx = _canvas.getContext('2d');
     if (_ctx) _ctx.imageSmoothingEnabled = false;
 
     if (container) {
         container.appendChild(_canvas);
+        
+        // Step 3 — Scale-to-fit via ResizeObserver (ADR-014)
+        const resizeObs = new ResizeObserver(() => {
+            const scale = Math.min(container.clientWidth / appRuntime.VP.CW, container.clientHeight / appRuntime.VP.CH);
+            _canvas.style.transform = `scale(${scale})`;
+            _canvas.style.transformOrigin = 'top left';
+            
+            // Center the scaled canvas
+            const scaledW = appRuntime.VP.CW * scale;
+            const scaledH = appRuntime.VP.CH * scale;
+            _canvas.style.marginLeft = `${(container.clientWidth - scaledW) / 2}px`;
+            _canvas.style.marginTop = `${(container.clientHeight - scaledH) / 2}px`;
+        });
+        resizeObs.observe(container);
     }
 
     // Dev Key Toggle
@@ -73,8 +78,14 @@ export function renderWorld(state, onTileClick) {
         const menu = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
         if (!menu || !appRuntime.uiRender) return;
         const rect = _canvas.getBoundingClientRect();
-        const cx = (e.clientX - rect.left) * (_canvas.width / rect.width);
-        const cy = (e.clientY - rect.top)  * (_canvas.height / rect.height);
+        
+        // CSS scaling factor
+        const scaleX = _canvas.width / rect.width;
+        const scaleY = _canvas.height / rect.height;
+        
+        const cx = (e.clientX - rect.left) * scaleX;
+        const cy = (e.clientY - rect.top)  * scaleY;
+        
         const idx = appRuntime.uiRender.resolveMenuClick(cx, cy);
         if (idx !== -1 && idx !== menu.selectedIndex && !menu.entries[idx]?.disabled)
             menu.selectedIndex = idx;
@@ -108,8 +119,11 @@ export function renderWorld(state, onTileClick) {
         const { camX, camY, screenOffsetX, screenOffsetY } = appRuntime.getViewportTransform(drawX, drawY, transform.mapId);
 
         const rect = _canvas.getBoundingClientRect();
-        const canvasX = (e.clientX - rect.left) * (_canvas.width / rect.width);
-        const canvasY = (e.clientY - rect.top) * (_canvas.height / rect.height);
+        const scaleX = _canvas.width / rect.width;
+        const scaleY = _canvas.height / rect.height;
+
+        const canvasX = (e.clientX - rect.left) * scaleX;
+        const canvasY = (e.clientY - rect.top) * scaleY;
 
         if (appRuntime.uiRender) {
             const menuIndex = appRuntime.uiRender.resolveMenuClick(canvasX, canvasY);
@@ -129,16 +143,8 @@ export function renderWorld(state, onTileClick) {
             }
         }
 
-        const { tx, ty } = resolveCanvasTile(
-            rect.left + (localCanvasX / (_canvas.width / rect.width)),
-            rect.top + (localCanvasY / (_canvas.height / rect.height)),
-            { left: rect.left, top: rect.top, width: _canvas.width / (_canvas.width / rect.width), height: _canvas.height / (_canvas.height / rect.height) },
-            _canvas.width,
-            _canvas.height,
-            appRuntime.VP.S,
-            camX,
-            camY
-        );
+        const tx = Math.floor(localCanvasX / appRuntime.VP.S) + camX;
+        const ty = Math.floor(localCanvasY / appRuntime.VP.S) + camY;
 
         // Find entity at logical coordinate
         const entities = appRuntime.world.query([Component.Transform, Component.Sprite]);

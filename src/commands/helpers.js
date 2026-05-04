@@ -49,6 +49,26 @@ export const getBestGear = () => {
     };
 };
 
+export const getBuyPrice = (itemId) => {
+    const item = ITEMS[itemId];
+    if (!item) return 0;
+
+    let price = item.price || 0;
+    if (worldState.scarcity.includes(itemId)) {
+        price = Math.ceil(price * 1.5);
+    }
+    if (worldState.event?.type === 'market_surplus' && (item.type === 'material' || item.type === 'consumable')) {
+        price = Math.max(1, Math.floor(price * 0.8));
+    }
+    return price;
+};
+
+export const getSellPrice = (itemId) => {
+    const item = ITEMS[itemId];
+    if (!item) return 0;
+    return Math.max(1, Math.floor((item.price || 0) * 0.4));
+};
+
 export const grantItem = (itemId) => {
     if (!ITEMS[itemId]) return;
     localPlayer.inventory.push(itemId);

@@ -1,8 +1,10 @@
 import { ITEMS, NPCS, QUESTS, RECIPES } from '../content/data.js';
 import { ENEMIES } from '../content/data.js';
-import { players } from '../state/store.js';
+import { players, worldState } from '../state/store.js';
+import { getBuyPrice, getSellPrice } from '../commands/helpers.js';
 
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+const MOVE_DIRECTIONS = new Set(['north', 'south', 'east', 'west', 'up', 'down']);
 
 const itemCommandName = (itemId) => (ITEMS[itemId]?.name || itemId).toLowerCase();
 
@@ -98,6 +100,19 @@ export function buildCanvasMenu(type, context, menuCtx) {
         return { type, title: 'Adventurer Menu', message: 'Select an action.', entries, selectedIndex: 0 };
     }
 
+    if (type === 'move') {
+        const entries = Object.keys(location?.exits || {})
+            .filter((dir) => MOVE_DIRECTIONS.has(dir))
+            .map((dir) => ({
+                label: capitalize(dir),
+                detail: location.exits[dir],
+                action: { kind: 'command', command: `move ${dir}` },
+            }));
+        if (!entries.length) entries.push({ label: 'No clear route', detail: 'Use a marked doorway or path.', disabled: true });
+        entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
+        return { type, title: 'Move', message: 'Choose a direction.', entries, selectedIndex: 0 };
+    }
+
     if (type === 'inventory') {
         const items = Array.from(new Set(localPlayer.inventory || []));
         const entries = items.map((id) => {
@@ -147,9 +162,10 @@ export function buildCanvasMenu(type, context, menuCtx) {
         const entries = [];
         const questRows = getQuestRowsForNpc(localPlayer, npcId, npcsHere);
         if (npc.role === 'shop' && npc.shop?.length) {
-            entries.push({ label: 'Buy', detail: timeOfDay === 'night' ? 'Shop is closed at night' : `${npc.shop.length} wares`, disabled: timeOfDay === 'night', action: { kind: 'menu', menuType: 'shop', context: { npcId } } });
+            const closedAtNight = npcId === 'merchant' && timeOfDay === 'night';
+            entries.push({ label: 'Buy', detail: closedAtNight ? 'Shop is closed at night' : `${npc.shop.length} wares`, disabled: closedAtNight, action: { kind: 'menu', menuType: 'shop', context: { npcId } } });
             if (getSellableItems(localPlayer).length > 0) {
-                entries.push({ label: 'Sell', detail: 'Turn goods into gold', disabled: timeOfDay === 'night', action: { kind: 'menu', menuType: 'sell', context: { npcId } } });
+                entries.push({ label: 'Sell', detail: 'Turn goods into gold', disabled: closedAtNight, action: { kind: 'menu', menuType: 'sell', context: { npcId } } });
             }
         }
         if (questRows.some(row => !row.disabled)) {
@@ -175,10 +191,13 @@ export function buildCanvasMenu(type, context, menuCtx) {
         const entries = (npc.shop || []).map((itemId) => {
             const item = ITEMS[itemId];
             const detail = item.heal ? `+${item.heal} hp` : item.bonus ? `+${item.bonus}` : item.type;
+            const closedAtNight = npcId === 'merchant' && timeOfDay === 'night';
+            const price = getBuyPrice(itemId);
+            const scarcityTag = worldState.scarcity.includes(itemId) ? ' ⚠️ scarce' : worldState.event?.type === 'market_surplus' && (item.type === 'material' || item.type === 'consumable') ? ' ↓ surplus' : '';
             return {
-                label: `${item.name} - ${item.price}g`,
-                detail,
-                disabled: localPlayer.gold < item.price || timeOfDay === 'night',
+                label: `${item.name} - ${price}g`,
+                detail: `${detail}${scarcityTag}`,
+                disabled: localPlayer.gold < price || closedAtNight,
                 action: { kind: 'command', command: `buy ${itemCommandName(itemId)}` },
             };
         });
@@ -193,7 +212,7 @@ export function buildCanvasMenu(type, context, menuCtx) {
         if (!npc) return null;
         const entries = getSellableItems(localPlayer).map((itemId) => {
             const item = ITEMS[itemId];
-            const sellPrice = Math.floor(item.price * 0.4);
+            const sellPrice = getSellPrice(itemId);
             return {
                 label: `${item.name} - ${sellPrice}g`,
                 detail: item.type,

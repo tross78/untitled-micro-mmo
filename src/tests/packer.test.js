@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { signMessage, verifyMessage } from '../security/crypto.js';
 import {
-    packMove, unpackMove, packEmote, unpackEmote,
+    packMove, unpackMove,
     packPresence, unpackPresence, presenceSignaturePayload,
     packDuelCommit, unpackDuelCommit, unpackActionLog,
     packPresenceBatch, unpackPresenceBatch
@@ -35,22 +35,6 @@ describe('Binary Packer', () => {
         expect(unpacked.y).toBe(move.y);
         expect(unpacked.ts).toBe(move.ts);
         expect(unpacked.signature).toBe(move.signature);
-    });
-
-    test('Emote packet encodes/decodes correctly', () => {
-        const text = 'cheers loudly!';
-        const packed = packEmote(text);
-        expect(packed).toBeInstanceOf(Uint8Array);
-        expect(packed).toHaveLength(1);
-        
-        const unpacked = unpackEmote(packed);
-        expect(unpacked.text).toBe(text);
-    });
-
-    test('Unknown emote falls back to default', () => {
-        const packed = new Uint8Array([255]);
-        const unpacked = unpackEmote(packed);
-        expect(unpacked.text).toBe('gestures vaguely.');
     });
 
     test('Presence packet encodes/decodes correctly', () => {
@@ -111,11 +95,12 @@ describe('Binary Packer', () => {
         const hlc = { wall: 1777593957322, logical: 42 };
         const presence = {
             name: 'T', location: 'cellar', ph: '00000000', level: 1,
-            xp: 0, hlc, signature: btoa('x'.repeat(64)),
+            xp: 0, inventory: ['wheat', 'herbs', 'red_mushroom'], hlc, signature: btoa('x'.repeat(64)),
         };
         const unpacked = unpackPresence(packPresence(presence));
         expect(unpacked.hlc.wall).toBe(hlc.wall);
         expect(unpacked.hlc.logical).toBe(hlc.logical);
+        expect(unpacked.inventory).toEqual(['wheat', 'herbs', 'red_mushroom']);
     });
 
     test('presence signature payload survives pack/unpack exactly', async () => {

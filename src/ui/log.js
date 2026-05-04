@@ -51,7 +51,6 @@ export const initLogHandlers = () => {
         injectLog(`[Quest] COMPLETED: ${name}!`, '#0f0');
         injectLog(`[Quest] Reward: ${rewards.xp} XP, ${rewards.gold} Gold`, '#ff0');
     });
-    bus.on('chat:say', ({ name, text }) => injectLog(`[Chat] ${name}: "${text}"`, '#fff'));
     bus.on('world:timeOfDay', ({ day, timeOfDay }) => {
         const label = timeOfDay === 'night' ? 'Night falls' : 'Dawn breaks';
         injectLog(`[World] ${label} — Day ${day}.`, '#0af');

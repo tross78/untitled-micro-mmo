@@ -1,0 +1,119 @@
+import { jest } from '@jest/globals';
+import { bus } from '../state/eventbus.js';
+import { ACTION } from '../engine/input.js';
+import { appRuntime } from '../app/runtime.js';
+import { Component } from '../domain/components.js';
+
+// We need to mock things that events.js depends on
+jest.mock('../state/persistence.js', () => ({
+    saveLocalState: jest.fn()
+}));
+
+jest.mock('../graphics/renderer.js', () => ({
+    renderWorld: jest.fn(),
+    setVisualRefreshCallback: jest.fn(),
+    setLogicalRefreshCallback: jest.fn(),
+    triggerHitFlash: jest.fn(),
+    showFloatingText: jest.fn(),
+    showDialogue: jest.fn(),
+    showToast: jest.fn(),
+    showLevelUp: jest.fn(),
+    showItemFanfare: jest.fn(),
+    showRoomBanner: jest.fn(),
+    advanceDialogue: jest.fn(),
+    isDialogueOpen: jest.fn(() => false)
+}));
+
+jest.mock('../ui/index.js', () => ({
+    renderActionButtons: jest.fn(),
+    log: jest.fn()
+}));
+
+jest.mock('../commands/index.js', () => ({
+    handleCommand: jest.fn().mockResolvedValue(true),
+    getPlayerName: jest.fn(),
+    startStateChannel: jest.fn(),
+    resolveRound: jest.fn(),
+    grantItem: jest.fn()
+}));
+
+// Mock graphics to avoid OffscreenCanvas
+jest.mock('../graphics/graphics.js', () => ({
+    drawTile: jest.fn(),
+    applyPalette: jest.fn(),
+    PALETTES: {},
+    getGrayscaleTemplate: jest.fn()
+}));
+
+import { setupGlobalEvents } from '../main/events.js';
+import { handleCommand } from '../commands/index.js';
+
+describe('Input Interaction (Cross-platform)', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        setupGlobalEvents();
+        // Setup a mock player with a menu
+        appRuntime.playerEntityId = 1;
+        appRuntime.world.query = jest.fn((components) => {
+            if (components.includes(Component.Menu)) return [1];
+            return [];
+        });
+    });
+
+    test('Keyboard/Gamepad: CONFIRM action activates selected menu entry', () => {
+        const mockMenu = {
+            type: 'shop',
+            selectedIndex: 1,
+            entries: [
+                { label: 'Item 1', action: { kind: 'command', command: 'buy item1' } },
+                { label: 'Item 2', action: { kind: 'command', command: 'buy item2' } }
+            ]
+        };
+        appRuntime.world.getComponent = jest.fn((id, comp) => {
+            if (comp === Component.Menu) return mockMenu;
+            return null;
+        });
+
+        bus.emit('input:action', { action: ACTION.CONFIRM, type: 'down' });
+
+        expect(handleCommand).toHaveBeenCalledWith('buy item2');
+    });
+
+    test('Mouse/Touch: ui:menu-select activates specific menu entry', () => {
+        const mockMenu = {
+            type: 'shop',
+            selectedIndex: 0,
+            entries: [
+                { label: 'Item 1', action: { kind: 'command', command: 'buy item1' } },
+                { label: 'Item 2', action: { kind: 'command', command: 'buy item2' } }
+            ]
+        };
+        appRuntime.world.getComponent = jest.fn((id, comp) => {
+            if (comp === Component.Menu) return mockMenu;
+            return null;
+        });
+
+        bus.emit('ui:menu-select', { index: 1 });
+
+        expect(handleCommand).toHaveBeenCalledWith('buy item2');
+    });
+
+    test('Keyboard: MOVE_S changes selectedIndex', () => {
+        const mockMenu = {
+            type: 'shop',
+            selectedIndex: 0,
+            entries: [
+                { label: 'Item 1', disabled: false },
+                { label: 'Item 2', disabled: false }
+            ]
+        };
+        appRuntime.world.getComponent = jest.fn((id, comp) => {
+            if (comp === Component.Menu) return mockMenu;
+            return null;
+        });
+
+        bus.emit('input:action', { action: ACTION.MOVE_S, type: 'down' });
+
+        expect(mockMenu.selectedIndex).toBe(1);
+    });
+});

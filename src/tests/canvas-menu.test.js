@@ -1,5 +1,6 @@
 import { buildCanvasMenu, findNearestEnabledIndex } from '../ui/canvas-menu.js';
 import { world, NPCS } from '../content/data.js';
+import { worldState } from '../state/store.js';
 
 const makePlayer = (overrides = {}) => ({
     name: 'Tester',
@@ -28,6 +29,11 @@ const makeCtx = (player, timeOfDay = 'day') => ({
 });
 
 describe('canvas menu builder', () => {
+    beforeEach(() => {
+        worldState.scarcity = [];
+        worldState.event = null;
+    });
+
     test('merchant npc menu exposes buy path', () => {
         const menu = buildCanvasMenu('npc', { npcId: 'merchant', text: 'Finest wares.' }, makeCtx(makePlayer()));
         expect(menu.title).toBe(NPCS.merchant.name);
@@ -38,6 +44,15 @@ describe('canvas menu builder', () => {
         const menu = buildCanvasMenu('shop', { npcId: 'merchant' }, makeCtx(makePlayer({ gold: 5 })));
         const sword = menu.entries.find((entry) => entry.label.startsWith('Iron Sword'));
         expect(sword.disabled).toBe(true);
+    });
+
+    test('shop menu reflects scarcity-adjusted prices', () => {
+        worldState.scarcity = ['wheat'];
+        const menu = buildCanvasMenu('shop', { npcId: 'merchant' }, makeCtx(makePlayer({ gold: 4 })));
+        const wheat = menu.entries.find((entry) => entry.label.startsWith('Wheat Bundle'));
+        expect(wheat.label).toBe('Wheat Bundle - 5g');
+        expect(wheat.detail).toContain('scarce');
+        expect(wheat.disabled).toBe(true);
     });
 
     test('inventory menu turns consumables into actionable entries', () => {

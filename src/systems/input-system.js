@@ -27,13 +27,20 @@ export class InputSystem {
     if (players.length === 0) return;
 
     const playerEntityId = players[0];
-    
-    // Process one intent per tick or all? Usually one per tick for discrete grid movement
+
+    // When a menu or dialogue is open, UI owns the input — drain queue without acting
+    const uiOpen = this.world.query([Component.Menu]).length > 0 ||
+                   this.world.query([Component.Dialogue]).length > 0;
+    if (uiOpen) {
+      this.pendingIntents = [];
+      return;
+    }
+
     if (this.pendingIntents.length > 0) {
       const action = this.pendingIntents.shift();
-      
+
       const intent = { action: 'idle' };
-      
+
       if ([ACTION.MOVE_N, ACTION.MOVE_S, ACTION.MOVE_E, ACTION.MOVE_W].includes(action)) {
         intent.action = 'move';
         // @ts-ignore
@@ -45,7 +52,7 @@ export class InputSystem {
       } else if (['die', 'flee', 'rest'].includes(action)) {
         intent.action = action;
       }
-      
+
       this.world.setComponent(playerEntityId, Component.Intent, intent);
     }
   }

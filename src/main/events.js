@@ -29,7 +29,7 @@ const getMenuCtx = () => ({
 const setMenuState = (menu) => {
     if (!appRuntime.playerEntityId) return;
     if (!menu) {
-        appRuntime.world.components.get(Component.Menu)?.delete(appRuntime.playerEntityId);
+        appRuntime.world.removeComponent(appRuntime.playerEntityId, Component.Menu);
         return;
     }
     appRuntime.world.setComponent(appRuntime.playerEntityId, Component.Menu, menu);
@@ -206,6 +206,9 @@ export const setupGlobalEvents = () => {
             if (roomName) showRoomBanner(roomName);
         }
         closeMenu();
+        triggerLogicalRefresh();
+    });
+    bus.on('player:step', () => {
         triggerLogicalRefresh();
     });
     bus.on('npc:speak', ({ npcName, text }) => {
@@ -428,6 +431,5 @@ export const setupGlobalEvents = () => {
             triggerLogicalRefresh();
         }
     });
-    bus.on('peer:emote', ({ peerId, data }) => showToast(`${getPlayerName(peerId)} ${data.text}`));
     bus.on('peer:leave', ({ peerId }) => { showToast(`${getPlayerName(peerId)} vanished`); triggerLogicalRefresh(); });
 };

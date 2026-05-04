@@ -8,7 +8,7 @@ import {
     addToPresenceCache,
     prunePresenceCache,
     listPeersForShard,
-} from '../src/arbiter-presence-cache.js';
+} from '../src/network/arbiter-presence-cache.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -32,9 +32,9 @@ const STATE_FILE = join(__dirname, 'world_state.json');
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     await import('werift');
-    const { signMessage, verifyMessage } = await import('../src/crypto.js');
-    const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/constants.js');
-    const { world } = await import('../src/rules.js');
+    const { signMessage, verifyMessage } = await import('../src/security/crypto.js');
+    const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/infra/constants.js');
+    const { world, ENEMIES } = await import('../src/content/data.js');
     const dotenv = await import('dotenv');
 
     dotenv.config({ path: new URL('.env', import.meta.url).pathname });
@@ -116,8 +116,7 @@ async function startArbiter() {
                 const { publicKey: cheaterKey, feedEntry, actionEntropy } = proof;
 
                 if (!feedEntry || feedEntry.type !== 'kill') return;
-                const { seededRNG } = await import('../src/rules.js');
-                const { ENEMIES } = await import('../src/data.js');
+                const { seededRNG } = await import('../src/rules/index.js');
                 const enemyDef = ENEMIES[feedEntry.target];
                 if (!enemyDef) return;
                 seededRNG(actionEntropy);

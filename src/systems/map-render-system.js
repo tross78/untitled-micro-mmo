@@ -1,7 +1,7 @@
 // @ts-check
 
 import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, drawLargeTree } from '../graphics/graphics.js';
-import { getScatteredContent, hashStr, getTimeOfDay } from '../rules/index.js';
+import { getScatteredContent, hashStr } from '../rules/index.js';
 
 /**
  * MapRenderSystem handles procedural tile generation and background caching.
@@ -73,23 +73,7 @@ export class MapRenderSystem {
             this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY);
         });
 
-        // 6. Night Lighting Pass
-        if (getTimeOfDay() === 'night') {
-            const px = (localPlayer.x - camX) * this.VP.S + this.VP.S / 2;
-            const py = (localPlayer.y - camY) * this.VP.S + this.VP.S / 2;
-            const rad = this.VP.S * 7;
-
-            ctx.save();
-            ctx.globalCompositeOperation = 'source-over';
-            const grad = ctx.createRadialGradient(px, py, this.VP.S * 0.5, px, py, rad);
-            grad.addColorStop(0,   'rgba(0,0,0,0)');
-            grad.addColorStop(0.4, 'rgba(0,0,20,0.15)');
-            grad.addColorStop(0.7, 'rgba(0,0,30,0.55)');
-            grad.addColorStop(1,   'rgba(0,0,20,0.88)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
-            ctx.restore();
-        }
+        // Night lighting disabled — revisit in future phase
     }
 
     rebuildCache(loc, locKey, floorX, floorY, tileType) {

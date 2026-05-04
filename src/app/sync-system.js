@@ -2,6 +2,7 @@
 
 import { Component } from '../domain/components.js';
 import { bus } from '../state/eventbus.js';
+import { QUESTS } from '../content/data.js';
 
 /**
  * SyncSystem bridges the ECS runtime state back to the canonical stores
@@ -32,14 +33,34 @@ export class SyncSystem {
         this.localPlayer.x = transform.x;
         this.localPlayer.y = transform.y;
         this.localPlayer.location = transform.mapId;
-        
-        // Emit legacy event for UI and Networking
-        bus.emit('player:move', { 
-            from: oldLoc, 
-            to: transform.mapId,
-            x: transform.x,
-            y: transform.y
-        });
+
+        if (oldLoc !== transform.mapId) {
+          Object.entries(this.localPlayer.quests || {}).forEach(([qid, progress]) => {
+            const quest = QUESTS[qid];
+            if (!quest || progress.completed) return;
+            if (quest.type !== 'explore' || quest.objective?.target !== transform.mapId) return;
+            const nextProgress = Math.max(progress.progress || 0, quest.objective?.count || 1);
+            if (nextProgress !== progress.progress) {
+              progress.progress = nextProgress;
+              bus.emit('quest:progress', {
+                name: quest.name,
+                current: progress.progress,
+                total: quest.objective?.count || 1
+              });
+            }
+          });
+
+          bus.emit('player:move', {
+            from: oldLoc,
+            to: transform.mapId
+          });
+        } else {
+          bus.emit('player:step', {
+            mapId: transform.mapId,
+            from: { x: oldX, y: oldY },
+            to: { x: transform.x, y: transform.y }
+          });
+        }
       }
     }
 

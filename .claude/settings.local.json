@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(js|json\\)$\")",
+      "WebSearch",
+      "Bash(npm test *)",
+      "Bash(npm run *)",
+      "Bash(git stash *)",
+      "Bash(cp src/graphics/graphics.js /tmp/p82_graphics.js)",
+      "Bash(cp src/content/data/rooms.js /tmp/p82_rooms.js)",
+      "Bash(cp src/systems/map-render-system.js /tmp/p82_mrs.js)",
+      "Bash(cp src/content/define.js /tmp/p82_define.js)",
+      "Bash(cp src/systems/movement-system.js /tmp/p82_movement.js)",
+      "Bash(cp /tmp/p82_graphics.js src/graphics/graphics.js)",
+      "Bash(cp /tmp/p82_rooms.js src/content/data/rooms.js)",
+      "Bash(cp /tmp/p82_mrs.js src/systems/map-render-system.js)",
+      "Bash(cp /tmp/p82_define.js src/content/define.js)",
+      "Bash(cp /tmp/p82_movement.js src/systems/movement-system.js)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(node /tmp/check_exits.js)",
+      "Bash(awk '/^export function drawTile/,/^}/' /Users/tysonross/Documents/GitHub/untitled-micro-mmo/src/graphics/graphics.js)",
+      "Bash(awk *)",
+      "Bash(node /tmp/verify_bounds2.js)",
+      "Bash(sed -n '1,10p' /Users/tysonross/Documents/GitHub/untitled-micro-mmo/src/systems/map-render-system.js)",
+      "Bash(sed -n '70,75p' /Users/tysonross/Documents/GitHub/untitled-micro-mmo/src/systems/map-render-system.js)",
+      "Bash(npx jest *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

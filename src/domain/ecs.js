@@ -40,6 +40,14 @@ export class WorldStore {
   }
 
   /**
+   * @param {number} entityId
+   * @param {string} componentName
+   */
+  removeComponent(entityId, componentName) {
+    this.components.get(componentName)?.delete(entityId);
+  }
+
+  /**
    * @param {string[]} componentNames
    * @returns {number[]}
    */

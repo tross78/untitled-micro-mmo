@@ -16,7 +16,7 @@ export const handleMiscCommands = async (command, _args) => {
         case 'help':
             log('--- Movement: /look, /move <dir>, /map', '#ffa500');
             log('--- Combat:   /attack, /rest, /stats, /inventory, /use <item>', '#ffa500');
-            log('--- Social:   /who, /talk <npc>, /wave, /bow, /cheer, /duel <name>, /accept, /decline', '#ffa500');
+            log('--- Social:   /who, /rename <name>, /talk <npc>', '#ffa500');
             log('--- NPC/Shop: /buy <item>, /sell <item>, /quest, /bank', '#ffa500');
             log('--- World:    /status, /rename <name>, /net, /clear', '#ffa500');
             return true;
@@ -49,7 +49,8 @@ export const handleMiscCommands = async (command, _args) => {
 
         case 'stats': {
             const bonus = levelBonus(localPlayer.level);
-            const maxHp = localPlayer.maxHp + bonus.maxHp;
+            const restedBonus = localPlayer.statusEffects?.find(s => s.id === 'well_rested') ? 5 : 0;
+            const maxHp = localPlayer.maxHp + bonus.maxHp + restedBonus;
             const hpPct = localPlayer.hp / maxHp;
             const hpColor = hpPct < 0.25 ? '#f55' : hpPct < 0.5 ? '#fa0' : '#0f0';
             const xpForLevel = (l) => (l - 1) ** 2 * 10;

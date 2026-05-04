@@ -228,6 +228,8 @@ class AppRuntime {
       this.playerEntityId = this.world.createEntity();
     }
     this.world.setComponent(this.playerEntityId, Component.PlayerControlled, {});
+    this.world.removeComponent(this.playerEntityId, Component.Menu);
+    this.world.removeComponent(this.playerEntityId, Component.Dialogue);
     this.world.setComponent(this.playerEntityId, 'Identity', {
       name: player.name,
       ph: player.ph,

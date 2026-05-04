@@ -71,7 +71,7 @@ export const handleInventoryCommands = async (command, args) => {
             const item = ITEMS[itemId];
             if (item?.type === 'consumable') {
                 const bonus = levelBonus(localPlayer.level);
-                const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.buffs?.rested ? 5 : 0);
+                const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.statusEffects?.find(s => s.id === 'well_rested') ? 5 : 0);
                 localPlayer.hp = Math.min(cap, localPlayer.hp + item.heal);
                 localPlayer.inventory.splice(idx, 1);
                 bus.emit('log', { msg: `You use ${item.name} (+${item.heal} HP).`, color: '#0f0' });

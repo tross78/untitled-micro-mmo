@@ -1,1699 +1,207 @@
-# **Claude Context & Implementation Notes \- Hearthwick**
+# Hearthwick Agent Handbook
 
-## **Architecture**
+This file is the current source of truth for AI agents working in this repo. It is intentionally short. Historical design discussion and superseded phase notes belong in [DECISIONS.md](/Users/tysonross/Documents/GitHub/untitled-micro-mmo/DECISIONS.md), not here.
 
-A serverless P2P browser MMO. Trystero (WebTorrent/WebRTC) for transport, Ed25519 for identity, a Pi Zero W as the Arbiter (state authority). No server-side game logic — the Arbiter only signs world state and validates rollups.
+## Architecture
 
-## **Source Layout**
+Hearthwick is a serverless P2P browser MMO:
 
-| File | Purpose |
+* Trystero (WebTorrent/WebRTC) for transport
+* Ed25519 for identity and signing
+* A Pi Zero W Arbiter for day ticks, shared-world state signing, and rollup/fraud validation
+* No traditional server-side game simulation
+
+Core product shape:
+
+* Mobile-first browser game, desktop second
+* 75% solo / 25% multiplayer
+* Shared Arbiter-driven world events are the signature differentiator
+* Monetization is not part of the near-term roadmap
+
+## Source Layout
+
+| Path | Purpose |
 | :---- | :---- |
-| src/main.js | Main orchestrator — initialization and UI event binding. |
-| src/rules.js | Pure deterministic simulation (combat, world, sharding, NPCs). |
-| src/data.js | Externalized game data (locations, enemies, NPCs, items, quests). |
-| src/store.js | Centralized shared mutable state and persistence. |
-| src/networking.js | Trystero P2P logic, shard management, and rollup sync. |
-| src/commands.js | Command interpreter and game-loop logic (combat, NPCs, bank). |
-| src/crypto.js | Universal Ed25519 sign/verify. |
-| src/packer.js | Binary serialization for high-frequency messages. |
-| src/iblt.js | Invertible Bloom Lookup Table for set reconciliation. |
-| src/constants.js | Identity-derived APP\_ID, tracker/STUN/TURN URLs. |
-| src/autocomplete.js | getSuggestions(input, context) — pure autocomplete. |
-| src/ads.js | Foundational architecture for optional rewarded ads. |
-| src/ui.js | Action button renderer, status bar, radar. |
-| src/renderer.js | 2D canvas renderer — tiles, sprites, HUD, dialogue, overlays. |
-| src/graphics.js | Procedural tile/sprite drawing primitives (ALttP palette). |
-| src/input.js | ACTION constants and InputManager (keyboard + gamepad). |
-| arbiter/index.js | Pi Zero: state authority, day tick, rollup validation, fraud/ban. |
-| src/\*.test.js | Comprehensive test suite for all modules. |
+| `src/main/*` | Browser bootstrap, wiring, event subscriptions |
+| `src/app/*` | Runtime loop and app-level sync helpers |
+| `src/content/*` | Authored data, registries, parsing, validation |
+| `src/commands/*` | Command handlers and player action logic |
+| `src/rules/*` | Pure deterministic rules and derivation helpers |
+| `src/systems/*` | ECS/runtime systems for gameplay, combat, movement, UI |
+| `src/graphics/*` | Canvas renderer and procedural art |
+| `src/ui/*` | DOM shell, actions, menus, status, debug/log adapters |
+| `src/network/*` | P2P transport, presence, simulation sync, packers |
+| `src/security/*` | Signing, verification, Merkle helpers |
+| `src/state/*` | Shared mutable state, persistence, event bus |
+| `src/infra/*` | Constants and environment-derived config |
+| `src/domain/*` | ECS/domain types and components |
+| `arbiter/index.js` | Pi-side arbiter logic |
+| `src/tests/*` | Regression suites |
 
-**Production build:** npm run build — esbuild bundles src/main.js into a single dist/main.js.
+Build target:
 
-## **Post-Implementation Verification Protocol**
+* `npm run build`
+* Bundles `src/main.js` into `dist/main.js`
+* Keep the build under roughly 250KB minified unless there is a clear reason
 
-Run this checklist after implementing any phase. Do not mark a phase complete until all checks pass.
+## Product Guardrails
 
-### **1. Build**
-```
-npm run build
-```
-Must produce `dist/main.js` with zero errors and zero warnings. Note the bundle size — flag if it grows more than 20KB unexpectedly.
+* Canvas-native play is the main experience.
+* Buttons/chips are convenience UI, not separate game logic.
+* CLI is debug/power-user only and must not be required for normal play.
+* The default player-facing surface is: movement, combat, inventory/use/equip, crafting, quests, shops, bank, map, status, and stats.
+* `trade` and `duel` may remain implemented internally, but are not first-class product surfaces.
+* `say`, emotes, and `vision` are not part of the current gameplay loop.
 
-### **2. Test suite**
-```
-npm test
-```
-All suites must pass. Zero regressions. If a test is newly broken, fix the root cause — do not delete or skip the test. If new behaviour is untested, add tests before marking the phase done.
+## Cohesion Guardrails
 
-### **3. Static checks — things the test suite cannot catch**
+* Do not ship authored content, UI, and command/runtime behavior separately. A feature is incomplete until all three agree.
+* If you add or change a room, verify: exits, exit tiles, prose, NPC placement, enemy placement, and player-facing movement affordances together.
+* If you add an item id anywhere, add or update validation/tests in the same patch.
+* If you change event semantics, update the canonical payload table and all listeners in the same patch.
+* If `scarcity`, `surplus`, or `threat` are surfaced prominently, they must have real gameplay impact in that same build.
+* Non-directional authored exit aliases are acceptable for topology, but direct player movement UI remains cardinal plus `up` / `down` unless the parser is extended too.
+* Gameplay math should use `statusEffects` for temporary effects. Legacy `buffs` fields are compatibility only.
 
-After any change to these files, manually verify the following:
+## Canonical Bus Payloads
 
-**`src/renderer.js`**
-- `renderWorld()` is called with a valid `state` object and does not throw when `worldState.seed` is `''` (offline/first-load case).
-- All overlay functions (`showDialogue`, `showToast`, `showItemFanfare`, `showRoomBanner`, `triggerHitFlash`) are exported and callable without crashing when the canvas has not yet been initialised.
-- Canvas click handler: NPC tile → `{type:'npc', id}`, enemy tile → `{type:'enemy'}`, empty tile → `null`. Verify the `npcTiles` Map is rebuilt on every render call, not cached between calls.
-- Dialogue open state (`isDialogueOpen()`) blocks canvas click-through correctly.
-
-**`src/commands.js`**
-- Kill quest progress uses `q.objective.target` / `q.objective.count`, never flat `q.target` / `q.count`.
-- `statusEffects` is always accessed with optional chaining (`?.find`, `?.filter`) or guarded with `if (!localPlayer.statusEffects) localPlayer.statusEffects = []` before mutation.
-- `forestFights` is checked before allowing combat. Combat at night is blocked (check `getTimeOfDay()`).
-- All `bus.emit()` calls use the canonical payload shapes listed in §Bus Event Payloads below.
-
-**`src/data.js`**
-- Every `exitTile` entry: `destX < world[dest].width` and `destY < world[dest].height`. The rules.test.js suite enforces this — do not remove that test.
-- Every room referenced in `exits` exists as a key in `world`.
-
-**`src/graphics.js`**
-- No calls to `Math.random()`. All randomness via `tileRng(seed)`.
-- `generateCharacterSprite` and any new designed sprite functions operate on `OffscreenCanvas` — must not reference `document` or `window` (test environment is Node).
-
-**`src/audio.js`**
-- All exported play functions are no-ops when `AudioContext` is unavailable (Node/test environment). Guard: `if (!audioCtx) return`.
-
-**`src/networking.js` / `arbiter/index.js`**
-- No `Math.random()` in simulation paths. Arbiter logic remains O(1) or O(log n) per event.
-
-### **4. Bus event payload shapes**
-
-All `bus.emit()` calls must match these shapes exactly. Listeners in `main.js` destructure these — a shape mismatch causes silent undefined bugs.
+These event shapes are treated as contracts:
 
 | Event | Payload |
-|-------|---------|
+| :---- | :---- |
 | `combat:hit` | `{ attacker, target, damage, crit }` |
 | `combat:dodge` | `{ attacker, target }` |
 | `combat:death` | `{ entity, loot }` |
 | `player:levelup` | `{ level }` |
 | `player:move` | `{ from, to }` |
-| `item:pickup` | `{ item }` — full item object from ITEMS |
+| `player:step` | `{ from, to, x, y }` |
+| `item:pickup` | `{ item }` |
 | `npc:speak` | `{ npcName, text }` |
 | `quest:progress` | `{ name, current, total }` |
 | `quest:complete` | `{ name, rewards }` |
 | `input:action` | `{ action, type: 'down'|'up' }` |
 
-### **5. Regression smoke-list**
+`player:move` is room-transition only. Same-room movement uses `player:step`.
 
-Check that these gameplay paths still work end-to-end after any phase:
+## Verification
 
-- [ ] Player loads with empty `worldState.seed` — NPCs visible, exits visible, no crash.
-- [ ] `talk <npcId>` triggers dialogue box on canvas (not log).
-- [ ] `attack` with an enemy present decreases enemy HP; kill quest progress updates.
-- [ ] `move north` (and other dirs) transitions room, room name banner appears on canvas.
-- [ ] `rest` in the tavern applies well-rested buff without crashing if `statusEffects` is undefined.
-- [ ] `craft` command at a valid location shows recipe list; crafted item appears in inventory.
-- [ ] `vision` command works without ENABLE\_ADS — fallback meditation path grants +3 fights.
-- [ ] Picking up an item shows item fanfare overlay on canvas.
-- [ ] Level up shows level-up overlay on canvas.
-- [ ] Backtick toggles radar dev view. Tilde reveals debug log. Neither crashes.
-- [ ] Bandit Camp is reachable from Forest Depths and player spawns within room bounds.
-- [ ] `npm run build` after the smoke-list still produces zero errors.
+After implementation work:
 
----
+1. Run `npm run build`.
+2. Run `npm test`.
+3. If you changed content, room topology, event payloads, quest progression, or player-facing command/UI surface, add or update regression coverage in `src/tests`.
 
-## **Key Implementation Details**
+Manual checks that still matter:
 
-### **Seed-Based Determinism**
+* Empty `worldState.seed` must not crash rendering or hide expected NPCs/exits.
+* Canvas click resolution must still distinguish NPC, enemy, and empty tile correctly.
+* Room transitions must emit `player:move`; same-room tile motion must not.
+* Move buttons/autocomplete must only surface directions the parser actually supports.
+* Item ids referenced by loot, shops, recipes, quests, scarcity, and interactions must all resolve.
+* Authored indoor/shop rooms that imply a resident NPC must place that NPC explicitly.
+* No `Math.random()` in deterministic simulation, network validation, or arbiter logic.
 
-* World state is world\_seed \+ day only (Yjs is gone).  
-* All randomness uses seededRNG(hashStr(...)) (mulberry32 variant). **Never use Math.random().**  
-* Integer math only in simulation (no floats in damage/XP).
+## Current Status
 
-### **Universal Cryptography (src/crypto.js)**
+Completed and relevant:
 
-* **Browser:** window.crypto.subtle (WebCrypto). verifyMessage requires a CryptoKey from importKey().  
-* **Node (Pi):** node:crypto. verifyMessage accepts a raw Base64 string or Buffer.  
-* Player identity: Ed25519 key pair generated on first visit, stored in localStorage under hearthwick\_keys\_v3.  
-* ph (8-char hex) \= (hashStr(pubKeyBase64) \>\>\> 0).toString(16).padStart(8,'0'). It is NOT a key — never pass it to verifyMessage.
+* Phases `4` through `5`: mobile-first UX, modularization, externalized content, NPCs/quests/bank, ads scaffolding, Markov flavor dialogue
+* Phases `7` through `7.5`: graphical foundations, spatial entities, canvas renderer, audio, persistence
+* Phase `8.3`: cohesion hardening, validation, room/content/runtime alignment
+* Phase `8.4`: core-loop cleanup, economy pass, command/UI pruning
 
-### **Memory Optimization (Pi Zero W)**
+Current shape after `8.4`:
 
-* 512MB RAM constraint. Arbiter logic must be O(1) or O(log n) per event.  
-* Nightly sequential pattern: pm2 stop arbiter → run llama.cpp → pm2 start arbiter.
+* Progression runs through the town loop, mill, herbalist, forest, and ruins
+* Scarcity and market surplus affect shop prices directly
+* Bread and healing-elixir loops are part of real progression
+* The public command surface is intentionally smaller than the internal runtime surface
 
-## **Current Status**
+Still open:
 
-### **Phase 4: UX — Mobile & Input (COMPLETE)**
+* Phase `6` anti-cheat/trading hardening is not finished
+* Arbiter-led shared-world events are still more promise than lived player experience
+* Visual cohesion needs its own polish pass before a private alpha
 
-* Autocomplete engine (src/autocomplete.js) with getSuggestions(input, context)  
-* Suggestion chips UI (up to 4, tappable, Tab-cycles on desktop)  
-* /move \<dir\> autocomplete shows valid exits; tapping moves immediately  
-* Mobile layout: env(safe-area-inset-bottom), position: fixed input bar  
-* Quick-action bar: look / attack / rest / inventory (visible on pointer: coarse only)  
-* visualViewport resize handler for virtual keyboard reflow
+## Roadmap
 
-### **Phase 4.1: Developer Tidy Up & Modularity (COMPLETE)**
+Direction:
 
-* Split the large src/main.js monolith into smaller, logical modules.  
-* Maintained a compact production build via esbuild.
+* Launch small to friends and a trusted early-feedback group
+* Prioritize gameplay feel, then retention, then launch readiness
+* Keep the MMO slice, but make it visually and mechanically good enough
+* Mobile-first, browser-only
 
-### **Phase 4.2: Data Externalization (COMPLETE)**
+### Phase 8.5: Mobile-First Alpha Slice
 
-* Extracted game name, locations, and entities into src/data.js.
+Goal: make the existing slice feel good enough to hand to early players.
 
-### **Phase 4.3: Gameplay Improvements (COMPLETE)**
+* Improve movement feel, collision readability, and touch-first interaction
+* Improve combat readability and prep/reward clarity
+* Make threat, scarcity, quest progress, and crafting loops obvious without debug literacy
+* Tighten the intended first-session path: guard -> tavern -> market/mill/herbalist -> forest/ruins
+* Ensure every authored room either progresses, sustains, or previews future progression
 
-* Added NPC system (Barkeep, Merchant, Sage, Guard).  
-* Implemented Quests, Daily Fight limits, and a Bank in the Cellar.
+### Phase 8.55: Visual Identity, Sprites, Tiles, and Room Art
 
-### **Phase 4.4: Ads Architecture (COMPLETE)**
+Goal: make the game look intentional and screenshot-worthy before private alpha.
 
-* Implemented foundational architecture with optional rewarded "visions" via the Bard.
+* Finalize player sprite silhouette, walk frames, and small-screen readability
+* Improve enemy and NPC readability so common entities are instantly distinguishable
+* Tighten biome palettes, tile cohesion, and transition readability
+* Improve room composition in key spaces like tavern, market, mill, herbalist hut, forest edge, and ruins
+* Unify HUD, overlays, room banners, and menus under one visual language
 
-### **Phase 4.5: UI/UX Modernization (COMPLETE)**
+### Phase 8.6: Shared-World Arbiter Events
 
-* "Juiced Retro" aesthetic: CRT glow, fade-in animations, and screen shake on damage.  
-* Sparse emoji support for stats and alerts.
+Goal: make the Arbiter visible in the play experience.
 
-### **Phase 4.6: Scaling & Regression Audit (COMPLETE)**
+* Add deterministic shared daily events such as scarcity spikes, surplus days, or threat surges
+* Surface those events clearly in HUD, room presentation, and NPC flavor
+* Keep event state cheap enough for the Pi Zero W and derivable from day plus minimal arbiter state
 
-* Deep architectural review for 50k player scale.  
-* Implemented debounced saveLocalState to prevent UI micro-stutters.  
-* Fixed NPC dialogue "flicker" via per-day deterministic stability.  
-* Documented 50k scaling roadmap in scaling-50k-architecture.md.
+### Phase 8.7: Retention and Daily Rituals
 
-### **Phase 4.7: Input Refinement (COMPLETE)**
+Goal: create reasons to return daily before there is large-scale social density.
 
-* Implemented dynamic, context-aware **Action Buttons** (A Dark Room style).  
-* Buttons automatically update based on room exits, enemies, NPCs, and current state.  
-* Refined the command parser to be case-insensitive and make the leading / optional.  
-* Maintained legacy CLI text input and chip suggestions for chat and power users.
+* Tighten short daily loops around recovery, fights, world events, and resource pressure
+* Add mobile-friendly short-term goals and clearer midgame continuity
+* Keep sessions light and avoid spreadsheet-MMO drift
 
-### **Phase 4.8: UI Chip Interface & Secure P2P Progression (COMPLETE)**
+### Phase 8.8: Feedback Instrumentation and Lightweight Analytics
 
-* Migrated to a mobile-first, drill-down chip interface.
-* Expanded world map with 8 new balanced indoor/outdoor environments.
-* Added new enemies and loot.
-* Implemented strict Peer Validation (PvE) via signed `action_log` packets.
-* Added deterministic combat verification and shadow-tracking to prevent local state hacking.
+Goal: learn what players use without building a heavy telemetry system.
 
-### **Phase 4.9: Consistency & Quality of Life (COMPLETE)**
+* Add bounded anonymous counters for session flow, room visitation, menu/command usage, quests, crafting, rests, deaths, and session bands
+* Prefer compact summaries over raw logs
+* Hard-cap storage and payload volume so telemetry stays small
 
-* Persistent Status Bar added to UI for constant vital monitoring.
-* Full UI drill-down chips for banking and quest management.
-* Auto-equip logic in combat math for optimal gear usage.
-* Added item stat displays directly on chips.
-* Implemented developer tools: `window.devReset()`, cheat commands (`/addxp`, `/addgold`, `/spawnitem`), and a network debug log toggle.
+### Phase 8.9: Private Alpha Launch Prep
 
-### **Phase 4.9.5: Gameplay Depth & UI Flourishes (COMPLETE)**
+Goal: prepare a small invite-only browser alpha.
 
-* Combat mechanics: Critical Hits (~10%), Dodges (~7%), and a `Flee` command.
-* UI Immersion: ASCII health bars and color-coded entities (enemies/items).
-* Gameplay loops: "Well Rested" buff from the Tavern, temporary stat buffs (Strength Elixir), and scaling enemy threat based on the Arbiter's `threatLevel`.
-* Context-sensitive "Repeat Action" memory chip.
+* Final mobile-first polish on layout, touch controls, text sizing, reconnects, and session resilience
+* Clear onboarding and first-10-minute experience
+* Simple off-game feedback loop for bug reports and confusion
 
-### **Phase 5: Stochastic NPC Dialogue (Markov) (COMPLETE)**
+### Phase 9: Arbiter Credibility, Balance Ops, and Live Tuning
 
-* Implemented a custom deterministic, seeded Markov chain generator (`src/markov.js`).
-* Added character voice corpora for Barkeep, Merchant, Sage, and Guard (`src/data.js`).
-* Added "The Ticker", a subtle fading sub-header UI for procedurally generated ambient world lore synced across all peers.
+Goal: support organic growth without betraying the technical premise.
 
-### **Phase 6: Advanced Anti-Cheat & Secure Trading — TODO**
+* Continue the Phase 6 hardening path where it materially improves trust
+* Add live tuning hooks for economy, event frequency, rewards, and enemy scaling
+* Use analytics to prune dead features and tune repeated loops
 
-* Ed25519 signatures on `/move` actions.
-* Deterministic move validation in `getMove` handler to prevent teleportation.
-* Secure multi-sig `trade_commit` protocol for P2P item/gold exchanges.
-* Arbiter side: Enhanced fraud proofs and rollback logic for compromised game instances.
+### Phase 10: Broader Launch Preparation
 
-### **Phase 7: Graphical Foundations & Spatial Entities — COMPLETE**
+Goal: move from private alpha to a small public launch without overbuilding.
 
-* EventBus (`src/eventbus.js`) replaces all `window.dispatchEvent` custom events.
-* 2D tile coordinate system (x, y) per room — all entities have spatial positions.
-* `stepPlayer()` handles tile-by-tile movement with room-edge transitions.
-* Canvas renderer (`src/renderer.js`) draws tiles, sprites, exits, scenery, HUD strip.
-* Procedural pixel-art sprites via `src/graphics.js` (ALttP-inspired palette).
-* `InputManager` (`src/input.js`) — keyboard + gamepad → ACTION constants → bus.
-* Exit tiles replace portals; void tiles render correctly for sub-viewport rooms.
-* NPC and enemy canvas click detection — click sprite to interact/attack.
+* Refine the external pitch around the real differentiators: shared deterministic world, Pi Zero Arbiter, procedural art/audio, and mobile-first browser MMO slice
+* Improve onboarding, landing-page copy, and sharing surfaces
+* Establish a basic content/event cadence
+* Revisit monetization only after retention and audience justify it
 
-### **Phase 7.5: Graphical Groundwork, Audio, Persistence — COMPLETE**
+## References
 
-* Audio system (`src/audio.js`) — procedural Web Audio tones for hit, crit, level-up, pickup, portal, death.
-* IndexedDB persistence layer (`src/persistence.js`).
-* Radar dev view — backtick toggles between canvas and ASCII radar.
-
-### **Phase 7.75: Zelda-Style Canvas Feedback — COMPLETE**
-
-Direction: eliminate the MUD text log from normal gameplay. All moment-to-moment feedback moves onto the canvas. The log (`~` to reveal) becomes a debug/power-user tool only.
-
-**Completed this phase:**
-* Scenery emoji labels — replaced opaque single chars (t, C, P…) with 📦🌲🏛🔥 etc.
-* Craft ⚒️ button in action menu at locations with available recipes.
-* Vision 🔮 works without ENABLE\_ADS — falls back to +3 fights via meditation flavour text.
-* Daily fights (⚡) shown in status bar at all times.
-* Night/dusk/dawn canvas tint + time-of-day icon in canvas corner.
-* Keyboard shortcut reference in Config menu.
-* Exit tile out-of-bounds bug fixed — bandit\_camp destY corrected; regression test added.
-* Regression test suite expanded: kill quest objective path, empty-seed NPC visibility, statusEffects crash paths, canvas click resolution, shortName article stripping.
-* **NPC dialogue box** — on `npc:speak` bus event, render a Zelda-style bottom panel on the canvas (dark bar, NPC name, wrapped text, ▼ dismiss prompt). Space/click to advance. Replaces log lines.
-* **Item fanfare overlay** — on `item:pickup`, flash "You got [Item]!" centered on canvas for ~1.5s (like Link raising a found item). Auto-dismisses.
-* **Level-up overlay** — on `player:levelup`, brief full-canvas card ("⬆ Level 4!") for ~2s.
-* **Room name banner** — on `player:move` (room change), fade-in location name at canvas top for 2s. Replaces `look` log header.
-* **In-canvas HUD strip** — draw HP, gold 💰, ⚡ fights inside the canvas (top or bottom strip). Remove the HTML `#status-bar` element — HUD lives on canvas only.
-* **Combat hit flash** — on `combat:hit`, tint enemy sprite red for ~200ms via canvas overlay rect. On enemy dodge, show brief "MISS" float text. No damage numbers.
-* **Log hidden by default** — revert `#debug-console` to `display:none`. Canvas events cover all gameplay moments. `~` reveals for debugging.
-* **Remove `> command` echo** — strip `log(\`> ${cmdOrAction}\`)` from main.js button handler.
-* **Ambient Ticker** — moved from HTML element to canvas overlay (top strip, italicized lore text).
-
-### **Phase 7.8: State of the Game — Retrospective & Pre-Phase 8 Tuning — COMPLETE**
-
-This phase is a deliberate pause before the large Phase 8 graphical push. No new systems. Take stock of what's here, what hurts, and what is genuinely interesting about the project so we can sharpen our focus before the next sprint.
-
----
-
-#### **What works well**
-
-**Canvas overlay pipeline.** The progression from HTML log → chip UI → full canvas feedback (7.75) landed cleanly. Dialogue boxes, toasts, item fanfares, room banners, hit flashes, and the ambient ticker all coexist without conflict. The pattern of bus events driving canvas overlays is the right architecture and scales to Phase 8 without redesign.
-
-**Procedural everything.** No external asset files. Sprites, tiles, and audio are all generated at runtime from seeded RNG and WebAudio oscillators. This is genuinely rare in a browser game and means the entire game ships as a single bundled JS file. That constraint has been a creative forcing function, not a limitation.
-
-**P2P serverless architecture.** Ed25519 identity, Trystero transport, a Pi Zero W as Arbiter — this is not a tutorial project. The design is principled: the Arbiter only signs and validates; it does not simulate. Rollup/fraud-proof/proposer-election logic is solid. The architecture could support thousands of players without a cloud bill.
-
-**Seeded determinism.** Keeping all simulation logic in `seededRNG(hashStr(...))` means two peers with the same seed will always produce the same world. This is load-bearing for P2P trust and is worth protecting in every future phase.
-
-**Event bus.** Replacing `window.dispatchEvent` with the typed `bus` was the right call. Payloads are documented, shapes are enforced in tests, and new systems can subscribe without touching existing code.
-
----
-
-#### **What isn't so good**
-
-**Two input paradigms, unresolved tension.** The game has a command interpreter (MUD heritage) and a chip/button UI (mobile-first) running in parallel. They were never fully unified. The chip UI covers the happy path; the CLI handles edge cases. This ambiguity leaks into the UX — power users type, casual players tap, and neither path feels complete. Phase 8's canvas D-pad will displace the chip UI, but the CLI layer will need a clear decision: keep as a debug tool (like the log) or surface it intentionally.
-
-**Teleporting movement.** Player position snaps tile-to-tile with no interpolation. Every other piece of the canvas pipeline is polished; this stands out. Even a 100ms linear lerp (no physics, no easing) would make the world feel inhabited rather than mechanical.
-
-**NPCs don't exist spatially.** NPCs have positions in data but they never move. They are statues with dialogue. One or two tiles of idle wandering, even deterministic (seeded per-day), would make the world feel alive at almost no implementation cost.
-
-**Combat is shallow.** Hit, crit, dodge, flee. The fight counter creates a resource loop but there's no tactical decision inside a fight. This is fine for a pre-Phase 8 state but risks feeling thin once visuals improve and players notice there's nothing to do but watch the numbers.
-
-**The world is small.** A handful of rooms. Phase 4.8 expanded it, but most rooms are variations on the same grammar (grass, enemy, exit). There are no environmental puzzles, no rooms that feel distinct from each other beyond the name banner.
-
-**Phase 6 is still TODO.** Ed25519 signatures on movement, secure trading, deterministic move validation — none of this exists yet. The fraud-proof architecture is built but not wired to the simulation paths. Until it is, a determined bad actor can teleport or dupe gold.
-
----
-
-#### **What is genuinely innovative — and how to emphasise it**
-
-**"No server, no sprites, no bullshit."** The combination of serverless P2P + procedural graphics + procedural audio in a browser MMO is novel. Other browser MMOs either use WebSockets to a game server or load sprite atlases. This game does neither. That should be the lead when anyone asks what it is.
-
-*How to emphasise it:* The bundle size is a living proof-point. Keep it visible (log it on build). Consider a small `?debug` HUD overlay that shows peers connected, Arbiter latency, and bundle size — not for players, but for anyone evaluating the tech.
-
-**The Pi Zero W Arbiter.** A $15 computer as the sole authoritative game server for a potentially large player base is a great story. The nightly Arbiter → llama.cpp → Arbiter handoff (for future NPC AI) is a clever architectural trick.
-
-*How to emphasise it:* Document it visually in the README. A simple diagram of the P2P topology with the Pi at the center is more compelling than paragraphs.
-
-**Seeded shared world.** All players on the same day see the same procedurally generated world without any server sync for world state. This is the core P2P insight.
-
-*How to emphasise it:* Make it legible to the player — show the current world seed and day in the debug view (already partially there). Consider a "world fingerprint" visible in the UI: a short hash that changes daily, so players know when they're in sync.
-
----
-
-#### **What to do before Phase 8**
-
-These are small, targeted improvements that reduce Phase 8 scope and make the current build feel more complete. None require architectural changes.
-
-1. **Sprite movement lerp.** Add `prevX/prevY/moveStart` tracking per entity in `renderer.js`. On each `renderWorld()` call, interpolate draw position for 100ms after a move. Logical position updates immediately — this is purely visual. (~50 lines in renderer.js, no new data structures.)
-
-2. **Two or three authored sprite silhouettes.** The player character, the wolf enemy, and a guard NPC are the most-seen entities. Give each a hand-defined pixel array in `graphics.js` (8×16, 4 columns = 4 frames). Keep the procedural color tinting from `seededRNG`. This immediately distinguishes "is that me or another player?" without touching the procedural tile system.
-
-3. **NPC idle wander.** One seeded `npcWanderOffset(npcId, day, tick)` function returns a ±1 tile delta. Apply it in `renderWorld()` when drawing NPC sprites. NPCs stay within their room, drift a tile or two, then drift back. No pathfinding, no bus events, no gameplay impact — purely cosmetic.
-
-4. **World: one distinct room.** Add one room that uses `tileOverrides` to feel deliberately designed — a library, a dungeon cell, a market stall. Not for gameplay, just to prove the authored set-dressing system works and to give Phase 8 a reference point for what "authored" looks like next to "procedural."
-
-5. **Unify the input model decision.** Decide explicitly: the CLI text input is a debug/power-user tool (hidden by default, `~` to reveal, like the log). Document this in `CLAUDE.md`. This lets Phase 8 build the D-pad without hedging against two input systems.
-
-6. **Phase 6 minimal viable wire-up.** Sign `move` actions with the player's Ed25519 key and validate on receipt. Not the full fraud-proof/rollback system — just enough so the architecture claim is partially true and Phase 6 can be marked partial-complete rather than fully TODO.
-
----
-
-### **Phase 7.85: Rendering Overhaul, Bug Fixes, World Expansion & Inventory Tests — COMPLETE**
-
-Five problems to fix before Phase 8 begins. The rendering section is the most important — Phase 8 builds directly on top of it.
-
----
-
-#### **0. Rendering architecture — what Kontra does that we don't**
-
-Our renderer calls `renderWorld()` imperatively on every state change, redraws every pixel every call, runs on a single canvas layer, and ignores device pixel ratio. Here's where Kontra's architecture is strictly better and what we should steal.
-
-**0a. Device pixel ratio (DPR) — we look blurry on Retina displays**
-
-We create the canvas at `720×528` and scale it with CSS `width:100%`. On a Retina screen where `window.devicePixelRatio === 2`, the browser stretches a 720-px buffer to fill a 1440-logical-px element — blurry. Kontra disables image smoothing on init and sizes the buffer at `logical × dpr`.
-
-Fix in `initCanvas()`:
-
-```js
-const dpr = window.devicePixelRatio || 1;
-_canvas.width  = CW * dpr;
-_canvas.height = CH * dpr;
-const ctx = _canvas.getContext('2d');
-ctx.scale(dpr, dpr);          // all draw calls stay in logical pixels
-ctx.imageSmoothingEnabled = false;
-```
-
-CSS stays the same logical size (`max-width:${CW}px`). Store `dpr` as a module-level const so the click handler can compensate: `const scaleX = (CW * dpr) / rect.width` — wait, no: the ctx is already scaled, so click math stays in logical coords. Just make sure `_canvas.getBoundingClientRect()` is divided by the CSS pixel size, not the buffer size.
-
-**0b. RAF loop — lerp does nothing without it**
-
-`getDrawPos()` and `npcWanderOffset()` both set `_isAnimating = true`, but `renderWorld()` is never called again unless a game event triggers it. The lerp is dead. NPCs appear frozen despite the wander math.
-
-Kontra uses a time-accumulator RAF loop that runs while any animation is active. Steal the pattern:
-
-```js
-let _rafId = null;
-let _renderFn = null;   // set by renderWorld to () => renderWorld(lastState, lastCb)
-
-function scheduleFrame() {
-    if (_rafId) return;
-    _rafId = requestAnimationFrame(() => {
-        _rafId = null;
-        _renderFn?.();
-        if (_isAnimating) scheduleFrame();
-    });
-}
-```
-
-Call `scheduleFrame()` at the end of `renderWorld()` whenever `_isAnimating` is true. This gives smooth lerp and NPC wander with no polling — the loop stops automatically when nothing is moving, matching Kontra's battery-friendly self-stopping behavior.
-
-**0c. Tile layer OffscreenCanvas cache — Kontra's dirty-flag pattern**
-
-Right now the tile loop reruns for every single render call, even when the player hasn't moved. Kontra pre-renders each tile layer to an `OffscreenCanvas` and only redraws it when the layer's data changes (dirty flag).
-
-For us the "dirty" event is a room change. Add a tile-layer cache:
-
-```js
-let _tileCache = null;    // { loc: string, camX: number, camY: number, canvas: OffscreenCanvas }
-
-function getTileLayer(loc, camX, camY, ...) {
-    const floorX = Math.floor(camX), floorY = Math.floor(camY);
-    if (_tileCache?.loc === loc.key && _tileCache.camX === floorX && _tileCache.camY === floorY)
-        return _tileCache.canvas;
-
-    const off = new OffscreenCanvas(CW, CH);
-    const octx = off.getContext('2d');
-    // ... draw tile loop onto octx ...
-    _tileCache = { loc: loc.key, camX: floorX, camY: floorY, canvas: off };
-    return off;
-}
-```
-
-Main draw: `ctx.drawImage(getTileLayer(...), 0, 0)` then draw entities on top. This eliminates the `(VIEWPORT_W+1) × (VIEWPORT_H+1)` tile draw loop from every frame — it only fires when the camera moves an integer tile, roughly once per player step, not once per animation frame.
-
-**0d. Tab blur — pause RAF when window loses focus**
-
-Kontra pauses the loop on `window.blur` and resumes on `window.focus`. Without this, the lerp timer `Date.now()` keeps ticking while the tab is hidden, and entities snap to their destination the instant the player returns. Add:
-
-```js
-window.addEventListener('blur',  () => { if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; } });
-window.addEventListener('focus', () => { if (_isAnimating) scheduleFrame(); });
-```
-
-**0e. Aspect ratio CSS fix — the stretching bug**
-
-Replace the canvas `style.cssText` width/height rules:
-
-```js
-_canvas.style.cssText = `
-    display:block;
-    width:100%;
-    max-width:${CW}px;
-    aspect-ratio:${CW}/${CH};
-    image-rendering:pixelated;
-    image-rendering:crisp-edges;
-    margin:0 auto;
-    cursor:pointer;
-    background:#000;
-    border-bottom:1px solid #111;
-`;
-```
-
-`aspect-ratio` keeps the element's height locked to the 720:528 ratio regardless of container width. `max-width:${CW}px` prevents upscaling beyond native resolution at large viewports. Remove `max-height:45vh` — it fights `aspect-ratio` on portrait/short viewports.
-
----
-
-#### **Summary: rendering work order**
-
-1. DPR fix in `initCanvas()` — one-time, no regressions.
-2. Aspect-ratio CSS fix — one-time.
-3. Tab blur/focus handlers — 4 lines.
-4. RAF loop (`scheduleFrame`, `_renderFn`) — the lerp and NPC wander finally work.
-5. OffscreenCanvas tile cache — performance win, do last (requires 0b to be stable).
-
-All five fit in `renderer.js` with no changes to `main.js` or `commands.js`.
-
----
-
----
-
-#### **1. Canvas stretching on wide viewports**
-
-Covered in §0e above — the aspect-ratio CSS fix addresses this. The rendering overhaul in §0 should be implemented first; this issue resolves as part of it.
-
----
-
-#### **2. Input blocked in some rooms**
-
-**Root cause (suspected).** `_canvas.onclick` is reassigned on every `renderWorld()` call. If `renderWorld()` is called while `_dialogue` is non-null (dialogue open), a new onclick handler is installed that checks `if (_dialogue) { advanceDialogue(); return; }` — so clicks advance dialogue correctly. But the `window.keydown` handler in `main.js` intercepts `Space`/`Enter` only `when isDialogueOpen()` is true. If `_dialogue` gets stuck non-null (e.g., an NPC speak event fires but the text is empty, producing zero pages), `isDialogueOpen()` returns `true` permanently and Space/Enter never reach the text input, making it appear that the room is unresponsive.
-
-Additionally: the text `input` element can lose focus silently when a canvas click fires. If `input.focus()` is not called after a canvas click that doesn't open dialogue, the keyboard is captured by `window.keydown` and typed characters don't appear in the input box.
-
-**Fixes:**
-
-1. In `renderer.js` `showDialogue()`: guard against empty page arrays.
-   ```js
-   export function showDialogue(npcName, text) {
-       const pages = paginateText(ctx, text, ...);
-       if (!pages.length) return; // don't open dialogue with no text
-       _dialogue = { name: npcName, pages, page: 0 };
-   }
-   ```
-
-2. In `renderer.js` canvas click handler, after handling an empty-tile click (no NPC, no enemy), call `input.focus()`. Pass the `input` element reference in at init time, or emit a `ui:requestFocus` bus event that `main.js` handles.
-
-3. Add a safety valve: if `_dialogue` is non-null but `_dialogue.pages` is empty or `_dialogue.page >= _dialogue.pages.length`, force `_dialogue = null` at the top of `drawDialogueBox`.
-
-**Test:** Talk to an NPC, dismiss dialogue, verify keyboard input works in the text box immediately after without clicking it. Repeat in every room type (indoor, outdoor, dungeon).
-
----
-
-#### **3. World expansion — more rooms, more variety**
-
-**Current state.** `data.js` has 16 rooms. Most follow the same grammar: open tiles, one enemy type, one or two exits. There are no rooms that feel mechanically or visually distinct from each other beyond the name banner.
-
-**Target.** Add 8–10 new rooms that each introduce one thing the world doesn't currently have. Quality over quantity — each new room should have a clear reason to exist in the quest graph or exploration loop.
-
-Suggested new rooms (implement all in `data.js`, wire exits bidirectionally):
-
-| Key | Name | What's new |
-|-----|------|------------|
-| `mill` | Old Mill | Crafting location — `craftable: ['flour','rope']`. No enemy. |
-| `cemetery` | Cemetery | Night-only enemy spawn (`nightOnly: true`). Wraith enemy. Connects to catacombs. |
-| `harbour` | Harbour | Merchant variant selling boat parts. Leads to `sea_cave`. |
-| `sea_cave` | Sea Cave | Underwater feel via `tileOverrides` (water tiles at edges). Crab enemy. |
-| `watchtower` | Watchtower | Tall room (`width:6, height:20`). Guard NPC. Gives scouting lore. |
-| `herbalist_hut` | Herbalist's Hut | Small (`width:8, height:8`). Unique NPC: Herbalist. Sells `herb`, `antidote`. |
-| `frozen_lake` | Frozen Lake | Wide open (`width:25, height:10`). Ice tile type (slippery — step 2 tiles per move). |
-| `throne_room` | Throne Room | Indoor. Boss-tier enemy (King's Guard). Dead-end, high reward. |
-| `smuggler_den` | Smuggler's Den | Secret room, reachable only via hidden exit in `harbour`. Black-market merchant. |
-| `crossroads` | Crossroads | Hub room with exits in all 4 directions. No enemy. Signpost scenery. |
-
-**Implementation notes:**
-- All rooms need `width`, `height`, `description`, `exits` (bidirectional), and `scenery` arrays.
-- `tileOverrides` is Phase 8 prep — define the array even if renderer ignores it now.
-- `nightOnly` enemy spawn: check `getTimeOfDay() === 'night'` before populating `loc.enemy` in `renderWorld`.
-- Every new room needs an `exitTile` entry with `destX`/`destY` within bounds — the `rules.test.js` exit-bounds test will catch violations automatically.
-- Expand the quest graph to reference at least 3 of the new rooms (e.g., herbalist fetch quest, watchtower scouting quest, throne room boss bounty).
-
----
-
-#### **4. Inventory — comprehensive test coverage**
-
-**Current state.** `commands.test.js` references `inventory` in 7 places, all incidental (setup or single-line assertions inside other tests). There are zero dedicated tests for the inventory subsystem despite it being a core mechanic with multiple code paths:
-
-- `pickup` / `drop` commands
-- `use <item>` (consumables: potion, ale, elixir)
-- `equip <item>` (weapons and armor auto-equip in combat via `getBestGear`)
-- `sell <item>` at merchant
-- Weight/count display in `inventory` command
-- Crafting consuming input items and producing output
-- Quest objective: `fetch` type checking `inventory` contents
-- `rest` command consuming `ale` from inventory
-
-**New test file: `src/inventory.test.js`**
-
-Write a dedicated suite covering at minimum:
-
-```
-describe('inventory system', () => {
-  describe('pickup', () => {
-    - picking up an item in a room with loot adds it to inventory
-    - picking up in a room with no loot emits a not-found message
-    - duplicate pickups stack correctly (same itemId appears twice)
-    - bus emits item:pickup with full item object
-  })
-  describe('drop', () => {
-    - drop removes item from inventory
-    - drop on an item not in inventory does not crash
-  })
-  describe('use', () => {
-    - use potion increases HP (capped at maxHp)
-    - use ale restores fight charges (up to daily max)
-    - use strength_elixir adds statusEffect with duration
-    - use non-consumable item gives appropriate message, does not remove from inventory
-    - use on empty inventory does not crash
-  })
-  describe('equip / getBestGear', () => {
-    - getBestGear selects highest-attack weapon in inventory
-    - getBestGear selects highest-defense armor in inventory
-    - manual equipment overrides auto-equip
-    - empty inventory gives base stats
-  })
-  describe('sell', () => {
-    - sell removes item from inventory and adds gold
-    - sell unknown item does not crash
-    - sell at non-merchant location gives appropriate message
-  })
-  describe('inventory command', () => {
-    - empty inventory prints "pack is empty"
-    - inventory with items shows each item name and count
-    - duplicate items shown as "x2" not listed twice
-  })
-  describe('craft', () => {
-    - crafting consumes ingredient items from inventory
-    - crafted item is added to inventory
-    - attempting craft without ingredients fails with message
-  })
-  describe('fetch quests', () => {
-    - fetch quest progress updates when item is in inventory
-    - fetch quest does not complete until count is met
-  })
-})
-```
-
-All tests use the same `localPlayer` mock pattern established in `commands.test.js` (set `store.localPlayer` directly, call `handleCommand()`). No mocking of the bus — verify side effects via the actual bus listener or by checking `localPlayer.inventory` state post-command.
-
----
-
-#### **Verification additions for §3 (Static checks)**
-
-After this phase, add to the Post-Implementation Verification Protocol:
-
-**`src/renderer.js`**
-- Canvas element has `aspect-ratio` style set. Verify in devtools that changing viewport width does not distort tile proportions.
-- `showDialogue('', '')` with empty text does not set `_dialogue` non-null (call `isDialogueOpen()` after — must be false).
-
-**`src/data.js`**
-- All new rooms: `exitTile` entries pass the existing bounds test in `rules.test.js`.
-- All new rooms: exit destinations are bidirectional (if room A exits to room B, room B has an exit back to room A or to another room — no orphan destinations).
-
-**`src/inventory.test.js`**
-- Full suite passes with zero skips. Cover all 8 describe blocks listed above.
-
----
-
-### **Phase 7.88: Action Button UI Freeze — FIXED**
-
-**Symptom.** Clicking any action button in the Rusty Flagon (tavern) or Market Square (market) appeared to do nothing. Other rooms worked fine.
-
-**What Gemini tried.** Gemini changed the CSS on `.chip` elements in an attempt to fix it. This was the wrong file — `.chip` elements live inside `#debug-console` which has `display:none`. They are permanently invisible regardless of their CSS; they are autocomplete suggestions for the debug CLI, not the game's action buttons. The visual action buttons use `.action-btn` class in `#action-buttons`, which is a separate element outside the debug console. No CSS change to `.chip` could affect the action buttons.
-
-**Actual root cause.** `uiState` (the UI navigation variable in `src/ui.js`) is module-level and was never reset on room transitions. If a player opened a submenu (e.g. clicked "Buy 💰" in the Market → `uiState = 'buy'`), then navigated to another room, `uiState` remained `'buy'`. In the new room, `renderActionButtons` rendered the buy submenu for the new room's shop NPC. If the new room had no shop NPC, only "Back ⬅️" appeared. If it had a different NPC, the wrong submenu appeared. From the player's perspective: all the normal root-state buttons (Move, Talk, Inventory, etc.) were gone, replaced by a single "Back" button. It looked like "nothing works."
-
-This was worst in the Rusty Flagon and Market because those are NPC-heavy rooms where players spend time navigating submenus, making the stale `uiState` state more likely to persist across a room transition.
-
-**Fix applied.** Added a `bus.on('player:move', ...)` listener in `src/ui.js` that resets `uiState = 'root'` whenever the player changes rooms. One line. All 402 tests pass.
-
-```js
-// src/ui.js — added alongside the existing ui:back handler
-bus.on('player:move', () => {
-    uiState = 'root';
-});
-```
-
-**What was NOT the issue.** The canvas CSS (`aspect-ratio` + `max-height` conflict) and the double `renderActionButtons` call were identified as separate inefficiencies but were not the cause of this specific bug. The NPCS data is clean — all shop NPCs (barkeep, merchant, herbalist) have their `shop` arrays defined.
-
-**Test gap.** There is no test covering `uiState` persistence across room transitions. `src/ui.test.js` does not exist. Add one as part of Phase 7.9 work covering: (a) `uiState` resets to root on `player:move`, (b) `uiState` resets to root on `ui:back`, (c) rendering in 'buy' state with no local shop NPC shows only the Back button and no crash.
-
----
-
-### **Phase 7.9: P2P Peer Bugs & Networking Test Suite — TODO**
-
-Three distinct bugs identified from same-machine Chrome+Safari testing (two instances, same computer, two peers detected but "Fraud detected" after ~2 minutes and peers invisible to each other).
-
----
-
-#### **Bug 1 — False fraud detection: position data in the Merkle root**
-
-**Root cause.** `buildLeafData()` in `networking.js` constructs leaves as:
-```js
-`${id}:${p.level}:${p.xp}:${p.location}:${p.x || 0}:${p.y || 0}`
-```
-
-`x` and `y` are included. Position changes on every tile step. The rollup interval is 10 seconds. When Chrome (the proposer this slot) builds its Merkle root at T=10s, it captures Safari's position as cached in its `players` map — say `(3,4)`. Chrome broadcasts this root. Safari receives it and verifies by running its own `buildLeafData()`. Safari's own self-leaf uses its *current* position `(5,2)` (it has been moving). The roots diverge → Safari fires "Fraud detected in instance!" and submits a fraud proof to the Arbiter.
-
-This is a false positive, not actual cheating. Position is high-frequency state that changes faster than the rollup interval. It does not need to be in a consensus hash — what matters for anti-cheat integrity is `level` and `xp` (hard to fake without detection) and `location` (room-level, not tile-level).
-
-**Fix.** Remove `x` and `y` from the leaf string:
-```js
-// networking.js — buildLeafData()
-.map(([id, p]) => `${id}:${p.level}:${p.xp}:${p.location}`);
-// self leaf:
-leaves.push(`${selfId}:${localPlayer.level}:${localPlayer.xp}:${localPlayer.location}`);
-```
-
-`location` (room key) is appropriate: it only changes on room transitions, is bounded, and is meaningful for shard integrity. Tile position within a room is not integrity-critical and should not be in the rollup.
-
-**Regression guard.** Add to `network.test.js`:
-```js
-test('buildLeafData leaves do not include x,y tile coordinates', () => {
-    const leaf = `peer1:5:120:tavern`;  // correct form
-    expect(leaf).not.toMatch(/:\d+:\d+$/);  // no trailing :x:y
-});
-```
-
----
-
-#### **Bug 2 — Peers invisible: presence dropped before public key arrives**
-
-**Root cause.** On peer join, `onPeerJoin` fires → after 500ms sends `identity_handshake` AND `presence_single` to the new peer simultaneously. On the *receiving* side, `getIdentity` and `getPresenceSingle` are independent async handlers. `getPresenceSingle` begins:
-
-```js
-const entry = players.get(peerId);
-if (!entry?.publicKey) return;  // ← silently dropped
-```
-
-If `getPresenceSingle` fires before `getIdentity` has stored the public key in `players` — which is a race that happens regularly on same-machine WebRTC where message ordering between action channels is not guaranteed — the presence packet is dropped with no retry. The peer is added to `knownPeers` but never to `players` with a valid presence. The renderer's `if (p.location !== localPlayer.location) return` then filters the peer out entirely. From the player's perspective: the UI says "2 peers" (from the knownPeers count) but nobody appears on canvas.
-
-The retry handshake (`setTimeout(handshake, 3000)`) resends identity but does **not** resend presence. So the peer stays invisible until the next periodic presence broadcast (30s+ depending on `players.size`).
-
-**Fix.** Queue presence packets that arrive before the public key is known, and replay them when the key arrives:
-
-```js
-// networking.js — add at module level
-const _pendingPresence = new Map(); // peerId → ArrayBuffer (most recent)
-
-// in getPresenceSingle handler — replace the early return:
-const entry = players.get(peerId);
-if (!entry?.publicKey) {
-    _pendingPresence.set(peerId, buf);  // hold it, don't drop it
-    return;
-}
-
-// in getIdentity handler — after trackPlayer():
-const pending = _pendingPresence.get(peerId);
-if (pending) {
-    _pendingPresence.delete(peerId);
-    // re-dispatch through the same validation path
-    processPresenceSingle(pending, peerId);
-}
-```
-
-Extract the presence validation logic into a `processPresenceSingle(buf, peerId)` function so both the handler and the replay path use identical validation. Cap `_pendingPresence` at one entry per peer (keep most recent only) to avoid unbounded growth.
-
-**Regression guard.** This is hard to unit test without a real WebRTC connection. Add an explicit test for the queuing logic using the extracted `processPresenceSingle` function with a mock `players` map that starts empty.
-
----
-
-#### **Bug 3 — Peer in wrong room: ROOM_MAP out of sync with data.js**
-
-**Root cause.** `unpackPresence` in `packer.js` decodes location as:
-```js
-const location = ROOM_MAP[r.u8()] ?? 'cellar';
-```
-
-`ROOM_MAP` is a hardcoded index array in `packer.js`. When new rooms are added to `data.js` (as prescribed in Phase 7.85 world expansion), they must also be appended to `ROOM_MAP` in `packer.js` in the same order. If they are not, a peer in a new room encodes an index that decodes to a different room (or falls back to `'cellar'`). The renderer then places the peer in the wrong room, and since you're not in `'cellar'`, you never see them.
-
-This is silent and produces no error — the byte just maps to the wrong string.
-
-**Fix.** Make `ROOM_MAP` derived from `data.js` rather than hardcoded:
-
-```js
-// packer.js
-import { world } from './data.js';
-export const ROOM_MAP = Object.keys(world).sort(); // deterministic order, same for all peers
-```
-
-Sorting alphabetically gives a stable, reproducible index that automatically stays in sync as rooms are added. Both peers must use the same sort — alphabetical is unambiguous. No manual maintenance.
-
-**Verify** that `ROOM_MAP` remains stable across builds by adding a snapshot test in `packer.test.js`:
-```js
-test('ROOM_MAP index for known rooms is stable', () => {
-    expect(ROOM_MAP.indexOf('tavern')).toBe(ROOM_MAP.indexOf('tavern')); // trivial
-    // More importantly: the index for a known room must not change between runs
-    const idx = ROOM_MAP.indexOf('cellar');
-    expect(typeof idx).toBe('number');
-    expect(idx).toBeGreaterThanOrEqual(0);
-});
-```
-
-And add a test that packs and unpacks a presence for every room in `world` and verifies the location round-trips correctly — this catches any new room that isn't indexed.
-
----
-
-#### **New test file: `src/networking.peer.test.js`**
-
-No tests currently cover peer-to-peer interaction patterns. Add a dedicated suite using a mock `players` Map and a mock `bus`:
-
-```
-describe('Peer presence lifecycle', () => {
-
-  describe('public key race condition', () => {
-    - presence arriving before publicKey is stored → queued to _pendingPresence
-    - identity arriving after → pending presence replayed through full validation
-    - pending presence for banned key → discarded on replay, not applied
-    - _pendingPresence holds at most one packet per peer (newest wins)
-  })
-
-  describe('presence validation', () => {
-    - valid presence packet updates players map
-    - ph mismatch (doesn't match publicKey hash) → rejected, players map unchanged
-    - XP jump > 100 over shadow → rejected
-    - level jump > 1 over shadow → rejected
-    - presence with location not in ROOM_MAP → falls back to 'cellar', does not crash
-    - presence with unknown room index → ROOM_MAP derived from data.js covers all rooms
-  })
-
-  describe('buildLeafData', () => {
-    - leaves are sorted deterministically regardless of players Map insertion order
-    - selfId is excluded from the players entries, added as a separate leaf
-    - leaf format is id:level:xp:location (no x,y)
-    - two peers with identical level/xp/location produce matching roots
-    - two peers where one has moved (x,y differ) still produce matching roots
-    - leaf data changes when a peer changes room (location changes)
-    - leaf data does NOT change when a peer moves within a room (x,y change)
-  })
-
-  describe('fraud detection', () => {
-    - root mismatch triggers fraud proof submission
-    - root match does not trigger fraud proof
-    - joinTime < 3000ms grace: rollup ignored, no fraud proof even if root differs
-    - self-signed rollup (publicKey === myPubKeyB64) is ignored
-  })
-
-  describe('ROOM_MAP round-trip', () => {
-    - packPresence/unpackPresence round-trips location for every room in world
-    - adding a new room to data.js does not break existing room indices (sorted derivation)
-  })
-
-})
-```
-
-All tests in this file run in Node without WebRTC. Mock `signMessage`/`verifyMessage` to return valid/invalid synchronously where needed.
-
----
-
-#### **Smoke test addition for §5 (Regression smoke-list)**
-
-Add to the existing smoke-list:
-- [ ] Open game in two browser tabs (or Chrome + Safari same machine). Both show "2 peers" or similar within 10 seconds of the second tab loading.
-- [ ] After 2 minutes with both tabs open and one player moving, neither tab shows "Fraud detected".
-- [ ] Player in Tab A is visible as a sprite on canvas in Tab B when both are in the same room.
-- [ ] Player in Tab A moving to a new room disappears from Tab B's canvas within one presence cycle.
-
----
-
-### **Phase 7.9.5: Advanced Peering & Fraud Detection — TODO**
-
-Six techniques drawn from distributed systems research and cryptographic protocol design. Ordered by implementation risk — implement in sequence.
-
----
-
-#### **Technique 1 — Hybrid Logical Clocks (HLC) on all timestamped messages**
-
-**From:** Kulkarni et al. 2014. Used in CockroachDB, YugabyteDB.
-
-**Problem.** Every presence and move packet uses `ts: Date.now()`. Physical clocks drift between browsers. Two events can share the same millisecond timestamp. Out-of-order delivery cannot be detected — a stale presence packet can overwrite a newer one if it arrives late.
-
-**Fix.** Replace all `ts: Date.now()` with an HLC value. An HLC is `{ wall: ms, logical: counter }` packed into a single `uint64` (or two uint32s). Rules: on send, `hlc = { wall: max(Date.now(), lastHlc.wall), logical: wall === lastHlc.wall ? lastHlc.logical + 1 : 0 }`. On receive, `hlc = max(local, received) + 1`. HLCs are monotonic, stay within a bounded skew of wall time, and give causal ordering for free.
-
-**Impact on peering.** When a peer receives two presence packets, drop the one with the lower HLC regardless of arrival order. Currently a packet dropped and retried 3s later will overwrite the newer state — with HLC it's correctly ordered.
-
-**Impact on fraud.** Move packets include HLC. A move with `hlc ≤ peer's last accepted hlc` is a replay attack. Reject it. No separate sequence number needed.
-
-**Implementation.**
-- Add `src/hlc.js` (~30 lines): `createHLC()`, `sendHLC(last)`, `recvHLC(last, received)`, `packHLC(hlc)` → uint32 pair, `unpackHLC(hi, lo)`.
-- Replace `ts` field in `packPresence`/`unpackPresence` in `packer.js` with HLC pair (8 bytes, same slot).
-- Replace `ts: Date.now()` in move packets and `trackPlayer()` calls.
-- Presence validation in `processPresenceSingle`: reject if `unpacked.hlc ≤ players.get(peerId).hlc`.
-
-**No new dependencies. ~60 lines of new code + packer change.**
-
----
-
-#### **Technique 2 — Token Bucket XP Rate Limiter**
-
-**From:** Network QoS. Used in every major CDN and API rate limiter.
-
-**Problem.** Shadow validation rejects `xp > shadow.xp + 100` per packet — a flat delta with no time dimension. A cheater can gain 99 XP per presence packet indefinitely. The tolerance is also arbitrary; 100 has no relation to actual game mechanics.
-
-**Fix.** Replace the flat delta with a per-peer token bucket. The bucket capacity and refill rate are derived from the maximum XP a player could legitimately earn. Compute at startup:
-
-```js
-// networking.js
-const MAX_XP_PER_MS = Math.max(...Object.values(ENEMIES).map(e => e.xp)) / 5000;
-// best enemy XP divided by minimum plausible kill time (5s)
-```
-
-Each peer has a bucket: `{ tokens: MAX_BUCKET, lastRefill: Date.now() }`. On each presence received:
-1. Refill: `tokens = min(MAX_BUCKET, tokens + MAX_XP_PER_MS * (now - lastRefill))`
-2. Drain: `tokens -= (unpacked.xp - shadow.xp)`
-3. If `tokens < 0`: reject, warn, submit fraud proof.
-
-`MAX_BUCKET` = 60 seconds of max possible XP (generous for tab-switching or network gaps).
-
-**Impact.** Catches slow-drip XP inflation that the current check misses. The limit is derived from `ENEMIES` data — it stays correct as enemy XP values are tuned.
-
-**Implementation.** Add `xpBuckets: Map<peerId, {tokens, lastRefill}>` alongside `shadowPlayers`. Update in `processPresenceSingle` and `getPresenceBatch`. ~25 lines.
-
----
-
-#### **Technique 3 — Immediate Targeted Sketch on `onPeerJoin`**
-
-**From:** Anti-entropy reconciliation in Dynamo, Cassandra, Riak.
-
-**Problem.** The IBLT sketch fires every `30s + 5s × peerCount`. After a portal transition, a peer who just joined the shard waits up to 35s before their first sketch reconciliation. During that window, if any presence packet was dropped (common on fresh WebRTC connections), the peer is invisible.
-
-**Fix.** When `onPeerJoin` fires, immediately send a targeted sketch to the new peer only (not a full broadcast). This kicks off IBLT reconciliation within ~200ms of connection instead of up to 35s.
-
-```js
-r.onPeerJoin(async peerId => {
-    knownPeers.add(peerId);
-    // ... existing handshake ...
-
-    // Immediately reconcile peer roster with the new peer
-    const iblt = new IBLT();
-    players.forEach((_, id) => iblt.insert(id));
-    iblt.insert(selfId);
-    if (gameActions.sendSketch) gameActions.sendSketch(iblt.serialize(), [peerId]);
-});
-```
-
-Also add a second presence broadcast 800ms after `joinInstance` completes — catches peers whose WebRTC data channel wasn't open when the initial `sendPresenceSingle` fired on line 364.
-
-```js
-// joinInstance — after rooms.torrent is assigned
-setTimeout(() => {
-    myEntry().then(entry => {
-        if (entry && gameActions.sendPresenceSingle) gameActions.sendPresenceSingle(packPresence(entry));
-    });
-}, 800);
-```
-
-**Impact.** Portal re-appearance drops from "up to 35s" to "~200–800ms". Zero protocol changes, zero extra bandwidth at steady state.
-
----
-
-#### **Technique 4 — Plumtree Epidemic Broadcast (lazy-push gossip)**
-
-**From:** Leitão, Pereira, Rodrigues — "Epidemic Broadcast Trees" (2007). Used in Riak, distributed consensus engines.
-
-**Problem.** Presence and sketch messages are broadcast to all peers (`sendPresenceSingle` with no target = flood). In a 50-peer shard, every move triggers N messages. Flood gossip has O(N) redundancy — every peer receives every message N times.
-
-**Architecture.** Plumtree separates peers into two sets per local node:
-- **Eager set** (2–4 peers): receive full message payloads immediately.
-- **Lazy set** (remaining peers): receive only a lightweight `{messageId, type}` announcement after a short delay (e.g. 200ms).
-
-On receiving a lazy announcement, if the payload hasn't arrived via an eager peer yet, the node upgrades the sender to eager and pulls the payload. If the payload already arrived, the announcement is silently dropped. This self-heals: if an eager link drops, a lazy link promotes itself automatically.
-
-**Implementation plan for this codebase.**
-1. Add `eagerSet: Set<peerId>` and `lazySet: Set<peerId>` per shard room (maintained alongside `knownPeers`).
-2. On `onPeerJoin`: add to `eagerSet` if `eagerSet.size < 3`, else `lazySet`.
-3. Modify `sendPresenceSingle` and `sendSketch`: send full payload to eager peers, send `{msgId: hash(payload), type}` to lazy peers via a new `presence_announce` action.
-4. Add `getPresenceAnnounce` handler: if `msgId` not seen within 200ms window, pull full payload from sender via `sendRequest`.
-5. On `onPeerLeave`: remove from eager/lazy sets; if eager set is now empty, promote from lazy.
-
-**Impact.** Reduces presence broadcast traffic by ~60–70% in a 10-peer shard. Makes the system scale toward 50 peers without flooding. Portal re-appearance stays fast because the eager set is always fresh.
-
-**Complexity.** Medium — requires a seen-message cache (LRU, cap at 256 entries, 20 lines), a `presence_announce` wire action, and the eager/lazy set maintenance. No new dependencies.
-
----
-
-#### **Technique 5 — Append-Only Signed Action Feed (Scuttlebutt-style)**
-
-**From:** Secure Scuttlebutt (Tarr et al. 2019). Used in SSB, Cabal, Manyverse.
-
-**Problem.** The current `actionIndex` in shadow state is a bare integer. There is no linkage between entries — a cheater can submit action index 50 with forged XP, and peers have no way to verify it chains from a legitimate index 49. The shadow validation only checks the delta from the last *received* packet, not the full history.
-
-**Architecture.** Each player maintains a local append-only feed. Every XP-granting action (kill, quest complete) produces a feed entry:
-
-```js
-{
-  seq: N,                          // monotonic, starts at 1
-  type: 'kill',
-  target: 'wolf',
-  xp: 12,
-  prev: H(entry_{N-1}),            // hash of previous entry (links the chain)
-  ts: hlc,                         // HLC timestamp (Technique 1)
-  sig: sign(above fields),
-}
-```
-
-The `prev` field links each entry to its predecessor via hash. A fork — two valid entries with the same `seq` and `prev` but different content — is cryptographically irrefutable proof of fraud. Peers verify the chain is intact when processing action logs.
-
-**What this enables.**
-- Replay `seq 1..N` from any peer's feed to reconstruct their XP from scratch.
-- Detect gaps (missing entries) and request them explicitly.
-- Fork detection: if peer sends `seq=5` with `prev=X` but you already have `seq=5` with `prev=Y`, the earlier one is evidence of fraud.
-
-**Integration with existing code.** The `action_log` message type already exists (`sendActionLog`, `getActionLog`). Extend the payload with `prev` and `seq`. Peers maintain a `feedHead: Map<peerId, {seq, hash}>` alongside `shadowPlayers`. On each `getActionLog`: verify `entry.prev === feedHead.get(peerId).hash`, verify seq increments, update head. Reject anything that breaks the chain.
-
-**Feed storage.** Feed heads only (not full history) live in memory. Full feed persisted to IndexedDB for offline verification. Cap stored feed at last 200 entries per peer — older entries are checkpointed into a summary hash.
-
-**Complexity.** Medium-high. The hash chaining is straightforward; the IndexedDB persistence and gap-fill request/response protocol adds complexity. Implement feed heads first (in-memory only), add persistence in a follow-up.
-
----
-
-#### **Technique 6 — Stateless Fraud Proofs for the Arbiter**
-
-**From:** Ethereum Optimistic Rollups (Arbitrum, Optimism).
-
-**Problem.** Current fraud proofs sent to the Arbiter contain `{ presence, signature, disputedRoot }` — the Arbiter must trust the witness's claimed state. There is no way for the Arbiter to independently verify the dispute without trusting one party.
-
-**Fix.** Make fraud proofs self-contained (stateless): include all data needed for the Arbiter to independently re-execute the disputed action and verify the outcome.
-
-For an XP fraud proof (most common case):
-```js
-{
-  type: 'xp_fraud',
-  proof: {
-    peerId,
-    publicKey,
-    feedEntry: { seq, type:'kill', target:'wolf', xp:12, prev, sig },    // the disputed entry
-    worldSeed: worldState.seed,
-    actionEntropy: hashStr(worldSeed + '|' + publicKey + '|' + seq),     // deterministic RNG seed
-  }
-}
-```
-
-The Arbiter re-runs `rollLoot(target, seededRNG(actionEntropy))` and `ENEMIES[target].xp` — if the claimed XP doesn't match the deterministic output, the proof is valid fraud. No trust required.
-
-For an illegal-move proof (already partially implemented):
-```js
-{
-  type: 'illegal_move',
-  proof: {
-    from, to,                     // the claimed transition
-    worldSnapshot: ROOM_MAP,      // which rooms exist (static — just version hash)
-    signature,                    // peer's signed move packet
-    publicKey,
-  }
-}
-```
-
-The Arbiter checks `Object.values(world[from]?.exits || {}).includes(to)` independently. Deterministic, no trust.
-
-**Arbiter changes (arbiter/index.js).**
-- Add `verifyXpFraud(proof)`: re-run `rollLoot` + XP lookup, compare to claimed XP.
-- Add `verifyIllegalMove(proof)`: check world graph exits.
-- Existing `fraudCounts` accumulation stays — now based on verified proofs rather than trusted claims.
-
-**Impact.** The Arbiter becomes a genuine fraud adjudicator rather than a vote counter. Ban decisions are now based on cryptographically verifiable re-execution, not majority claims.
-
----
-
-#### **Technique 7 — Commit-Reveal for XP-Granting Actions**
-
-**From:** Cryptographic protocol design. Used in Ethereum games, zkSNARK protocols, sealed-bid auctions.
-
-**Problem.** A client can claim they killed an enemy after seeing the outcome — picking the most favorable action retroactively. No peer can prove the kill was committed to before the result was known.
-
-**Architecture.** Two-phase protocol per kill:
-1. **Commit:** Before the attack resolves, broadcast `{ seq, commit: H(action | nonce) }` — a binding hash. Peers record it.
-2. **Reveal:** After the kill, broadcast `{ seq, action: 'kill', target: 'wolf', nonce }` — peers verify `H(action | nonce) === stored commit`.
-
-A cheater cannot choose a different action after the commit is recorded, because the hash binds them. A missing reveal (commit with no matching reveal within N seconds) is logged as suspicious.
-
-**Pi Zero W impact:** None. Arbiter receives only the final fraud proof if a reveal doesn't match its commit — same shape as existing proofs. No new Arbiter logic needed.
-
-**Bundle size:** ~40 lines in `networking.js`. Uses existing `hashStr`. No new crypto primitives.
-
-**Implementation.**
-- New wire actions: `commit_action` and `reveal_action` in `setupShard`.
-- `pendingCommits: Map<peerId, Map<seq, {commit, ts}>>` — held until reveal or timeout (10s).
-- On `getRevealAction`: verify hash, clear from pending, process XP grant.
-- On timeout: if commit has no reveal, flag the peer (increment suspicion counter; don't ban on first offence — network drops happen).
-- Integrates directly with Technique 5 (signed action feed): the reveal becomes the feed entry.
-
----
-
-#### **Technique 8 — Minisketch (Polynomial Set Reconciliation)**
-
-**From:** Naumenko, Maxwell, Wuille et al. — "Bandwidth-Efficient Transaction Relay for Bitcoin" (2019). Used in Bitcoin Core's Erlay.
-
-**Problem.** The current IBLT silently fails to decode when the set difference is large (line 482: `if (!success) return`). A shard that has drifted significantly (e.g. after a network partition) cannot reconcile. Also, IBLT requires pre-allocating enough cells for the expected diff size — too small and it fails; too large wastes bandwidth.
-
-**Architecture.** Minisketch encodes the symmetric difference of two sets as a polynomial over GF(2³²). The sketch size is exactly `d × 4 bytes` where `d` is the number of differing elements. Decoding uses Berlekamp-Massey (finds the polynomial's roots). It never fails within its declared capacity — and capacity can be declared conservatively because the sketch is optimally compact.
-
-**Pi Zero W impact:** None. Arbiter doesn't participate in IBLT/Minisketch reconciliation — that's purely client-side P2P.
-
-**Bundle size:** `src/minisketch.js` (~120 lines of pure JS GF arithmetic + BM decoder) **replaces** `src/iblt.js` (~same size). Net bundle change: approximately neutral, possibly smaller. `iblt.js` is deleted.
-
-**Implementation.**
-- `src/minisketch.js` exports `Minisketch` with `add(id)`, `serialize()`, `Minisketch.decode(a, b)` → `[added[], removed[]]`.
-- GF(2³²) multiply: carryless multiplication via lookup table (256-entry, generated at module init — ~1KB, within budget).
-- Berlekamp-Massey: ~40 lines, operates on GF elements.
-- Drop-in replacement for IBLT in `getSketch`/`sendSketch` handlers. Wire format changes (smaller), but since it's internal gossip between same-version clients this is safe.
-- Capacity declared as `min(32, players.size + 4)` — generous enough for any realistic diff, tiny enough to stay compact.
-
-**Constraint note:** The 50-peer cap on IBLT diff (line 484) is replaced by Minisketch's declared capacity. Set capacity to 32 by default — covers any realistic per-gossip-round diff without risk of decode failure.
-
----
-
-#### **Technique 9 — HyParView Logical Overlay (Eager/Lazy Peer Sets)**
-
-**From:** Leitão, Marques, Pereira, Rodrigues — "HyParView: A Membership Protocol for Reliable Gossip-Based Broadcast" (2007). Used in Ethereum devp2p, libp2p, Riak.
-
-**Architecture in this codebase.** Trystero owns the actual WebRTC mesh — we cannot dictate which peers connect to which. HyParView is therefore implemented as a **logical overlay**: all peers remain connected via Trystero's torrent room, but each node independently designates 2–3 peers as its **active view** (eager gossip targets) and the rest as its **passive view** (lazy announcement targets). The underlying WebRTC connections are unchanged; only the message routing policy changes.
-
-**Active view selection:** On shard join, peers that complete the identity handshake first fill the active view (up to `ACTIVE_VIEW_SIZE = 3`). Subsequent peers go to the passive view. On `onPeerLeave`, if the departed peer was in the active view, promote the longest-known passive-view peer to replace them.
-
-**Gossip behavior:**
-- Presence and sketch payloads → full payload to active view only.
-- Presence and sketch IDs (`{msgId: hashStr(payload).toString(16), type}`) → passive view via `presence_announce` action, after 200ms delay.
-- On receiving an announcement: if `msgId` not seen, pull full payload from sender via existing `request_presence` action. Promote sender to active view.
-- Seen-message LRU: 256 entries, evict oldest. ~20 lines.
-
-**Pi Zero W impact:** None. The Arbiter is in the global room, not the shard. HyParView is shard-only.
-
-**Bundle size:** ~100 lines split between `src/hyparview.js` (view management, ~60 lines) and additions to `networking.js` (~40 lines for announce/pull handlers). New wire action `presence_announce` adds one `makeAction` call per shard setup — negligible.
-
-**What HyParView does NOT do here:** It does not reduce WebRTC connection count (Trystero controls that). It reduces **message volume**: in a 10-peer shard, instead of broadcasting presence to 9 peers, you send full payload to 3 and a 4-byte announcement ID to 6. Roughly 60% bandwidth reduction on presence traffic. Portal re-appearance stays fast because the active view peers receive full payloads immediately.
-
-**Constraint note:** `ACTIVE_VIEW_SIZE = 3` is hardcoded. With 2 peers (the common dev case), both go into the active view automatically — HyParView degrades gracefully to full broadcast at low peer counts.
-
----
-
-#### **Implementation order**
-
-| # | Technique | Complexity | Pi Zero impact | Bundle delta | Unlocks |
-|---|-----------|------------|----------------|--------------|---------|
-| 1 | HLC timestamps | Low | None | +30 lines | Causal ordering for all subsequent |
-| 2 | Token bucket XP | Low | None | +25 lines | Tight fraud bounds from game data |
-| 3 | Immediate sketch on join | Low | None | +10 lines | Portal re-appearance fix |
-| 8 | Minisketch (replaces IBLT) | Medium | None | ~neutral | Reliable set reconciliation |
-| 4 | Plumtree gossip | Medium | None | +80 lines | Efficient broadcast |
-| 9 | HyParView logical overlay | Medium | None | +100 lines | Bandwidth reduction at scale |
-| 7 | Commit-reveal | Medium | None | +40 lines | Retroactive action fraud closed |
-| 5 | Signed action feed | Medium-high | None | +60 lines | Chain-verifiable XP history |
-| 6 | Stateless fraud proofs | Medium | Minimal* | +30 lines | Arbiter as genuine adjudicator |
-
-*Technique 6 adds two re-execution functions to `arbiter/index.js`. Both are O(1) — a lookup in `ENEMIES` and a single `rollLoot` call. Pi Zero cost is negligible.
-
-Techniques 1–3 ship together. Technique 8 ships next (replaces IBLT, neutral bundle). Techniques 4 and 9 ship together (both are gossip routing — Plumtree defines the eager/lazy split that HyParView manages). Techniques 7, 5, 6 follow in sequence.
-
----
-
-#### **New files**
-
-- `src/hlc.js` — Hybrid Logical Clock (~30 lines)
-- `src/minisketch.js` — GF(2³²) polynomial set reconciliation, replaces `src/iblt.js` (~120 lines)
-- `src/hyparview.js` — Eager/lazy view management + seen-message LRU (~60 lines)
-
-#### **Deleted files**
-
-- `src/iblt.js` — replaced by `src/minisketch.js`
-
-#### **Modified files**
-
-- `src/networking.js` — HLC timestamps, token bucket, immediate sketch on join, Plumtree broadcast, HyParView routing, commit-reveal protocol, feed head tracking, stateless fraud proof construction
-- `src/packer.js` — HLC replaces `ts` uint48 field in presence packet
-- `src/store.js` — `xpBuckets`, `feedHeads`, `pendingCommits` maps alongside `shadowPlayers`
-- `arbiter/index.js` — `verifyXpFraud`, `verifyIllegalMove` re-execution handlers (Technique 6 only)
-
-#### **Test additions**
-
-- `src/hlc.test.js` — monotonicity, skew bounds, pack/unpack round-trip
-- `src/minisketch.test.js` — GF arithmetic correctness, BM decode, symmetric difference round-trip, capacity edge cases
-- `src/networking.peer.test.js` — token bucket drain/refill, feed chain validation, fork detection, HyParView view promotion, commit-reveal hash verification, announce/pull flow
-
----
-
-### **Phase 7.98: Cold-Page Bootstrap — Gist Presence Snapshot & Arbiter Peer Rendezvous — TODO**
-
-Two complementary techniques that attack the cold-page join latency from different angles. Neither requires new dependencies. Together they make the world feel populated the moment the page loads — before a single WebRTC connection is open.
-
----
-
-#### **Background: what "cold-page join latency" actually is**
-
-When a new player loads the game, three things must happen before they see other players:
-
-1. **BitTorrent tracker announce** — Trystero registers with trackers and discovers peers in the shard room. Typically 500ms–2s depending on tracker responsiveness.
-2. **WebRTC ICE negotiation** — After discovery, peers negotiate a direct connection. Another 200ms–1s.
-3. **Presence exchange** — Once connected, the handshake and sketch reconciliation run. With the Phase 7.9.5 fixes, this is now ~100–800ms.
-
-Total cold-page-to-seeing-other-players: **1–4 seconds** at best. This phase reduces the *perceived* latency to near-zero by bootstrapping from a server-cached snapshot, and reduces actual WebRTC time by seeding the Minisketch with known peers before the first reconciliation round.
-
----
-
-#### **Technique A — Gist Presence Snapshot (Approach #3)**
-
-**What it does.** The arbiter maintains a rolling list of the 50 most recently active players across all shards and writes it to the existing Gist file (alongside the arbiter beacon) every 60 seconds. On cold page load, clients parse this snapshot and immediately seed the `players` map with "ghost" entries — display-only data with no publicKey. The game renders other players' sprites and names on canvas *before any WebRTC connection is open*. When real P2P presence arrives and is verified, ghost entries are replaced.
-
-**Why only the arbiter writes.** GitHub Gist rate limit is 5,000 authenticated requests/hour per token. At 50k concurrent players each writing on join: ~14 writes/second — instantly rate-limited. The arbiter is a single writer making one write per minute: 1 request/min, orders of magnitude under the limit. Clients only read; Gist raw content is served from GitHub's CDN edge and scales to any read volume without hitting the API.
-
-**Gist file format** (extends the existing arbiter beacon file):
-
-```json
-{
-  "peerId": "<arbiter trystero peer id>",
-  "state": "<signed world state string>",
-  "signature": "<arbiter ed25519 sig>",
-  "snapshot": [
-    { "name": "Alice",  "location": "cellar", "level": 5,  "ph": "ab12cd34", "ts": 1714435210 },
-    { "name": "Tyson",  "location": "tavern", "level": 12, "ph": "ef56gh78", "ts": 1714435205 },
-    ...up to 50 entries, sorted by ts descending
-  ],
-  "snapshotTs": 1714435210
-}
-```
-
-No signatures on individual snapshot entries — they are display-only hints, not authoritative state. Security: ghost entries cannot initiate trade, duel, or any signed action. They render as other players' sprites but are marked `ghost: true` internally and filtered out of any security-sensitive lookup.
-
-**Arbiter changes (`arbiter/index.js`):**
-
-```js
-// Rolling presence cache: peerId → { name, location, level, ph, ts }
-// Peers send their presence to the arbiter via a new wire action 'register_presence'
-const presenceCache = new Map(); // peerId → entry
-const PRESENCE_CACHE_TTL = 120000; // 2 minutes
-
-// New wire action in setupArbiterRoom:
-const [, getRegisterPresence] = r.makeAction('register_presence');
-getRegisterPresence((entry, peerId) => {
-    if (bans.has(entry.ph)) return; // rough ban check by ph
-    presenceCache.set(peerId, { ...entry, ts: Date.now() });
-});
-
-// Prune stale entries before each Gist write
-const prunePresenceCache = () => {
-    const cutoff = Date.now() - PRESENCE_CACHE_TTL;
-    for (const [id, e] of presenceCache) {
-        if (e.ts < cutoff) presenceCache.delete(id);
-    }
-};
-
-// Extend publishBeacon to include snapshot:
-async function publishBeacon(packet) {
-    prunePresenceCache();
-    const snapshot = Array.from(presenceCache.values())
-        .sort((a, b) => b.ts - a.ts)
-        .slice(0, 50)
-        .map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }));
-    const payload = { peerId: selfId, ...packet, snapshot, snapshotTs: Date.now() };
-    // ... existing fetch to GitHub Gist API (unchanged)
-}
-```
-
-**Arbiter Pi Zero W impact.** `presenceCache` is a plain Map bounded to active players (TTL 2 min). At 50k players across many shards this could grow large — cap at 500 entries total, evicting oldest:
-
-```js
-if (presenceCache.size > 500) {
-    const oldest = [...presenceCache.entries()].sort(([,a],[,b]) => a.ts - b.ts)[0];
-    presenceCache.delete(oldest[0]);
-}
-```
-
-Memory cost: 500 × ~100 bytes = ~50KB. CPU cost: one sort + slice every 60s. Negligible on Pi Zero.
-
-**Client changes (`src/networking.js`):**
-
-```js
-// Called from initNetworking, after Gist fetch resolves (already happening in main.js).
-export const seedFromSnapshot = (snapshot) => {
-    if (!Array.isArray(snapshot)) return;
-    for (const entry of snapshot) {
-        if (!entry.ph || !entry.location || players.has(entry.ph)) continue;
-        // Store as ghost — no peerId, no publicKey. Keyed by ph (display only).
-        // Real P2P presence will overwrite when it arrives.
-        if (!players.has('ghost:' + entry.ph)) {
-            trackPlayer('ghost:' + entry.ph, { ...entry, ghost: true, ts: entry.ts });
-        }
-    }
-};
-```
-
-Ghost entries are keyed `ghost:<ph>` so they can never collide with real Trystero peer IDs (which don't contain colons). When real presence for a peer with the same `ph` arrives and is verified, remove the ghost and add the real entry.
-
-**Renderer impact.** Ghost players render at their last known `location` but with a subtle visual distinction — 50% opacity or a faded color, so the local player can tell who is "live" vs "cached". Add a `ghost` flag check in `renderer.js`:
-
-```js
-// renderer.js — when drawing other players
-const alpha = entry.ghost ? 0.4 : 1.0;
-ctx.globalAlpha = alpha;
-// ... draw sprite
-ctx.globalAlpha = 1.0;
-```
-
----
-
-#### **Technique B — Arbiter Peer Rendezvous Endpoint (Approach #1, lightweight)**
-
-**What it does.** The arbiter exposes a new HTTP endpoint `/peers?shard=<shardName>` that returns the current presence data for all active players in a specific shard. When a client calls `joinInstance(location)`, it immediately hits this endpoint and seeds the `players` map with the returned entries — *before* Trystero has found anyone via the BitTorrent tracker. This means the Minisketch on first `onPeerJoin` starts from a populated baseline, and the sketch diff on first contact is tiny (usually empty) rather than covering all unknown peers.
-
-**Why not full ICE rendezvous.** True ICE rendezvous (posting SDP offers to the arbiter so new peers can skip BitTorrent tracker discovery entirely) requires accessing Trystero's underlying `RTCPeerConnection` SDP, which isn't exposed by the library. The lightweight version here is practical: it doesn't eliminate tracker discovery but it ensures the Minisketch + presence bootstrap happens the instant the WebRTC channel opens, not after a reconciliation round-trip.
-
-**Arbiter changes (`arbiter/index.js`):**
-
-```js
-// HTTP endpoint — add to healthServer handler:
-} else if (req.url.startsWith('/peers')) {
-    const url = new URL(req.url, 'http://localhost');
-    const shard = url.searchParams.get('shard');
-    const entries = shard
-        ? Array.from(presenceCache.values()).filter(e => e.shard === shard)
-        : Array.from(presenceCache.values());
-    prunePresenceCache();
-    res.writeHead(200, { ...cors, 'Cache-Control': 'public, max-age=10' });
-    res.end(JSON.stringify(entries.map(({ name, location, level, ph, ts }) => ({ name, location, level, ph, ts }))));
-}
-```
-
-The `shard` field is added to presence registrations: `presenceCache.set(peerId, { ...entry, shard: entry.shard, ts: Date.now() })`.
-
-`Cache-Control: max-age=10` means responses are cached for 10 seconds at any reverse-proxy or CDN in front of the Pi. Multiple players joining the same shard within 10s share one Pi HTTP response. Pi Zero W CPU cost: one Map filter + JSON.stringify per unique request per 10s window. Negligible.
-
-**Client changes (`src/networking.js`):**
-
-```js
-// In joinInstance, immediately after setting rooms.torrent:
-if (ARBITER_URL) {
-    fetch(`${ARBITER_URL}/peers?shard=${encodeURIComponent(shard)}`, {
-        signal: AbortSignal.timeout(3000)
-    })
-    .then(r => r.ok ? r.json() : [])
-    .then(entries => seedFromSnapshot(entries))
-    .catch(() => {}); // non-fatal — P2P still works without this
-}
-```
-
-The `seedFromSnapshot` function (from Technique A) handles both the Gist snapshot and the arbiter `/peers` response — same shape, same ghost-entry logic. One function, two callers.
-
-**Client registration.** Peers register their presence with the arbiter when joining a shard. Add to `setupShard` alongside the global room setup:
-
-```js
-// After identity is ready, register with arbiter for rendezvous
-const registerWithArbiter = async () => {
-    if (!playerKeys || !ARBITER_URL) return;
-    const entry = await myEntry();
-    if (!entry) return;
-    // Send via the global Trystero room (arbiter is in 'global', not the shard)
-    // Use existing sendPresenceSingle mechanism on globalRooms — arbiter receives it
-    // and caches it. No new wire protocol needed if arbiter is in global room.
-    // Alternatively: POST to ARBITER_URL/register (simpler, more reliable)
-    fetch(`${ARBITER_URL}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            name: entry.name,
-            location: entry.location,
-            level: entry.level,
-            ph: entry.ph,
-            shard,
-        }),
-        signal: AbortSignal.timeout(3000),
-    }).catch(() => {});
-};
-setTimeout(registerWithArbiter, 500); // after identity confirmed ready
-```
-
-**Arbiter HTTP POST handler:**
-
-```js
-} else if (req.url === '/register' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-        try {
-            const entry = JSON.parse(body);
-            if (entry.ph && entry.location) {
-                if (presenceCache.size > 500) {
-                    const oldest = [...presenceCache.entries()].sort(([,a],[,b]) => a.ts - b.ts)[0];
-                    presenceCache.delete(oldest[0]);
-                }
-                presenceCache.set(entry.ph, { ...entry, ts: Date.now() });
-            }
-            res.writeHead(200, cors);
-            res.end('{}');
-        } catch { res.writeHead(400); res.end(); }
-    });
-}
-```
-
-Note: we key by `ph` (not peerId) for the POST endpoint since peerId is a Trystero runtime ID not known to the HTTP layer. This is fine — `ph` is unique per player identity.
-
----
-
-#### **Ghost entry lifecycle**
-
-```
-Page load
-  └─ Gist fetch → seedFromSnapshot() → ghost entries in players map
-  └─ joinInstance(location) → /peers?shard=X → seedFromSnapshot() → refresh ghosts for this shard
-
-onPeerJoin(peerId)
-  └─ Identity handshake → publicKey stored
-  └─ Presence received + verified → trackPlayer(peerId, real entry)
-  └─ Remove ghost: if real entry's ph matches a ghost key, players.delete('ghost:' + ph)
-```
-
-Ghost cleanup happens in `processPresenceSingle` after a verified presence is stored:
-
-```js
-// After trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now() }):
-players.delete('ghost:' + unpacked.ph); // evict stale ghost for this identity
-```
-
----
-
-#### **Security model**
-
-Ghost entries are display-only. They are:
-- Excluded from `localIds()` in Minisketch (only real peerId strings matter for reconciliation)
-- Excluded from proposer election (`Array.from(players.keys())` filtered for `ghost:` prefix)
-- Excluded from rollup leaf data (`buildLeafData` skips ghost entries)
-- Excluded from duel/trade target lookups
-- Never signed, never verified — they are explicitly untrusted display hints
-
-A malicious Gist entry (if someone compromised the arbiter's Gist token) could display fake players. This is cosmetic only — it cannot affect game state, XP, or combat. Ghost entries disappear when their TTL (2 min from snapshot timestamp) expires with no P2P confirmation.
-
----
-
-#### **Implementation order**
-
-| Step | What | Files | Lines |
-|------|------|-------|-------|
-| 1 | `presenceCache` + prune + `/register` POST endpoint | `arbiter/index.js` | ~40 |
-| 2 | `/peers?shard=` GET endpoint | `arbiter/index.js` | ~15 |
-| 3 | Extend `publishBeacon` to include snapshot | `arbiter/index.js` | ~20 |
-| 4 | `seedFromSnapshot()` + ghost entry logic | `src/networking.js` | ~35 |
-| 5 | Gist parse in `processBeacon` + call `seedFromSnapshot` | `src/main.js` | ~10 |
-| 6 | `/peers` fetch in `joinInstance` | `src/networking.js` | ~10 |
-| 7 | `registerWithArbiter` on shard join | `src/networking.js` | ~15 |
-| 8 | Ghost rendering (50% alpha) in `renderer.js` | `src/renderer.js` | ~5 |
-| 9 | Ghost cleanup in `processPresenceSingle` | `src/networking.js` | ~3 |
-
-Total: ~153 lines across 4 files. No new files. No new dependencies. Arbiter requires a restart to pick up the new endpoints.
-
----
-
-#### **Pi Zero W impact summary**
-
-| Addition | Memory | CPU |
-|----------|--------|-----|
-| `presenceCache` Map (500 entries max) | ~50KB | Negligible |
-| `/peers` endpoint | 0 | One Map filter + JSON.stringify per 10s per shard |
-| `/register` POST | 0 | One JSON.parse + Map.set per player join |
-| Gist snapshot in `publishBeacon` | 0 | One sort + slice per 60s write |
-
-All O(1) or O(n) with small bounded n. No loops in hot paths.
-
----
-
-#### **Test additions**
-
-- `src/networking.peer.test.js` (extend existing):
-  - `seedFromSnapshot` with valid entries populates players map as ghosts
-  - Ghost entries keyed `ghost:<ph>` do not appear in `localIds()` or `buildLeafData()`
-  - Verified real presence for same `ph` removes the ghost entry
-  - `seedFromSnapshot` with empty/null/malformed data does not throw
-  - Ghost entries with `ts` older than 2 minutes are treated as stale and not rendered
-
-- Arbiter unit tests (if test harness exists): `/register` accepts valid entry, rejects malformed body; `/peers?shard=X` returns only entries for that shard; presenceCache evicts at 500 entries.
-
----
-
-### **Phase 7.9.9: Architecture Hardening & ECS Migration — DONE**
-
-**7.9.9.1 — Architecture Seams**
-- Established `app`, `domain`, `content`, and `adapters` layers.
-- Introduced lightweight hybrid ECS in `src/domain/ecs.js`.
-- Decoupled DOM access via `src/adapters/dom/shell.js`.
-- Implemented static build validation (typecheck, content-validation).
-
-**7.9.9.2 — Fixed-Timestep Loop & ECS Migration**
-- Implemented fixed-timestep `GameLoop` (`src/app/loop.js`).
-- Migrated movement and input logic into pure ECS Systems (`InputSystem`, `MovementSystem`).
-- Introduced deterministic "Grammar Scatter" for seasonal room variation.
-- Added performance-focused `Pool` class for entity reuse.
-
-**7.9.9.3 — Standardisation & Cleanup**
-- Resolved all lingering TypeScript errors and network stack technical debt.
-- Modularized game content into `src/content/data/` using strict registries.
-- Standardized P2P networking as an ECS-aware `NetworkSystem`.
-- Established `TweenSystem` and `DialogueSystem` as foundations for the Phase 8 graphical client.
-- Cleaned up deprecated code (IBLT, legacy movement side-effects).
-
----
-
-### **Phase 8: Full Zelda-Style Graphical Client — TODO**
-
-Target feel: ALttP / Link's Awakening. No visible text log during play. All feedback is spatial, animated, and momentary.
-
-*Architectural Note: Phase 8 must strictly build upon the Phase 7.9.9.1 architecture. All DOM interaction must go through adapters, all game loop tracking through the ECS runtime, and all data extensions through the Content Registries.*
-
-**Procedural Pixel Art Methodology (The <200KB Constraint):**
-To achieve a SNES-style visual fidelity without blowing past the strict 200KB bundle limit, Phase 8 relies entirely on code-driven, procedural art. **No traditional image files (PNGs) or large Base64 strings are permitted.**
-1. **Procedural Tiles:** Functions like `drawTile` in `src/graphics/graphics.js` generate textures (grass tufts, stone cracks) via seeded RNG `fillRect` calls. Because the RNG is seeded by the grid coordinate, the texture is deterministic and stable across frames.
-2. **Offscreen Canvas Cache:** To maintain 60fps, rooms are procedurally drawn *once* into an `OffscreenCanvas` upon entry. The core render loop then simply stamps this cached image onto the main canvas.
-3. **Bitmask Sprites:** Entities (heroes, enemies, items) use 8x12 or 16x16 bitmasks (defined as hexadecimal arrays like `[0x3C, 0x7E...]`). These shapes are stamped onto offscreen canvases and colorized dynamically using the `applyPalette` utility. This allows infinite visual variety (e.g., different colored armor, varying wolf types) for virtually zero byte cost.
-4. **Authored Level Design:** Rooms use `tileOverrides` to stamp specific, hard-coded features (like bookshelves or water pools) onto the procedural base, ensuring levels feel hand-crafted despite being generated by code.
-
-**Rendering foundation (from Phase 7.85):**
-Phase 7.85 lands the five rendering fixes (DPR, aspect-ratio, RAF loop, tile cache, tab blur). Phase 8 builds directly on top of that — do not start Phase 8 renderer work until those are complete and stable.
-
-**Viewport / layout rules:**
-* The world viewport is orientation-aware, not just scaled. Portrait should bias toward a taller slice of the room and bottom-aligned controls; landscape should bias toward a wider slice and more lateral visibility.
-* Canvas, HUD, and interaction hotspots must all consume the same viewport metrics so tile clicks and touch targets remain aligned after resize/orientation changes.
-* The room camera should preserve a stable tile grid in both orientations. Do not let CSS stretching change gameplay coordinates.
-
-**Collision / occupancy:**
-* Phase 8 adds explicit occupancy rules for tiles and entities. A tile can be `walkable`, `solid`, `interactive`, or `occupied`.
-* **Implementation:** Collision logic must be driven by the ECS runtime (`src/app/runtime.js`). Do not bake collision state directly into the renderer.
-* Movement must resolve collisions before movement tweening commits via the Event Bus.
-* Collision metadata must be registered natively via `defineRoom()` in `src/content/define.js`. Start with single-tile axis-aligned blocking. No physics engine.
-
----
-
-**Procedural world freshness — keeping maps consistent across all peers**
-
-The core constraint: `worldState.seed` + `worldState.day` must produce the same world for every peer. This is already true for tile variation (seeded RNG per tile). Phase 8 extends this to room layout.
-
-*The problem.* Currently rooms are structurally static every day. There's nothing to rediscover.
-
-*The solution.* **Seasonal layout variation via the day seed.** Rooms stay structurally stable (exits never move) but their interior changes on a slow cadence.
-
-```js
-// rules/world.js — new export
-export function roomDaySeed(roomKey, day) {
-    const week = Math.floor(day / 7);
-    return hashStr(roomKey) ^ (week * 0x9e3779b9);
-}
-```
-
-Use `roomDaySeed` for:
-- **Scenery placement** — scatter barrels, trees, altars within the room bounds. **Must be defined via `defineRoom()` in the content registry.**
-- **Loot tile positions** — the tile with a pickup item moves each week.
-- **Enemy starting position** — make it fully driven by `roomDaySeed`.
-- **Light sources** — which scenery objects are torches varies by day.
-
-*What stays fixed.* Exit tile positions never change — they're defined in `data.js` and rooms are navigable day-to-day. Room dimensions never change. NPCs stay at their authored positions (wandering is cosmetic, not layout-changing).
-
-*Procedural dungeon floors.* For new underground rooms, generate the room's `tileOverrides` array dynamically using the content pipeline (`defineRoom()`), seeded by `roomDaySeed`.
-
-```js
-export function generateDungeonOverrides(roomKey, day, width, height) {
-    const rng = seededRNG(roomDaySeed(roomKey, day));
-    const overrides = [];
-    // scatter water/chasm tiles as obstacles (never on exits, never blocking the center)
-    const count = 3 + (rng() * 5 | 0);
-    for (let i = 0; i < count; i++) {
-        overrides.push({ x: 1 + (rng() * (width - 2) | 0), y: 1 + (rng() * (height - 2) | 0), type: 'chasm' });
-    }
-    return overrides;
-}
-```
-
-All peers call this with the same `roomKey` + `day` → same overrides. The room feels different each week. No network traffic required — the seed is the sync mechanism.
-
-*Room grammar and authored set-dressing.* Keep a deliberate split between procedural noise and authored landmarks:
-* Procedural: floor/grass/water/wall fill, scatter, seasonal tint, fog, lighting falloff.
-* Authored: doors, rugs, shelves, altar footprints, boss markers, collision blockers, room-signature silhouettes.
-* The goal is to make every room feel hand-composed even when most of the pixels are seeded.
-
-*Unexplored room "fog".* When a peer first enters a room in the current week, mark `exploredRooms[roomKey + ':' + week] = true` in IndexedDB. The renderer can draw a subtle fog overlay on tiles outside the player's current sightline radius (e.g., 4 tiles), lifting as they move. This is local-only — it doesn't affect other peers and requires no state sync. It makes large rooms feel like genuine exploration rather than instant reveals.
-
-*Day/season visual theming.* The existing time-of-day tint (`getTimeOfDay()`) already varies by hour. Add a season pass in the tile renderer:
-
-```js
-// renderer.js — applied after the tile layer, before entities
-const season = SEASONS[Math.floor(worldState.day / SEASON_LENGTH) % 4];
-if (season === 'winter') ctx.fillStyle = 'rgba(200,220,255,0.07)';
-if (season === 'autumn') ctx.fillStyle = 'rgba(120,60,0,0.05)';
-// spring/summer: no tint
-if (ctx.fillStyle !== ...) { ctx.fillRect(0, 0, CW, CH); }
-```
-
-This is one overlay pass on the cached tile layer — essentially free.
-
----
-
-**Sprite system & ECS Integration:**
-* Character/enemy/NPC sprites are **authored** — palette-indexed pixel arrays defined in `graphics.js`, drawn onto `OffscreenCanvas`.
-* **ECS Driven:** Do not build bespoke tracking maps in `renderer.js`. Utilize the `appRuntime` ECS to track entity state. Create generic `Transform` and `Tweenable` components. The renderer should iterate over entities with these components to draw frames, decoupling game state from view state.
-* Terrain tiles stay **fully procedural** seeded-RNG.
-* Scenery objects get designed silhouettes but procedural color/position variation.
-* Unknown peer sprites fall back to the existing hash-identicon generator (`generateCharacterSprite`).
-* Object pool (`src/app/pool.js`) — use for short-lived ECS entities (floating text, particles).
-
-**Renderer / visuals:**
-* Smooth tile movement — ECS `Tweenable` component interpolates over ~100ms.
-* Sparse tile overrides — defined via `defineRoom` in `data.js`/`content`. Allows authored set-dressing.
-* Dynamic lighting — at night, draw a `createRadialGradient` vignette centered on player.
-* Weather layer — occasional rain/snow via short-lived ECS particle entities.
-* Collision readability — blocked tiles should be visually explainable, not mysterious. Use subtle blockers, doorway frames, and shadow cues so players can read why they cannot step there.
-* Orientation-aware layout — portrait can expose a taller action stack and shorter side gutters; landscape can expose a wider playfield and a compact side panel. The same room should feel intentionally laid out in both modes.
-
-**HUD & DOM Shell cleanup:**
-* Phase 8 removes the legacy HTML elements (`#status-bar`, `#ticker`).
-* **Implementation:** Do not manually target these in JS. Update `SHELL_HTML` in `src/adapters/dom/shell.js` and remove them from `src/index.html`.
-* Heart containers for HP — drawn as designed pixel sprites on the canvas.
-* Rupee-style gold counter & ⚡ fight counter on canvas.
-* Active status effect icons on canvas.
-
-**Dialogue system (canvas-native):**
-* Bottom-of-canvas dialogue box, typewriter effect, A/B choice prompts.
-* Triggered via ECS/Bus, displayed entirely within `renderWorld` cycles.
-
-**Notification system:**
-* `showItemFanfare(itemName)` shows designed sprite centered above text.
-* `showFloatingText` uses pooled ECS entities for "MISS" or status names.
-
-**Mobile controls:**
-* Virtual D-pad (bottom-left canvas overlay, touch only) — semi-transparent, fires `input:action` bus events.
-* Context "A" button (bottom-right).
-* **Chat Input:** Do not use `window.prompt`. Must use the DOM adapter port: `appRuntime.ports.ui.requestText({ placeholder: 'Say...' })`.
-
-**Audio:**
-* Zone BGM — `playBGM(zoneType)` builds a looping arpeggio/chord sequence via `setInterval` + 2-3 oscillators. Zone types: `grass`, `dungeon`, `town`. `stopBGM()` fades gain over 500ms; `playBGM(newZone)` fades in — crossfade on room transition.
-* Footstep sounds — short noise burst (~30ms) on each tile step, pitched by tile type (higher/crisper for stone, duller for grass). Gated to max 1 per 150ms.
-* Hit SFX upgraded — noise burst layer under oscillator for meatier impact.
-
-**Phase 9 (unchanged):** A/B testing and anonymous telemetry.
-**Phase 10 (unchanged):** Onboarding, SEO, monetization finalization.
-
-### **Phase 9: A/B Testing & Analytics — TODO**
-
-* Implement anonymous, privacy-respecting telemetry for player retention and balancing.
-* Add A/B testing hooks for UI layouts and combat stats driven by the Arbiter seed.
-
-### **Phase 10: Marketing & Launch Prep — TODO**
-
-* Onboarding/Tutorial: A smooth, visually guided "first session" experience.
-* SEO & Meta Optimization for social sharing.
-* Finalize monetization (refined rewarded ads) and promotional materials.
-
-## **Key Gaps (not yet implemented)**
-
-* **Arbiter election** — Pi is always assumed to be the sole Arbiter. No electArbiter logic exists.
-
-## **Packer Layouts**
-
-Presence packet (96 bytes):
-
-\[0-15\]  Name (UTF-8, null-padded, byte-truncated to 16\)  
-\[16\]  Location (index into ROOM\_MAP)  
-\[17-20\] PH (4 bytes from 8-char hex)  
-\[21\]   Level (Uint8)  
-\[22-25\] XP (Uint32BE)  
-\[26-31\] TS (48-bit: Uint16BE high word at 26, Uint32BE low word at 28\)  
-\[32-95\] Signature (64 bytes, Ed25519)
-
-DuelCommit packet (70 bytes):
-
-\[0\]    Round (Uint8)  
-\[1\]    Damage (Uint8)  
-\[2-5\]  Day (Uint32BE)  
-\[6-69\] Signature (64 bytes)
-
-All multi-byte DataView fields are big-endian. Always pass false explicitly.
-
-## **Fraud Proof Format**
-
-JavaScript
-
-// witness.presence must include disputedRoot to prevent replay attacks  
-{  
-  rollup: { rollup, signature, publicKey },  
-  witness: {  
-    id: selfId,  
-    presence: { name, location, ph, level, xp, ts, disputedRoot: rollup.root },  
-    signature: string,   // Ed25519 sig over JSON.stringify(presence)  
-    publicKey: string,   // Base64 public key of the witness  
-  }  
-}
-
-Arbiter checks presence.disputedRoot \=== rollup.root before accumulating the report.
-
-## **Proposer Election**
-
-JavaScript
-
-const all \= Array.from(players.keys()).concat(selfId).sort();  
-const slot \= Math.floor(Date.now() / ROLLUP\_INTERVAL) % all.length;  
-// Primary: all\[slot\] \=== selfId  
-// Fallback: if lastRollupReceivedAt \> 1.5× interval, all\[(slot+1) % all.length\] \=== selfId
-
-* Don't propose if alone (all.length \< 2\) — prevents Arbiter spam.  
-* createMerkleRoot is **lazy-imported** inside the rollup interval. Don't move it to top-level imports.  
-* buildLeafData() in networking.js filters selfId from players before pushing self explicitly — prevents double-leaf fraud false-positives.
-
-## **Arbiter Notes**
-
-* Day tick: scheduleTick() (recursive setTimeout targeting last\_tick \+ 86400000). On restart it loops to catch up all missed days before scheduling the next real tick.  
-* Rate limiting: one rollup per public key per ROLLUP\_INTERVAL \* 0.8 ms (lastRollupTime map).  
-* Ban persistence: worldState.bans \= Array.from(bans) written before every schedulePersist().  
-* Peer join: sends state only to the new peer (sendState(packet, \[peerId\])), not a full broadcast.  
-* Maps lastRollupTime and fraudCounts are purged hourly to prevent unbounded growth on Pi Zero.  
-* doReset() clears fraudCounts and lastRollupTime. 
-
----
-
-### **Phase 8.2: Unified Procedural Tilemap & Map Editor — COMPLETE**
-
-**Tile art pass:**
-* Replaced emoji scenery labels in `rooms.js` with string keys (`'tree'`, `'rock'`, `'crate'`, etc.) — no emoji rendering in the canvas pipeline (ADR-011).
-* Extended `TILE_PAL` in `graphics.js` with richer LttP/Stardew-inspired palettes for all existing tile types.
-* Added three new tile types: `dungeon` (blue-grey interlocking tiles, LttP dungeon style), `cave` (earthy cobblestone, Stardew mine style), `ice` (pale blue-white frost with hairline cracks).
-* Added 13 new sprite shapes to `SHAPES`: `scroll`, `barrel`, `stall`, `sign`, `wheel`, `torch`, `bones`, `anchor`, `snowflake`, `crown`, `ladder`, `shell`, `candle`, `door_arch`.
-* Added `getSceneryPalette(label)` to `graphics.js` — compact grouped palette lookup, no per-scenery object overhead.
-* Updated `zoneTileType()` to map all 27 rooms to appropriate tile types including the new `dungeon`, `cave`, `ice` types.
-* Simplified `drawScenery()` in `map-render-system.js` — direct string key lookup, no emoji map, no emoji fallback text.
-
-**Portal system:**
-* Edge exits now use LttP-style full-side boundary crossing (ADR-013) — player position preserved along the edge.
-* Movement system uses `loc.exits[dir]` + boundary check for edge transitions; position offset clamped to destination dimensions.
-* `door` type exits remain specific-tile walk-through portals.
-
-**DSL extension:**
-* `defineRoom()` in `define.js` now parses an optional `tiles` row-string array — single char per tile (`W`, `G`, `I`, etc.) for compact hand-authored tile overrides (ADR-012).
-
-**Map editor tool (`tools/editor.html` + `tools/editor.js`):**
-* Standalone browser tool — zero dependencies, import via `<script type="module">`.
-* Left panel: world graph canvas — all 27 rooms as labeled nodes, edges drawn (dashed red = orphaned/non-reciprocal exit).
-* Right panel: tile grid editor — click to paint tile types, right-click to place/clear scenery sprites.
-* Bottom: live DSL output (copy to clipboard → paste into `rooms.js`).
-* Resize rooms with +Row/-Row/+Col/-Col toolbar buttons.
-* Editor state persisted to `localStorage` between sessions.
-* Scenery picker shows rendered sprite previews using the same `getGrayscaleTemplate` + `applyPalette` pipeline as the game.
-
-**Bundle:** 215KB — within the updated 250KB limit.
-
----
-
-### **Phase 8.3: Room Art Direction & Multi-Tile Sprites — COMPLETE**
-
-**Multi-tile sprite system:**
-* `define.js` already parsed `w,h` from scenery DSL (Phase 8.2 foundation). Phase 8.3 confirmed all 27 rooms use it correctly.
-* `map-render-system.drawScenery` scales sprite to `w*S × h*S`; calls `drawLargeTree` when `label === 'tree' && w > 1`.
-* `drawLargeTree(ctx, cx, cy, wPx, hPx, seed)` — procedural circular canopy, seeded tufts, trunk with shadow rim.
-* `MovementSystem.handleMove` — entity occupants (NPC/enemy) checked BEFORE scenery to prevent scenery at same tile silently blocking NPC interaction (bug fix: hallway torch at 2,2 was blocking the guard).
-
-**New SHAPES (all used in room layouts):** `bookshelf`, `fireplace`, `chair`, `counter`, `cauldron`, `pillar`, `table`, `bed`, `altar`, `anchor`, `bones`, `candle`, `crown`, `grave`, `ladder`, `scroll`, `shell`, `sign`, `snowflake`, `stall`, `torch`, `wheel` — full set of 22 sprite shapes.
-
-**Room art direction (all 27 rooms):**
-* Indoor rooms: perimeter wall (`W`) border with exit tiles left open; warm `interior` or `stone_floor` default.
-* `market`: stone path in + shape (center column and row `S` tiles) against interior default — visual distinction between plaza and stall areas.
-* `tavern`: bar counter (4×1) across north wall, 4 tables with chairs, fireplace NE corner, barkeep + bard NPCs.
-* `library`: four 3×2 bookshelf clusters on wall alcoves, reading chairs, central scroll, north fireplace.
-* `herbalist_hut`: dominant 2×2 cauldron left-center, work table + scroll, herb plants, mushrooms.
-* `catacombs`: tomb alcoves via tileOverrides, bone piles in quadrants, candle perimeter, central altar.
-* `throne_room`: stone_floor dais (tileOverrides rows 1-4 cols 5-9), 3×2 crown on dais, pillar flanks, 2×2 throne chair.
-* `forest_edge` / `forest_depths`: 10 and 14 large 3×3 tree canopies respectively; scattered mushroom/rock/shrub via `sceneryScatter`.
-* `cemetery`: 12 graves in 4 quadrant clusters, stone_floor N-S path (tileOverrides), 4 corner trees.
-* `mountain_pass`: narrow stone_floor path (tileOverrides center columns x=8-11) through wall-tile cliff.
-
-**Test fixes:**
-* `getTimeOfDay` mocked in `ui.test.js` — prevents flaky "Attack Forest Wolf" button test failing at night.
-* NPC-before-scenery collision fix ensures `commands.test.js` "walking into NPC" test is deterministic.
-
-**Bundle:** 223.4KB — within the 250KB limit.
+* [DECISIONS.md](/Users/tysonross/Documents/GitHub/untitled-micro-mmo/DECISIONS.md) is the historical ADR log.
+* [CLAUDE.md](/Users/tysonross/Documents/GitHub/untitled-micro-mmo/CLAUDE.md) is the short implementation guardrail companion.

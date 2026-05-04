@@ -17,23 +17,6 @@ export const handleSocialCommands = async (command, args) => {
             return true;
         }
 
-        case 'say': {
-            const text = args.slice(1).join(' ').trim();
-            if (!text) return true;
-            gameActions.sendEmote({ room: localPlayer.location, text: `says: "${text}"` });
-            bus.emit('chat:say', { name: 'You', text });
-            return true;
-        }
-
-        case 'wave':
-        case 'bow':
-        case 'cheer': {
-            const emoteText = command === 'wave' ? 'waves hello.' : command === 'bow' ? 'bows respectfully.' : 'cheers loudly!';
-            gameActions.sendEmote({ room: localPlayer.location, text: emoteText });
-            log(`[Social] You ${emoteText}`);
-            return true;
-        }
-
         case 'rename': {
             const newName = args.slice(1).join(' ').trim();
             if (!newName) { bus.emit('log', { msg: `Usage: /rename <name>` }); return true; }

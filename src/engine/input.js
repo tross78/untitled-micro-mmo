@@ -35,10 +35,14 @@ export class InputManager {
     this.prevGamepadButtons = new Set();
     this.gamepadConnected = false;
     this.touchStart = { x: 0, y: 0 };
+    this.lastInputMode = 'keyboard'; // 'keyboard', 'gamepad', 'touch'
   }
 
   init() {
-    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    window.addEventListener('keydown', (e) => {
+      this.lastInputMode = 'keyboard';
+      this.handleKeyDown(e);
+    });
     window.addEventListener('keyup', (e) => this.handleKeyUp(e));
     
     // D1: Gamepad connection tracking
@@ -51,10 +55,12 @@ export class InputManager {
     const canvas = getGameAreaEl();
     if (canvas) {
       canvas.addEventListener('touchstart', (e) => {
+        this.lastInputMode = 'touch';
         this.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       }, { passive: true });
 
       canvas.addEventListener('touchend', (e) => {
+        this.lastInputMode = 'touch';
         const touchEnd = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
         const dx = touchEnd.x - this.touchStart.x;
         const dy = touchEnd.y - this.touchStart.y;
@@ -134,6 +140,7 @@ export class InputManager {
           const pressed = gp.buttons[b.idx].pressed;
           const key = `${gp.index}-${b.idx}`;
           if (pressed && !this.prevGamepadButtons.has(key)) {
+            this.lastInputMode = 'gamepad';
             bus.emit('input:action', { action: b.action, type: 'down' });
             this.prevGamepadButtons.add(key);
           } else if (!pressed && this.prevGamepadButtons.has(key)) {
@@ -145,9 +152,13 @@ export class InputManager {
         // Stick mapping (simple threshold)
         const stickThreshold = 0.5;
         const checkStick = (val, posAction, negAction) => {
-          if (val > stickThreshold) this.emitContinuous(posAction);
-          else if (val < -stickThreshold) this.emitContinuous(negAction);
-          else {
+          if (val > stickThreshold) {
+            this.lastInputMode = 'gamepad';
+            this.emitContinuous(posAction);
+          } else if (val < -stickThreshold) {
+            this.lastInputMode = 'gamepad';
+            this.emitContinuous(negAction);
+          } else {
             this.stopContinuous(posAction);
             this.stopContinuous(negAction);
           }

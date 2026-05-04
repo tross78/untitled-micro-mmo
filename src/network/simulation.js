@@ -53,6 +53,9 @@ export const updateSimulation = (state) => {
             localPlayer.currentEnemy = null;
             localPlayer.forestFights = 15;
             localPlayer.combatRound = 0;
+            if (localPlayer.statusEffects) {
+                localPlayer.statusEffects = localPlayer.statusEffects.filter(effect => effect.id !== 'well_rested');
+            }
             if (localPlayer.buffs) {
                 localPlayer.buffs.rested = false;
                 localPlayer.buffs.activeElixir = null;

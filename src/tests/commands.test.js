@@ -20,7 +20,6 @@ jest.mock('../ui/index.js', () => ({
 jest.mock('../network/index.js', () => ({
     gameActions: {
         sendMove: jest.fn(),
-        sendEmote: jest.fn(),
         sendPresenceSingle: jest.fn(),
         sendMonsterDmg: jest.fn(),
         sendActionLog: jest.fn()
@@ -191,6 +190,77 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
                 attacker: 'You',
                 target: 'Forest Wolf'
             }));
+        });
+    });
+
+    describe('Quest Progression', () => {
+        test('quest accept enforces prerequisites', async () => {
+            localPlayer.location = 'hallway';
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('quest accept bandit_sweep');
+
+            expect(localPlayer.quests.bandit_sweep).toBeUndefined();
+        });
+
+        test('explore quests progress on room transition', async () => {
+            localPlayer.location = 'hallway';
+            localPlayer.x = 5;
+            localPlayer.y = 1;
+            localPlayer.quests.find_tavern = { progress: 0, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('move north');
+            step();
+            step();
+
+            expect(localPlayer.location).toBe('tavern');
+            expect(localPlayer.quests.find_tavern.progress).toBe(1);
+            expect(emitSpy).toHaveBeenCalledWith('quest:progress', {
+                name: 'Find the Tavern',
+                current: 1,
+                total: 1
+            });
+        });
+
+        test('rest quests only progress once per day', async () => {
+            localPlayer.location = 'tavern';
+            localPlayer.quests.tavern_regular = { progress: 0, completed: false };
+            worldState.day = 7;
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('rest');
+            step();
+            expect(localPlayer.quests.tavern_regular.progress).toBe(1);
+
+            await handleCommand('rest');
+            step();
+            expect(localPlayer.quests.tavern_regular.progress).toBe(1);
+        });
+
+        test('crafting bread advances the merchant recovery quest', async () => {
+            localPlayer.location = 'mill';
+            localPlayer.inventory = ['wheat', 'wheat'];
+            localPlayer.quests.market_recovery = { progress: 0, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('craft bread');
+
+            expect(localPlayer.inventory).toContain('bread');
+            expect(localPlayer.quests.market_recovery.progress).toBe(1);
+        });
+
+        test('scarcity and surplus both affect shop prices', async () => {
+            localPlayer.location = 'market';
+            localPlayer.gold = 10;
+            worldState.scarcity = ['wheat'];
+            worldState.event = { type: 'market_surplus' };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('buy wheat');
+
+            expect(localPlayer.gold).toBe(6);
+            expect(localPlayer.inventory).toContain('wheat');
         });
     });
 

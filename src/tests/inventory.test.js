@@ -20,7 +20,6 @@ jest.mock('../ui/index.js', () => ({
 jest.mock('../network/index.js', () => ({
     gameActions: {
         sendMove: jest.fn(),
-        sendEmote: jest.fn(),
         sendPresenceSingle: jest.fn(),
         sendMonsterDmg: jest.fn(),
         sendActionLog: jest.fn()

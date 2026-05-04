@@ -1,4 +1,5 @@
 import { commandDefinitions } from '../content/commands.js';
+import { ITEMS, SCARCITY_ITEMS } from '../content/data.js';
 import { validateContent } from '../content/validate.js';
 import { getCommandDefinition, parseCommandInput } from '../commands/registry.js';
 
@@ -7,6 +8,12 @@ describe('content validation', () => {
         const result = validateContent();
         expect(result.ok).toBe(true);
         expect(result.problems).toEqual([]);
+    });
+
+    test('scarcity items all resolve to defined item ids', () => {
+        SCARCITY_ITEMS.forEach((itemId) => {
+            expect(ITEMS[itemId]).toBeDefined();
+        });
     });
 });
 
@@ -19,6 +26,14 @@ describe('command registry', () => {
     test('aliases resolve to canonical definitions', () => {
         expect(getCommandDefinition('get')?.id).toBe('pickup');
         expect(getCommandDefinition('go')?.id).toBe('move');
+    });
+
+    test('pruned social commands are no longer part of the public command surface', () => {
+        expect(getCommandDefinition('say')).toBeUndefined();
+        expect(getCommandDefinition('wave')).toBeUndefined();
+        expect(getCommandDefinition('bow')).toBeUndefined();
+        expect(getCommandDefinition('cheer')).toBeUndefined();
+        expect(getCommandDefinition('vision')).toBeUndefined();
     });
 
     test('command input parser strips slash and lowercases lookup id', () => {

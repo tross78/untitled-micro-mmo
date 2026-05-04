@@ -4,6 +4,7 @@ import { Component } from '../domain/components.js';
 import { applyPalette, PALETTES, getGrayscaleTemplate } from '../graphics/graphics.js';
 import { levelBonus } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
+import { inputManager } from '../engine/input.js';
 
 /**
  * UIRenderSystem handles HUD, dialogue, menus, and overlays.
@@ -120,7 +121,7 @@ export class UIRenderSystem {
         overlays.forEach(id => {
             const overlay = this.world.getComponent(id, Component.UIOverlay);
             if (now > overlay.expires) {
-                this.world.components.get(Component.UIOverlay).delete(id);
+                this.world.removeComponent(id, Component.UIOverlay);
                 return;
             }
 
@@ -207,7 +208,13 @@ export class UIRenderSystem {
             const alpha = 0.5 + Math.sin(Date.now() / 200) * 0.5;
             ctx.fillStyle = `rgba(204, 136, 255, ${alpha})`;
             ctx.textAlign = 'right';
-            ctx.fillText('▼', this.VP.CW - 10 - PAD, BOX_Y + BOX_H - PAD * 0.5);
+            
+            let diaHint = 'Space/Enter to advance';
+            if (inputManager.lastInputMode === 'gamepad') diaHint = '(A) to advance';
+            else if (inputManager.lastInputMode === 'touch') diaHint = 'Tap to advance';
+            
+            ctx.font = `${Math.floor(this.VP.S * 0.25)}px monospace`;
+            ctx.fillText(`${diaHint} ▼`, this.VP.CW - 10 - PAD, BOX_Y + BOX_H - PAD * 0.5);
         }
     }
 
@@ -279,7 +286,15 @@ export class UIRenderSystem {
         ctx.fillStyle = '#b6c39d';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Tap to choose • Arrows/Swipe to move • Enter/Space to confirm • Esc to back', panel.x + panel.w / 2, panel.y + panel.h - panel.pad * 0.85);
+        
+        let hint = '↑↓ / WASD to navigate  •  Enter/Space to confirm  •  Esc to back';
+        if (inputManager.lastInputMode === 'gamepad') {
+            hint = 'D-Pad / Stick to navigate  •  (A) to confirm  •  (B) to back';
+        } else if (inputManager.lastInputMode === 'touch') {
+            hint = 'Tap to choose  •  Swipe to move  •  Esc/Back to exit';
+        }
+        
+        ctx.fillText(hint, panel.x + panel.w / 2, panel.y + panel.h - panel.pad * 0.85);
     }
 
     getMenuLayout(menu) {

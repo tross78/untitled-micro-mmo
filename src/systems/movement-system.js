@@ -36,10 +36,10 @@ export class MovementSystem {
 
       if (intent.action === 'move') {
         this.handleMove(entityId, transform, intent.dir);
-        this.world.components.get(Component.Intent).delete(entityId);
+        this.world.removeComponent(entityId, Component.Intent);
       } else if (intent.action === 'interact') {
         this.handleInteract(entityId, transform);
-        this.world.components.get(Component.Intent).delete(entityId);
+        this.world.removeComponent(entityId, Component.Intent);
       }
     }
     
@@ -48,7 +48,7 @@ export class MovementSystem {
   }
 
   /**
-   * @param {number} entityId
+   * @param {number} _entityId
    * @param {any} transform
    * @param {string} dir
    */
@@ -135,10 +135,9 @@ export class MovementSystem {
    * @param {any} transform
    * @param {string} destId
    * @param {number} tx
-   * @param {number} ty
-   */
-  async performTransition(entityId, transform, destId, tx, ty) {
-    const prevLoc = transform.mapId;
+  * @param {number} ty
+  */
+  async performTransition(_entityId, transform, destId, tx, ty) {
     transform.mapId = destId;
     transform.x = tx;
     transform.y = ty;
@@ -147,8 +146,6 @@ export class MovementSystem {
     await joinInstance(destId, getCurrentInstance(), currentRtcConfig);
     const entry = await myEntry();
     if (entry && this.gameActions.sendPresenceSingle) this.gameActions.sendPresenceSingle(entry);
-    
-    bus.emit('player:move', { from: prevLoc, to: destId });
   }
 
   /**
@@ -186,9 +183,10 @@ export class MovementSystem {
     
     if (itemAtFeet) {
         const itemId = itemAtFeet.label === 'mushroom' ? 'red_mushroom' : 'herbs';
+        const item = ITEMS[itemId];
         localPlayer.inventory.push(itemId);
-        bus.emit('item:pickup', { item: { name: itemAtFeet.label } });
-        bus.emit('log', { msg: `You foraged a ${itemAtFeet.label}!`, color: '#0f0' });
+        bus.emit('item:pickup', { item });
+        bus.emit('log', { msg: `You foraged ${item?.name || itemAtFeet.label}!`, color: '#0f0' });
         return;
     }
 
