@@ -1,6 +1,6 @@
 # Hearthwick Implementation Guardrails
 
-This file is intentionally short. Use it for current implementation constraints. Use `AGENTS.md` for the active roadmap and working model of the product. Use `DECISIONS.md` for historical ADRs and non-negotiable architectural decisions.
+This file is intentionally short. Use it for current implementation constraints. Use `AGENTS.md` for the active roadmap and working model of the product. Use `DECISIONS.md` for historical ADRs and non-negotiable architectural decisions. Use `docs/*` for model-neutral product, architecture, content, and visual rules.
 
 ## Product Shape
 
@@ -21,6 +21,7 @@ This file is intentionally short. Use it for current implementation constraints.
 * **No dependencies:** follow ADR-009. Use native browser/platform APIs.
 * **Bundle limit:** 250KB minified. Treat growth over ~20KB as a design review trigger.
 * **Procedural assets only:** no external image or audio files.
+* **Asset pipeline:** PNGs are authoring inputs only. Runtime assets should come from checked-in generated modules under `src/generated/assets`, with legacy procedural shapes used as fallback during migration.
 * **Determinism:** no `Math.random()` in simulation, networking validation, or arbiter logic.
 
 ## Cohesion Rules

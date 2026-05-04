@@ -29,7 +29,17 @@ export class TweenSystem {
       if (tween.progress >= 1.0) this.world.removeComponent(entityId, Component.Tweenable);
     }
 
-    // 2. Process Attack Animations
+    // 2. Process Collision Bumps
+    const bumps = this.world.query([Component.CollisionBump]);
+    const BUMP_SPEED = 20.0; // Very fast vibration
+    for (const entityId of bumps) {
+      const bump = this.world.getComponent(entityId, Component.CollisionBump);
+      if (!bump) continue;
+      bump.progress += dt * BUMP_SPEED;
+      if (bump.progress >= 1.0) this.world.removeComponent(entityId, Component.CollisionBump);
+    }
+
+    // 3. Process Attack Animations
     const attacks = this.world.query([Component.AttackAnimation]);
     const ATTACK_SPEED = 12.0; // Complete in ~80ms
     for (const entityId of attacks) {

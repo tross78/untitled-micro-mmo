@@ -2,6 +2,7 @@
 
 import { appRuntime } from '../app/runtime.js';
 import { Component } from '../domain/components.js';
+import { bus } from '../state/eventbus.js';
 
 /**
  * Temporary compatibility layer for legacy UI functions that haven't 
@@ -20,6 +21,7 @@ export function setLogicalRefreshCallback(fn) { _triggerLogicalRefresh = fn; }
 export function showDialogue(npcName, text) {
     if (!text) {
         appRuntime.world.removeComponent(appRuntime.playerEntityId, Component.Dialogue);
+        bus.emit('dialogue:closed', {});
         return;
     }
 
@@ -43,6 +45,7 @@ export function advanceDialogue() {
 
     if (isFinished) {
         appRuntime.world.removeComponent(players[0], Component.Dialogue);
+        bus.emit('dialogue:closed', {});
         if (_triggerVisualRefresh) _triggerVisualRefresh();
         if (_triggerLogicalRefresh) _triggerLogicalRefresh();
         return false;

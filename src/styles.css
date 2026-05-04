@@ -4,15 +4,15 @@
 }
 
 body {
-  background: radial-gradient(circle at top, #203120 0%, #10160f 35%, #060806 100%);
-  color: #dfe8d2;
+  background: radial-gradient(circle at top, #203120 0%, #121812 35%, #080c08 100%);
+  color: #edf5d7;
   font-family: "Courier New", Courier, monospace;
   padding: 0;
   margin: 0;
   display: block;
   height: 100vh;
   height: 100dvh;
-  text-shadow: 0 0 2px rgba(180, 210, 170, 0.18);
+  text-shadow: 0 0 2px rgba(180, 210, 170, 0.12);
   overflow: hidden;
 }
 
@@ -46,7 +46,7 @@ body {
   margin-bottom: 8px;
   min-height: 0;
   scrollbar-width: thin;
-  scrollbar-color: #0f0 #000;
+  scrollbar-color: #c7d8ab #080c08;
   overscroll-behavior: contain;
 }
 
@@ -65,32 +65,34 @@ body {
   max-height: 26vh;
   overflow-y: auto;
   padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px);
-  border-top: 1px solid rgba(214, 226, 194, 0.28);
-  background: linear-gradient(180deg, rgba(8, 12, 8, 0.2) 0%, rgba(8, 12, 8, 0.88) 24%, rgba(8, 12, 8, 0.96) 100%);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.32);
+  border-top: 2px solid #c7d8ab;
+  background: linear-gradient(180deg, rgba(18, 24, 18, 0.4) 0%, rgba(18, 24, 18, 0.92) 24%, rgba(18, 24, 18, 0.96) 100%);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 -10px 32px rgba(0, 0, 0, 0.45);
   scrollbar-width: thin;
 }
 
 .action-btn {
-  background: rgba(48, 66, 43, 0.96);
+  background: rgba(56, 78, 48, 0.9);
   border: 1px solid #c7d8ab;
-  color: #edf5d7;
+  color: #f6edc5;
   font-family: inherit;
-  font-size: 0.85em;
-  padding: 10px 14px;
+  font-size: 0.88em;
+  padding: 11px 16px;
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: 8px;
   user-select: none;
   touch-action: manipulation;
   transition: all 0.1s ease;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
 .action-btn:active {
-  background: #d5e2ae;
-  color: #172014;
-  transform: translateY(2px);
+  background: #ffdd55;
+  border-color: #f6edc5;
+  color: #121812;
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 #suggestions {
@@ -102,14 +104,14 @@ body {
 }
 
 .chip {
-  background: #000;
-  border: 1px solid #0a0;
-  color: #0f0;
+  background: rgba(18, 24, 18, 0.9);
+  border: 1px solid #adc39d;
+  color: #edf5d7;
   font-family: inherit;
-  font-size: 0.82em;
-  padding: 4px 10px;
+  font-size: 0.85em;
+  padding: 5px 12px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 4px;
   user-select: none;
   touch-action: manipulation;
   transition: all 0.1s ease;
@@ -117,21 +119,21 @@ body {
 
 .chip:hover,
 .chip.active {
-  background: #0f0;
-  color: #000;
-  transform: scale(1.05);
+  background: #88cc44;
+  color: #121812;
+  border-color: #f6edc5;
 }
 
 .chip.immediate {
-  border-color: #0f0;
+  border-color: #ffdd55;
 }
 
 .input-container {
   display: flex;
   align-items: center;
-  padding: 4px 0;
-  border-top: 1px solid #222;
-  padding-bottom: max(4px, env(safe-area-inset-bottom));
+  padding: 6px 0;
+  border-top: 1px solid rgba(199, 216, 171, 0.2);
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
 }
 
 .input-container.is-hidden {
@@ -139,15 +141,16 @@ body {
 }
 
 #prompt {
-  color: #0a0;
-  margin-right: 8px;
+  color: #ffdd55;
+  margin-right: 10px;
   flex-shrink: 0;
+  font-weight: bold;
 }
 
 #input {
   background: transparent;
   border: none;
-  color: #0f0;
+  color: #f6edc5;
   font-family: inherit;
   font-size: inherit;
   flex: 1;
@@ -159,14 +162,14 @@ body {
   display: none;
   width: 100%;
   height: 250px;
-  background: #050505;
-  border: 1px solid #111;
+  background: #080c08;
+  border: 1px solid #1a241a;
   margin-bottom: 4px;
   gap: 1px;
   padding: 2px;
   user-select: none;
   touch-action: none;
-  box-shadow: inset 0 0 20px rgba(0, 50, 0, 0.5);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.8);
   image-rendering: pixelated;
   overflow: hidden;
 }
@@ -178,19 +181,19 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 0.7em;
-  color: #030;
+  color: #1a2a1a;
   cursor: pointer;
 }
 
 .tile:hover {
-  background: rgba(0, 255, 0, 0.05);
+  background: rgba(199, 216, 171, 0.08);
 }
 
-.tile.entity-self { color: #0f0; font-weight: bold; text-shadow: 0 0 5px #0f0; }
-.tile.entity-peer { color: #0af; }
-.tile.entity-npc { color: #ff0; }
-.tile.entity-enemy { color: #f55; }
-.tile.portal { color: #f0f; }
+.tile.entity-self { color: #88cc44; font-weight: bold; text-shadow: 0 0 5px #88cc44; }
+.tile.entity-peer { color: #6aaac8; }
+.tile.entity-npc { color: #ffdd55; }
+.tile.entity-enemy { color: #ff4444; }
+.tile.portal { color: #cc7050; }
 
 #game-area {
   position: fixed;
@@ -227,9 +230,10 @@ body {
   min-height: 180px;
   max-height: 42vh;
   padding: 12px;
-  background: rgba(5, 8, 5, 0.95);
-  border-top: 1px solid rgba(180, 210, 170, 0.25);
+  background: rgba(18, 24, 18, 0.96);
+  border-top: 2px solid #c7d8ab;
   z-index: 35;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.5);
 }
 
 .debug-console.is-hidden {
@@ -257,30 +261,35 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(8, 12, 8, 0.85);
+  backdrop-filter: blur(4px);
 }
 
 .ui-modal-panel {
   width: min(92vw, 420px);
   display: grid;
   gap: 12px;
-  padding: 16px;
-  background: #050505;
-  border: 1px solid #0f0;
-  box-shadow: 0 0 20px rgba(0, 255, 0, 0.15);
+  padding: 20px;
+  background: rgba(18, 24, 18, 0.98);
+  border: 2px solid #c7d8ab;
+  border-radius: 8px;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
 }
 
 .ui-modal-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.1rem;
+  color: #ffdd55;
+  font-weight: bold;
 }
 
 .ui-modal-input {
   width: 100%;
-  padding: 10px 12px;
-  background: #000;
-  border: 1px solid #0f0;
-  color: #0f0;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid #adc39d;
+  border-radius: 4px;
+  color: #edf5d7;
   font: inherit;
 }
 
@@ -291,17 +300,19 @@ body {
 }
 
 .ui-modal-button {
-  padding: 8px 12px;
-  background: #111;
-  border: 1px solid #0f0;
-  color: #0f0;
+  padding: 10px 16px;
+  background: rgba(56, 78, 48, 0.9);
+  border: 1px solid #c7d8ab;
+  border-radius: 6px;
+  color: #f6edc5;
   font: inherit;
   cursor: pointer;
 }
 
 .ui-modal-button-primary {
-  background: #0f0;
-  color: #000;
+  background: #88cc44;
+  color: #121812;
+  border-color: #f6edc5;
 }
 
 @media (orientation: landscape) {

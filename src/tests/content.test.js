@@ -2,10 +2,14 @@ import { commandDefinitions } from '../content/commands.js';
 import { ITEMS, SCARCITY_ITEMS } from '../content/data.js';
 import { validateContent } from '../content/validate.js';
 import { getCommandDefinition, parseCommandInput } from '../commands/registry.js';
+import * as defs from '../content/index.js';
 
 describe('content validation', () => {
     test('current content definitions validate cleanly', () => {
-        const result = validateContent();
+        const result = validateContent(defs);
+        if (!result.ok) {
+            console.log('Validation problems:', JSON.stringify(result.problems, null, 2));
+        }
         expect(result.ok).toBe(true);
         expect(result.problems).toEqual([]);
     });
@@ -14,6 +18,26 @@ describe('content validation', () => {
         SCARCITY_ITEMS.forEach((itemId) => {
             expect(ITEMS[itemId]).toBeDefined();
         });
+    });
+
+    test('fetch quest targets must have at least one acquisition source', () => {
+        const result = validateContent({
+            itemDefinitions: [{ id: 'mystery_box' }],
+            enemyDefinitions: [],
+            roomDefinitions: [],
+            npcDefinitions: [],
+            recipeDefinitions: [],
+            questDefinitions: [{
+                id: 'bad_fetch',
+                giver: null,
+                receiver: null,
+                objective: { type: 'fetch', target: 'mystery_box', count: 1 },
+                reward: {},
+            }],
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.problems).toContain('Quest "bad_fetch" targets item "mystery_box" but no acquisition source is defined');
     });
 });
 

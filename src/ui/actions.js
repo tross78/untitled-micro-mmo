@@ -134,6 +134,7 @@ export const renderActionButtons = (ctx, onAction) => {
                 renderActionButtons(ctx, onAction); 
             });
             addButton('Config ⚙️', () => { uiState = 'settings'; renderActionButtons(ctx, onAction); });
+            addButton('Help ❓', () => { uiState = 'help'; renderActionButtons(ctx, onAction); });
 
         } else if (uiState === 'move') {
             Object.keys(loc.exits || {}).filter(dir => MOVE_DIRECTIONS.has(dir)).forEach(dir => {
@@ -260,6 +261,12 @@ export const renderActionButtons = (ctx, onAction) => {
             });
             addButton('Back ⬅️', ACTION.CANCEL);
 
+        } else if (uiState === 'help') {
+            addButton('Controls 📱', () => onAction('help-controls'));
+            addButton('Keys ⌨️', () => onAction('help-keys'));
+            addButton('About 📖', () => onAction('help'));
+            addButton('Back ⬅️', ACTION.CANCEL);
+
         } else if (uiState === 'settings') {
             const inputContainer = getInputContainerEl();
             const input = getInputEl();
@@ -284,10 +291,6 @@ export const renderActionButtons = (ctx, onAction) => {
             addButton('Score 🏆', 'score');
             addButton('Net Status 📡', 'net');
             addButton('Map 🗺️', 'map');
-            addButton('Keys ⌨️', () => {
-                // Return action to main coordinator to avoid direct log() import loop
-                onAction('help-keys');
-            });
             addButton('Back ⬅️', ACTION.CANCEL);
         }
     } catch (err) {

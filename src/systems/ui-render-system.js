@@ -1,10 +1,11 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { applyPalette, PALETTES, getGrayscaleTemplate } from '../graphics/graphics.js';
+import { applyPalette, PALETTES, getGrayscaleTemplate, roundRect } from '../graphics/graphics.js';
 import { levelBonus } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';
+import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
 
 /**
  * UIRenderSystem handles HUD, dialogue, menus, and overlays.
@@ -32,38 +33,43 @@ export class UIRenderSystem {
         this.drawEnvironmentBar(ctx, localPlayerStore);
         this.drawHUD(ctx, localPlayerStore);
         this.drawTicker(ctx);
-        this.drawOverlays(ctx);
         this.drawDialogue(ctx);
         this.drawMenu(ctx, localPlayerStore);
+        this.drawOverlays(ctx);
     }
 
     drawEnvironmentBar(ctx, player) {
         const room = this.worldData?.[player.location];
         if (!room) return;
 
-        const STRIP = 24;
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        const STRIP = 28;
+        ctx.fillStyle = UI_PALETTE.overlay;
         ctx.fillRect(0, 0, this.VP.CW, STRIP);
         
-        ctx.font = `italic ${Math.floor(this.VP.S * 0.25)}px monospace`;
-        ctx.fillStyle = '#aaa';
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.32)}px monospace`;
+        ctx.fillStyle = UI_PALETTE.textHi;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(room.description, 10, STRIP / 2);
+        ctx.fillText(room.name, 12, STRIP / 2);
+
+        ctx.font = `italic ${Math.floor(this.VP.S * 0.24)}px monospace`;
+        ctx.fillStyle = UI_PALETTE.textLo;
+        const nw = ctx.measureText(room.name).width;
+        ctx.fillText(` — ${room.description}`, 12 + nw, STRIP / 2);
     }
 
     drawHUD(ctx, player) {
-        const STRIP = Math.floor(this.VP.S * 0.7);
+        const STRIP = Math.floor(this.VP.S * 0.85);
         const y = this.VP.CH - STRIP;
-        const PAD = 8;
+        const PAD = UI_STYLE.pad;
 
-        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillStyle = UI_PALETTE.overlay;
         ctx.fillRect(0, y, this.VP.CW, STRIP);
 
         if (!this.heartSprite) {
             const template = getGrayscaleTemplate('heart');
             if (template) {
-                this.heartSprite = applyPalette(template, PALETTES.self);
+                this.heartSprite = applyPalette(template, { primary: '#ff4444', secondary: '#aa1111', outline: '#000', accent: '#ffffff' });
                 this.emptyHeartSprite = applyPalette(template, { primary: '#333', secondary: '#222', outline: '#000', accent: '#444' });
             }
         }
@@ -77,24 +83,24 @@ export class UIRenderSystem {
 
         if (this.heartSprite && this.emptyHeartSprite) {
             for (let i = 0; i < heartsCount; i++) {
-                const hx = PAD + i * 20;
-                const hy = y + (STRIP - 16) / 2;
+                const hx = PAD + i * 18;
+                const hy = y + (STRIP - 14) / 2;
                 const sprite = (i < fullHearts) ? this.heartSprite : this.emptyHeartSprite;
-                ctx.drawImage(sprite, hx, hy, 16, 16);
+                ctx.drawImage(sprite, hx, hy, 14, 14);
             }
         }
 
         ctx.textBaseline = 'middle';
         const mid = y + STRIP / 2;
-        const fs = Math.floor(STRIP * 0.45);
+        const fs = Math.floor(STRIP * 0.4);
         ctx.font = `bold ${fs}px monospace`;
 
-        ctx.fillStyle = '#ffd700';
+        ctx.fillStyle = UI_PALETTE.accent;
         ctx.textAlign = 'center';
         ctx.fillText(`◆ ${player.gold ?? 0}`, this.VP.CW / 2, mid);
 
         const fights = player.forestFights ?? 0;
-        ctx.fillStyle = fights > 0 ? '#aaffaa' : '#555';
+        ctx.fillStyle = fights > 0 ? UI_PALETTE.success : UI_PALETTE.textLo;
         ctx.textAlign = 'right';
         ctx.fillText(`⚡ ${fights}`, this.VP.CW - PAD, mid);
     }
@@ -103,12 +109,12 @@ export class UIRenderSystem {
         const text = getTickerText();
         if (!text) return;
 
-        const barY = Math.floor(this.VP.S * 0.7);
-        const barH = Math.max(20, Math.floor(this.VP.S * 0.45));
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        const barY = Math.floor(this.VP.S * 0.9);
+        const barH = Math.max(22, Math.floor(this.VP.S * 0.5));
+        ctx.fillStyle = UI_PALETTE.overlay;
         ctx.fillRect(0, barY, this.VP.CW, barH);
-        ctx.font = `italic ${Math.floor(this.VP.S * 0.24)}px monospace`;
-        ctx.fillStyle = '#9ab0c2';
+        ctx.font = `italic ${Math.floor(this.VP.S * 0.26)}px monospace`;
+        ctx.fillStyle = UI_PALETTE.textLo;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, this.VP.CW / 2, barY + barH / 2);
@@ -133,43 +139,57 @@ export class UIRenderSystem {
 
     drawBanner(ctx, text, now, expires) {
         const alpha = Math.min(1, (expires - now) / 400);
-        ctx.fillStyle = `rgba(0,0,0,${0.7 * alpha})`;
-        const bh = Math.floor(this.VP.S * 0.7);
-        ctx.fillRect(0, 2, this.VP.CW, bh);
-        ctx.fillStyle = `rgba(255,255,200,${alpha})`;
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.4)}px monospace`;
+        ctx.fillStyle = `rgba(18, 24, 18, ${0.85 * alpha})`;
+        const bh = Math.floor(this.VP.S * 0.85);
+        ctx.fillRect(0, 4, this.VP.CW, bh);
+        ctx.fillStyle = `rgba(246, 237, 197, ${alpha})`;
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.45)}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, this.VP.CW / 2, 2 + bh / 2);
+        ctx.fillText(text, this.VP.CW / 2, 4 + bh / 2);
     }
 
     drawToast(ctx, text, now, expires) {
         const alpha = Math.min(1, (expires - now) / 400);
-        const fs = Math.floor(this.VP.S * 0.28);
+        const fs = Math.floor(this.VP.S * 0.32);
         ctx.font = `${fs}px monospace`;
-        const tw = ctx.measureText(text).width + 24;
+        const tw = ctx.measureText(text).width + 32;
+        const th = fs + 16;
         const px = (this.VP.CW - tw) / 2;
-        const py = Math.floor(this.VP.S * 0.8);
-        ctx.fillStyle = `rgba(20,20,40,${0.85 * alpha})`;
-        ctx.fillRect(px, py, tw, fs + 10);
-        ctx.fillStyle = `rgba(200,230,255,${alpha})`;
+        const py = Math.floor(this.VP.S * 1.2);
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = UI_PALETTE.bg;
+        roundRect(ctx, px, py, tw, th, UI_STYLE.radius);
+        ctx.fill();
+        ctx.strokeStyle = UI_PALETTE.border;
+        ctx.lineWidth = UI_STYLE.borderW;
+        ctx.stroke();
+
+        ctx.fillStyle = UI_PALETTE.textHi;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, this.VP.CW / 2, py + (fs + 10) / 2);
+        ctx.fillText(text, this.VP.CW / 2, py + th / 2);
+        ctx.globalAlpha = 1.0;
     }
 
     drawFanfare(ctx, text, now, expires) {
         const alpha = Math.min(1, (expires - now) / 300);
-        ctx.fillStyle = `rgba(0,0,0,${0.75 * alpha})`;
-        const bh = Math.floor(this.VP.CH * 0.35);
+        ctx.fillStyle = `rgba(18, 24, 18, ${0.9 * alpha})`;
+        const bh = Math.floor(this.VP.CH * 0.4);
         const by = (this.VP.CH - bh) / 2;
         ctx.fillRect(0, by, this.VP.CW, bh);
-        ctx.fillStyle = `rgba(255,230,100,${alpha})`;
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.55)}px monospace`;
+        
+        ctx.strokeStyle = `rgba(199, 216, 171, ${alpha})`;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(-10, by, this.VP.CW + 20, bh);
+
+        ctx.fillStyle = `rgba(255, 221, 85, ${alpha})`;
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.65)}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const lines = text.split('\n');
-        const lineH = Math.floor(this.VP.S * 0.6);
+        const lineH = Math.floor(this.VP.S * 0.7);
         const startY = this.VP.CH / 2 - (lines.length - 1) * lineH / 2;
         lines.forEach((l, i) => ctx.fillText(l, this.VP.CW / 2, startY + i * lineH));
     }
@@ -179,42 +199,47 @@ export class UIRenderSystem {
         if (players.length === 0) return;
         const dialogue = this.world.getComponent(players[0], Component.Dialogue);
         const BOX_H = Math.floor(this.VP.CH * 0.35);
-        const BOX_Y = this.VP.CH - BOX_H - 40;
-        const PAD = Math.floor(this.VP.S * 0.5);
-        ctx.fillStyle = 'rgba(10,10,30,0.95)';
-        ctx.fillRect(10, BOX_Y, this.VP.CW - 20, BOX_H);
-        ctx.strokeStyle = '#8866cc';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(12, BOX_Y + 2, this.VP.CW - 24, BOX_H - 4);
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.35)}px monospace`;
-        ctx.fillStyle = '#ffdd55';
+        const BOX_W = this.VP.CW - 32;
+        const BOX_X = 16;
+        const BOX_Y = this.VP.CH - BOX_H - 48;
+        const PAD = UI_STYLE.pad * 1.5;
+
+        ctx.fillStyle = UI_PALETTE.bg;
+        roundRect(ctx, BOX_X, BOX_Y, BOX_W, BOX_H, UI_STYLE.radius);
+        ctx.fill();
+        ctx.strokeStyle = UI_PALETTE.border;
+        ctx.lineWidth = UI_STYLE.borderW;
+        ctx.stroke();
+
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.38)}px monospace`;
+        ctx.fillStyle = UI_PALETTE.accent;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText(dialogue.speakerId.toUpperCase(), 10 + PAD, BOX_Y + PAD * 0.5);
-        ctx.font = `${Math.floor(this.VP.S * 0.3)}px monospace`;
-        ctx.fillStyle = '#ddeeff';
+        ctx.fillText(dialogue.speakerId.toUpperCase(), BOX_X + PAD, BOX_Y + PAD * 0.6);
+
+        ctx.font = `${Math.floor(this.VP.S * 0.32)}px monospace`;
+        ctx.fillStyle = UI_PALETTE.text;
         const visibleChars = Math.floor(dialogue.progress);
         const text = dialogue.text.slice(0, visibleChars);
         const words = text.split(' ');
         let curLine = '', lines = [];
         for (const w of words) {
-            if ((curLine + w).length > 35) { lines.push(curLine); curLine = w + ' '; }
+            if ((curLine + w).length > 32) { lines.push(curLine); curLine = w + ' '; }
             else { curLine += w + ' '; }
         }
         lines.push(curLine);
-        const lineH = Math.floor(this.VP.S * 0.4);
-        lines.forEach((line, i) => ctx.fillText(line, 10 + PAD, BOX_Y + PAD * 1.5 + i * lineH));
+        const lineH = Math.floor(this.VP.S * 0.45);
+        lines.forEach((line, i) => ctx.fillText(line, BOX_X + PAD, BOX_Y + PAD * 1.6 + i * lineH));
+
         if (visibleChars >= dialogue.text.length) {
             const alpha = 0.5 + Math.sin(Date.now() / 200) * 0.5;
-            ctx.fillStyle = `rgba(204, 136, 255, ${alpha})`;
+            ctx.fillStyle = `rgba(255, 221, 85, ${alpha})`;
             ctx.textAlign = 'right';
-            
             let diaHint = 'Space/Enter to advance';
             if (inputManager.lastInputMode === 'gamepad') diaHint = '(A) to advance';
             else if (inputManager.lastInputMode === 'touch') diaHint = 'Tap to advance';
-            
-            ctx.font = `${Math.floor(this.VP.S * 0.25)}px monospace`;
-            ctx.fillText(`${diaHint} ▼`, this.VP.CW - 10 - PAD, BOX_Y + BOX_H - PAD * 0.5);
+            ctx.font = `${Math.floor(this.VP.S * 0.28)}px monospace`;
+            ctx.fillText(`${diaHint} ▼`, BOX_X + BOX_W - PAD, BOX_Y + BOX_H - PAD * 0.6);
         }
     }
 
@@ -225,65 +250,76 @@ export class UIRenderSystem {
         const menu = this.world.getComponent(players[0], Component.Menu);
 
         const panel = this.getMenuLayout(menu);
-        const titleSize = Math.max(20, Math.floor(this.VP.S * 0.42));
-        const bodySize = Math.max(14, Math.floor(this.VP.S * 0.28));
-        const detailSize = Math.max(12, Math.floor(this.VP.S * 0.22));
+        const titleSize = Math.max(20, Math.floor(this.VP.S * 0.45));
+        const bodySize = Math.max(14, Math.floor(this.VP.S * 0.3));
+        const detailSize = Math.max(12, Math.floor(this.VP.S * 0.24));
 
-        ctx.fillStyle = 'rgba(7, 12, 10, 0.88)';
+        // Full screen overlay
+        ctx.fillStyle = 'rgba(8, 12, 8, 0.82)';
         ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
 
-        ctx.fillStyle = 'rgba(27, 38, 24, 0.96)';
-        ctx.fillRect(panel.x, panel.y, panel.w, panel.h);
-        ctx.strokeStyle = '#c8d8b0';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(panel.x + 1, panel.y + 1, panel.w - 2, panel.h - 2);
+        // Panel Background
+        ctx.fillStyle = UI_PALETTE.bg;
+        roundRect(ctx, panel.x, panel.y, panel.w, panel.h, UI_STYLE.radius);
+        ctx.fill();
+        ctx.strokeStyle = UI_PALETTE.border;
+        ctx.lineWidth = UI_STYLE.borderW;
+        ctx.stroke();
 
-        ctx.fillStyle = 'rgba(56, 78, 48, 0.9)';
-        ctx.fillRect(panel.x, panel.y, panel.w, panel.headerH);
+        // Header Strip
+        ctx.fillStyle = UI_PALETTE.bgLight;
+        roundRect(ctx, panel.x, panel.y, panel.w, panel.headerH, UI_STYLE.radius);
+        ctx.fill();
+        // Flatten bottom of header strip
+        ctx.fillRect(panel.x, panel.y + panel.headerH / 2, panel.w, panel.headerH / 2);
 
         ctx.font = `bold ${titleSize}px monospace`;
-        ctx.fillStyle = '#f6edc5';
+        ctx.fillStyle = UI_PALETTE.textHi;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(menu.title || menu.type.toUpperCase(), panel.x + panel.pad, panel.y + panel.headerH / 2);
 
         if (menu.message) {
             ctx.font = `${bodySize}px monospace`;
-            ctx.fillStyle = '#d7e2c7';
-            this.drawWrappedText(ctx, menu.message, panel.x + panel.pad, panel.y + panel.headerH + panel.pad * 0.85, panel.w - panel.pad * 2, Math.max(18, Math.floor(bodySize * 1.35)));
+            ctx.fillStyle = UI_PALETTE.text;
+            this.drawWrappedText(ctx, menu.message, panel.x + panel.pad, panel.y + panel.headerH + panel.pad, panel.w - panel.pad * 2, Math.max(18, Math.floor(bodySize * 1.35)));
         }
 
         menu.entries.forEach((entry, index) => {
             const row = panel.rows[index];
             if (!row) return;
             const selected = index === (menu.selectedIndex || 0);
+            
             if (selected) {
-                ctx.fillStyle = entry.disabled ? 'rgba(98, 88, 54, 0.6)' : 'rgba(142, 172, 95, 0.78)';
-                ctx.fillRect(row.x, row.y, row.w, row.h);
-                ctx.strokeStyle = entry.disabled ? '#7a7044' : '#f6edc5';
+                ctx.fillStyle = entry.disabled ? 'rgba(120, 120, 80, 0.4)' : UI_PALETTE.bgLight;
+                roundRect(ctx, row.x, row.y, row.w, row.h, 4);
+                ctx.fill();
+                ctx.strokeStyle = entry.disabled ? UI_PALETTE.textLo : UI_PALETTE.accent;
                 ctx.lineWidth = 2;
-                ctx.strokeRect(row.x + 1, row.y + 1, row.w - 2, row.h - 2);
+                ctx.stroke();
             } else {
-                ctx.fillStyle = entry.disabled ? 'rgba(33, 42, 32, 0.9)' : 'rgba(18, 24, 20, 0.88)';
-                ctx.fillRect(row.x, row.y, row.w, row.h);
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                roundRect(ctx, row.x, row.y, row.w, row.h, 4);
+                ctx.fill();
             }
 
-            ctx.font = `${bodySize}px monospace`;
-            ctx.fillStyle = entry.disabled ? '#86917d' : (selected ? '#1c1e14' : '#edf3dc');
+            ctx.font = `bold ${bodySize}px monospace`;
+            ctx.fillStyle = entry.disabled ? UI_PALETTE.textLo : (selected ? UI_PALETTE.accent : UI_PALETTE.textHi);
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             ctx.fillText(entry.label || '...', row.x + panel.pad * 0.75, row.y + 8);
 
             if (entry.detail) {
                 ctx.font = `${detailSize}px monospace`;
-                ctx.fillStyle = entry.disabled ? '#687060' : (selected ? '#344126' : '#adc39d');
+                ctx.fillStyle = entry.disabled ? 'rgba(150,150,150,0.5)' : (selected ? UI_PALETTE.textHi : UI_PALETTE.textLo);
                 ctx.fillText(entry.detail, row.x + panel.pad * 0.75, row.y + 8 + bodySize + 4);
             }
             this.menuHitRegions.push({ index, ...row });
         });
 
+        // Footer Hint
         ctx.font = `${detailSize}px monospace`;
-        ctx.fillStyle = '#b6c39d';
+        ctx.fillStyle = UI_PALETTE.textLo;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         

@@ -18,6 +18,7 @@ import {
     showToast,
     triggerHitFlash,
 } from '../graphics/renderer.js';
+import { bus } from '../state/eventbus.js';
 
 describe('renderer public overlay API', () => {
     let visual;
@@ -51,8 +52,10 @@ describe('renderer public overlay API', () => {
     });
 
     test('showDialogue ignores empty text and opens/closes non-empty dialogue', () => {
+        const emitSpy = jest.spyOn(bus, 'emit');
         showDialogue('Barkeep', '');
         expect(isDialogueOpen()).toBe(false);
+        expect(emitSpy).toHaveBeenCalledWith('dialogue:closed', {});
 
         showDialogue('Barkeep', 'Welcome to the tavern.');
         expect(isDialogueOpen()).toBe(true);
@@ -61,6 +64,8 @@ describe('renderer public overlay API', () => {
 
         while (advanceDialogue());
         expect(isDialogueOpen()).toBe(false);
+        expect(emitSpy).toHaveBeenCalledWith('dialogue:closed', {});
+        emitSpy.mockRestore();
     });
 
     test('advanceDialogue pages through long text before closing', () => {

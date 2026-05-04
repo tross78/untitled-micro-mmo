@@ -19,6 +19,12 @@ export const Component = {
   
   /** Movement intent */
   Intent: 'Intent', // { action: 'move' | 'attack' | 'interact', dir?: string, targetId?: string }
+
+  /** Movement target for multi-tile navigation */
+  MovementTarget: 'MovementTarget', // { x: number, y: number }
+
+  /** Visual shudder/bounce on collision */
+  CollisionBump: 'CollisionBump', // { dir: 'n'|'s'|'e'|'w', progress: number }
   
   /** Health status */
   Health: 'Health', // { current: number, max: number }
@@ -37,6 +43,9 @@ export const Component = {
 
   /** Local identity marker */
   PlayerControlled: 'PlayerControlled', // {}
+
+  /** Entity identity (name, peer hash) */
+  Identity: 'Identity', // { name: string, ph?: string, id?: string }
 
   /** Dialogue state */
   Dialogue: 'Dialogue', // { text: string, speakerId: string, progress: number, page: number, onComplete?: string }

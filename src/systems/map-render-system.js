@@ -1,6 +1,8 @@
 // @ts-check
 
-import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, drawLargeTree } from '../graphics/graphics.js';
+import { Component } from '../domain/components.js';
+import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, drawLargeTree, getCompiledAssetMeta } from '../graphics/graphics.js';
+import { SCENERY_RENDER_STYLE } from '../infra/graphics-constants.js';
 import { getScatteredContent, hashStr } from '../rules/index.js';
 
 /**
@@ -73,6 +75,28 @@ export class MapRenderSystem {
             this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY);
         });
 
+        // 6. Draw Movement Target (Affordance Phase 8.5a)
+        const playersWithTarget = this.world.query([Component.PlayerControlled, Component.Transform, Component.MovementTarget]);
+        playersWithTarget.forEach(id => {
+            const target = this.world.getComponent(id, Component.MovementTarget);
+            const tx = target.x - camX;
+            const ty = target.y - camY;
+            if (tx < -1 || tx >= this.VP.W || ty < -1 || ty >= this.VP.H) return;
+
+            const px = screenOffsetX + tx * this.VP.S + this.VP.S / 2;
+            const py = screenOffsetY + ty * this.VP.S + this.VP.S / 2;
+            const alpha = 0.5 + Math.sin(Date.now() / 150) * 0.3;
+
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(px, py, this.VP.S / 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(px, py, this.VP.S / 6, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+
         // Night lighting disabled — revisit in future phase
     }
 
@@ -110,6 +134,14 @@ export class MapRenderSystem {
         const template = getGrayscaleTemplate(label) || getGrayscaleTemplate('rock');
         const palette = getSceneryPalette(label);
         const colored = applyPalette(template, palette);
-        ctx.drawImage(colored, px, py, w * this.VP.S, h * this.VP.S);
+        const compiledMeta = getCompiledAssetMeta(label);
+        const renderStyle = compiledMeta ? {
+            heightTiles: compiledMeta.renderHeightTiles,
+            yOffsetTiles: compiledMeta.renderYOffsetTiles,
+        } : SCENERY_RENDER_STYLE[label];
+        const drawH = (renderStyle?.heightTiles || h) * this.VP.S;
+        const drawY = py - ((renderStyle?.yOffsetTiles || 0) * this.VP.S);
+
+        ctx.drawImage(colored, px, drawY, w * this.VP.S, drawH);
     }
 }

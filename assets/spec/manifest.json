@@ -1,0 +1,182 @@
+{
+  "compilerOptions": {
+    "palette": {
+      "outline": "#000000",
+      "secondary": "#888888",
+      "primary": "#cccccc",
+      "accent": "#ffffff"
+    }
+  },
+  "assetManifest": [
+    {
+      "id": "player",
+      "family": "player",
+      "source": "../source/players/player.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+      }
+    },
+    {
+      "id": "player_back",
+      "family": "player",
+      "source": "../source/players/player_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+      }
+    },
+    {
+      "id": "player_side",
+      "family": "player",
+      "source": "../source/players/player_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+      }
+    },
+    {
+      "id": "forest_wolf",
+      "family": "enemy",
+      "source": "../source/enemies/forest_wolf.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
+      "id": "goblin",
+      "family": "enemy",
+      "source": "../source/enemies/goblin.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
+      "id": "bandit",
+      "family": "enemy",
+      "source": "../source/enemies/bandit.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
+      "id": "cave_troll",
+      "family": "enemy",
+      "source": "../source/enemies/cave_troll.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+      }
+    },
+    {
+      "id": "mountain_troll",
+      "family": "enemy",
+      "source": "../source/enemies/mountain_troll.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+      }
+    },
+    {
+      "id": "ruin_shade",
+      "family": "enemy",
+      "source": "../source/enemies/ruin_shade.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
+      "id": "wraith",
+      "family": "enemy",
+      "source": "../source/enemies/wraith.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
+      "id": "skeleton",
+      "family": "enemy",
+      "source": "../source/enemies/skeleton.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
+      "id": "crab",
+      "family": "enemy",
+      "source": "../source/enemies/crab.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 12 }
+      }
+    },
+    {
+      "id": "guard",
+      "family": "npc",
+      "source": "../source/npcs/guard.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
+      "id": "tree",
+      "family": "scenery",
+      "source": "../source/scenery/tree.png",
+      "logicalWidth": 3,
+      "logicalHeight": 3,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 12, "renderHeightTiles": 3 }
+      }
+    },
+    {
+      "id": "stall",
+      "family": "scenery",
+      "source": "../source/scenery/stall.png",
+      "logicalWidth": 2,
+      "logicalHeight": 2,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 12 }
+      }
+    },
+    {
+      "id": "bookshelf",
+      "family": "scenery",
+      "source": "../source/scenery/bookshelf.png",
+      "logicalWidth": 2,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 12, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
+      }
+    },
+    {
+      "id": "fireplace",
+      "family": "scenery",
+      "source": "../source/scenery/fireplace.png",
+      "logicalWidth": 2,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 12, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
+      }
+    }
+  ]
+}

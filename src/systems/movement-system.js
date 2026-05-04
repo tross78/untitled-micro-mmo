@@ -7,7 +7,7 @@ import { getCurrentInstance } from '../network/shard.js';
 import { myEntry } from '../security/identity.js';
 import { shardEnemies, localPlayer, worldState } from '../state/store.js';
 import { ITEMS, NPCS } from '../content/data.js';
-import { getScatteredContent, getNPCDialogue } from '../rules/index.js';
+import { getScatteredContent, getNPCDialogue, findSafeArrival } from '../rules/index.js';
 import { getNPCsAt } from '../commands/helpers.js';
 import { ACTION } from '../engine/input.js';
 
@@ -28,18 +28,51 @@ export class MovementSystem {
   }
 
   update() {
-    const entities = this.world.query([Component.Transform, Component.Intent]);
+    // 1. Process explicit Intent
+    const entitiesWithIntent = this.world.query([Component.Transform, Component.Intent]);
 
-    for (const entityId of entities) {
+    for (const entityId of entitiesWithIntent) {
       const intent = this.world.getComponent(entityId, Component.Intent);
       const transform = this.world.getComponent(entityId, Component.Transform);
 
       if (intent.action === 'move') {
         this.handleMove(entityId, transform, intent.dir);
         this.world.removeComponent(entityId, Component.Intent);
+        this.world.removeComponent(entityId, Component.MovementTarget);
       } else if (intent.action === 'interact') {
         this.handleInteract(entityId, transform);
         this.world.removeComponent(entityId, Component.Intent);
+      }
+    }
+
+    // 2. Process Movement Targets (Tap-to-move)
+    const entitiesWithTarget = this.world.query([Component.Transform, Component.MovementTarget]);
+    for (const entityId of entitiesWithTarget) {
+      if (this.world.getComponent(entityId, Component.Intent)) continue;
+      if (this.world.getComponent(entityId, Component.Tweenable)) continue;
+
+      const transform = this.world.getComponent(entityId, Component.Transform);
+      const target = this.world.getComponent(entityId, Component.MovementTarget);
+
+      if (transform.x === target.x && transform.y === target.y) {
+        this.world.removeComponent(entityId, Component.MovementTarget);
+        continue;
+      }
+
+      const nextStepDir = this.findNextStepBFS(transform, target);
+
+      if (nextStepDir) {
+        this.handleMove(entityId, transform, nextStepDir);
+      } else {
+        // Path blocked: give feedback and clear target
+        const dx = target.x - transform.x;
+        const dy = target.y - transform.y;
+        let failDir = 's';
+        if (Math.abs(dx) > Math.abs(dy)) failDir = dx > 0 ? 'e' : 'w';
+        else failDir = dy > 0 ? 's' : 'n';
+
+        this.world.setComponent(entityId, Component.CollisionBump, { dir: failDir, progress: 0 });
+        this.world.removeComponent(entityId, Component.MovementTarget);
       }
     }
     
@@ -74,19 +107,26 @@ export class MovementSystem {
 
     // 2. Check Bounds — LttP-style full-edge transitions, preserving player position offset
     if (nx < 0 || nx >= loc.width || ny < 0 || ny >= loc.height) {
+      const boundaryExit = this.findBoundaryExit(loc, transform.x, transform.y, dir);
+      if (boundaryExit) {
+        await this.performTransition(entityId, transform, boundaryExit.dest, boundaryExit.destX, boundaryExit.destY);
+        return;
+      }
+
       const destId = loc.exits?.[this.dirToKey(dir)];
-      if (destId) {
+      const hasAuthoredEdgeExit = this.roomHasBoundaryExit(loc, dir);
+      if (destId && !hasAuthoredEdgeExit) {
         const destRoom = this.worldData[destId];
         if (!destRoom) return;
-        let tx, ty;
-        // Preserve the player's position along the edge they crossed
-        if (dir === 'n') { ty = destRoom.height - 1; tx = Math.min(transform.x, destRoom.width - 1); }
-        else if (dir === 's') { ty = 0; tx = Math.min(transform.x, destRoom.width - 1); }
-        else if (dir === 'e') { tx = 0; ty = Math.min(transform.y, destRoom.height - 1); }
-        else if (dir === 'w') { tx = destRoom.width - 1; ty = Math.min(transform.y, destRoom.height - 1); }
-        else { tx = 0; ty = 0; }
+        const tx = this.getFallbackArrivalX(destRoom, dir);
+        const ty = this.getFallbackArrivalY(destRoom, dir);
         await this.performTransition(entityId, transform, destId, tx, ty);
+        return;
       }
+
+      transform.facing = dir;
+      this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
+      this.world.removeComponent(entityId, Component.MovementTarget);
       return;
     }
 
@@ -110,6 +150,8 @@ export class MovementSystem {
     );
     if (isWall || isScenery) {
         transform.facing = dir;
+        this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
+        this.world.removeComponent(entityId, Component.MovementTarget);
         return;
     }
 
@@ -137,10 +179,13 @@ export class MovementSystem {
    * @param {number} tx
   * @param {number} ty
   */
-  async performTransition(_entityId, transform, destId, tx, ty) {
+  async performTransition(entityId, transform, destId, tx, ty) {
+    const loc = this.worldData[destId];
+    const safePos = loc ? findSafeArrival(tx, ty, loc.width, loc.height, (x, y) => this.isWalkable(destId, x, y)) : { x: tx, y: ty };
+    
     transform.mapId = destId;
-    transform.x = tx;
-    transform.y = ty;
+    transform.x = safePos?.x ?? tx;
+    transform.y = safePos?.y ?? ty;
 
     // Network Sync
     await joinInstance(destId, getCurrentInstance(), currentRtcConfig);
@@ -241,10 +286,47 @@ export class MovementSystem {
     const text = getNPCDialogue(npcId, worldState.seed, worldState.day, worldState.mood);
     const role = NPCS[npcId].role;
     if (role === 'shop' || role === 'quest') {
-      bus.emit('ui:menu', { type: 'npc', context: { npcId, text } });
+      bus.emit('npc:speak', { npcName: NPCS[npcId].name, text });
+      bus.emit('ui:queue-menu', { type: 'npc', context: { npcId, text } });
       return;
     }
     bus.emit('npc:speak', { npcName: NPCS[npcId].name, text });
+  }
+
+  findBoundaryExit(loc, x, y, dir) {
+    return (loc.exitTiles || []).find((tile) => {
+      const width = tile.w || 1;
+      const height = tile.h || 1;
+      if (dir === 'n') return tile.y === 0 && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
+      if (dir === 's') return tile.y + height === loc.height && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
+      if (dir === 'e') return tile.x + width === loc.width && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
+      if (dir === 'w') return tile.x === 0 && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
+      return false;
+    }) || null;
+  }
+
+  roomHasBoundaryExit(loc, dir) {
+    return (loc.exitTiles || []).some((tile) => {
+      const width = tile.w || 1;
+      const height = tile.h || 1;
+      if (dir === 'n') return tile.y === 0;
+      if (dir === 's') return tile.y + height === loc.height;
+      if (dir === 'e') return tile.x + width === loc.width;
+      if (dir === 'w') return tile.x === 0;
+      return false;
+    });
+  }
+
+  getFallbackArrivalX(destRoom, dir) {
+    if (dir === 'e') return 0;
+    if (dir === 'w') return destRoom.width - 1;
+    return Math.floor(destRoom.width / 2);
+  }
+
+  getFallbackArrivalY(destRoom, dir) {
+    if (dir === 's') return 0;
+    if (dir === 'n') return destRoom.height - 1;
+    return Math.floor(destRoom.height / 2);
   }
 
   processProactiveSharding() {
@@ -266,6 +348,76 @@ export class MovementSystem {
       if (transform.y <= 1 && exits.north) preJoinShard(exits.north);
       if (transform.y >= loc.height - 2 && exits.south) preJoinShard(exits.south);
     }
+  }
+
+  /**
+   * Simple BFS to find the next step toward a target.
+   * @param {any} transform 
+   * @param {any} target 
+   */
+  findNextStepBFS(transform, target) {
+    const startX = transform.x;
+    const startY = transform.y;
+    const mapId = transform.mapId;
+    const loc = this.worldData[mapId];
+    if (!loc) return null;
+
+    // Use a simple BFS since rooms are small and we only need the first step
+    const queue = [[startX, startY, []]];
+    const visited = new Set([`${startX},${startY}`]);
+    const maxNodes = 400; // Safety cap for performance
+    let nodesProcessed = 0;
+
+    while (queue.length > 0 && nodesProcessed < maxNodes) {
+      const [cx, cy, path] = queue.shift();
+      nodesProcessed++;
+
+      if (cx === target.x && cy === target.y) {
+        return path[0]; // Return the first direction in the successful path
+      }
+
+      // Order: N, S, E, W (stable determinism)
+      const neighbors = [
+        { x: cx, y: cy - 1, dir: 'n' },
+        { x: cx, y: cy + 1, dir: 's' },
+        { x: cx + 1, y: cy, dir: 'e' },
+        { x: cx - 1, y: cy, dir: 'w' }
+      ];
+
+      for (const n of neighbors) {
+        const key = `${n.x},${n.y}`;
+        if (!visited.has(key) && this.isWalkable(mapId, n.x, n.y)) {
+          visited.add(key);
+          queue.push([n.x, n.y, [...path, n.dir]]);
+        }
+      }
+    }
+
+    return null; // No path found within search bounds
+  }
+
+  /**
+   * Helper to check if a tile is walkable for pathfinding purposes.
+   * Logic matches handleMove but without side effects.
+   */
+  isWalkable(mapId, x, y) {
+    const loc = this.worldData[mapId];
+    if (!loc) return false;
+
+    // 1. Check Bounds
+    if (x < 0 || x >= loc.width || y < 0 || y >= loc.height) return false;
+
+    // 2. Check Static Collisions
+    const isWall = (loc.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'wall');
+    const isScenery = (loc.scenery || []).find(s =>
+        x >= s.x && x < s.x + (s.w || 1) &&
+        y >= s.y && y < s.y + (s.h || 1)
+    );
+    if (isWall || isScenery) return false;
+
+    // Note: We don't check dynamic occupants (other players/NPCs) for pathfinding 
+    // to keep it stable and avoid jitter, but handleMove will still block them.
+    return true;
   }
 
   dirToKey(dir) {

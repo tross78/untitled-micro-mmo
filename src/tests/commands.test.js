@@ -135,16 +135,18 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             
             await handleCommand('interact');
             step();
-            expect(emitSpy).toHaveBeenCalledWith('ui:menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'guard' }) }));
+            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Guard' }));
+            expect(emitSpy).toHaveBeenCalledWith('ui:queue-menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'guard' }) }));
         });
 
-        test('talking to a merchant opens the selectable npc menu', async () => {
+        test('talking to a merchant speaks first and queues the npc menu', async () => {
             localPlayer.location = 'market';
             appRuntime.hydratePlayer(localPlayer);
 
             await handleCommand('talk merchant');
 
-            expect(emitSpy).toHaveBeenCalledWith('ui:menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'merchant' }) }));
+            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Merchant' }));
+            expect(emitSpy).toHaveBeenCalledWith('ui:queue-menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'merchant' }) }));
         });
 
         test('interact command uses portal if no NPC present', async () => {
@@ -169,7 +171,8 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
 
             expect(localPlayer.x).toBe(1);
             expect(localPlayer.y).toBe(2);
-            expect(emitSpy).toHaveBeenCalledWith('ui:menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'guard' }) }));
+            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Guard' }));
+            expect(emitSpy).toHaveBeenCalledWith('ui:queue-menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'guard' }) }));
         });
     });
 

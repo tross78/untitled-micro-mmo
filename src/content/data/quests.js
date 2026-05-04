@@ -54,13 +54,13 @@ export const QUESTS = {
     // The Trade Chain (Merchant)
     gather_wood: defineQuest('gather_wood', {
         id: 'gather_wood', name: 'Gather Wood', giver: 'merchant', receiver: 'merchant', type: 'fetch',
-        description: 'Gather 5 wood bundles.', lore: 'The Market needs fuel for the coming season.',
+        description: 'Procure 5 wood bundles for the Market.', lore: 'The Market needs fuel for the coming season.',
         objective: { type: 'fetch', target: 'wood', count: 5 }, prerequisite: null,
         reward: { xp: 25, gold: 15 }, chain: 'trade'
     }),
     iron_supply: defineQuest('iron_supply', {
         id: 'iron_supply', name: 'Iron Supply', giver: 'merchant', receiver: 'merchant', type: 'fetch',
-        description: 'Gather 3 iron ore.', lore: 'We need raw materials for new tools and weapons.',
+        description: 'Procure 3 iron ore bundles.', lore: 'We need raw materials for new tools and weapons.',
         objective: { type: 'fetch', target: 'iron', count: 3 }, prerequisite: 'gather_wood',
         reward: { xp: 35, gold: 20 }, chain: 'trade'
     }),

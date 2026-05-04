@@ -31,6 +31,7 @@ export const commandDefinitions = [
   defineCommand({ id: 'rename', category: 'social', description: 'Rename your character.' }),
   defineCommand({ id: 'status', category: 'misc', description: 'Show world status.' }),
   defineCommand({ id: 'help', category: 'misc', description: 'Show command help.' }),
+  defineCommand({ id: 'help-controls', aliases: ['controls'], category: 'misc', description: 'Show interaction help.' }),
   defineCommand({ id: 'net', category: 'misc', description: 'Show network status.' }),
   defineCommand({ id: 'score', category: 'misc', description: 'Show top adventurers.' }),
   defineCommand({ id: 'stats', category: 'misc', description: 'Show player stats.' }),

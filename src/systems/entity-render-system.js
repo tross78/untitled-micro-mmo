@@ -42,6 +42,17 @@ export class EntityRenderSystem {
                 walkPose = getWalkPose(Date.now());
             }
 
+            // Apply Bump Offset (Juice Phase 8.5a)
+            const bump = this.world.getComponent(id, Component.CollisionBump);
+            if (bump) {
+                const amp = 0.15; // 15% of a tile
+                const shift = Math.sin(bump.progress * Math.PI) * amp;
+                if (bump.dir === 'e') drawX += shift;
+                else if (bump.dir === 'w') drawX -= shift;
+                else if (bump.dir === 's') drawY += shift;
+                else if (bump.dir === 'n') drawY -= shift;
+            }
+
             const sx = drawX - camX;
             const sy = drawY - camY;
 
@@ -136,7 +147,7 @@ export class EntityRenderSystem {
         // Use type override if provided (for directional posing)
         let template = null;
         if (type) {
-            template = getGrayscaleTemplate(type);
+            template = getGrayscaleTemplate(type, seed);
         } else {
             // Standard detection if no override
             let sType = null;
@@ -144,7 +155,7 @@ export class EntityRenderSystem {
             else if (palette === 'enemy') sType = 'wolf';
             else if (palette === 'npc') sType = 'guard';
             
-            if (sType) template = getGrayscaleTemplate(sType);
+            if (sType) template = getGrayscaleTemplate(sType, seed);
         }
 
         const canvas = template ? applyPalette(template, pal) : generateCharacterSprite(seed, palette);

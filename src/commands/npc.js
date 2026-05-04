@@ -17,7 +17,8 @@ export const handleNPCCommands = async (command, args) => {
             const npc = NPCS[targetId];
             const dialogue = getNPCDialogue(targetId, worldState.seed, worldState.day, worldState.mood);
             if (npc.role === 'shop' || npc.role === 'quest') {
-                bus.emit('ui:menu', { type: 'npc', context: { npcId: targetId, text: dialogue } });
+                bus.emit('npc:speak', { npcName: npc.name, text: dialogue });
+                bus.emit('ui:queue-menu', { type: 'npc', context: { npcId: targetId, text: dialogue } });
             } else {
                 bus.emit('npc:speak', { npcName: npc.name, text: dialogue });
             }
@@ -172,6 +173,10 @@ export const handleNPCCommands = async (command, args) => {
                 
                 if (localPlayer.quests[id]) { log(`You already have that quest.`); return true; }
                 localPlayer.quests[id] = { progress: 0, completed: false };
+                bus.emit('npc:speak', {
+                    npcName: NPCS[q.giver]?.name || 'Quest Giver',
+                    text: `Good. Take on ${q.name.toLowerCase()}. ${q.description}`
+                });
                 bus.emit('log', { msg: `[Quest] Accepted: ${q.name}`, color: '#ff0' });
                 saveLocalState(localPlayer);
                 return true;
@@ -191,6 +196,11 @@ export const handleNPCCommands = async (command, args) => {
                 localPlayer.xp += q.reward.xp;
                 localPlayer.gold += q.reward.gold;
                 if (q.reward.item) grantItem(q.reward.item);
+                const receiverName = NPCS[q.receiver || q.giver]?.name || 'Quest Giver';
+                bus.emit('npc:speak', {
+                    npcName: receiverName,
+                    text: `Well done. ${q.name} is finished. Take your reward and keep moving.`
+                });
                 
                 const newLevel = xpToLevel(localPlayer.xp);
                 bus.emit('quest:complete', { name: q.name, rewards: q.reward });

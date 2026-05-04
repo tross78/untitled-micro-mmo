@@ -8,6 +8,7 @@ jest.mock('../graphics/graphics.js', () => ({
     getGrayscaleTemplate: jest.fn(),
     getSceneryPalette: jest.fn(),
     applyPalette: jest.fn(),
+    roundRect: jest.fn(),
     PALETTES: { self: ['#000'], npc: ['#000'], enemy: ['#000'] }
 }));
 

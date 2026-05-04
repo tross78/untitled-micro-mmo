@@ -18,6 +18,7 @@ import { getNPCsAt } from '../commands/helpers.js';
 import { getTimeOfDay } from '../rules/index.js';
 
 let _vRefreshTimer = null;
+let _queuedMenuAfterDialogue = null;
 const getMenuCtx = () => ({
     localPlayer,
     world,
@@ -94,9 +95,13 @@ const activateMenuEntry = async (index = null) => {
     }
     if (entry.action.kind === 'command') {
         await handleCommand(entry.action.command);
-        const refreshed = rebuildMenu(menu.type, menu.context || {}, menu.parent || null, selectedIndex);
-        if (refreshed) setMenuState(refreshed);
-        else closeMenu();
+        if (isDialogueOpen()) {
+            closeMenu();
+        } else {
+            const refreshed = rebuildMenu(menu.type, menu.context || {}, menu.parent || null, selectedIndex);
+            if (refreshed) setMenuState(refreshed);
+            else closeMenu();
+        }
         triggerLogicalRefresh();
         return true;
     }
@@ -119,21 +124,11 @@ export const triggerVisualRefresh = () => {
             }
             if (entity?.type === 'npc') { handleCommand(`talk ${entity.id}`).then(triggerLogicalRefresh); return; }
             if (entity?.type === 'enemy') { handleCommand('attack').then(triggerLogicalRefresh); return; }
-            const dx = tx - localPlayer.x;
-            const dy = ty - localPlayer.y;
-            if (dx === 0 && dy === 0) return;
-            const stepX = dx !== 0 ? (dx > 0 ? 1 : -1) : 0;
-            const stepY = stepX === 0 && dy !== 0 ? (dy > 0 ? 1 : -1) : 0;
             
-            let action = null;
-            if (stepX === 1) action = ACTION.MOVE_E;
-            else if (stepX === -1) action = ACTION.MOVE_W;
-            else if (stepY === 1) action = ACTION.MOVE_S;
-            else if (stepY === -1) action = ACTION.MOVE_N;
-
-            if (action) {
-                bus.emit('input:action', { action, type: 'down' });
-                setTimeout(triggerLogicalRefresh, 150);
+            // Ground tiles: set movement target (Phase 8.5a)
+            if (appRuntime.playerEntityId) {
+                appRuntime.world.setComponent(appRuntime.playerEntityId, Component.MovementTarget, { x: tx, y: ty });
+                triggerLogicalRefresh();
             }
         });
     });
@@ -160,6 +155,14 @@ export const triggerLogicalRefresh = () => {
                 log(`Escape — Back / Cancel`, '#aaa');
                 log(`\` (backtick) — Toggle radar view`, '#aaa');
                 log(`~ (tilde) — Toggle log panel`, '#aaa');
+                log(`--------------------------\n`, '#aaa');
+            } else if (cmdOrAction === 'help-controls') {
+                log(`\n--- Interaction Guide ---`, '#aaa');
+                log(`Tap Floor — Walk to location`, '#aaa');
+                log(`Tap NPC — Talk to them`, '#aaa');
+                log(`Tap Enemy — Start combat`, '#aaa');
+                log(`Tap Yourself — Open main menu`, '#aaa');
+                log(`Action Buttons — Use skills and items`, '#aaa');
                 log(`--------------------------\n`, '#aaa');
             } else {
                 handleCommand(cmdOrAction).then(triggerLogicalRefresh);
@@ -213,6 +216,21 @@ export const setupGlobalEvents = () => {
     });
     bus.on('npc:speak', ({ npcName, text }) => {
         showDialogue(npcName, text);
+    });
+
+    bus.on('ui:queue-menu', ({ type, context }) => {
+        if (isDialogueOpen()) _queuedMenuAfterDialogue = { type, context: context || {} };
+        else openMenu(type, context || {});
+    });
+
+    bus.on('dialogue:closed', () => {
+        if (_queuedMenuAfterDialogue) {
+            const queued = _queuedMenuAfterDialogue;
+            _queuedMenuAfterDialogue = null;
+            openMenu(queued.type, queued.context || {});
+            return;
+        }
+        triggerLogicalRefresh();
     });
 
     bus.on('ui:back', () => {

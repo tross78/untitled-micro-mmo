@@ -9,6 +9,25 @@ function tileRng(seed) {
     };
 }
 
+import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
+import { COMPILED_ASSET_SHAPES, COMPILED_ASSET_META } from '../generated/assets/compiled-assets.js';
+
+/**
+ * Hearthwick Graphics Bible & Tile Taxonomy (Phase 8.55a)
+ * 
+ * PALETTE RULES:
+ * All procedural assets use a 4-color unified palette [primary, secondary, outline, accent].
+ * 
+ * SCALE RULES:
+ * - Small (1x1): props, small plants, items
+ * - Medium (2x2): furniture, pillars, shrubs
+ * - Large (3x3+): trees, ruins, major structures
+ */
+
+export { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_DIMENSIONS };
+export const hasCompiledAssetShape = (type) => !!COMPILED_ASSET_SHAPES[type];
+export const getCompiledAssetMeta = (type) => COMPILED_ASSET_META[type] || null;
+
 // LttP + Stardew unified palette — saturated, 16-bit SNES feel
 const TILE_PAL = {
     grass:       { base: '#3d6b2a', hi: '#5a9a38', lo: '#274518', accent: '#80c050' },
@@ -20,20 +39,24 @@ const TILE_PAL = {
     dungeon:     { base: '#5a6878', hi: '#7a90a8', lo: '#3a4858', accent: '#b0c4d8' },
     cave:        { base: '#6a5038', hi: '#8a6a4a', lo: '#3e2e20', accent: '#a8845c' },
     ice:         { base: '#b8d8e8', hi: '#ddf0f8', lo: '#8ab0c8', accent: '#ffffff' },
+    dirt:        { base: '#8a6a38', hi: '#a8845c', lo: '#5a4520', accent: '#c8a078' },
+    sand:        { base: '#d4b478', hi: '#e8d098', lo: '#b09050', accent: '#f0e0b0' },
+    forest:      { base: '#2a4a1a', hi: '#3d6b2a', lo: '#17300d', accent: '#5a9a38' },
+    cobble:      { base: '#5a5448', hi: '#7a7468', lo: '#3a3428', accent: '#9a9488' },
 };
 
 const zoneTileType = (locationId) => {
     const map = {
         cellar: 'stone_floor',   hallway: 'stone_floor',
-        library: 'stone_floor',  crossroads: 'stone_floor',
-        ruins: 'stone_floor',    ruins_descent: 'stone_floor',
+        library: 'stone_floor',  crossroads: 'dirt',
+        ruins: 'cobble',         ruins_descent: 'cobble',
         tavern: 'interior',      market: 'interior',
         herbalist_hut: 'interior', mill: 'interior',
-        forest_edge: 'grass',    forest_depths: 'grass',
-        bandit_camp: 'grass',    cemetery: 'grass',
+        forest_edge: 'grass',    forest_depths: 'forest',
+        bandit_camp: 'grass',    cemetery: 'forest',
         frozen_lake: 'ice',
-        lake_shore: 'water',     harbour: 'water',
-        mountain_pass: 'wall',   watchtower: 'wall',
+        lake_shore: 'sand',      harbour: 'sand',
+        mountain_pass: 'stone_floor', watchtower: 'stone_floor',
         catacombs: 'dungeon',    dungeon_cell: 'dungeon',
         throne_room: 'dungeon',
         cave: 'cave',            sea_cave: 'cave',
@@ -50,19 +73,28 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
     ctx.fillStyle = p.base;
     ctx.fillRect(cx, cy, S, S);
 
-    if (tileType === 'grass') {
+    if (tileType === 'grass' || tileType === 'forest') {
         // Darker patch variation
         if (rng(3) === 0) {
             ctx.fillStyle = p.lo;
             ctx.fillRect(cx, cy, S, S);
         }
         // Tufts
-        for (let i = 0; i < 4 + rng(5); i++) {
+        for (let i = 0; i < (tileType === 'forest' ? 6 : 4) + rng(5); i++) {
             ctx.fillStyle = rng(2) ? p.hi : p.accent;
             const tx = cx + rng(S - 2);
             const ty = cy + rng(S - 3);
             ctx.fillRect(tx, ty + 1, 1, 2);
             ctx.fillRect(tx, ty, 1, 1);
+        }
+        // Leaf litter for forest
+        if (tileType === 'forest') {
+            for (let i = 0; i < 3; i++) {
+                if (rng(4) === 0) {
+                    ctx.fillStyle = rng(2) ? '#8a5a28' : '#6a4a1a';
+                    ctx.fillRect(cx + rng(S-2), cy + rng(S-2), 2, 1);
+                }
+            }
         }
         // Pebble
         if (rng(6) === 0) {
@@ -70,7 +102,7 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
             ctx.fillRect(cx + rng(S - 2), cy + rng(S - 2), 1, 1);
         }
         // Flower
-        if (rng(9) === 0) {
+        if (rng(tileType === 'forest' ? 12 : 9) === 0) {
             ctx.fillStyle = rng(2) ? '#ffcc44' : '#ff88aa';
             const fx = cx + 2 + rng(S - 6);
             const fy = cy + 2 + rng(S - 6);
@@ -83,15 +115,25 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
             ctx.fillRect(cx, cy, S, 1);
         }
 
-    } else if (tileType === 'stone_floor') {
-        // Flagstone grid
-        ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + Math.floor(S / 2), S, 1);
-        ctx.fillRect(cx + Math.floor(S / 2), cy, 1, S);
-        // Bevel
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(cx + 1, cy + 1, Math.floor(S / 2) - 2, 1);
-        ctx.fillRect(cx + 1, cy + 1, 1, Math.floor(S / 2) - 2);
+    } else if (tileType === 'stone_floor' || tileType === 'cobble') {
+        if (tileType === 'stone_floor') {
+            // Flagstone grid
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx, cy + Math.floor(S / 2), S, 1);
+            ctx.fillRect(cx + Math.floor(S / 2), cy, 1, S);
+            // Bevel
+            ctx.fillStyle = p.hi;
+            ctx.fillRect(cx + 1, cy + 1, Math.floor(S / 2) - 2, 1);
+            ctx.fillRect(cx + 1, cy + 1, 1, Math.floor(S / 2) - 2);
+        } else {
+            // Cobblestone pattern
+            for (let i = 0; i < 4; i++) {
+                const px = cx + (i % 2) * (S/2) + 1;
+                const py = cy + Math.floor(i / 2) * (S/2) + 1;
+                ctx.fillStyle = rng(3) === 0 ? p.lo : p.hi;
+                ctx.fillRect(px, py, (S/2)-2, (S/2)-2);
+            }
+        }
         ctx.fillStyle = p.accent;
         ctx.fillRect(cx + Math.floor(S / 2) + 2, cy + Math.floor(S / 2) + 2, Math.floor(S / 3), 1);
         // Wear marks
@@ -99,6 +141,26 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
             if (rng(4) === 0) {
                 ctx.fillStyle = p.lo;
                 ctx.fillRect(cx + 2 + rng(S - 4), cy + 2 + rng(S - 4), 1, 1);
+            }
+        }
+
+    } else if (tileType === 'dirt' || tileType === 'sand') {
+        // Base noise
+        for (let i = 0; i < 8; i++) {
+            ctx.fillStyle = rng(2) ? p.hi : p.lo;
+            ctx.fillRect(cx + rng(S), cy + rng(S), 1, 1);
+        }
+        if (tileType === 'sand') {
+            // Ripple marks
+            ctx.fillStyle = p.hi;
+            for (let i = 0; i < 2; i++) {
+                ctx.fillRect(cx + 2 + rng(S-4), cy + 4 + i*4, 4, 1);
+            }
+        } else {
+            // Footprint/cracks for dirt
+            if (rng(4) === 0) {
+                ctx.fillStyle = p.lo;
+                ctx.fillRect(cx + 4 + rng(S-8), cy + 4 + rng(S-8), 2, 2);
             }
         }
 
@@ -249,31 +311,52 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
 }
 
 // --- AUTHORED SPRITE BITMASKS ---
-// 8x12 grayscale templates (0: transparent, 1: outline #000, 2: secondary #888, 3: primary #ccc, 4: accent #fff)
+// 8x14 grayscale templates (0: transparent, 1: outline #000, 2: secondary #888, 3: primary #ccc, 4: accent #fff)
 const SHAPES = {
+    // Player Base — Humanoid silhouette (16px tall total with feet)
     player: [
-        "00011000", "00133100", "01344410", "01344410", "00011000", "01133110",
-        "13333331", "01333310", "01122110", "01122110", "00112100", "00112100"
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01133110",
+        "01100110", "01100110"
     ],
     player_back: [
-        "00011000", "00133100", "01333310", "01333310", "00011000", "01133110",
-        "13333331", "01333310", "01122110", "01122110", "00112100", "00112100"
+        "00011000", "00122100", "01222210", "01222210", "00122100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01133110",
+        "01100110", "01100110"
     ],
     player_side: [
-        "00011100", "00133100", "01334410", "01333100", "00011000", "00133110",
-        "01333310", "01333110", "01122100", "00122100", "00112100", "00011100"
+        "00011100", "00133310", "01333310", "01333110", "00133100", "00011000",
+        "00133100", "01333310", "01333110", "01333110", "01133100", "01133100",
+        "01100000", "01100000"
     ],
+    // Hair Masks (Layered on top of primary #ccc head)
+    hair_bowl:   ["00111100", "01222210", "12222221", "01122110"],
+    hair_shaggy: ["00111100", "12222221", "12222221", "11222211", "01111110"],
+    hair_long:   ["01111110", "12222221", "12222221", "12222221", "12222221", "11011011"],
+    // Clothing Accent Masks (Layered on primary #ccc body)
+    vest:  ["00000000", "00000000", "00000000", "00000000", "00000000", "00000000", "00111100", "01211210", "12111121", "01211210"],
+    cloak: ["00000000", "00000000", "00000000", "00000000", "00000000", "00000000", "00122100", "01222210", "12222221", "12222221", "12222221", "12222221"],
+
     stairs: [
         "00011000", "00011000", "00133100", "00133100", "01333310", "01333310",
         "13333331", "13333331", "33333333", "33333333", "11111111", "00000000"
     ],
+    // Differentiated enemies (unique silhouettes)
     wolf: [
-        "00000000", "00000000", "30000030", "33000330", "03333300", "03311300",
-        "03411430", "03333300", "02333200", "03000300", "03000300", "02000200"
+        "00000000", "00000000", "00000000", "30000300", "33003300", "03333000", 
+        "03131300", "13414310", "03333000", "02333200", "03303300", "03000300", "11000110"
+    ],
+    wraith: [
+        "00011000", "00144100", "01444410", "01411410", "01444410", "00144100",
+        "00133100", "01333310", "01333310", "01300310", "12000210", "02000200", "00000000"
+    ],
+    skeleton: [
+        "00011000", "00133100", "01311310", "01333310", "00111100", "00011000",
+        "00133100", "01311310", "01311310", "00111100", "00111100", "01100110", "01100110"
     ],
     guard: [
         "00111100", "01333310", "01344310", "01311310", "00111100", "02333320",
-        "23333332", "23333332", "23333332", "23333332", "02200220", "02200220"
+        "23333332", "23333332", "23333332", "23333332", "02200220", "02200220", "01100110"
     ],
     potion: [
         "00044000", "00033000", "00333300", "03433430", "03333330", "03333330", "00333300"
@@ -405,13 +488,25 @@ const SHAPES = {
         "13333331", "13333331", "13333331", "13333331",
         "13333331", "13333331", "01111110", "00000000"
     ],
+    well: [
+        "00111100", "01222210", "12222221", "12111121",
+        "12100121", "12100121", "11111111", "01333310",
+        "01333310", "01333310", "00111100", "00000000"
+    ],
+    flower_pot: [
+        "00000000", "00044000", "00433400", "00433400",
+        "00044000", "01111110", "13333331", "13333331",
+        "01333310", "00111100", "00000000", "00000000"
+    ],
 };
 
 /**
  * Generates a grayscale template canvas for a shape.
  */
-export function getGrayscaleTemplate(type) {
-    const shape = SHAPES[type];
+export function getGrayscaleTemplate(type, seed = 0) {
+    if (!type) return null;
+    const isPlayer = type.startsWith('player');
+    const shape = COMPILED_ASSET_SHAPES[type] || SHAPES[type];
     if (!shape) return null;
 
     const canvas = new OffscreenCanvas(16, 16);
@@ -426,15 +521,43 @@ export function getGrayscaleTemplate(type) {
         '4': '#ffffff'
     };
 
-    shape.forEach((row, y) => {
-        for (let x = 0; x < row.length; x++) {
-            const char = row[x];
-            if (char !== '0') {
-                ctx.fillStyle = colors[char];
-                ctx.fillRect(4 + x, 2 + y, 1, 1);
+    const drawMask = (mask, offX=0, offY=0) => {
+        mask.forEach((row, y) => {
+            for (let x = 0; x < row.length; x++) {
+                const char = row[x];
+                if (char !== '0') {
+                    ctx.fillStyle = colors[char];
+                    ctx.fillRect(4 + x + offX, 2 + y + offY, 1, 1);
+                }
             }
+        });
+    }
+
+    // 1. Draw Base
+    drawMask(shape);
+
+    // 2. Apply Multiplayer Variations (if player)
+    if (isPlayer && seed !== 0) {
+        const rng = tileRng(seed);
+        
+        // Hair variation
+        const hairs = [null, 'hair_bowl', 'hair_shaggy', 'hair_long'];
+        const hairType = hairs[rng(hairs.length)];
+        if (hairType) {
+            const hairMask = SHAPES[hairType];
+            // Back view hair is higher/fuller, side/front vary
+            const hOffY = type === 'player_back' ? -1 : 0;
+            drawMask(hairMask, 0, hOffY);
         }
-    });
+
+        // Clothing variation
+        const clothes = [null, 'vest', 'cloak'];
+        const clothType = clothes[rng(clothes.length)];
+        if (clothType && type !== 'player_back') { // Accents mostly on front/side
+            drawMask(SHAPES[clothType]);
+        }
+    }
+
     return canvas;
 }
 
@@ -512,60 +635,72 @@ export function applyPalette(template, palette) {
 export function drawLargeTree(ctx, cx, cy, wPx, hPx, seed) {
     const rng = tileRng(seed ^ 0x7a2e4f);
     const ccx = cx + wPx / 2;
-    const ccy = cy + hPx * 0.42;
-    const r = wPx * 0.44;
+    const ccy = cy + hPx * 0.45;
+    const r = wPx * 0.42;
 
-    // Shadow offset
+    // 1. Trunk (textured)
+    const tw = Math.max(4, wPx * 0.15);
+    const tx = ccx - tw / 2;
+    const ty = ccy;
+    const th = cy + hPx - ty;
+    ctx.fillStyle = '#3a2010'; // deep shadow
+    ctx.fillRect(tx - 1, ty, tw + 2, th);
+    ctx.fillStyle = '#5a3818'; // mid
+    ctx.fillRect(tx, ty, tw, th);
+    ctx.fillStyle = '#8a5a28'; // highlight
+    ctx.fillRect(tx + 1, ty, 2, th);
+
+    // 2. Canopy Shadow (offset)
+    ctx.fillStyle = 'rgba(0,15,0,0.4)';
     ctx.beginPath();
-    ctx.arc(ccx + 2, ccy + 2, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#0d2e0d';
+    ctx.arc(ccx + 4, ccy + 4, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Base canopy
-    ctx.beginPath();
-    ctx.arc(ccx, ccy, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#1a4a1a';
-    ctx.fill();
+    // 3. Blob Cluster Canopy (3 layers for depth)
+    const layers = [
+        { color: '#17300d', rMul: 1.0,  off: 0,   count: 5 }, // Back/Deep
+        { color: '#2a4a1a', rMul: 0.85, off: -2,  count: 6 }, // Mid
+        { color: '#3d6b2a', rMul: 0.6,  off: -5,  count: 4 }  // Front/Hi
+    ];
 
-    // Mid highlight
-    ctx.beginPath();
-    ctx.arc(ccx - 1, ccy - 1, r * 0.8, 0, Math.PI * 2);
-    ctx.fillStyle = '#2a6a2a';
-    ctx.fill();
+    layers.forEach(layer => {
+        ctx.fillStyle = layer.color;
+        const lr = r * layer.rMul;
+        for (let i = 0; i < layer.count; i++) {
+            const angle = (i / layer.count) * Math.PI * 2 + (rng(100) / 100);
+            const dist = rng(Math.floor(r * 0.4));
+            const bx = ccx + Math.cos(angle) * dist;
+            const by = ccy + Math.sin(angle) * dist + layer.off;
+            const br = lr * (0.7 + (rng(40) / 100));
+            ctx.beginPath();
+            ctx.arc(bx, by, br, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
 
-    // Seeded tufts
-    for (let i = 0; i < 4 + rng(5); i++) {
-        const angle = rng(628) / 100;
-        const dist = rng(Math.floor(r * 60)) / 100;
-        const sr = Math.max(1.5, r * 0.18);
+    // 4. Specular Highlights
+    ctx.fillStyle = '#5a9a38';
+    for (let i = 0; i < 3; i++) {
         ctx.beginPath();
-        ctx.arc(ccx + Math.cos(angle) * dist, ccy + Math.sin(angle) * dist, sr, 0, Math.PI * 2);
-        ctx.fillStyle = rng(3) === 0 ? '#3a8a3a' : '#2a6a2a';
+        ctx.arc(ccx - r*0.3 + rng(10), ccy - r*0.4 + rng(10), r * 0.2, 0, Math.PI * 2);
         ctx.fill();
     }
-
-    // Trunk
-    const tw = Math.max(2, wPx * 0.18);
-    const tx = ccx - tw / 2;
-    const ty = ccy + r * 0.65;
-    const th = Math.max(4, cy + hPx - ty);
-    ctx.fillStyle = '#5a3818';
-    ctx.fillRect(tx, ty, tw, th);
-    ctx.fillStyle = '#3a2010';
-    ctx.fillRect(tx, ty, 2, th);
 }
 
 // Hash-identicon character sprite — 16×16, seeded from entity id
 export function generateCharacterSprite(seed, type) {
     const pal = PALETTES[type] || PALETTES.peer;
-    const _rng = tileRng(seed);
 
     let sType = null;
     if (type === 'self' || type === 'peer') sType = 'player';
-    if (type === 'enemy') sType = 'wolf';
-    if (type === 'npc') sType = 'guard';
+    else if (type === 'enemy') {
+        const rng = tileRng(seed);
+        const types = ['wolf', 'wraith', 'skeleton'];
+        sType = types[rng(types.length)];
+    }
+    else if (type === 'npc') sType = 'guard';
 
-    const template = getGrayscaleTemplate(sType);
+    const template = getGrayscaleTemplate(sType, seed);
     if (template) return applyPalette(template, pal);
 
     // Fallback identicon
@@ -594,4 +729,19 @@ export function getWalkPose(frameTime) {
     const legOffset = Math.round(Math.sin(t * Math.PI * 2) * 2);
     const bodyY = Math.abs(Math.sin(t * Math.PI * 2)) > 0.7 ? -1 : 0;
     return { legOffset, bodyY };
+}
+
+/**
+ * Primitive for rounded rectangles.
+ */
+export function roundRect(ctx, x, y, w, h, r) {
+    if (w < 2 * r) r = w / 2;
+    if (h < 2 * r) r = h / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
 }

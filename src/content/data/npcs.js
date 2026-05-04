@@ -6,7 +6,7 @@ export const NPCS = {
         home: 'tavern', 
         role: 'shop', 
         shop: ['ale', 'bread', 'potion'],
-        baseDialogue: "Welcome to the Rusty Flagon. Stay a while, have a drink."
+        baseDialogue: "Welcome to the Rusty Flagon. Stay a while, have a drink. You look like you could use a rest."
     }),
     bard: defineNpc('bard', {
         name: 'The Bard',
@@ -40,6 +40,6 @@ export const NPCS = {
         home: 'hallway',
         patrol: ['hallway', 'cellar', 'tavern', 'market', 'watchtower'],
         role: 'quest',
-        baseDialogue: "Keep the peace, or I'll keep you in the cellar."
+        baseDialogue: "Keep the peace, or I'll keep you in the cellar. Head north to the tavern if you're looking for work."
     })
 };
