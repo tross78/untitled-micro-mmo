@@ -39,6 +39,46 @@ describe('content validation', () => {
         expect(result.ok).toBe(false);
         expect(result.problems).toContain('Quest "bad_fetch" targets item "mystery_box" but no acquisition source is defined');
     });
+
+    test('forage sources only count when a room actually authors sceneryScatter', () => {
+        const missingForage = validateContent({
+            itemDefinitions: [{ id: 'herbs' }],
+            enemyDefinitions: [],
+            roomDefinitions: [],
+            npcDefinitions: [],
+            recipeDefinitions: [],
+            questDefinitions: [{
+                id: 'herb_fetch',
+                giver: null,
+                receiver: null,
+                objective: { type: 'fetch', target: 'herbs', count: 1 },
+                reward: {},
+            }],
+        });
+        expect(missingForage.ok).toBe(false);
+        expect(missingForage.problems).toContain('Quest "herb_fetch" targets item "herbs" but no acquisition source is defined');
+
+        const withForage = validateContent({
+            itemDefinitions: [{ id: 'herbs' }],
+            enemyDefinitions: [],
+            roomDefinitions: [{
+                id: 'meadow',
+                width: 5,
+                height: 5,
+                sceneryScatter: [{ type: 'flora', label: 'herbs', count: [1, 1] }],
+            }],
+            npcDefinitions: [],
+            recipeDefinitions: [],
+            questDefinitions: [{
+                id: 'herb_fetch',
+                giver: null,
+                receiver: null,
+                objective: { type: 'fetch', target: 'herbs', count: 1 },
+                reward: {},
+            }],
+        });
+        expect(withForage.problems).not.toContain('Quest "herb_fetch" targets item "herbs" but no acquisition source is defined');
+    });
 });
 
 describe('command registry', () => {

@@ -4,6 +4,10 @@ import { findSafeArrival } from '../rules/index.js';
 
 const VALID_TILES = new Set(Object.values(TILE_TAXONOMY).flat());
 const VALID_SCENERY = new Set(Object.values(SCENERY_SIZE_CLASSES).flat());
+const FORAGE_LABEL_TO_ITEM = {
+  herbs: 'herbs',
+  mushroom: 'red_mushroom',
+};
 
 const hasDuplicateIds = (definitions) => new Set(definitions.map((entry) => entry.id)).size !== definitions.length;
 
@@ -57,8 +61,6 @@ export const validateContent = (defs) => {
   for (const quest of quests) {
     if (quest.reward?.item) noteSource(String(quest.reward.item), `quest:${quest.id}`);
   }
-  ['herbs', 'red_mushroom'].forEach((itemId) => noteSource(itemId, 'forage'));
-
   const getIsWalkable = (r) => (x, y) => {
     if (x < 0 || x >= r.width || y < 0 || y >= r.height) return false;
     const wall = (r.tileOverrides || []).find(t => t.x === x && t.y === y && t.type === 'wall');
@@ -81,6 +83,13 @@ export const validateContent = (defs) => {
     for (const sc of room.scenery || []) {
       if (sc.label && !VALID_SCENERY.has(sc.label)) {
         problems.push(`Room "${room.id}" uses non-canonical scenery label "${sc.label}"`);
+      }
+    }
+    for (const scatter of room.sceneryScatter || []) {
+      if (scatter.type === 'flora') {
+        const itemId = FORAGE_LABEL_TO_ITEM[scatter.label];
+        if (itemId) noteSource(itemId, `forage:${room.id}`);
+        else problems.push(`Room "${room.id}" uses unknown forage label "${scatter.label}"`);
       }
     }
 

@@ -41,16 +41,21 @@ export const handleNPCCommands = async (command, args) => {
                 }
             });
 
-            const courierQ = localPlayer.quests['courier_run'];
-            if (courierQ && !courierQ.completed && targetId === 'sage') {
-                const aleIdx = localPlayer.inventory.indexOf('ale');
-                if (aleIdx !== -1) {
-                    localPlayer.inventory.splice(aleIdx, 1);
-                    courierQ.progress = 1;
-                    bus.emit('quest:progress', { name: 'Courier Run', current: 1, total: 1 });
-                    log(`[Quest] You deliver the ale to the Sage. They nod gratefully.`, '#ff0');
-                }
-            }
+            Object.entries(localPlayer.quests || {}).forEach(([qid, pq]) => {
+                const q = QUESTS[qid];
+                if (!q || pq.completed || q.type !== 'deliver' || q.receiver !== targetId) return;
+                const deliverItemId = q.objective?.target;
+                const goal = q.objective?.count || 1;
+                if (!deliverItemId || (pq.progress || 0) >= goal) return;
+
+                const invIdx = localPlayer.inventory.indexOf(deliverItemId);
+                if (invIdx === -1) return;
+
+                localPlayer.inventory.splice(invIdx, 1);
+                pq.progress = Math.min(goal, (pq.progress || 0) + 1);
+                bus.emit('quest:progress', { name: q.name, current: pq.progress, total: goal });
+                log(`[Quest] You deliver ${ITEMS[deliverItemId]?.name || deliverItemId} to ${npc.name}.`, '#ff0');
+            });
             return true;
         }
 
@@ -119,10 +124,11 @@ export const handleNPCCommands = async (command, args) => {
             Object.keys(localPlayer.quests).forEach(qid => {
                 const q = QUESTS[qid];
                 const pq = localPlayer.quests[qid];
-                if (q && !pq.completed && q.type === 'deliver' && q.objective.target === shopNpcId) {
-                    pq.progress = Math.min(q.objective.count, (pq.progress || 0) + 1);
-                    bus.emit('quest:progress', { name: q.name, current: pq.progress, total: q.objective.count });
-                }
+                if (!q || pq.completed || q.type !== 'deliver') return;
+                if (q.receiver !== shopNpcId || q.objective?.target !== itemId) return;
+                const total = q.objective?.count || 1;
+                pq.progress = Math.min(total, (pq.progress || 0) + 1);
+                bus.emit('quest:progress', { name: q.name, current: pq.progress, total });
             });
 
             saveLocalState(localPlayer, true);

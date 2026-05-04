@@ -4,6 +4,7 @@ import { localPlayer, worldState, shardEnemies } from '../state/store.js';
 import { bus } from '../state/eventbus.js';
 import { appRuntime } from '../app/runtime.js';
 import { gameActions } from '../network/index.js';
+import { QUESTS } from '../content/data.js';
 
 // Mocking dependencies
 jest.mock('../state/persistence.js', () => ({
@@ -251,6 +252,57 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
 
             expect(localPlayer.inventory).toContain('bread');
             expect(localPlayer.quests.market_recovery.progress).toBe(1);
+        });
+
+        test('deliver quests progress generically when talking to the receiver with the item', async () => {
+            localPlayer.location = 'ruins';
+            localPlayer.inventory = ['ale'];
+            localPlayer.quests.courier_run = { progress: 0, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('talk sage');
+
+            expect(localPlayer.inventory).not.toContain('ale');
+            expect(localPlayer.quests.courier_run.progress).toBe(1);
+            expect(emitSpy).toHaveBeenCalledWith('quest:progress', {
+                name: 'Courier Run',
+                current: 1,
+                total: 1
+            });
+        });
+
+        test('deliver quests progress generically when selling the target item to the receiver shop npc', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['wood'];
+            localPlayer.quests.merchant_delivery = {
+                progress: 0,
+                completed: false
+            };
+            const originalQuest = QUESTS.merchant_delivery;
+            QUESTS.merchant_delivery = {
+                id: 'merchant_delivery',
+                name: 'Merchant Delivery',
+                giver: 'merchant',
+                receiver: 'merchant',
+                type: 'deliver',
+                objective: { type: 'deliver', target: 'wood', count: 1 },
+                reward: { xp: 1, gold: 1 }
+            };
+            try {
+                appRuntime.hydratePlayer(localPlayer);
+
+                await handleCommand('sell wood');
+
+                expect(localPlayer.quests.merchant_delivery.progress).toBe(1);
+                expect(emitSpy).toHaveBeenCalledWith('quest:progress', {
+                    name: 'Merchant Delivery',
+                    current: 1,
+                    total: 1
+                });
+            } finally {
+                if (originalQuest) QUESTS.merchant_delivery = originalQuest;
+                else delete QUESTS.merchant_delivery;
+            }
         });
 
         test('scarcity and surplus both affect shop prices', async () => {

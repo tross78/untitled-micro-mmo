@@ -173,6 +173,10 @@ export const rooms = {
         exits: {"west":"crossroads","north":"ruins","south":"cave","east":"forest_depths"},
         exitTiles: "0,10,crossroads,10,5,edge|10,0,ruins,10,20,edge|10,20,cave,6,0,door|20,10,forest_depths,0,12,edge",
         scenery: "1,1,tree|15,1,tree|1,14,tree|15,14,tree|5,1,tree|12,1,tree|1,7,tree|16,6,tree|1,11,tree|16,11,tree",
+        sceneryScatter: [
+            { type: 'flora', label: 'herbs', count: [2, 4] },
+            { type: 'flora', label: 'mushroom', count: [1, 2] }
+        ],
         enemy: 'forest_wolf',
         tileOverrides: [
             { x: 9, y: 0, type: 'forest' }, { x: 10, y: 0, type: 'forest' }, { x: 11, y: 0, type: 'forest' },
@@ -189,6 +193,10 @@ export const rooms = {
         exits: {"west":"forest_edge","east":"lake_shore","north":"bandit_camp","south":"cemetery"},
         exitTiles: "0,12,forest_edge,20,10,edge|24,12,lake_shore,0,10,edge|12,0,bandit_camp,7,14,edge|12,24,cemetery,10,0,edge",
         terrain: { floor: 'forest', density: 20, clutter: ['tree', 'shrub', 'rock'] },
+        sceneryScatter: [
+            { type: 'flora', label: 'herbs', count: [3, 5] },
+            { type: 'flora', label: 'mushroom', count: [2, 4] }
+        ],
         enemy: 'goblin',
     }),
 
@@ -237,6 +245,9 @@ export const rooms = {
         exits: {"west":"forest_depths","north":"mountain_pass","east":"harbour"},
         exitTiles: "0,10,forest_depths,24,12,edge|10,0,mountain_pass,10,30,edge|20,10,harbour,0,7,edge",
         scenery: "1,1,tree|17,1,tree|7,1,rock|2,9,rock|2,11,rock|5,5,rock|15,5,rock|5,15,rock|15,15,rock",
+        sceneryScatter: [
+            { type: 'flora', label: 'herbs', count: [1, 3] }
+        ],
         tileOverrides: [
             { x: 9, y: 0, type: 'sand' }, { x: 10, y: 0, type: 'sand' }, { x: 11, y: 0, type: 'sand' },
             { x: 0, y: 9, type: 'sand' }, { x: 0, y: 10, type: 'sand' }, { x: 0, y: 11, type: 'sand' },
@@ -434,6 +445,9 @@ export const rooms = {
         exits: {"north":"forest_depths","south":"catacombs","east":"throne_room"},
         exitTiles: "10,0,forest_depths,12,24,edge|10,20,catacombs,7,1,edge|20,10,throne_room,1,7,edge",
         terrain: { floor: 'forest', density: 10, clutter: ['grave', 'shrub'] },
+        sceneryScatter: [
+            { type: 'flora', label: 'mushroom', count: [1, 3] }
+        ],
     }),
 
     catacombs: defineRoom('catacombs', {

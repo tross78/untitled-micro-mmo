@@ -22,6 +22,11 @@ describe('Deterministic NPC Logic', () => {
         expect(getNPCLocation('guard', seed, 1)).toBe(loc1);
     });
 
+    test('guard patrol stays within town-scale rooms', () => {
+        const validRooms = [NPCS.guard.home, ...NPCS.guard.patrol];
+        expect(validRooms).not.toContain('watchtower');
+    });
+
     test('NPC dialogue selection is deterministic', () => {
         const d1 = getNPCDialogue('sage', seed, 1, 'joyful');
         const d2 = getNPCDialogue('sage', seed, 1, 'joyful');

@@ -38,7 +38,7 @@ export const NPCS = {
     guard: defineNpc('guard', {
         name: 'Guard',
         home: 'hallway',
-        patrol: ['hallway', 'cellar', 'tavern', 'market', 'watchtower'],
+        patrol: ['hallway', 'cellar', 'tavern', 'market', 'crossroads'],
         role: 'quest',
         baseDialogue: "Keep the peace, or I'll keep you in the cellar. Head north to the tavern if you're looking for work."
     })
