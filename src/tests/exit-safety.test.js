@@ -28,7 +28,7 @@ describe('Phase 8.5 Tightening: Exit Safety and Safe Arrival', () => {
     });
 
     test('findSafeArrival returns original if walkable', () => {
-        const pos = findSafeArrival(1, 1, 5, 5, (x, y) => true);
+        const pos = findSafeArrival(1, 1, 5, 5, (_x, _y) => true);
         expect(pos).toEqual({ x: 1, y: 1 });
     });
 

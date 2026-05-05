@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { applyPalette, PALETTES, getGrayscaleTemplate, roundRect } from '../graphics/graphics.js';
+import { applyPalette, getGrayscaleTemplate, roundRect } from '../graphics/graphics.js';
 import { levelBonus } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';

@@ -44,7 +44,7 @@ export const decodePng = (buffer) => {
   let offset = PNG_SIGNATURE.length;
   let width = 0;
   let height = 0;
-  let bitDepth = 0;
+  let bitDepth;
   let colorType = 0;
   const idat = [];
 

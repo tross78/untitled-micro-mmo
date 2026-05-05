@@ -1,4 +1,3 @@
-import { jest } from '@jest/globals';
 import { WorldStore } from '../domain/ecs.js';
 import { Component } from '../domain/components.js';
 import { MovementSystem } from '../systems/movement-system.js';

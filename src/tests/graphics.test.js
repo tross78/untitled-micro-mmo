@@ -129,7 +129,7 @@ describe('graphics procedural primitives', () => {
         // Enemy type selection is deterministic from seed
         const canvas1a = generateCharacterSprite(seed1, 'enemy');
         const canvas1b = generateCharacterSprite(seed1, 'enemy');
-        const canvas2 = generateCharacterSprite(seed2, 'enemy');
+        generateCharacterSprite(seed2, 'enemy');
         
         expect(canvas1a.ctx.putImageData.mock.calls).toEqual(canvas1b.ctx.putImageData.mock.calls);
     });

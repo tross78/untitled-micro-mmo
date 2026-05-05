@@ -67,7 +67,7 @@ export class MovementSystem {
         // Path blocked: give feedback and clear target
         const dx = target.x - transform.x;
         const dy = target.y - transform.y;
-        let failDir = 's';
+        let failDir;
         if (Math.abs(dx) > Math.abs(dy)) failDir = dx > 0 ? 'e' : 'w';
         else failDir = dy > 0 ? 's' : 'n';
 

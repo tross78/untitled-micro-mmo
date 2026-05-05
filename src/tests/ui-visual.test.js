@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { UIRenderSystem } from '../systems/ui-render-system.js';
-import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
+import { UI_PALETTE } from '../infra/graphics-constants.js';
 import { WorldStore } from '../domain/ecs.js';
 
 function makeCtx() {
