@@ -27,6 +27,13 @@ export class GameLoop {
     if (!this.stopped) return;
     this.stopped = false;
     this.last = performance.now();
+
+    // Reset timestamp on tab resume so we don't accumulate a large dt spike.
+    this._visHandler = () => {
+      if (document.visibilityState === 'visible') this.last = performance.now();
+    };
+    document.addEventListener('visibilitychange', this._visHandler);
+
     this.frame = (now) => {
       if (this.stopped) return;
       
@@ -53,6 +60,10 @@ export class GameLoop {
     if (this.rafId) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
+    }
+    if (this._visHandler) {
+      document.removeEventListener('visibilitychange', this._visHandler);
+      this._visHandler = null;
     }
   }
 }

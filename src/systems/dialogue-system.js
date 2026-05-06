@@ -13,17 +13,8 @@ export class DialogueSystem {
   constructor(world) {
     this.world = world;
 
-    bus.on('npc:speak', ({ npcName, text }) => {
-      const players = this.world.query([Component.PlayerControlled]);
-      if (players.length > 0) {
-        this.world.setComponent(players[0], Component.Dialogue, {
-          text,
-          speakerId: npcName,
-          progress: 0,
-          page: 1
-        });
-      }
-    });
+    // Note: npc:speak → Dialogue component is handled by showDialogue() in
+    // renderer-ui-compat, which is wired up in events.js. No duplicate handler here.
 
     bus.on('ui:back', () => {
       const players = this.world.query([Component.PlayerControlled]);

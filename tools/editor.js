@@ -374,11 +374,13 @@ function renderTileCanvas() {
     // Draw exit overlays
     (state.exitTiles || []).forEach(ex => {
         if (ex.x < 0 || ex.y < 0) return;
+        const exW = (ex.w || 1) * S;
+        const exH = (ex.h || 1) * S;
         ctx.fillStyle = 'rgba(80,200,120,0.35)';
-        ctx.fillRect(ex.x * S, ex.y * S, S, S);
+        ctx.fillRect(ex.x * S, ex.y * S, exW, exH);
         ctx.strokeStyle = '#33aa55';
         ctx.lineWidth = 1;
-        ctx.strokeRect(ex.x * S + 0.5, ex.y * S + 0.5, S - 1, S - 1);
+        ctx.strokeRect(ex.x * S + 0.5, ex.y * S + 0.5, exW - 1, exH - 1);
     });
 
     // Draw scenery
@@ -550,7 +552,11 @@ function getRoomDSL(id) {
     }
 
     const sceneryStr = scenery.map(s => `${s.x},${s.y},${s.label}`).join('|');
-    const exitStr = exitTiles.map(ex => `${ex.x},${ex.y},${ex.dest},${ex.destX},${ex.destY},${ex.type}`).join('|');
+    const exitStr = exitTiles.map(ex => {
+        const parts = [`${ex.x}`, `${ex.y}`, ex.dest, `${ex.destX}`, `${ex.destY}`, ex.type];
+        if ((ex.w || 1) !== 1 || (ex.h || 1) !== 1) parts.push(`${ex.w || 1}`, `${ex.h || 1}`);
+        return parts.join(',');
+    }).join('|');
     const tileRows = grid.map(row => `            '${row.join('')}'`).join(',\n');
     const hasTiles = grid.some(row => row.some(c => c !== '.'));
 

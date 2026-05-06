@@ -354,8 +354,8 @@ export class UIRenderSystem {
         const footerH = Math.max(30, Math.floor(this.VP.S * 0.7));
         const rowsTop = y + headerH + messageH + pad * 0.4;
         const availableH = h - headerH - messageH - footerH - pad * 1.2;
-        const rowGap = Math.max(6, Math.floor(this.VP.S * 0.12));
-        const rowH = Math.max(44, Math.floor((availableH - rowGap * Math.max(0, menu.entries.length - 1)) / Math.max(1, menu.entries.length)));
+        const rowGap = Math.max(4, Math.floor(this.VP.S * 0.09));
+        const rowH = Math.max(28, Math.floor((availableH - rowGap * Math.max(0, menu.entries.length - 1)) / Math.max(1, menu.entries.length)));
         const rows = menu.entries.map((_, index) => ({
             x: x + pad,
             y: rowsTop + index * (rowH + rowGap),

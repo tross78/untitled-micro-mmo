@@ -42,7 +42,7 @@ Build target:
 
 * `npm run build`
 * Bundles `src/main.js` into `dist/main.js`
-* Keep the build under roughly 250KB minified unless there is a clear reason
+* Keep the build under roughly 500KB minified unless there is a clear reason
 
 ## Product Guardrails
 

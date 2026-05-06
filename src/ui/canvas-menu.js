@@ -1,5 +1,6 @@
 import { ITEMS, NPCS, QUESTS, RECIPES } from '../content/data.js';
 import { ENEMIES } from '../content/data.js';
+import { levelBonus } from '../rules/index.js';
 import { players, worldState } from '../state/store.js';
 import { getBuyPrice, getSellPrice } from '../commands/helpers.js';
 import { getAudioSettings } from '../engine/audio.js';
@@ -98,6 +99,9 @@ export function buildCanvasMenu(type, context, menuCtx) {
         if (enemy) {
             entries.push({ label: `Attack ${enemy.name}`, detail: 'Hostile nearby', action: { kind: 'command', command: 'attack' } });
         }
+        entries.push({ label: 'Stats', detail: `Lvl ${localPlayer.level}`, action: { kind: 'menu', menuType: 'stats' } });
+        entries.push({ label: 'Status', detail: 'Effects & world state', action: { kind: 'menu', menuType: 'status' } });
+        entries.push({ label: 'Map', detail: 'Connected locations', action: { kind: 'menu', menuType: 'map' } });
         entries.push({ label: 'Audio', detail: audio.muted ? 'Muted' : `Music ${Math.round(audio.music * 100)}% / SFX ${Math.round(audio.sfx * 100)}%`, action: { kind: 'menu', menuType: 'audio' } });
         entries.push({ label: 'Close', detail: 'Return to the world', action: { kind: 'close' } });
         return { type, title: 'Adventurer Menu', message: 'Select an action.', entries, selectedIndex: 0 };
@@ -265,6 +269,71 @@ export function buildCanvasMenu(type, context, menuCtx) {
         if (entries.length === 0) entries.push({ label: 'Nothing to craft here', detail: localPlayer.location, disabled: true });
         entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
         return { type, title: 'Crafting', message: capitalize(localPlayer.location), entries, selectedIndex: 0 };
+    }
+
+    if (type === 'stats') {
+        const bonus = levelBonus(localPlayer.level);
+        const restedBonus = (localPlayer.statusEffects || []).find(s => s.id === 'well_rested') ? 5 : 0;
+        const maxHp = (localPlayer.maxHp || 20) + bonus.maxHp + restedBonus;
+        const xpForLevel = (l) => (l - 1) ** 2 * 10;
+        const xpNeeded = xpForLevel(localPlayer.level + 1) - (localPlayer.xp || 0);
+        const eqWep = localPlayer.equipped?.weapon ? (ITEMS[localPlayer.equipped.weapon]?.name || 'none') : 'none';
+        const eqArm = localPlayer.equipped?.armor ? (ITEMS[localPlayer.equipped.armor]?.name || 'none') : 'none';
+        const entries = [
+            { label: 'Level', detail: `${localPlayer.level}  (${xpNeeded} XP to next)`, disabled: true },
+            { label: 'HP', detail: `${localPlayer.hp} / ${maxHp}`, disabled: true },
+            { label: 'Attack', detail: `${(localPlayer.attack || 1) + bonus.attack}`, disabled: true },
+            { label: 'Defense', detail: `${(localPlayer.defense || 0) + bonus.defense}`, disabled: true },
+            { label: 'Weapon', detail: eqWep, disabled: true },
+            { label: 'Armor', detail: eqArm, disabled: true },
+            { label: 'Gold', detail: `${localPlayer.gold || 0}g  (Bank: ${localPlayer.bankedGold || 0}g)`, disabled: true },
+            { label: 'Fights left today', detail: `${localPlayer.forestFights ?? '?'}`, disabled: true },
+            { label: 'Back', detail: 'Return', action: { kind: 'back' } },
+        ];
+        return { type, title: localPlayer.name || 'Character', message: `XP: ${localPlayer.xp || 0}`, entries, selectedIndex: entries.length - 1 };
+    }
+
+    if (type === 'status') {
+        const { worldState } = menuCtx;
+        const effects = localPlayer.statusEffects || [];
+        const effectLabels = { poisoned: 'Poisoned', well_rested: 'Well Rested' };
+        const entries = [];
+        if (effects.length === 0) {
+            entries.push({ label: 'No active effects', detail: 'Feeling normal', disabled: true });
+        } else {
+            effects.forEach(e => {
+                const dur = e.duration != null ? `${e.duration} turns left` : 'active';
+                entries.push({ label: effectLabels[e.id] || e.id, detail: dur, disabled: true });
+            });
+        }
+        entries.push({ label: 'Day', detail: `${worldState?.day ?? 1}`, disabled: true });
+        const threat = worldState?.threatLevel || 0;
+        const scarcity = worldState?.scarcity || [];
+        const surplus = worldState?.surplus || [];
+        if (threat > 0) entries.push({ label: 'Threat Level', detail: `${threat} — enemies are stronger`, disabled: true });
+        if (scarcity.length > 0) entries.push({ label: 'Scarce goods', detail: scarcity.map(id => ITEMS[id]?.name || id).join(', '), disabled: true });
+        if (surplus.length > 0) entries.push({ label: 'Market surplus', detail: surplus.map(id => ITEMS[id]?.name || id).join(', '), disabled: true });
+        entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
+        return { type, title: 'World Status', message: location?.name || '', entries, selectedIndex: entries.length - 1 };
+    }
+
+    if (type === 'map') {
+        const visited = localPlayer.visitedRooms || [localPlayer.location];
+        const currentLoc = localPlayer.location;
+        const entries = visited.map(locId => {
+            const loc = world[locId];
+            if (!loc) return null;
+            const exits = Object.keys(loc.exits || {}).join(', ') || 'none';
+            const isCurrent = locId === currentLoc;
+            return {
+                label: `${isCurrent ? '▶ ' : ''}${loc.name || locId}`,
+                detail: isCurrent ? 'You are here' : `Exits: ${exits}`,
+                disabled: true,
+            };
+        }).filter(Boolean);
+        if (entries.length === 0) entries.push({ label: location?.name || currentLoc, detail: 'You are here', disabled: true });
+        entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
+        return { type, title: 'World Map', message: `${visited.length} location${visited.length !== 1 ? 's' : ''} discovered`, entries, selectedIndex: entries.length - 1 };
     }
 
     return null;

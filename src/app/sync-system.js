@@ -2,7 +2,9 @@
 
 import { Component } from '../domain/components.js';
 import { bus } from '../state/eventbus.js';
-import { QUESTS } from '../content/data.js';
+import { QUESTS, ITEMS } from '../content/data.js';
+import { xpToLevel } from '../rules/index.js';
+import { saveLocalState } from '../state/persistence.js';
 
 /**
  * SyncSystem bridges the ECS runtime state back to the canonical stores
@@ -47,6 +49,27 @@ export class SyncSystem {
                 current: progress.progress,
                 total: quest.objective?.count || 1
               });
+            }
+            // Auto-complete explore quests with no receiver — reward granted on arrival
+            if (quest.receiver === null && progress.progress >= (quest.objective?.count || 1) && !progress.completed) {
+              progress.completed = true;
+              this.localPlayer.xp = (this.localPlayer.xp || 0) + (quest.reward?.xp || 0);
+              this.localPlayer.gold = (this.localPlayer.gold || 0) + (quest.reward?.gold || 0);
+              if (quest.reward?.item) {
+                if (!this.localPlayer.inventory) this.localPlayer.inventory = [];
+                this.localPlayer.inventory.push(quest.reward.item);
+              }
+              const newLevel = xpToLevel(this.localPlayer.xp);
+              bus.emit('quest:complete', { name: quest.name, rewards: quest.reward });
+              if (newLevel > this.localPlayer.level) {
+                this.localPlayer.level = newLevel;
+                bus.emit('player:levelup', { level: this.localPlayer.level });
+              }
+              bus.emit('npc:speak', {
+                npcName: ITEMS[quest.reward?.item]?.name ? 'Quest Complete' : 'Quest Complete',
+                text: `${quest.name} complete! Reward: ${quest.reward?.xp || 0} XP${quest.reward?.item ? `, ${ITEMS[quest.reward.item]?.name || quest.reward.item}` : ''}.`,
+              });
+              saveLocalState(this.localPlayer, true);
             }
           });
 

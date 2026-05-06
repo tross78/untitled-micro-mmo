@@ -1,4 +1,5 @@
 import { localPlayer, players, hasSyncedWithArbiter } from '../state/store.js';
+import { world } from '../content/data.js';
 import { ITEMS } from '../content/data.js';
 import { levelBonus, getShardName } from '../rules/index.js';
 import { log, printStatus } from '../ui/index.js';
@@ -20,6 +21,20 @@ export const handleMiscCommands = async (command, _args) => {
             log('--- NPC/Shop: /buy <item>, /sell <item>, /quest, /bank', '#ffa500');
             log('--- World:    /status, /rename <name>, /net, /clear', '#ffa500');
             return true;
+
+        case 'map': {
+            const visited = localPlayer.visitedRooms || [localPlayer.location];
+            log('\n--- WORLD MAP ---', '#ffa500');
+            visited.forEach(locId => {
+                const loc = world[locId];
+                if (!loc) return;
+                const exits = Object.keys(loc.exits || {}).join(', ') || 'none';
+                const marker = locId === localPlayer.location ? '▶ ' : '  ';
+                log(`${marker}${loc.name}  [${exits}]`, locId === localPlayer.location ? '#0f0' : '#aaa');
+            });
+            log('-----------------\n', '#ffa500');
+            return true;
+        }
 
         case 'net': {
             const gPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;

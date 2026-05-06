@@ -7,7 +7,7 @@ import { inputManager } from '../engine/input.js';
 import { setupGlobalEvents, triggerLogicalRefresh } from './events.js';
 import { initCrossTabSync } from './sync.js';
 import { verifyMessage } from '../security/crypto.js';
-import { updateSimulation, initNetworking, gameActions } from '../network/index.js';
+import { updateSimulation, initNetworking, gameActions, initOfflineDayTick } from '../network/index.js';
 import { world, GAME_NAME } from '../content/data.js';
 import { GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL } from '../infra/constants.js';
 import { saveLocalState } from '../state/persistence.js';
@@ -119,6 +119,7 @@ export const start = async () => {
                 .catch(() => {});
         }
 
+        initOfflineDayTick();
         await initNetworking();
         startTicker(worldState, setTicker);
         

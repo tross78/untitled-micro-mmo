@@ -99,8 +99,13 @@ export class EntityRenderSystem {
             if (fx && fx.type === 'hit_flash') {
                 ctx.globalCompositeOperation = 'source-atop';
                 ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                if (facing === 'w') ctx.fillRect(screenOffsetX, screenOffsetY + sy * this.VP.S + bounceY, this.VP.S, this.VP.S);
-                else ctx.fillRect(screenOffsetX + sx * this.VP.S, screenOffsetY + sy * this.VP.S + bounceY, this.VP.S, this.VP.S);
+                // Use same coordinate space as the sprite draw above — the flip
+                // transform is still active here, so west-facing must use the same
+                // inset x as the drawImage call, not screen-space screenOffsetX.
+                const flashX = facing === 'w'
+                    ? Math.floor(this.VP.S * 0.15)
+                    : screenOffsetX + sx * this.VP.S + Math.floor(this.VP.S * 0.15);
+                ctx.fillRect(flashX, screenOffsetY + sy * this.VP.S + bounceY, Math.floor(this.VP.S * 0.7), this.VP.S);
             }
             ctx.restore();
 

@@ -34,7 +34,7 @@ export class MapRenderSystem {
         const tileType = zoneTileType(locId);
         const floorX = Math.floor(camX);
         const floorY = Math.floor(camY);
-        const locKey = `${loc.name}:${loc.width}:${loc.height}:${worldState.day}`;
+        const locKey = `${locId}:${loc.width}:${loc.height}:${worldState.day}`;
 
         // 1. Manage Cache
         if (!this.tileCache || this.tileCache.locKey !== locKey || this.tileCache.camX !== floorX || this.tileCache.camY !== floorY) {

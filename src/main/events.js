@@ -116,6 +116,8 @@ const activateMenuEntry = async (index = null) => {
     return false;
 };
 
+export const resetVisualRefreshTimer = () => { _vRefreshTimer = null; };
+
 export const triggerVisualRefresh = () => {
     if (_vRefreshTimer) return;
     _vRefreshTimer = requestAnimationFrame(() => {
@@ -215,6 +217,8 @@ export const setupGlobalEvents = () => {
         if (to !== from) {
             const roomName = world[to]?.name;
             if (roomName) showRoomBanner(roomName);
+            if (!localPlayer.visitedRooms) localPlayer.visitedRooms = [from];
+            if (!localPlayer.visitedRooms.includes(to)) localPlayer.visitedRooms.push(to);
         }
         closeMenu();
         triggerLogicalRefresh();
@@ -345,7 +349,7 @@ export const setupGlobalEvents = () => {
                 cmd = 'back'; 
                 break;
             }
-            case ACTION.CONFIRM: cmd = 'confirm'; break;
+            case ACTION.CONFIRM: return; // no-op; menus handle confirm via their own input path
             case ACTION.MENU:
                 openMenu('root');
                 return;

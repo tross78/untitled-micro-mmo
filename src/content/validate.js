@@ -3,6 +3,18 @@ import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants
 import { findSafeArrival } from '../rules/index.js';
 import { COMPILED_ASSET_SHAPES } from '../generated/assets/compiled-assets.js';
 
+// Runtime sprite shapes defined in graphics.js — valid sprite names for NPCs/enemies
+const RUNTIME_SPRITE_NAMES = new Set([
+    'player', 'player_back', 'player_side', 'guard', 'barkeep', 'merchant',
+    'herbalist', 'sage', 'bard', 'wolf', 'ruin_shade', 'skeleton', 'wraith',
+    'goblin', 'cave_troll', 'mountain_troll', 'bandit', 'crab',
+    'potion', 'heart', 'tree', 'shrub', 'rock', 'crate', 'altar', 'grave',
+    'mushroom', 'scroll', 'barrel', 'stall', 'sign', 'wheel', 'torch', 'bones',
+    'anchor', 'snowflake', 'crown', 'ladder', 'shell', 'door_arch', 'candle',
+    'bookshelf', 'fireplace', 'chair', 'counter', 'cauldron', 'pillar', 'table',
+    'bed', 'well', 'flower_pot', 'stairs',
+]);
+
 const VALID_TILES = new Set(Object.values(TILE_TAXONOMY).flat());
 const VALID_SCENERY = new Set(Object.values(SCENERY_SIZE_CLASSES).flat());
 const FORAGE_LABEL_TO_ITEM = {
@@ -56,7 +68,7 @@ export const validateContent = (defs) => {
   for (const npc of npcs) {
     if (!npc.sprite) {
       problems.push(`NPC "${npc.id}" is missing required sprite id`);
-    } else if (!COMPILED_ASSET_SHAPES[npc.sprite]) {
+    } else if (!COMPILED_ASSET_SHAPES[npc.sprite] && !RUNTIME_SPRITE_NAMES.has(npc.sprite)) {
       problems.push(`NPC "${npc.id}" references missing compiled sprite "${npc.sprite}"`);
     }
     for (const itemId of npc.shop || []) noteSource(String(itemId), `shop:${npc.id}`);

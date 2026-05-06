@@ -38,12 +38,12 @@ import {
 import { 
     buildSketch, packSignedPresence, unpackPresencePacket, seedFromSnapshot 
 } from './presence.js';
-import { updateSimulation } from './simulation.js';
+import { updateSimulation, initOfflineDayTick } from './simulation.js';
 import { 
     getCurrentInstance, setCurrentInstance, preJoinShard, getPreJoined, clearShardState 
 } from './shard.js';
 
-export { seedFromSnapshot, updateSimulation, preJoinShard, buildTorrentConfig, isProposer };
+export { seedFromSnapshot, updateSimulation, initOfflineDayTick, preJoinShard, buildTorrentConfig, isProposer };
 
 const netLog = (msg, color = '#555') => {
     if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {

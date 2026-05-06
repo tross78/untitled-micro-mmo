@@ -136,8 +136,8 @@ class AppRuntime {
 
     const canvas = document.getElementById('game-canvas');
     if (canvas instanceof HTMLCanvasElement) {
-        canvas.width = this.VP.CW;
-        canvas.height = this.VP.CH;
+        if (canvas.width !== this.VP.CW) canvas.width = this.VP.CW;
+        if (canvas.height !== this.VP.CH) canvas.height = this.VP.CH;
     }
   }
 
@@ -186,7 +186,9 @@ class AppRuntime {
     const { camX, camY, screenOffsetX, screenOffsetY } = this.getViewportTransform(drawX, drawY, transform.mapId);
 
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+
     this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY);
     this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY);
     this.uiRender.draw(ctx, localPlayerStore);

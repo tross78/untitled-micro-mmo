@@ -137,7 +137,7 @@ export class InputManager {
         ];
 
         buttons.forEach(b => {
-          const pressed = gp.buttons[b.idx].pressed;
+          const pressed = gp.buttons[b.idx]?.pressed ?? false;
           const key = `${gp.index}-${b.idx}`;
           if (pressed && !this.prevGamepadButtons.has(key)) {
             this.lastInputMode = 'gamepad';

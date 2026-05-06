@@ -10,6 +10,7 @@ import { ITEMS, NPCS } from '../content/data.js';
 import { getScatteredContent, getNPCDialogue, findSafeArrival } from '../rules/index.js';
 import { getNPCsAt } from '../commands/helpers.js';
 import { ACTION } from '../engine/input.js';
+import { log } from '../ui/index.js';
 
 const getSpriteKind = (sprite) => {
   if (!sprite) return null;
@@ -82,6 +83,7 @@ export class MovementSystem {
 
         this.world.setComponent(entityId, Component.CollisionBump, { dir: failDir, progress: 0 });
         this.world.removeComponent(entityId, Component.MovementTarget);
+        log('Path blocked.', '#888');
       }
     }
     
@@ -161,6 +163,7 @@ export class MovementSystem {
         transform.facing = dir;
         this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
         this.world.removeComponent(entityId, Component.MovementTarget);
+        log('Blocked.', '#888');
         return;
     }
 
@@ -306,10 +309,12 @@ export class MovementSystem {
     return (loc.exitTiles || []).find((tile) => {
       const width = tile.w || 1;
       const height = tile.h || 1;
-      if (dir === 'n') return tile.y === 0 && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
-      if (dir === 's') return tile.y + height === loc.height && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
-      if (dir === 'e') return tile.x + width === loc.width && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
-      if (dir === 'w') return tile.x === 0 && x >= tile.x && x < tile.x + width && y >= tile.y && y < tile.y + height;
+      // Only check the perpendicular axis — the player's position along the
+      // movement axis is already constrained to the boundary by the OOB check.
+      if (dir === 'n') return tile.y === 0 && x >= tile.x && x < tile.x + width;
+      if (dir === 's') return tile.y + height === loc.height && x >= tile.x && x < tile.x + width;
+      if (dir === 'e') return tile.x + width === loc.width && y >= tile.y && y < tile.y + height;
+      if (dir === 'w') return tile.x === 0 && y >= tile.y && y < tile.y + height;
       return false;
     }) || null;
   }

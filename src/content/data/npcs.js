@@ -1,8 +1,8 @@
 import { defineNpc } from '../define.js';
 
 export const NPCS = {
-    barkeep: defineNpc('barkeep', { 
-        name: 'Barkeep', 
+    barkeep: defineNpc('barkeep', {
+        name: 'Barkeep',
         sprite: 'barkeep',
         palette: 'npcWarm',
         home: 'tavern', 
@@ -12,37 +12,37 @@ export const NPCS = {
     }),
     bard: defineNpc('bard', {
         name: 'The Bard',
-        sprite: 'guard',
+        sprite: 'bard',
         palette: 'npcSong',
         home: 'tavern',
         role: 'flavor',
         baseDialogue: "The old songs still carry the shape of this land. Sit a while and listen."
     }),
-    merchant: defineNpc('merchant', { 
-        name: 'Merchant', 
-        sprite: 'guard',
+    merchant: defineNpc('merchant', {
+        name: 'Merchant',
+        sprite: 'merchant',
         palette: 'npcTrade',
-        home: 'market', 
-        role: 'shop', 
+        home: 'market',
+        role: 'shop',
         shop: ['iron_sword', 'wood', 'iron', 'wheat'],
         baseDialogue: "Finest wares in the realm, or at least in this square."
     }),
     herbalist: defineNpc('herbalist', {
         name: 'Herbalist',
-        sprite: 'guard',
+        sprite: 'herbalist',
         palette: 'npcLeaf',
         home: 'herbalist_hut',
         role: 'shop',
         shop: ['potion', 'healing_elixir', 'strength_elixir'],
         baseDialogue: "The forest provides all we need, if you know where to look."
     }),
-    sage: defineNpc('sage', { 
-        name: 'Sage', 
-        sprite: 'guard',
+    sage: defineNpc('sage', {
+        name: 'Sage',
+        sprite: 'sage',
         palette: 'npcSage',
-        home: 'ruins', 
-        patrol: ['ruins', 'forest_edge', 'hallway'], 
-        role: 'flavor', 
+        home: 'ruins',
+        patrol: ['ruins', 'forest_edge', 'hallway'],
+        role: 'flavor',
         baseDialogue: "The shadows grow longer with each passing day..."
     }),
     guard: defineNpc('guard', {
@@ -53,5 +53,13 @@ export const NPCS = {
         patrol: ['hallway', 'cellar', 'tavern', 'market', 'crossroads'],
         role: 'quest',
         baseDialogue: "Keep the peace, or I'll keep you in the cellar. Head north to the tavern if you're looking for work."
+    }),
+    cellar_guard: defineNpc('cellar_guard', {
+        name: 'Guard',
+        sprite: 'guard',
+        palette: 'npcGuard',
+        home: 'cellar',
+        role: 'flavor',
+        baseDialogue: "New here? Head through the door to the north. The tavern's where people find work around these parts."
     })
 };

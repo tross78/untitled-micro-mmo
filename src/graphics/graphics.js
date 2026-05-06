@@ -28,21 +28,21 @@ export { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_DIMENSIONS };
 export const hasCompiledAssetShape = (type) => !!COMPILED_ASSET_SHAPES[type];
 export const getCompiledAssetMeta = (type) => COMPILED_ASSET_META[type] || null;
 
-// LttP + Stardew unified palette — saturated, 16-bit SNES feel
+// LttP + Stardew unified palette — saturated SNES-era colors
 const TILE_PAL = {
-    grass:       { base: '#3d6b2a', hi: '#5a9a38', lo: '#274518', accent: '#80c050' },
-    stone_floor: { base: '#6e6458', hi: '#8a7d6f', lo: '#48413a', accent: '#a09080' },
-    wall:        { base: '#4a5248', hi: '#6a7260', lo: '#282e28', accent: '#8a9080' },
-    water:       { base: '#1a3f6a', hi: '#2e608a', lo: '#0e2540', accent: '#6aaac8' },
-    exit:        { base: '#0a2a0a', hi: '#33aa55', lo: '#051505', accent: '#44dd77' },
-    interior:    { base: '#8a5a28', hi: '#b87c3a', lo: '#5a3818', accent: '#d4a060' },
-    dungeon:     { base: '#5a6878', hi: '#7a90a8', lo: '#3a4858', accent: '#b0c4d8' },
-    cave:        { base: '#6a5038', hi: '#8a6a4a', lo: '#3e2e20', accent: '#a8845c' },
-    ice:         { base: '#b8d8e8', hi: '#ddf0f8', lo: '#8ab0c8', accent: '#ffffff' },
-    dirt:        { base: '#8a6a38', hi: '#a8845c', lo: '#5a4520', accent: '#c8a078' },
-    sand:        { base: '#d4b478', hi: '#e8d098', lo: '#b09050', accent: '#f0e0b0' },
-    forest:      { base: '#2a4a1a', hi: '#3d6b2a', lo: '#17300d', accent: '#5a9a38' },
-    cobble:      { base: '#5a5448', hi: '#7a7468', lo: '#3a3428', accent: '#9a9488' },
+    grass:       { base: '#48942a', hi: '#6ab83c', lo: '#2d5e18', accent: '#90d050' },
+    stone_floor: { base: '#787060', hi: '#9a9080', lo: '#504840', accent: '#b8aea0' },
+    wall:        { base: '#58504a', hi: '#787060', lo: '#302c28', accent: '#a09488' },
+    water:       { base: '#1848a8', hi: '#2870c8', lo: '#0c2c68', accent: '#60c0e8' },
+    exit:        { base: '#082808', hi: '#20b840', lo: '#041404', accent: '#40f070' },
+    interior:    { base: '#9a6030', hi: '#c8844a', lo: '#603818', accent: '#e0a868' },
+    dungeon:     { base: '#404878', hi: '#6070a8', lo: '#282e50', accent: '#98b0d8' },
+    cave:        { base: '#5a4030', hi: '#7a5840', lo: '#361e10', accent: '#9a7050' },
+    ice:         { base: '#c0ddf0', hi: '#e8f6ff', lo: '#88b8d8', accent: '#ffffff' },
+    dirt:        { base: '#906830', hi: '#b08848', lo: '#583e18', accent: '#c8a868' },
+    sand:        { base: '#d8bc70', hi: '#ead898', lo: '#a88840', accent: '#f8eebc' },
+    forest:      { base: '#204818', hi: '#346828', lo: '#102808', accent: '#50a030' },
+    cobble:      { base: '#585048', hi: '#787060', lo: '#343028', accent: '#989088' },
 };
 
 const zoneTileType = (locationId) => {
@@ -68,245 +68,287 @@ export { zoneTileType };
 
 export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
     const p = TILE_PAL[tileType] || TILE_PAL.stone_floor;
-    const rng = tileRng(rngSeed ^ 0xdeadbeef);
+    // Use seed only to pick a variant (0-7), not per-pixel noise positions
+    const variant = rngSeed % 8;
+    const h = Math.floor(S / 2);
+    const q = Math.floor(S / 4);
 
     ctx.fillStyle = p.base;
     ctx.fillRect(cx, cy, S, S);
 
     if (tileType === 'grass' || tileType === 'forest') {
-        // Darker patch variation
-        if (rng(3) === 0) {
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(cx, cy, S, S);
-        }
-        // Tufts
-        for (let i = 0; i < (tileType === 'forest' ? 6 : 4) + rng(5); i++) {
-            ctx.fillStyle = rng(2) ? p.hi : p.accent;
-            const tx = cx + rng(S - 2);
-            const ty = cy + rng(S - 3);
-            ctx.fillRect(tx, ty + 1, 1, 2);
-            ctx.fillRect(tx, ty, 1, 1);
-        }
-        // Leaf litter for forest
+        // Structured tufts — 4 tuft position templates, picked by variant
+        const tufts = [
+            [[2, S-6], [S-5, 3]],           // v0: two corner tufts
+            [[h-1, 2], [3, S-5]],            // v1: top-center + bottom-left
+            [[2, 3], [S-5, S-6], [h, h-2]],  // v2: three tufts
+            [[h-1, h-2]],                     // v3: single center tuft
+        ];
+        const tgroup = tufts[variant % 4];
+        tgroup.forEach(([tx, ty]) => {
+            ctx.fillStyle = p.hi;
+            ctx.fillRect(cx + tx, cy + ty, 1, 3);      // stem
+            ctx.fillRect(cx + tx - 1, cy + ty + 1, 1, 1); // left blade
+            ctx.fillRect(cx + tx + 1, cy + ty, 1, 1);     // right tip
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + tx, cy + ty, 1, 1);          // tip highlight
+        });
+        // Forest: denser + darker patches + leaf litter
         if (tileType === 'forest') {
-            for (let i = 0; i < 3; i++) {
-                if (rng(4) === 0) {
-                    ctx.fillStyle = rng(2) ? '#8a5a28' : '#6a4a1a';
-                    ctx.fillRect(cx + rng(S-2), cy + rng(S-2), 2, 1);
-                }
-            }
-        }
-        // Pebble
-        if (rng(6) === 0) {
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + rng(S - 2), cy + rng(S - 2), 1, 1);
+            ctx.fillRect(cx, cy, S, S); // darker base for forest
+            tgroup.forEach(([tx, ty]) => {
+                ctx.fillStyle = p.hi;
+                ctx.fillRect(cx + tx, cy + ty, 1, 3);
+                ctx.fillRect(cx + tx - 1, cy + ty + 1, 1, 1);
+                ctx.fillRect(cx + tx + 1, cy + ty, 1, 1);
+                ctx.fillStyle = p.accent;
+                ctx.fillRect(cx + tx, cy + ty, 1, 1);
+            });
+            // Leaf debris (brown, at fixed positions per variant)
+            const leafPos = [[1,1],[S-4,S-3],[q,S-2]];
+            leafPos.slice(0, 1 + variant % 2).forEach(([lx, ly]) => {
+                ctx.fillStyle = '#6a4020';
+                ctx.fillRect(cx + lx, cy + ly, 2, 1);
+            });
         }
-        // Flower
-        if (rng(tileType === 'forest' ? 12 : 9) === 0) {
-            ctx.fillStyle = rng(2) ? '#ffcc44' : '#ff88aa';
-            const fx = cx + 2 + rng(S - 6);
-            const fy = cy + 2 + rng(S - 6);
+        // Rare flower — only on specific variants
+        if (variant === 0) {
+            const fx = cx + q + 1, fy = cy + q;
+            ctx.fillStyle = variant % 2 ? '#ffc840' : '#ff80aa';
             ctx.fillRect(fx, fy, 2, 2);
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(fx, fy, 1, 1);
         }
-        if (rng(4) === 0) {
-            ctx.fillStyle = 'rgba(255,255,255,0.06)';
-            ctx.fillRect(cx, cy, S, 1);
-        }
 
-    } else if (tileType === 'stone_floor' || tileType === 'cobble') {
-        if (tileType === 'stone_floor') {
-            // Flagstone grid
+    } else if (tileType === 'stone_floor') {
+        // 4-quadrant flagstone with consistent mortar and bevels
+        ctx.fillStyle = p.lo;
+        ctx.fillRect(cx, cy + h, S, 2);       // horizontal mortar
+        ctx.fillRect(cx + h, cy, 2, S);       // vertical mortar
+        // Bevel top-left of each quadrant
+        ctx.fillStyle = p.hi;
+        ctx.fillRect(cx + 1,     cy + 1,     h - 3, 1); // Q1 top
+        ctx.fillRect(cx + 1,     cy + 1,     1, h - 3); // Q1 left
+        ctx.fillRect(cx + h + 3, cy + 1,     h - 3, 1); // Q2 top
+        ctx.fillRect(cx + h + 3, cy + 1,     1, h - 3); // Q2 left
+        ctx.fillRect(cx + 1,     cy + h + 3, h - 3, 1); // Q3 top
+        ctx.fillRect(cx + 1,     cy + h + 3, 1, h - 3); // Q3 left
+        ctx.fillRect(cx + h + 3, cy + h + 3, h - 3, 1); // Q4 top
+        ctx.fillRect(cx + h + 3, cy + h + 3, 1, h - 3); // Q4 left
+        // Occasional wear mark (variant-dependent, not random)
+        if (variant < 2) {
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx, cy + Math.floor(S / 2), S, 1);
-            ctx.fillRect(cx + Math.floor(S / 2), cy, 1, S);
-            // Bevel
-            ctx.fillStyle = p.hi;
-            ctx.fillRect(cx + 1, cy + 1, Math.floor(S / 2) - 2, 1);
-            ctx.fillRect(cx + 1, cy + 1, 1, Math.floor(S / 2) - 2);
-        } else {
-            // Cobblestone pattern
-            for (let i = 0; i < 4; i++) {
-                const px = cx + (i % 2) * (S/2) + 1;
-                const py = cy + Math.floor(i / 2) * (S/2) + 1;
-                ctx.fillStyle = rng(3) === 0 ? p.lo : p.hi;
-                ctx.fillRect(px, py, (S/2)-2, (S/2)-2);
-            }
-        }
-        ctx.fillStyle = p.accent;
-        ctx.fillRect(cx + Math.floor(S / 2) + 2, cy + Math.floor(S / 2) + 2, Math.floor(S / 3), 1);
-        // Wear marks
-        for (let i = 0; i < 3; i++) {
-            if (rng(4) === 0) {
-                ctx.fillStyle = p.lo;
-                ctx.fillRect(cx + 2 + rng(S - 4), cy + 2 + rng(S - 4), 1, 1);
-            }
+            ctx.fillRect(cx + q + 1, cy + q + 1, 2, 1);
         }
 
-    } else if (tileType === 'dirt' || tileType === 'sand') {
-        // Base noise
-        for (let i = 0; i < 8; i++) {
-            ctx.fillStyle = rng(2) ? p.hi : p.lo;
-            ctx.fillRect(cx + rng(S), cy + rng(S), 1, 1);
-        }
-        if (tileType === 'sand') {
-            // Ripple marks
-            ctx.fillStyle = p.hi;
-            for (let i = 0; i < 2; i++) {
-                ctx.fillRect(cx + 2 + rng(S-4), cy + 4 + i*4, 4, 1);
+    } else if (tileType === 'cobble') {
+        // Irregular cobblestone — 6 stones in structured layout
+        const stones = [
+            [1, 1, h-2, h-1],           // top-left
+            [h+2, 2, h-2, h-2],         // top-right
+            [2, h+2, h-1, h-2],         // bottom-left
+            [h+1, h+2, h-1, h-1],       // bottom-right
+            [q, q+1, q, h-1],           // center-left
+            [h+q-1, q, q+1, h-2],       // center-right
+        ];
+        stones.forEach(([sx, sy, sw, sh], i) => {
+            ctx.fillStyle = (i + variant) % 3 === 0 ? p.lo : (i % 2 ? p.hi : p.base);
+            ctx.fillRect(cx + sx, cy + sy, sw, sh);
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + sx, cy + sy, sw, 1);    // top highlight
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + sx, cy + sy + sh, sw, 1); // bottom shadow
+        });
+
+    } else if (tileType === 'dirt') {
+        // Diagonal crosshatch dithering — structured texture
+        ctx.fillStyle = p.hi;
+        for (let y = 0; y < S; y += 4) {
+            for (let x = 0; x < S; x += 4) {
+                ctx.fillRect(cx + x + (y/4 % 2)*2, cy + y, 2, 1);
             }
-        } else {
-            // Footprint/cracks for dirt
-            if (rng(4) === 0) {
-                ctx.fillStyle = p.lo;
-                ctx.fillRect(cx + 4 + rng(S-8), cy + 4 + rng(S-8), 2, 2);
-            }
         }
+        // Variant: occasional pebble at fixed position
+        if (variant < 3) {
+            ctx.fillStyle = p.lo;
+            const px = q + (variant * q) % (h);
+            ctx.fillRect(cx + px, cy + h, 3, 2);
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + px, cy + h, 3, 1);
+        }
+
+    } else if (tileType === 'sand') {
+        // Horizontal ripple bands at consistent Y positions
+        const rippleYs = [Math.floor(S*0.2), Math.floor(S*0.45), Math.floor(S*0.7)];
+        const rippleOffset = (variant % 4) * Math.floor(S / 8);
+        rippleYs.forEach((ry, i) => {
+            ctx.fillStyle = i === 1 ? p.accent : p.hi;
+            const rLen = Math.floor(S * 0.55);
+            ctx.fillRect(cx + rippleOffset % (S - rLen), cy + ry, rLen, 1);
+        });
+        // Shadow at bottom
+        ctx.fillStyle = p.lo;
+        ctx.fillRect(cx, cy + S - 2, S, 2);
 
     } else if (tileType === 'wall') {
-        // Brick rows with stagger
-        const brickRow = Math.floor(rngSeed / 100) % 2;
+        // Proper staggered brick — 2 rows, each half-height, bricks alternate offset
+        const bOff = (variant % 2) * h; // odd/even column stagger
+        const bW = h - 1;
+        // Row 1
         ctx.fillStyle = p.hi;
-        ctx.fillRect(cx + (brickRow ? 0 : Math.floor(S / 2)), cy + 1, Math.floor(S / 2) - 2, Math.floor(S / 2) - 2);
-        ctx.fillRect(cx + (brickRow ? Math.floor(S / 2) : 0), cy + Math.floor(S / 2) + 1, Math.floor(S / 2) - 2, Math.floor(S / 2) - 2);
-        // Mortar
+        ctx.fillRect(cx + bOff + 1,     cy + 1,     bW - 1, h - 2);
+        ctx.fillRect(cx + bOff - h + 1, cy + 1,     bW - 1, h - 2); // wrap-around brick
+        ctx.fillRect(cx + bOff + h + 1, cy + 1,     bW - 1, h - 2); // wrap-around brick
+        // Row 2
+        ctx.fillRect(cx + (bOff + h/2 | 0) + 1, cy + h + 1, bW - 1, h - 2);
+        ctx.fillRect(cx + (bOff - h/2 | 0) + 1, cy + h + 1, bW - 1, h - 2);
+        ctx.fillRect(cx + (bOff + h/2 | 0) - h + 1, cy + h + 1, bW - 1, h - 2);
+        // Mortar (dark lines)
         ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + Math.floor(S / 2), S, 1);
-        ctx.fillRect(cx + Math.floor(S / 3), cy, 1, S);
-        // Bevel
-        ctx.fillStyle = p.accent;
-        ctx.fillRect(cx + (brickRow ? 1 : Math.floor(S / 2) + 1), cy + 2, 2, 1);
-        // Cracks
-        if (rng(5) === 0) {
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + 1 + rng(S - 3), cy + 1 + rng(S / 2), 1, 2 + rng(3));
+        ctx.fillRect(cx, cy + h, S, 2);        // horizontal mortar
+        for (let bx = 0; bx <= S; bx += h) {
+            ctx.fillRect(cx + (bx + bOff) % S, cy, 1, h);
+            ctx.fillRect(cx + (bx + bOff + h/2 | 0) % S, cy + h, 1, h);
         }
+        // Highlight bevel (top of each brick)
+        ctx.fillStyle = p.accent;
+        ctx.fillRect(cx + bOff + 2,     cy + 2, bW - 3, 1);
+        ctx.fillRect(cx + (bOff + h/2 | 0) + 2, cy + h + 2, bW - 3, 1);
 
     } else if (tileType === 'water') {
-        // Wave bands
-        for (let i = 0; i < 3; i++) {
-            ctx.fillStyle = i === 0 ? p.hi : p.accent;
-            const wy = cy + 2 + rng(S - 6);
-            ctx.fillRect(cx + 1 + rng(3), wy, Math.floor(S * 0.45), 1);
-        }
-        ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fillRect(cx, cy + Math.floor(S * 0.2), S, 1);
-        // Shimmer
-        if (rng(3) === 0) {
+        // Layered horizontal bands — dark base → bright crests
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx, cy, S, S);
+        // Wave crests at consistent Y offsets, shifted by variant
+        const waveShift = (variant * (S / 8)) % S;
+        [[S*0.15, p.hi, Math.floor(S*0.6)],
+         [S*0.4,  p.accent, Math.floor(S*0.35)],
+         [S*0.65, p.hi, Math.floor(S*0.5)]].forEach(([wy, color, wl]) => {
+            ctx.fillStyle = color;
+            const wx = Math.floor((waveShift) % (S - wl));
+            ctx.fillRect(cx + wx, cy + Math.floor(wy), wl, 1);
+        });
+        // Sparkle — only on variant 0
+        if (variant === 0) {
             ctx.fillStyle = '#ffffff';
-            ctx.globalAlpha = 0.35;
-            ctx.fillRect(cx + rng(S - 2), cy + rng(S - 2), 2, 1);
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(cx + q, cy + q, 2, 1);
             ctx.globalAlpha = 1.0;
         }
 
     } else if (tileType === 'exit') {
         // Glowing portal rings
-        const cx2 = cx + Math.floor(S / 2);
-        const cy2 = cy + Math.floor(S / 2);
-        [[6, p.hi], [4, p.accent], [2, '#ffffff']].forEach(([r, color]) => {
+        const mx = cx + h, my = cy + h;
+        [[Math.floor(S*0.38), p.lo],
+         [Math.floor(S*0.26), p.hi],
+         [Math.floor(S*0.16), p.accent],
+         [Math.floor(S*0.08), '#ffffff']].forEach(([r, color]) => {
             ctx.beginPath();
-            ctx.arc(cx2, cy2, r * (S / 16), 0, Math.PI * 2);
+            ctx.arc(mx, my, r, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
         });
         ctx.beginPath();
-        ctx.arc(cx2, cy2, 1, 0, Math.PI * 2);
+        ctx.arc(mx, my, Math.max(1, S*0.04), 0, Math.PI * 2);
         ctx.fillStyle = p.base;
         ctx.fill();
 
     } else if (tileType === 'interior') {
-        // Warm wood planks (Stardew style)
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(cx, cy, S, S);
-        ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + Math.floor(S * 0.33), S, 1);
-        ctx.fillRect(cx, cy + Math.floor(S * 0.66), S, 1);
-        ctx.fillStyle = p.base;
-        ctx.fillRect(cx, cy + 1, S, Math.floor(S * 0.33) - 1);
-        ctx.fillRect(cx, cy + Math.floor(S * 0.33) + 1, S, Math.floor(S * 0.33) - 1);
-        ctx.fillRect(cx, cy + Math.floor(S * 0.66) + 1, S, Math.floor(S * 0.34) - 1);
-        // Plank knot
-        if (rng(7) === 0) {
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + 3 + rng(S - 8), cy + 4 + rng(4), 3, 2);
-            ctx.fillStyle = p.base;
-            ctx.fillRect(cx + 4 + rng(S - 10), cy + 5 + rng(2), 1, 1);
-        }
-        // Grain highlight
-        if (rng(3) === 0) {
+        // Stardew-style wood planks — 3 horizontal planks
+        const gapY = [Math.floor(S*0.33), Math.floor(S*0.66)];
+        // Draw planks
+        [0, gapY[0]+1, gapY[1]+1].forEach((py, i) => {
+            const ph = (i === 2 ? S : gapY[i]) - py;
+            ctx.fillStyle = i % 2 === 0 ? p.base : p.hi;
+            ctx.fillRect(cx, cy + py, S, ph);
+            // Grain highlight strip along top of each plank
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + 1 + rng(S - 4), cy + 1 + rng(S - 4), 3, 1);
+            ctx.fillRect(cx + 1, cy + py + 1, S - 2, 1);
+            // Grain shadow along bottom
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx, cy + py + ph - 1, S, 1);
+        });
+        // Dark gap lines between planks
+        ctx.fillStyle = p.lo;
+        gapY.forEach(gy => ctx.fillRect(cx, cy + gy, S, 1));
+        // Knot on variant 0
+        if (variant === 0) {
+            const kx = cx + q + 2, ky = cy + q + 1;
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(kx, ky, 4, 3);
+            ctx.fillRect(kx+1, ky-1, 2, 1);
+            ctx.fillRect(kx+1, ky+3, 2, 1);
+            ctx.fillStyle = p.base;
+            ctx.fillRect(kx+1, ky+1, 2, 1);
         }
 
     } else if (tileType === 'dungeon') {
-        // LttP dungeon floor — blue-grey interlocking tiles
-        const h = Math.floor(S / 2);
+        // LttP checkerboard — alternating hi/base quadrants + mortar + bevel
         ctx.fillStyle = p.hi;
         ctx.fillRect(cx + 1, cy + 1, h - 2, h - 2);
         ctx.fillRect(cx + h + 1, cy + h + 1, h - 2, h - 2);
         ctx.fillStyle = p.base;
         ctx.fillRect(cx + h + 1, cy + 1, h - 2, h - 2);
         ctx.fillRect(cx + 1, cy + h + 1, h - 2, h - 2);
-        // Mortar lines
+        // Mortar
         ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + h, S, 1);
-        ctx.fillRect(cx + h, cy, 1, S);
-        // Bevel on bright quadrants
+        ctx.fillRect(cx, cy + h, S, 2);
+        ctx.fillRect(cx + h, cy, 2, S);
+        // Bevel on hi quadrants
         ctx.fillStyle = p.accent;
         ctx.fillRect(cx + 1, cy + 1, h - 3, 1);
         ctx.fillRect(cx + 1, cy + 1, 1, h - 3);
-        ctx.fillRect(cx + h + 1, cy + h + 1, h - 3, 1);
-        ctx.fillRect(cx + h + 1, cy + h + 1, 1, h - 3);
-        // Diamond inlay on every 4th tile (seeded)
-        if ((rngSeed % 4) === 0) {
-            const cx2 = cx + h;
-            const cy2 = cy + h;
+        ctx.fillRect(cx + h + 2, cy + h + 2, h - 3, 1);
+        ctx.fillRect(cx + h + 2, cy + h + 2, 1, h - 3);
+        // Corner ornament on every 4th tile
+        if (variant === 0) {
+            const mx = cx + h, my = cy + h;
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx2 - 1, cy2, 3, 1);
-            ctx.fillRect(cx2, cy2 - 1, 1, 3);
+            ctx.fillRect(mx - 1, my, 3, 1);
+            ctx.fillRect(mx, my - 1, 1, 3);
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx2, cy2, 1, 1);
+            ctx.fillRect(mx, my, 1, 1);
         }
 
     } else if (tileType === 'cave') {
-        // Earthy cobblestone (Stardew mine style)
-        const pebs = 4 + rng(3);
-        for (let i = 0; i < pebs; i++) {
-            const px = cx + 1 + rng(S - 5);
-            const py = cy + 1 + rng(S - 4);
-            const pw = 2 + rng(3);
-            const ph = 1 + rng(2);
-            ctx.fillStyle = rng(3) === 0 ? p.hi : rng(2) === 0 ? p.accent : p.base;
-            ctx.fillRect(px, py, pw, ph);
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(px + 1, py + ph, pw - 1, 1);
-        }
+        // Structured stone cells — 6 fixed positions, Stardew mine style
+        const cells = [
+            [1,     1,     h-2, h-2],
+            [h+2,   2,     h-2, h-3],
+            [2,     h+2,   h-1, h-2],
+            [h+1,   h+2,   h-1, h-1],
+            [q,     q,     q-1, q],
+            [h+q,   h+q-1, q,   q],
+        ];
+        cells.forEach(([sx, sy, sw, sh], i) => {
+            ctx.fillStyle = i % 3 === 0 ? p.lo : (i % 2 ? p.hi : p.base);
+            ctx.fillRect(cx+sx, cy+sy, sw, sh);
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx+sx, cy+sy, sw, 1);        // top highlight
+            ctx.fillStyle = '#1a0a00';
+            ctx.fillRect(cx+sx, cy+sy+sh, sw, 1);     // bottom shadow
+        });
 
     } else if (tileType === 'ice') {
-        // Pale blue-white frost
+        // Pale blue-white — mostly flat with structured decoration
         ctx.fillStyle = p.hi;
         ctx.fillRect(cx, cy, S, S);
-        // Shimmer
-        if (rng(2) === 0) {
-            ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + rng(S - 4), cy + rng(Math.floor(S / 2)), Math.floor(S * 0.4), 1);
-        }
-        // Hairline crack
-        if (rng(3) === 0) {
+        // Horizontal shimmer band at consistent position
+        ctx.fillStyle = p.accent;
+        ctx.fillRect(cx + q, cy + q, h, 1);
+        // Crack — L-shaped at fixed position per variant
+        if (variant < 3) {
             ctx.fillStyle = p.lo;
-            const x1 = cx + rng(S - 4);
-            const y1 = cy + rng(S - 4);
-            const len = 2 + rng(4);
-            for (let i = 0; i < len; i++) {
-                ctx.fillRect(x1 + i, y1 + (i % 2), 1, 1);
-            }
+            const cx2 = cx + q + (variant * 3 % q);
+            const cy2 = cy + h;
+            ctx.fillRect(cx2, cy2, q + 2, 1);          // horizontal
+            ctx.fillRect(cx2 + q + 1, cy2, 1, q);      // vertical drop
         }
-        // Glint
-        if (rng(4) === 0) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(cx + rng(S - 1), cy + rng(S - 1), 1, 1);
-        }
+        // Corner glint
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(cx + 2, cy + 2, 2, 1);
+        ctx.fillRect(cx + 2, cy + 2, 1, 2);
     }
 }
 
@@ -341,22 +383,95 @@ const SHAPES = {
         "00011000", "00011000", "00133100", "00133100", "01333310", "01333310",
         "13333331", "13333331", "33333333", "33333333", "11111111", "00000000"
     ],
-    // Differentiated enemies (unique silhouettes)
+    // --- NPC SPRITES ---
+    guard: [
+        "00111100", "01333310", "01344310", "01311310", "00111100", "02333320",
+        "23333332", "23333332", "23333332", "23333332", "02200220", "02200220", "01100110"
+    ],
+    // Barkeep — round-bodied, apron stripe down the front
+    barkeep: [
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "01131110", "13131331", "13131331", "13131331", "13133331",
+        "01133110", "01100110", "01100110"
+    ],
+    // Merchant — deep hood, goods in hand
+    merchant: [
+        "01111110", "11333111", "11333311", "01333310", "01133110", "01111110",
+        "01333310", "13333331", "13333331", "13333331",
+        "01333110", "01133110", "01100110", "01100110"
+    ],
+    // Herbalist — slender robe, widens at hem
+    herbalist: [
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "00133100", "01333310", "01333310", "13333331", "13333331",
+        "01333310", "00133100"
+    ],
+    // Sage — pointed hat, long beard flowing into robe
+    sage: [
+        "00010000", "00131000", "01331100", "11333110",
+        "01333310", "01313310", "00111100",
+        "01333310", "13333331", "13333331", "13333331",
+        "01333310", "00333300"
+    ],
+    // Bard — cocked hat, holds lute neck
+    bard: [
+        "00110000", "01314100", "00133100", "01333310", "00133100", "00011000",
+        "01133100", "13332331", "13312331", "01312310",
+        "01133100", "01133100", "01100000"
+    ],
+
+    // --- ENEMY SPRITES ---
+    // Wolf — 4-legged silhouette, readable at 8px
     wolf: [
-        "00000000", "00000000", "00000000", "30000300", "33003300", "03333000", 
-        "03131300", "13414310", "03333000", "02333200", "03303300", "03000300", "11000110"
+        "00110000", "00110000", "01133000", "31133300",
+        "33333100", "13333310", "03313310",
+        "13131310", "11100110", "00000110", "11000010", "00000000"
     ],
-    wraith: [
+    // Ruin shade — translucent ghost, hollow face
+    ruin_shade: [
         "00011000", "00144100", "01444410", "01411410", "01444410", "00144100",
-        "00133100", "01333310", "01333310", "01300310", "12000210", "02000200", "00000000"
+        "00143100", "01133310", "01133310", "01300310", "12000210", "02000200", "00000000"
     ],
+    // Skeleton — exposed ribs, hollow eyes
     skeleton: [
         "00011000", "00133100", "01311310", "01333310", "00111100", "00011000",
         "00133100", "01311310", "01311310", "00111100", "00111100", "01100110", "01100110"
     ],
-    guard: [
-        "00111100", "01333310", "01344310", "01311310", "00111100", "02333320",
-        "23333332", "23333332", "23333332", "23333332", "02200220", "02200220", "01100110"
+    // Wraith — billowing dark form, glowing core
+    wraith: [
+        "00011000", "00144100", "01444410", "01411410", "01444410", "00144100",
+        "00133100", "01333310", "01333310", "01300310", "12000210", "02000200", "00000000"
+    ],
+    // Goblin — short, hunched, big ears and eyes
+    goblin: [
+        "00000000", "01011010", "01133110", "01141110",
+        "00133100", "00011000",
+        "01133110", "11333311", "11333311",
+        "01133110", "01100110", "01100110", "00000000"
+    ],
+    // Cave troll — massive, hunched, huge fists
+    cave_troll: [
+        "01111110", "13333331", "13133131", "13333331", "01111110",
+        "11333311", "13333331", "13333331", "13333331",
+        "11133111", "11100111", "01000010"
+    ],
+    // Mountain troll — like cave troll, slightly taller
+    mountain_troll: [
+        "01111110", "13333331", "13133131", "13333331", "01111110",
+        "11333311", "13333331", "13333331", "13333331", "13333331",
+        "11133111", "11100111", "01000010"
+    ],
+    // Bandit — hooded cloak, weapon implied
+    bandit: [
+        "01111110", "11233111", "01233310", "01333310", "00133100", "00011000",
+        "00133100", "01333310", "13333331", "13333331",
+        "01133110", "01133110", "01100110", "01100110"
+    ],
+    // Crab — wide low silhouette, claws raised
+    crab: [
+        "00000000", "10000001", "13000031", "11300311",
+        "03313300", "03333300", "03333300",
+        "11111111", "01111110", "00111100", "00000000", "00000000"
     ],
     potion: [
         "00044000", "00033000", "00333300", "03433430", "03333330", "03333330", "00333300"
@@ -503,10 +618,20 @@ const SHAPES = {
 /**
  * Generates a grayscale template canvas for a shape.
  */
+// Maps content IDs to sprite shape keys
+const SPRITE_ALIASES = {
+    forest_wolf:    'wolf',
+    forest_shade:   'wraith',
+    cave_shade:     'wraith',
+    ruin_skeleton:  'skeleton',
+    forest_troll:   'cave_troll',
+};
+
 export function getGrayscaleTemplate(type, seed = 0) {
     if (!type) return null;
-    const isPlayer = type.startsWith('player');
-    const shape = COMPILED_ASSET_SHAPES[type] || SHAPES[type];
+    const resolvedType = SPRITE_ALIASES[type] || type;
+    const isPlayer = resolvedType.startsWith('player');
+    const shape = COMPILED_ASSET_SHAPES[resolvedType] || SHAPES[resolvedType];
     if (!shape) return null;
     const baseWidth = Math.max(...shape.map((row) => row.length));
     const baseHeight = shape.length;
@@ -551,15 +676,14 @@ export function getGrayscaleTemplate(type, seed = 0) {
         const hairType = hairs[rng(hairs.length)];
         if (hairType) {
             const hairMask = SHAPES[hairType];
-            // Back view hair is higher/fuller, side/front vary
-            const hOffY = type === 'player_back' ? -1 : 0;
+            const hOffY = resolvedType === 'player_back' ? -1 : 0;
             drawMask(hairMask, 0, hOffY);
         }
 
         // Clothing variation
         const clothes = [null, 'vest', 'cloak'];
         const clothType = clothes[rng(clothes.length)];
-        if (clothType && type !== 'player_back') { // Accents mostly on front/side
+        if (clothType && resolvedType !== 'player_back') {
             drawMask(SHAPES[clothType]);
         }
     }
@@ -568,30 +692,40 @@ export function getGrayscaleTemplate(type, seed = 0) {
 }
 
 export const PALETTES = {
-    self:  { primary: '#00ff44', secondary: '#009922', outline: '#000000', accent: '#ffffff' },
-    peer:  { primary: '#00aaff', secondary: '#0066aa', outline: '#000000', accent: '#ffffff' },
-    npc:   { primary: '#ffdd00', secondary: '#aa8800', outline: '#000000', accent: '#ffffff' },
-    npcGuard: { primary: '#e2c55d', secondary: '#8b6d28', outline: '#000000', accent: '#fff7d0' },
-    npcWarm: { primary: '#d89a54', secondary: '#7a4924', outline: '#000000', accent: '#fff0d2' },
-    npcTrade: { primary: '#c9b56a', secondary: '#7f5d23', outline: '#000000', accent: '#fff6cc' },
-    npcLeaf: { primary: '#7cc468', secondary: '#2d6b2f', outline: '#000000', accent: '#eef7d8' },
-    npcSage: { primary: '#9ec5d6', secondary: '#486b7b', outline: '#000000', accent: '#f2fbff' },
-    npcSong: { primary: '#67b0d8', secondary: '#245e83', outline: '#000000', accent: '#f4fbff' },
-    enemy: { primary: '#ff4444', secondary: '#aa1111', outline: '#000000', accent: '#ffff00' },
+    // Player — bright lime green, very readable on any background
+    self:  { primary: '#20e840', secondary: '#0a8020', outline: '#001800', accent: '#ffffff' },
+    // Other players — sky blue
+    peer:  { primary: '#30c0ff', secondary: '#0878b8', outline: '#001828', accent: '#ffffff' },
+    // Generic NPC fallback
+    npc:   { primary: '#ffd820', secondary: '#a07800', outline: '#201800', accent: '#ffffff' },
+    // Guard — steel blue armour, gold trim
+    npcGuard:  { primary: '#8098c8', secondary: '#3850a0', outline: '#080820', accent: '#f8e060' },
+    // Barkeep — warm amber/brown
+    npcWarm:   { primary: '#e09040', secondary: '#884818', outline: '#200800', accent: '#fff8d0' },
+    // Merchant — rich purple-maroon
+    npcTrade:  { primary: '#c06890', secondary: '#703050', outline: '#180010', accent: '#ffd8f0' },
+    // Herbalist — vivid leaf green
+    npcLeaf:   { primary: '#48c838', secondary: '#186818', outline: '#001800', accent: '#d8ffd0' },
+    // Sage — cool lilac
+    npcSage:   { primary: '#b090d8', secondary: '#604898', outline: '#100820', accent: '#f0e8ff' },
+    // Bard — bright teal
+    npcSong:   { primary: '#28d8c0', secondary: '#088070', outline: '#001818', accent: '#d0fff8' },
+    // Enemy — vivid red, yellow sclera
+    enemy: { primary: '#f03020', secondary: '#801008', outline: '#180000', accent: '#ffee00' },
 };
 
 // Compact grouped palette table: [primary, secondary, outline, accent]
 const _SP = {
-    g: ['#1a4a1a','#0d300d','#000','#2a6a2a'],  // green
-    w: ['#6a4a2a','#4a3218','#000','#9a6a40'],  // wood
-    r: ['#606060','#404040','#000','#808080'],  // grey/rock
-    s: ['#a09070','#706050','#000','#c0b090'],  // stone
-    p: ['#c8b078','#906820','#000','#e8d090'],  // parchment
-    d: ['#d4a820','#906000','#000','#ffd840'],  // gold
-    f: ['#d06010','#802008','#000','#ffa030'],  // fire
-    i: ['#c0e0f0','#8ab0c8','#6080a0','#fff'], // ice
-    m: ['#8a4a30','#5a2818','#000','#cc7050'],  // mushroom
-    h: ['#d4a868','#a07040','#000','#f0c888'],  // shell
+    g: ['#286820','#103808','#000820','#48b030'],  // vivid green (trees/shrubs)
+    w: ['#a06030','#583010','#180800','#d89050'],  // warm wood
+    r: ['#707880','#404850','#101418','#a0aab0'],  // slate grey/rock
+    s: ['#b0a888','#706848','#181408','#d8d0b0'],  // warm stone/bones
+    p: ['#d8c080','#906820','#180800','#f8e8a8'],  // parchment/scroll
+    d: ['#f0c020','#a06800','#181000','#fff088'],  // bright gold
+    f: ['#f07820','#a03008','#180800','#ffe040'],  // vivid fire/torch
+    i: ['#d0ecff','#90c0e0','#304860','#ffffff'],  // crisp ice
+    m: ['#c04828','#701808','#180000','#f09060'],  // rich mushroom red
+    h: ['#e8c878','#b08038','#201000','#fff0b0'],  // pale shell
 };
 const _SM = {
     tree:'g', shrub:'g',
@@ -655,26 +789,25 @@ export function drawLargeTree(ctx, cx, cy, wPx, hPx, seed) {
     const tx = ccx - tw / 2;
     const ty = ccy;
     const th = cy + hPx - ty;
-    ctx.fillStyle = '#3a2010'; // deep shadow
+    ctx.fillStyle = '#241208';
     ctx.fillRect(tx - 1, ty, tw + 2, th);
-    ctx.fillStyle = '#5a3818'; // mid
+    ctx.fillStyle = '#583010';
     ctx.fillRect(tx, ty, tw, th);
-    ctx.fillStyle = '#8a5a28'; // highlight
+    ctx.fillStyle = '#a06030';
     ctx.fillRect(tx + 1, ty, 2, th);
 
-    // 2. Canopy Shadow (offset)
-    ctx.fillStyle = 'rgba(0,15,0,0.4)';
+    // 2. Canopy shadow
+    ctx.fillStyle = 'rgba(0,20,0,0.35)';
     ctx.beginPath();
-    ctx.arc(ccx + 4, ccy + 4, r, 0, Math.PI * 2);
+    ctx.arc(ccx + 3, ccy + 3, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // 3. Blob Cluster Canopy (3 layers for depth)
+    // 3. Blob cluster canopy — 3 depth layers
     const layers = [
-        { color: '#17300d', rMul: 1.0,  off: 0,   count: 5 }, // Back/Deep
-        { color: '#2a4a1a', rMul: 0.85, off: -2,  count: 6 }, // Mid
-        { color: '#3d6b2a', rMul: 0.6,  off: -5,  count: 4 }  // Front/Hi
+        { color: '#102808', rMul: 1.0,  off: 0,   count: 5 },
+        { color: '#1e4010', rMul: 0.85, off: -3,  count: 6 },
+        { color: '#346828', rMul: 0.62, off: -6,  count: 4 },
     ];
-
     layers.forEach(layer => {
         ctx.fillStyle = layer.color;
         const lr = r * layer.rMul;
@@ -690,13 +823,17 @@ export function drawLargeTree(ctx, cx, cy, wPx, hPx, seed) {
         }
     });
 
-    // 4. Specular Highlights
-    ctx.fillStyle = '#5a9a38';
+    // 4. Specular highlights — top-left cluster
+    ctx.fillStyle = '#60b038';
     for (let i = 0; i < 3; i++) {
         ctx.beginPath();
-        ctx.arc(ccx - r*0.3 + rng(10), ccy - r*0.4 + rng(10), r * 0.2, 0, Math.PI * 2);
+        ctx.arc(ccx - r*0.35 + rng(8), ccy - r*0.45 + rng(8), r * 0.22, 0, Math.PI * 2);
         ctx.fill();
     }
+    ctx.fillStyle = '#80d050';
+    ctx.beginPath();
+    ctx.arc(ccx - r*0.3, ccy - r*0.45, r * 0.12, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 // Hash-identicon character sprite — 16×16, seeded from entity id

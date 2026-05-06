@@ -7,6 +7,52 @@ import { ARBITER_URL } from '../infra/constants.js';
 
 const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 
+const OFFLINE_DAY_MS = 24 * 60 * 60 * 1000;
+const OFFLINE_DAY_KEY = 'hearthwick_offline_day_ts';
+
+const applyNewDay = () => {
+    worldState.day = (worldState.day || 1) + 1;
+    const derived = deriveWorldState(worldState.seed || 0, worldState.day);
+    Object.assign(worldState, {
+        mood: derived.mood, season: derived.season, seasonNumber: derived.seasonNumber,
+        threatLevel: derived.threatLevel, scarcity: derived.scarcity, event: derived.event, weather: derived.weather,
+    });
+    localStorage.setItem(WORLD_STATE_KEY, JSON.stringify({ seed: worldState.seed, day: worldState.day, lastTick: worldState.lastTick || 0 }));
+    localPlayer.currentEnemy = null;
+    localPlayer.forestFights = 15;
+    localPlayer.combatRound = 0;
+    if (localPlayer.statusEffects) localPlayer.statusEffects = localPlayer.statusEffects.filter(e => e.id !== 'well_rested');
+    if (localPlayer.buffs) { localPlayer.buffs.rested = false; localPlayer.buffs.activeElixir = null; }
+    log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
+    printStatus();
+    bus.emit('world:timeOfDay', { day: worldState.day, timeOfDay: 'day' });
+};
+
+export const initOfflineDayTick = () => {
+    if (runtimeArbiterUrl()) return; // arbiter handles day ticks
+
+    const stored = parseInt(localStorage.getItem(OFFLINE_DAY_KEY) || '0', 10);
+    const now = Date.now();
+    if (!stored) {
+        localStorage.setItem(OFFLINE_DAY_KEY, String(now));
+    } else if (now - stored >= OFFLINE_DAY_MS) {
+        const daysPassed = Math.floor((now - stored) / OFFLINE_DAY_MS);
+        for (let i = 0; i < daysPassed; i++) applyNewDay();
+        localStorage.setItem(OFFLINE_DAY_KEY, String(stored + daysPassed * OFFLINE_DAY_MS));
+    }
+
+    // Check once per hour while tab is open
+    setInterval(() => {
+        if (hasSyncedWithArbiter) return; // arbiter took over
+        const ts = parseInt(localStorage.getItem(OFFLINE_DAY_KEY) || '0', 10);
+        if (Date.now() - ts >= OFFLINE_DAY_MS) {
+            const daysPassed = Math.floor((Date.now() - ts) / OFFLINE_DAY_MS);
+            for (let i = 0; i < daysPassed; i++) applyNewDay();
+            localStorage.setItem(OFFLINE_DAY_KEY, String(ts + daysPassed * OFFLINE_DAY_MS));
+        }
+    }, 60 * 60 * 1000);
+};
+
 export const updateSimulation = (state) => {
     if (!state) return;
     
