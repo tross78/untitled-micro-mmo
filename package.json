@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "assets:compile": "node scripts/compile-assets.js",
+    "assets:normalize-palette": "node scripts/normalize-asset-palette.js",
     "build": "esbuild src/main.js --bundle --minify --loader:.wasm=dataurl --external:crypto --outfile=dist/main.js && cp src/index.html dist/index.html && cp src/manifest.json dist/manifest.json && cp src/styles.css dist/styles.css",
     "build:e2e": "npm run build && esbuild src/e2e-entry.js --bundle --minify --loader:.wasm=dataurl --external:crypto --outfile=dist/e2e-main.js && cp src/e2e.html dist/e2e.html",
     "audit:deep": "npm test && npm run test:browser",

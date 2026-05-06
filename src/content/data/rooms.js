@@ -74,7 +74,7 @@ export const rooms = {
         exits: {"south":"hallway","east":"market"},
         exitTiles: "6,10,hallway,5,0,door|11,5,market,0,7,door",
         scenery: "6,1,counter|10,1,fireplace|3,4,table|8,4,table|3,7,table|8,7,table|2,4,chair|4,4,chair|7,4,chair|9,4,chair|2,7,chair|4,7,chair|7,7,chair|9,7,chair|1,1,barrel|1,9,barrel",
-        staticEntities: [{ id: 'barkeep', x: 6, y: 2 }, { id: 'bard', x: 3, y: 2 }],
+        staticEntities: [{ id: 'barkeep', x: 6, y: 2 }, { id: 'bard', x: 9, y: 2 }],
         tiles: [
             'WWWWWWWWWWWW',
             'WIIIIIIIIIIW',

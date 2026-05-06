@@ -42,20 +42,22 @@ export class UIRenderSystem {
         const room = this.worldData?.[player.location];
         if (!room) return;
 
-        const STRIP = 28;
+        const STRIP = Math.max(40, Math.floor(this.VP.S * 1.15));
         ctx.fillStyle = UI_PALETTE.overlay;
         ctx.fillRect(0, 0, this.VP.CW, STRIP);
+        ctx.fillStyle = 'rgba(255, 221, 85, 0.12)';
+        ctx.fillRect(0, 0, this.VP.CW, 3);
         
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.32)}px monospace`;
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.34)}px monospace`;
         ctx.fillStyle = UI_PALETTE.textHi;
         ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(room.name, 12, STRIP / 2);
+        ctx.textBaseline = 'top';
+        ctx.fillText(room.name, 12, 8);
 
-        ctx.font = `italic ${Math.floor(this.VP.S * 0.24)}px monospace`;
+        ctx.font = `${Math.floor(this.VP.S * 0.22)}px monospace`;
         ctx.fillStyle = UI_PALETTE.textLo;
-        const nw = ctx.measureText(room.name).width;
-        ctx.fillText(` — ${room.description}`, 12 + nw, STRIP / 2);
+        const summary = room.description.length > 72 ? `${room.description.slice(0, 69)}...` : room.description;
+        ctx.fillText(summary, 12, STRIP - 10);
     }
 
     drawHUD(ctx, player) {
@@ -65,6 +67,8 @@ export class UIRenderSystem {
 
         ctx.fillStyle = UI_PALETTE.overlay;
         ctx.fillRect(0, y, this.VP.CW, STRIP);
+        ctx.fillStyle = 'rgba(199, 216, 171, 0.14)';
+        ctx.fillRect(0, y, this.VP.CW, 2);
 
         if (!this.heartSprite) {
             const template = getGrayscaleTemplate('heart');
@@ -95,14 +99,18 @@ export class UIRenderSystem {
         const fs = Math.floor(STRIP * 0.4);
         ctx.font = `bold ${fs}px monospace`;
 
-        ctx.fillStyle = UI_PALETTE.accent;
+        ctx.fillStyle = UI_PALETTE.textLo;
         ctx.textAlign = 'center';
-        ctx.fillText(`◆ ${player.gold ?? 0}`, this.VP.CW / 2, mid);
+        ctx.fillText(`Gold`, this.VP.CW / 2, y + Math.floor(STRIP * 0.28));
+        ctx.fillStyle = UI_PALETTE.accent;
+        ctx.fillText(`◆ ${player.gold ?? 0}`, this.VP.CW / 2, y + Math.floor(STRIP * 0.68));
 
         const fights = player.forestFights ?? 0;
-        ctx.fillStyle = fights > 0 ? UI_PALETTE.success : UI_PALETTE.textLo;
+        ctx.fillStyle = UI_PALETTE.textLo;
         ctx.textAlign = 'right';
-        ctx.fillText(`⚡ ${fights}`, this.VP.CW - PAD, mid);
+        ctx.fillText(`Hunts`, this.VP.CW - PAD, y + Math.floor(STRIP * 0.28));
+        ctx.fillStyle = fights > 0 ? UI_PALETTE.success : UI_PALETTE.textLo;
+        ctx.fillText(`⚡ ${fights}`, this.VP.CW - PAD, y + Math.floor(STRIP * 0.68));
     }
 
     drawTicker(ctx) {
@@ -210,6 +218,9 @@ export class UIRenderSystem {
         ctx.strokeStyle = UI_PALETTE.border;
         ctx.lineWidth = UI_STYLE.borderW;
         ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 221, 85, 0.12)';
+        roundRect(ctx, BOX_X + 6, BOX_Y + 6, BOX_W - 12, Math.max(22, Math.floor(this.VP.S * 0.55)), 5);
+        ctx.fill();
 
         ctx.font = `bold ${Math.floor(this.VP.S * 0.38)}px monospace`;
         ctx.fillStyle = UI_PALETTE.accent;

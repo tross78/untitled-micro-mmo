@@ -20,6 +20,20 @@ describe('content validation', () => {
         });
     });
 
+    test('npc definitions require compiled sprite ids', () => {
+        const result = validateContent({
+            itemDefinitions: [],
+            enemyDefinitions: [],
+            roomDefinitions: [],
+            npcDefinitions: [{ id: 'broken_npc', name: 'Broken', sprite: 'missing_sprite' }],
+            recipeDefinitions: [],
+            questDefinitions: [],
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.problems).toContain('NPC "broken_npc" references missing compiled sprite "missing_sprite"');
+    });
+
     test('fetch quest targets must have at least one acquisition source', () => {
         const result = validateContent({
             itemDefinitions: [{ id: 'mystery_box' }],

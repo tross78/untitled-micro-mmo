@@ -1,6 +1,7 @@
-import { drawTile, generateCharacterSprite, getWalkPose, zoneTileType, roundRect, hasCompiledAssetShape, getCompiledAssetMeta } from '../graphics/graphics.js';
+import { drawTile, generateCharacterSprite, getWalkPose, zoneTileType, roundRect, hasCompiledAssetShape, getCompiledAssetMeta, getGrayscaleTemplate } from '../graphics/graphics.js';
 import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants.js';
 import { ENEMIES } from '../content/data/enemies.js';
+import { NPCS } from '../content/data/npcs.js';
 
 function makeCtx() {
     return {
@@ -92,6 +93,29 @@ describe('graphics procedural primitives', () => {
                 logicalHeight: 1,
             });
         });
+    });
+
+    test('authored NPCs can resolve distinct sprite ids for the visible slice', () => {
+        expect(NPCS.guard.sprite).toBe('guard');
+        expect(NPCS.barkeep.sprite).toBe('barkeep');
+        expect(hasCompiledAssetShape('guard')).toBe(true);
+        expect(hasCompiledAssetShape('barkeep')).toBe(true);
+        expect(getCompiledAssetMeta('guard')).toMatchObject({
+            family: 'npc',
+            logicalWidth: 1,
+            logicalHeight: 1,
+        });
+        expect(getCompiledAssetMeta('barkeep')).toMatchObject({
+            family: 'npc',
+            logicalWidth: 1,
+            logicalHeight: 1,
+        });
+    });
+
+    test('large authored scenery preserves its authored canvas size', () => {
+        const tree = getGrayscaleTemplate('tree');
+        expect(tree.width).toBeGreaterThanOrEqual(16);
+        expect(tree.height).toBeGreaterThan(16);
     });
 
     test('drawTile is deterministic for same tile type and seed', () => {

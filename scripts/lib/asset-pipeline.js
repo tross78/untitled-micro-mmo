@@ -11,6 +11,8 @@ const ROLE_DIGITS = new Map([
   ['accent', '4'],
 ]);
 
+const sq = (n) => n * n;
+
 const hexToRgb = (hex) => {
   const normalized = hex.toLowerCase();
   const raw = normalized.startsWith('#') ? normalized.slice(1) : normalized;
@@ -33,6 +35,33 @@ const paeth = (a, b, c) => {
   if (pa <= pb && pa <= pc) return a;
   if (pb <= pc) return b;
   return c;
+};
+
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+const crc32 = (bytes) => {
+  let c = 0xffffffff;
+  for (const byte of bytes) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+
+const chunk = (type, data) => {
+  const typeBytes = Buffer.from(type, 'ascii');
+  const payload = Buffer.from(data);
+  const out = Buffer.alloc(8 + payload.length + 4);
+  out.writeUInt32BE(payload.length, 0);
+  typeBytes.copy(out, 4);
+  payload.copy(out, 8);
+  out.writeUInt32BE(crc32(Buffer.concat([typeBytes, payload])), 8 + payload.length);
+  return out;
 };
 
 export const decodePng = (buffer) => {
@@ -112,7 +141,72 @@ export const decodePng = (buffer) => {
   return { width, height, rgba };
 };
 
-export const frameToMaskRows = ({ width, height, rgba }, palette) => {
+export const encodePng = ({ width, height, rgba }) => {
+  const signature = Buffer.from(PNG_SIGNATURE);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    rows.push(Buffer.from([0]));
+    rows.push(Buffer.from(rgba.slice(y * width * 4, (y + 1) * width * 4)));
+  }
+  const idat = zlib.deflateSync(Buffer.concat(rows));
+  return Buffer.concat([
+    signature,
+    chunk('IHDR', ihdr),
+    chunk('IDAT', idat),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+};
+
+const findExactPaletteEntry = (rgb, paletteEntries) => paletteEntries.find(({ rgb: entry }) =>
+  entry[0] === rgb[0] && entry[1] === rgb[1] && entry[2] === rgb[2]
+);
+
+const findNearestPaletteEntry = (rgb, paletteEntries) => {
+  let best = paletteEntries[0] || null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const entry of paletteEntries) {
+    const distance = sq(entry.rgb[0] - rgb[0]) + sq(entry.rgb[1] - rgb[1]) + sq(entry.rgb[2] - rgb[2]);
+    if (distance < bestDistance) {
+      best = entry;
+      bestDistance = distance;
+    }
+  }
+  return best;
+};
+
+export const remapPngToPalette = ({ width, height, rgba }, palette, alphaCutoff = 1) => {
+  const paletteEntries = Object.entries(palette).map(([role, hex]) => ({ role, rgb: hexToRgb(hex) }));
+  const out = new Uint8Array(rgba.length);
+
+  for (let i = 0; i < rgba.length; i += 4) {
+    const alpha = rgba[i + 3];
+    if (alpha < alphaCutoff) {
+      out[i] = 0;
+      out[i + 1] = 0;
+      out[i + 2] = 0;
+      out[i + 3] = 0;
+      continue;
+    }
+    const match = findNearestPaletteEntry([rgba[i], rgba[i + 1], rgba[i + 2]], paletteEntries);
+    out[i] = match.rgb[0];
+    out[i + 1] = match.rgb[1];
+    out[i + 2] = match.rgb[2];
+    out[i + 3] = 255;
+  }
+
+  return { width, height, rgba: out };
+};
+
+export const frameToMaskRows = ({ width, height, rgba }, palette, colorMode = 'strict') => {
   const paletteEntries = Object.entries(palette).map(([role, hex]) => ({ role, rgb: hexToRgb(hex) }));
   const rows = [];
 
@@ -126,9 +220,8 @@ export const frameToMaskRows = ({ width, height, rgba }, palette) => {
         continue;
       }
       const rgb = [rgba[idx], rgba[idx + 1], rgba[idx + 2]];
-      const match = paletteEntries.find(({ rgb: entry }) =>
-        entry[0] === rgb[0] && entry[1] === rgb[1] && entry[2] === rgb[2]
-      );
+      const match = findExactPaletteEntry(rgb, paletteEntries)
+        || (colorMode === 'quantized' ? findNearestPaletteEntry(rgb, paletteEntries) : null);
       if (!match) {
         throw new Error(`Unsupported source color rgb(${rgb.join(',')}) in strict 4-color import`);
       }
@@ -165,6 +258,10 @@ export const compileAssets = async (manifest, baseDir) => {
     primary: '#cccccc',
     accent: '#ffffff',
   };
+  const colorMode = manifest.compilerOptions?.colorMode || 'strict';
+  if (!['strict', 'quantized'].includes(colorMode)) {
+    throw new Error(`Unsupported colorMode "${colorMode}"`);
+  }
 
   for (const spec of manifest.assetManifest || []) {
     const sourcePath = path.resolve(baseDir, spec.source);
@@ -172,7 +269,7 @@ export const compileAssets = async (manifest, baseDir) => {
     for (const [variant, rect] of Object.entries(spec.variants || {})) {
       const frame = cropFrame(png, rect);
       const key = variant === 'base' ? spec.id : `${spec.id}_${variant}`;
-      assets[key] = frameToMaskRows(frame, palette);
+      assets[key] = frameToMaskRows(frame, palette, colorMode);
       meta[key] = {
         family: spec.family,
         variant,

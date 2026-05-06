@@ -3,6 +3,8 @@ import { defineNpc } from '../define.js';
 export const NPCS = {
     barkeep: defineNpc('barkeep', { 
         name: 'Barkeep', 
+        sprite: 'barkeep',
+        palette: 'npcWarm',
         home: 'tavern', 
         role: 'shop', 
         shop: ['ale', 'bread', 'potion'],
@@ -10,12 +12,16 @@ export const NPCS = {
     }),
     bard: defineNpc('bard', {
         name: 'The Bard',
+        sprite: 'guard',
+        palette: 'npcSong',
         home: 'tavern',
         role: 'flavor',
         baseDialogue: "The old songs still carry the shape of this land. Sit a while and listen."
     }),
     merchant: defineNpc('merchant', { 
         name: 'Merchant', 
+        sprite: 'guard',
+        palette: 'npcTrade',
         home: 'market', 
         role: 'shop', 
         shop: ['iron_sword', 'wood', 'iron', 'wheat'],
@@ -23,6 +29,8 @@ export const NPCS = {
     }),
     herbalist: defineNpc('herbalist', {
         name: 'Herbalist',
+        sprite: 'guard',
+        palette: 'npcLeaf',
         home: 'herbalist_hut',
         role: 'shop',
         shop: ['potion', 'healing_elixir', 'strength_elixir'],
@@ -30,6 +38,8 @@ export const NPCS = {
     }),
     sage: defineNpc('sage', { 
         name: 'Sage', 
+        sprite: 'guard',
+        palette: 'npcSage',
         home: 'ruins', 
         patrol: ['ruins', 'forest_edge', 'hallway'], 
         role: 'flavor', 
@@ -37,6 +47,8 @@ export const NPCS = {
     }),
     guard: defineNpc('guard', {
         name: 'Guard',
+        sprite: 'guard',
+        palette: 'npcGuard',
         home: 'hallway',
         patrol: ['hallway', 'cellar', 'tavern', 'market', 'crossroads'],
         role: 'quest',

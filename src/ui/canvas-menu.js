@@ -2,6 +2,7 @@ import { ITEMS, NPCS, QUESTS, RECIPES } from '../content/data.js';
 import { ENEMIES } from '../content/data.js';
 import { players, worldState } from '../state/store.js';
 import { getBuyPrice, getSellPrice } from '../commands/helpers.js';
+import { getAudioSettings } from '../engine/audio.js';
 
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 const MOVE_DIRECTIONS = new Set(['north', 'south', 'east', 'west', 'up', 'down']);
@@ -80,6 +81,7 @@ export function buildCanvasMenu(type, context, menuCtx) {
     if (type === 'root') {
         const enemyId = location?.enemy;
         const enemy = enemyId ? ENEMIES[enemyId] : null;
+        const audio = getAudioSettings();
         const entries = [
             { label: 'Inventory', detail: `${localPlayer.inventory?.length || 0} items`, action: { kind: 'menu', menuType: 'inventory' } },
             { label: 'Quests', detail: `${Object.keys(localPlayer.quests || {}).length} active`, action: { kind: 'menu', menuType: 'quests' } },
@@ -96,8 +98,32 @@ export function buildCanvasMenu(type, context, menuCtx) {
         if (enemy) {
             entries.push({ label: `Attack ${enemy.name}`, detail: 'Hostile nearby', action: { kind: 'command', command: 'attack' } });
         }
+        entries.push({ label: 'Audio', detail: audio.muted ? 'Muted' : `Music ${Math.round(audio.music * 100)}% / SFX ${Math.round(audio.sfx * 100)}%`, action: { kind: 'menu', menuType: 'audio' } });
         entries.push({ label: 'Close', detail: 'Return to the world', action: { kind: 'close' } });
         return { type, title: 'Adventurer Menu', message: 'Select an action.', entries, selectedIndex: 0 };
+    }
+
+    if (type === 'audio') {
+        const audio = getAudioSettings();
+        const entries = [
+            {
+                label: audio.muted ? 'Unmute Audio' : 'Mute Audio',
+                detail: audio.muted ? 'Enable music and sound effects' : 'Silence all audio output',
+                action: { kind: 'emit', event: 'audio:toggle-mute' },
+            },
+            {
+                label: 'Music Volume',
+                detail: `${Math.round(audio.music * 100)}%`,
+                action: { kind: 'emit', event: 'audio:change-volume', payload: { field: 'music', delta: audio.music >= 1 ? -0.2 : 0.2 } },
+            },
+            {
+                label: 'SFX Volume',
+                detail: `${Math.round(audio.sfx * 100)}%`,
+                action: { kind: 'emit', event: 'audio:change-volume', payload: { field: 'sfx', delta: audio.sfx >= 1 ? -0.2 : 0.2 } },
+            },
+            { label: 'Back', detail: 'Return', action: { kind: 'back' } },
+        ];
+        return { type, title: 'Audio', message: 'Tune the demo mix.', entries, selectedIndex: 0 };
     }
 
     if (type === 'move') {

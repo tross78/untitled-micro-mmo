@@ -43,10 +43,14 @@ export class WorldSyncSystem {
                 if (!eid) {
                     eid = this.world.createEntity();
                     this.entityMap.set(id, eid);
-                    this.world.setComponent(eid, Component.Sprite, { type: 'npc', palette: 'npc', seed: this.hash(id) });
                 }
                 
                 const npcDef = NPCS[id];
+                this.world.setComponent(eid, Component.Sprite, {
+                    type: npcDef?.sprite || 'guard',
+                    palette: npcDef?.palette || 'npc',
+                    seed: this.hash(id),
+                });
                 if (staticEntry) {
                     this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: staticEntry.x, y: staticEntry.y });
                 } else {
@@ -88,8 +92,8 @@ export class WorldSyncSystem {
             if (!eid) {
                 eid = this.world.createEntity();
                 this.entityMap.set(enemyId, eid);
-                this.world.setComponent(eid, Component.Sprite, { type: 'enemy', palette: 'enemy', seed: this.hash(enemyType) });
             }
+            this.world.setComponent(eid, Component.Sprite, { type: enemyType, palette: 'enemy', seed: this.hash(enemyType) });
             this.world.setComponent(eid, Component.Transform, { 
                 mapId: currentLoc, 
                 x: roomData.enemyX ?? 5, 

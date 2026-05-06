@@ -15,7 +15,7 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
       }
     },
     {
@@ -25,7 +25,7 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
       }
     },
     {
@@ -35,7 +35,7 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
       }
     },
     {
@@ -135,7 +135,17 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "barkeep",
+      "family": "npc",
+      "source": "../source/npcs/barkeep.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
       }
     },
     {
@@ -145,7 +155,7 @@
       "logicalWidth": 3,
       "logicalHeight": 3,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 12, "renderHeightTiles": 3 }
+        "base": { "x": 0, "y": 0, "w": 16, "h": 20, "renderHeightTiles": 3, "renderYOffsetTiles": 0 }
       }
     },
     {

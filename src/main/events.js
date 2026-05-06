@@ -16,6 +16,7 @@ import { selfId } from '../network/transport.js';
 import { buildCanvasMenu, findNearestEnabledIndex } from '../ui/canvas-menu.js';
 import { getNPCsAt } from '../commands/helpers.js';
 import { getTimeOfDay } from '../rules/index.js';
+import { stepAudioVolume, toggleAudioMute } from '../engine/audio.js';
 
 let _vRefreshTimer = null;
 let _queuedMenuAfterDialogue = null;
@@ -102,6 +103,13 @@ const activateMenuEntry = async (index = null) => {
             if (refreshed) setMenuState(refreshed);
             else closeMenu();
         }
+        triggerLogicalRefresh();
+        return true;
+    }
+    if (entry.action.kind === 'emit') {
+        bus.emit(entry.action.event, entry.action.payload || {});
+        const refreshed = rebuildMenu(menu.type, menu.context || {}, menu.parent || null, selectedIndex);
+        if (refreshed) setMenuState(refreshed);
         triggerLogicalRefresh();
         return true;
     }
@@ -256,6 +264,16 @@ export const setupGlobalEvents = () => {
     });
 
     bus.on('ui:shake', () => triggerShake());
+
+    bus.on('audio:toggle-mute', () => {
+        toggleAudioMute();
+        triggerLogicalRefresh();
+    });
+
+    bus.on('audio:change-volume', ({ field, delta }) => {
+        stepAudioVolume(field, delta);
+        triggerLogicalRefresh();
+    });
 
     bus.on('input:action', ({ action, type }) => {
         if (type !== 'down') return;

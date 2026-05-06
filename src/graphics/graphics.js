@@ -508,8 +508,14 @@ export function getGrayscaleTemplate(type, seed = 0) {
     const isPlayer = type.startsWith('player');
     const shape = COMPILED_ASSET_SHAPES[type] || SHAPES[type];
     if (!shape) return null;
+    const baseWidth = Math.max(...shape.map((row) => row.length));
+    const baseHeight = shape.length;
+    const canvasWidth = Math.max(16, baseWidth);
+    const canvasHeight = Math.max(16, baseHeight);
+    const baseOffsetX = Math.max(0, Math.floor((canvasWidth - baseWidth) / 2));
+    const baseOffsetY = Math.max(0, canvasHeight - baseHeight);
 
-    const canvas = new OffscreenCanvas(16, 16);
+    const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
@@ -527,7 +533,7 @@ export function getGrayscaleTemplate(type, seed = 0) {
                 const char = row[x];
                 if (char !== '0') {
                     ctx.fillStyle = colors[char];
-                    ctx.fillRect(4 + x + offX, 2 + y + offY, 1, 1);
+                    ctx.fillRect(baseOffsetX + x + offX, baseOffsetY + y + offY, 1, 1);
                 }
             }
         });
@@ -565,6 +571,12 @@ export const PALETTES = {
     self:  { primary: '#00ff44', secondary: '#009922', outline: '#000000', accent: '#ffffff' },
     peer:  { primary: '#00aaff', secondary: '#0066aa', outline: '#000000', accent: '#ffffff' },
     npc:   { primary: '#ffdd00', secondary: '#aa8800', outline: '#000000', accent: '#ffffff' },
+    npcGuard: { primary: '#e2c55d', secondary: '#8b6d28', outline: '#000000', accent: '#fff7d0' },
+    npcWarm: { primary: '#d89a54', secondary: '#7a4924', outline: '#000000', accent: '#fff0d2' },
+    npcTrade: { primary: '#c9b56a', secondary: '#7f5d23', outline: '#000000', accent: '#fff6cc' },
+    npcLeaf: { primary: '#7cc468', secondary: '#2d6b2f', outline: '#000000', accent: '#eef7d8' },
+    npcSage: { primary: '#9ec5d6', secondary: '#486b7b', outline: '#000000', accent: '#f2fbff' },
+    npcSong: { primary: '#67b0d8', secondary: '#245e83', outline: '#000000', accent: '#f4fbff' },
     enemy: { primary: '#ff4444', secondary: '#aa1111', outline: '#000000', accent: '#ffff00' },
 };
 

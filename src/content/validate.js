@@ -1,6 +1,7 @@
 // @ts-check
 import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants.js';
 import { findSafeArrival } from '../rules/index.js';
+import { COMPILED_ASSET_SHAPES } from '../generated/assets/compiled-assets.js';
 
 const VALID_TILES = new Set(Object.values(TILE_TAXONOMY).flat());
 const VALID_SCENERY = new Set(Object.values(SCENERY_SIZE_CLASSES).flat());
@@ -53,6 +54,11 @@ export const validateContent = (defs) => {
     for (const itemId of enemy.loot || []) noteSource(String(itemId), `enemy:${enemy.id}`);
   }
   for (const npc of npcs) {
+    if (!npc.sprite) {
+      problems.push(`NPC "${npc.id}" is missing required sprite id`);
+    } else if (!COMPILED_ASSET_SHAPES[npc.sprite]) {
+      problems.push(`NPC "${npc.id}" references missing compiled sprite "${npc.sprite}"`);
+    }
     for (const itemId of npc.shop || []) noteSource(String(itemId), `shop:${npc.id}`);
   }
   for (const recipe of recipes) {

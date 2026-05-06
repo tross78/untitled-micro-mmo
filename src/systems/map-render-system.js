@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, drawLargeTree, getCompiledAssetMeta } from '../graphics/graphics.js';
+import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta } from '../graphics/graphics.js';
 import { SCENERY_RENDER_STYLE } from '../infra/graphics-constants.js';
 import { getScatteredContent, hashStr } from '../rules/index.js';
 
@@ -124,24 +124,22 @@ export class MapRenderSystem {
         this.tileCache = { locKey, camX: floorX, camY: floorY, canvas: off };
     }
 
-    drawScenery(ctx, sx, sy, label, screenOffsetX = 0, screenOffsetY = 0, w = 1, h = 1, wx = 0, wy = 0) {
+    drawScenery(ctx, sx, sy, label, screenOffsetX = 0, screenOffsetY = 0, w = 1, h = 1, _wx = 0, _wy = 0) {
         const px = screenOffsetX + sx * this.VP.S;
         const py = screenOffsetY + sy * this.VP.S;
-        if (label === 'tree' && w > 1) {
-            drawLargeTree(ctx, px, py, w * this.VP.S, h * this.VP.S, hashStr(`t${wx}_${wy}`));
-            return;
-        }
+        const compiledMeta = getCompiledAssetMeta(label);
+        const logicalW = compiledMeta?.logicalWidth || w;
+        const logicalH = compiledMeta?.logicalHeight || h;
         const template = getGrayscaleTemplate(label) || getGrayscaleTemplate('rock');
         const palette = getSceneryPalette(label);
         const colored = applyPalette(template, palette);
-        const compiledMeta = getCompiledAssetMeta(label);
         const renderStyle = compiledMeta ? {
             heightTiles: compiledMeta.renderHeightTiles,
             yOffsetTiles: compiledMeta.renderYOffsetTiles,
         } : SCENERY_RENDER_STYLE[label];
-        const drawH = (renderStyle?.heightTiles || h) * this.VP.S;
+        const drawH = (renderStyle?.heightTiles || logicalH) * this.VP.S;
         const drawY = py - ((renderStyle?.yOffsetTiles || 0) * this.VP.S);
 
-        ctx.drawImage(colored, px, drawY, w * this.VP.S, drawH);
+        ctx.drawImage(colored, px, drawY, logicalW * this.VP.S, drawH);
     }
 }

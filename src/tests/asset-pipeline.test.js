@@ -1,60 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import zlib from 'node:zlib';
-import { compileAssets, compileAssetManifestFile, decodePng, emitCompiledAssetModule } from '../../scripts/lib/asset-pipeline.js';
-
-const crcTable = (() => {
-    const table = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-        let c = n;
-        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-        table[n] = c >>> 0;
-    }
-    return table;
-})();
-
-const crc32 = (bytes) => {
-    let c = 0xffffffff;
-    for (const byte of bytes) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-};
-
-const chunk = (type, data) => {
-    const typeBytes = Buffer.from(type, 'ascii');
-    const payload = Buffer.from(data);
-    const out = Buffer.alloc(8 + payload.length + 4);
-    out.writeUInt32BE(payload.length, 0);
-    typeBytes.copy(out, 4);
-    payload.copy(out, 8);
-    out.writeUInt32BE(crc32(Buffer.concat([typeBytes, payload])), 8 + payload.length);
-    return out;
-};
-
-const encodePng = ({ width, height, pixels }) => {
-    const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-    const ihdr = Buffer.alloc(13);
-    ihdr.writeUInt32BE(width, 0);
-    ihdr.writeUInt32BE(height, 4);
-    ihdr[8] = 8;
-    ihdr[9] = 6;
-    ihdr[10] = 0;
-    ihdr[11] = 0;
-    ihdr[12] = 0;
-
-    const rows = [];
-    for (let y = 0; y < height; y++) {
-        rows.push(Buffer.from([0]));
-        rows.push(Buffer.from(pixels.slice(y * width * 4, (y + 1) * width * 4)));
-    }
-    const idat = zlib.deflateSync(Buffer.concat(rows));
-    return Buffer.concat([
-        signature,
-        chunk('IHDR', ihdr),
-        chunk('IDAT', idat),
-        chunk('IEND', Buffer.alloc(0)),
-    ]);
-};
+import { compileAssets, compileAssetManifestFile, decodePng, emitCompiledAssetModule, encodePng, remapPngToPalette } from '../../scripts/lib/asset-pipeline.js';
 
 const rgba = (...values) => Uint8Array.from(values.flat());
 
@@ -63,7 +10,7 @@ describe('asset pipeline', () => {
         const png = encodePng({
             width: 2,
             height: 1,
-            pixels: rgba([0, 0, 0, 255], [255, 255, 255, 255]),
+            rgba: rgba([0, 0, 0, 255], [255, 255, 255, 255]),
         });
         const decoded = decodePng(png);
         expect(decoded.width).toBe(2);
@@ -80,7 +27,7 @@ describe('asset pipeline', () => {
             [0, 0, 0, 255], [136, 136, 136, 255],
             [204, 204, 204, 255], [255, 255, 255, 255]
         );
-        await fs.writeFile(pngPath, encodePng({ width: 2, height: 2, pixels }));
+        await fs.writeFile(pngPath, encodePng({ width: 2, height: 2, rgba: pixels }));
         await fs.writeFile(manifestPath, JSON.stringify({
             compilerOptions: {
                 palette: {
@@ -114,7 +61,7 @@ describe('asset pipeline', () => {
         const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearthwick-assets-bad-'));
         const pngPath = path.join(dir, 'bad.png');
         const pixels = rgba([12, 34, 56, 255]);
-        await fs.writeFile(pngPath, encodePng({ width: 1, height: 1, pixels }));
+        await fs.writeFile(pngPath, encodePng({ width: 1, height: 1, rgba: pixels }));
         await expect(compileAssets({
             compilerOptions: {
                 palette: {
@@ -131,6 +78,56 @@ describe('asset pipeline', () => {
                 variants: { base: { x: 0, y: 0, w: 1, h: 1 } },
             }],
         }, dir)).rejects.toThrow('Unsupported source color');
+    });
+
+    test('quantized color mode reduces arbitrary pixel colors into the 4-role mask palette', async () => {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearthwick-assets-quantized-'));
+        const pngPath = path.join(dir, 'tile.png');
+        const pixels = rgba(
+            [5, 5, 5, 255],
+            [150, 150, 150, 255],
+            [210, 210, 210, 255],
+            [250, 250, 250, 255]
+        );
+        await fs.writeFile(pngPath, encodePng({ width: 2, height: 2, rgba: pixels }));
+
+        const compiled = await compileAssets({
+            compilerOptions: {
+                colorMode: 'quantized',
+                palette: {
+                    outline: '#000000',
+                    secondary: '#888888',
+                    primary: '#cccccc',
+                    accent: '#ffffff',
+                },
+            },
+            assetManifest: [{
+                id: 'tile_test',
+                family: 'scenery',
+                source: './tile.png',
+                variants: { base: { x: 0, y: 0, w: 2, h: 2 } },
+            }],
+        }, dir);
+
+        expect(compiled.assets.tile_test).toEqual(['12', '34']);
+    });
+
+    test('palette normalization rewrites arbitrary colors into strict palette values', () => {
+        const remapped = remapPngToPalette({
+            width: 2,
+            height: 1,
+            rgba: rgba([13, 13, 13, 255], [245, 245, 245, 255]),
+        }, {
+            outline: '#000000',
+            secondary: '#888888',
+            primary: '#cccccc',
+            accent: '#ffffff',
+        });
+
+        expect(Array.from(remapped.rgba)).toEqual([
+            0, 0, 0, 255,
+            255, 255, 255, 255,
+        ]);
     });
 
     test('emits deterministic generated modules', async () => {

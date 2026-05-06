@@ -11,6 +11,15 @@ import { getScatteredContent, getNPCDialogue, findSafeArrival } from '../rules/i
 import { getNPCsAt } from '../commands/helpers.js';
 import { ACTION } from '../engine/input.js';
 
+const getSpriteKind = (sprite) => {
+  if (!sprite) return null;
+  if (sprite.palette === 'enemy') return 'enemy';
+  if (typeof sprite.palette === 'string' && sprite.palette.startsWith('npc')) return 'npc';
+  if (sprite.palette === 'self' || sprite.palette === 'peer') return 'player';
+  if (sprite.type === 'peer' || sprite.type === 'player') return 'player';
+  return sprite.type;
+};
+
 /**
  * MovementSystem handles spatial logic, collision detection, and room transitions.
  */
@@ -276,7 +285,7 @@ export class MovementSystem {
       if (!transform || !sprite || transform.mapId !== mapId) continue;
       if (transform.x !== x || transform.y !== y) continue;
       const identity = this.world.getComponent(id, 'Identity');
-      return { entityId: id, type: sprite.type, id: identity?.id || sprite.type };
+      return { entityId: id, type: getSpriteKind(sprite), id: identity?.id || sprite.type };
     }
     return null;
   }

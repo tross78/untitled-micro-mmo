@@ -12,6 +12,15 @@ let _ctx = null;
 let _radarEl = null;
 let _devMode = false;
 
+const getSpriteKind = (sprite) => {
+    if (!sprite) return null;
+    if (sprite.palette === 'enemy') return 'enemy';
+    if (typeof sprite.palette === 'string' && sprite.palette.startsWith('npc')) return 'npc';
+    if (sprite.palette === 'self' || sprite.palette === 'peer') return 'player';
+    if (sprite.type === 'peer' || sprite.type === 'player') return 'player';
+    return sprite.type;
+};
+
 export function initCanvas() {
     if (_canvas) return;
     _radarEl = getShellElement('radar-container');
@@ -157,7 +166,7 @@ export function renderWorld(state, onTileClick) {
             const s = appRuntime.world.getComponent(id, Component.Sprite);
             const identity = appRuntime.world.getComponent(id, 'Identity');
             if (t.x === tx && t.y === ty && !appRuntime.world.getComponent(id, Component.PlayerControlled)) {
-                clickedEntity = { id: identity?.id || id, type: s.type };
+                clickedEntity = { id: identity?.id || id, type: getSpriteKind(s) };
                 break;
             }
         }

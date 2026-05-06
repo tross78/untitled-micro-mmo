@@ -30,7 +30,7 @@ export const Component = {
   Health: 'Health', // { current: number, max: number }
   
   /** Display metadata */
-  Sprite: 'Sprite', // { type: 'player'|'enemy'|'npc', palette: 'hero'|'peer'|'npc'|'enemy', seed: number }
+  Sprite: 'Sprite', // { type: string, palette: string, seed: number }
   
   /** UI Overlays */
   UIOverlay: 'UIOverlay', // { type: 'toast'|'fanfare'|'banner', text: string, expires: number }

@@ -14,6 +14,7 @@ export class AudioSystem {
     constructor(world) {
         this.world = world;
         this.lastLocation = null;
+        this.lastStepBucket = -1;
 
         // SFX Listeners
         bus.on('combat:hit', ({ crit }) => { if (crit) playCrit(); else playHit(); });
@@ -41,8 +42,14 @@ export class AudioSystem {
 
         // 2. Footstep SFX
         const tween = this.world.getComponent(players[0], Component.Tweenable);
-        if (tween && tween.progress > 0.1 && tween.progress < 0.15) {
-            playStep();
+        if (tween) {
+            const bucket = Math.floor(tween.progress * 5);
+            if (bucket === 0 && this.lastStepBucket !== 0) {
+                playStep();
+            }
+            this.lastStepBucket = bucket;
+        } else {
+            this.lastStepBucket = -1;
         }
     }
 
