@@ -134,6 +134,11 @@ describe('graphics procedural primitives', () => {
         });
     });
 
+    test('drawTile tolerates invalid seeds without crashing grass variants', () => {
+        expect(() => drawTile(makeCtx(), 'grass', 0, 0, undefined, 16)).not.toThrow();
+        expect(() => drawTile(makeCtx(), 'forest', 0, 0, Number.NaN, 16)).not.toThrow();
+    });
+
     test('generateCharacterSprite uses OffscreenCanvas and returns 16x16 canvas for entity types', () => {
         ['self', 'peer', 'npc', 'enemy', 'other'].forEach(type => {
             const canvas = generateCharacterSprite(123, type);

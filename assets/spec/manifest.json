@@ -155,7 +155,7 @@
       "logicalWidth": 3,
       "logicalHeight": 3,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 20, "renderHeightTiles": 3, "renderYOffsetTiles": 0 }
+        "base": { "x": 0, "y": 0, "w": 16, "h": 20, "renderHeightTiles": 3.75, "renderYOffsetTiles": 0.75 }
       }
     },
     {

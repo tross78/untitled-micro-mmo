@@ -30,46 +30,45 @@ export class UIRenderSystem {
      * @param {object} localPlayerStore
      */
     draw(ctx, localPlayerStore) {
-        this.drawEnvironmentBar(ctx, localPlayerStore);
-        this.drawHUD(ctx, localPlayerStore);
-        this.drawTicker(ctx);
+        const topBarH = this.drawTopBar(ctx, localPlayerStore);
+        this.drawTicker(ctx, topBarH);
         this.drawDialogue(ctx);
         this.drawMenu(ctx, localPlayerStore);
         this.drawOverlays(ctx);
     }
 
-    drawEnvironmentBar(ctx, player) {
+    drawTopBar(ctx, player) {
         const room = this.worldData?.[player.location];
-        if (!room) return;
+        if (!room) return 0;
 
-        const STRIP = Math.max(40, Math.floor(this.VP.S * 1.15));
+        const STRIP = Math.max(64, Math.floor(this.VP.S * 1.35));
+        const PAD = 12;
+        
+        // Background
         ctx.fillStyle = UI_PALETTE.overlay;
         ctx.fillRect(0, 0, this.VP.CW, STRIP);
-        ctx.fillStyle = 'rgba(255, 221, 85, 0.12)';
-        ctx.fillRect(0, 0, this.VP.CW, 3);
-        
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.34)}px monospace`;
-        ctx.fillStyle = UI_PALETTE.textHi;
+        ctx.fillStyle = 'rgba(199, 216, 171, 0.15)';
+        ctx.fillRect(0, STRIP - 2, this.VP.CW, 2);
+
+        // --- LEFT SIDE: Room Info ---
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText(room.name, 12, 8);
+        
+        // Room Name
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.38)}px monospace`;
+        ctx.fillStyle = UI_PALETTE.textHi;
+        ctx.fillText(room.name, PAD, 8);
 
-        ctx.font = `${Math.floor(this.VP.S * 0.22)}px monospace`;
+        // Room Description (truncated)
+        ctx.font = `${Math.floor(this.VP.S * 0.24)}px monospace`;
         ctx.fillStyle = UI_PALETTE.textLo;
-        const summary = room.description.length > 72 ? `${room.description.slice(0, 69)}...` : room.description;
-        ctx.fillText(summary, 12, STRIP - 10);
-    }
+        const summary = room.description.length > 60 ? `${room.description.slice(0, 57)}...` : room.description;
+        ctx.fillText(summary, PAD, Math.floor(STRIP * 0.55));
 
-    drawHUD(ctx, player) {
-        const STRIP = Math.floor(this.VP.S * 0.85);
-        const y = this.VP.CH - STRIP;
-        const PAD = UI_STYLE.pad;
+        // --- RIGHT SIDE: Player Stats ---
+        ctx.textAlign = 'right';
 
-        ctx.fillStyle = UI_PALETTE.overlay;
-        ctx.fillRect(0, y, this.VP.CW, STRIP);
-        ctx.fillStyle = 'rgba(199, 216, 171, 0.14)';
-        ctx.fillRect(0, y, this.VP.CW, 2);
-
+        // Hearts (HP)
         if (!this.heartSprite) {
             const template = getGrayscaleTemplate('heart');
             if (template) {
@@ -86,41 +85,37 @@ export class UIRenderSystem {
         const fullHearts = Math.floor(hp / 10);
 
         if (this.heartSprite && this.emptyHeartSprite) {
+            const hSize = 16;
+            const hGap = 20;
             for (let i = 0; i < heartsCount; i++) {
-                const hx = PAD + i * 18;
-                const hy = y + (STRIP - 14) / 2;
+                const hx = this.VP.CW - PAD - (heartsCount - i) * hGap;
+                const hy = 8;
                 const sprite = (i < fullHearts) ? this.heartSprite : this.emptyHeartSprite;
-                ctx.drawImage(sprite, hx, hy, 14, 14);
+                ctx.drawImage(sprite, hx, hy, hSize, hSize);
             }
         }
 
-        ctx.textBaseline = 'middle';
-        const fs = Math.floor(STRIP * 0.4);
-        ctx.font = `bold ${fs}px monospace`;
-
-        ctx.fillStyle = UI_PALETTE.textLo;
-        ctx.textAlign = 'center';
-        ctx.fillText(`Gold`, this.VP.CW / 2, y + Math.floor(STRIP * 0.28));
+        // Gold & Hunts
+        const gold = player.gold ?? 0;
+        const hunts = player.forestFights ?? 0;
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.3)}px monospace`;
         ctx.fillStyle = UI_PALETTE.accent;
-        ctx.fillText(`◆ ${player.gold ?? 0}`, this.VP.CW / 2, y + Math.floor(STRIP * 0.68));
+        ctx.fillText(`◆ ${gold}   ⚡ ${hunts}`, this.VP.CW - PAD, Math.floor(STRIP * 0.55));
 
-        const fights = player.forestFights ?? 0;
-        ctx.fillStyle = UI_PALETTE.textLo;
-        ctx.textAlign = 'right';
-        ctx.fillText(`Hunts`, this.VP.CW - PAD, y + Math.floor(STRIP * 0.28));
-        ctx.fillStyle = fights > 0 ? UI_PALETTE.success : UI_PALETTE.textLo;
-        ctx.fillText(`⚡ ${fights}`, this.VP.CW - PAD, y + Math.floor(STRIP * 0.68));
+        return STRIP;
     }
 
-    drawTicker(ctx) {
+    drawTicker(ctx, yOffset = 0) {
         const text = getTickerText();
         if (!text) return;
 
-        const barY = Math.floor(this.VP.S * 0.9);
-        const barH = Math.max(22, Math.floor(this.VP.S * 0.5));
-        ctx.fillStyle = UI_PALETTE.overlay;
+        const barH = Math.max(24, Math.floor(this.VP.S * 0.5));
+        const barY = yOffset;
+        
+        ctx.fillStyle = 'rgba(8, 12, 8, 0.6)';
         ctx.fillRect(0, barY, this.VP.CW, barH);
-        ctx.font = `italic ${Math.floor(this.VP.S * 0.26)}px monospace`;
+        
+        ctx.font = `italic ${Math.floor(this.VP.S * 0.28)}px monospace`;
         ctx.fillStyle = UI_PALETTE.textLo;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';

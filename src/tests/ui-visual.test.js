@@ -52,16 +52,10 @@ describe('Phase 8.55e: UI Visual Cohesion', () => {
         global.OffscreenCanvas = originalOffscreenCanvas;
     });
 
-    test('Environment bar uses UI_PALETTE overlay color', () => {
-        sys.drawEnvironmentBar(ctx, { location: 'tavern' });
-        // The last fillStyle set is used for descriptions
-        expect(ctx.fillStyle).toBe(UI_PALETTE.textLo);
-    });
-
-    test('HUD uses UI_PALETTE constants', () => {
-        sys.drawHUD(ctx, { hp: 10, gold: 50 });
-        // fights label is the last thing drawn in drawHUD
-        expect(ctx.fillStyle).toBe(UI_PALETTE.textLo);
+    test('Top bar uses UI_PALETTE constants', () => {
+        sys.drawTopBar(ctx, { location: 'tavern', hp: 10, gold: 50 });
+        // accent color used for gold/hunts is the last fillStyle set in drawTopBar
+        expect(ctx.fillStyle).toBe(UI_PALETTE.accent);
     });
 
     test('Toasts use UI_PALETTE and rounded rects', () => {

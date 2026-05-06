@@ -307,7 +307,7 @@ export const COMPILED_ASSET_META = {
   "crab": {"family":"enemy","variant":"base","logicalWidth":1,"logicalHeight":1},
   "guard": {"family":"npc","variant":"base","logicalWidth":1,"logicalHeight":1},
   "barkeep": {"family":"npc","variant":"base","logicalWidth":1,"logicalHeight":1},
-  "tree": {"family":"scenery","variant":"base","logicalWidth":3,"logicalHeight":3,"renderHeightTiles":3,"renderYOffsetTiles":0},
+  "tree": {"family":"scenery","variant":"base","logicalWidth":3,"logicalHeight":3,"renderHeightTiles":3.75,"renderYOffsetTiles":0.75},
   "stall": {"family":"scenery","variant":"base","logicalWidth":2,"logicalHeight":2},
   "bookshelf": {"family":"scenery","variant":"base","logicalWidth":2,"logicalHeight":1,"renderHeightTiles":2,"renderYOffsetTiles":1},
   "fireplace": {"family":"scenery","variant":"base","logicalWidth":2,"logicalHeight":1,"renderHeightTiles":2,"renderYOffsetTiles":1},

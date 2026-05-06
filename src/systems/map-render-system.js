@@ -127,6 +127,7 @@ export class MapRenderSystem {
     drawScenery(ctx, sx, sy, label, screenOffsetX = 0, screenOffsetY = 0, w = 1, h = 1, _wx = 0, _wy = 0) {
         const px = screenOffsetX + sx * this.VP.S;
         const py = screenOffsetY + sy * this.VP.S;
+
         const compiledMeta = getCompiledAssetMeta(label);
         const logicalW = compiledMeta?.logicalWidth || w;
         const logicalH = compiledMeta?.logicalHeight || h;

@@ -68,8 +68,10 @@ export { zoneTileType };
 
 export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
     const p = TILE_PAL[tileType] || TILE_PAL.stone_floor;
-    // Use seed only to pick a variant (0-7), not per-pixel noise positions
-    const variant = rngSeed % 8;
+    // Use seed only to pick a variant (0-7), not per-pixel noise positions.
+    // Invalid seeds can leak in from callers during partial world/bootstrap states.
+    const safeSeed = Number.isFinite(rngSeed) ? Math.abs(Math.trunc(rngSeed)) : 0;
+    const variant = safeSeed % 8;
     const h = Math.floor(S / 2);
     const q = Math.floor(S / 4);
 
@@ -776,64 +778,6 @@ export function applyPalette(template, palette) {
     }
     ctx.putImageData(imageData, 0, 0);
     return canvas;
-}
-
-export function drawLargeTree(ctx, cx, cy, wPx, hPx, seed) {
-    const rng = tileRng(seed ^ 0x7a2e4f);
-    const ccx = cx + wPx / 2;
-    const ccy = cy + hPx * 0.45;
-    const r = wPx * 0.42;
-
-    // 1. Trunk (textured)
-    const tw = Math.max(4, wPx * 0.15);
-    const tx = ccx - tw / 2;
-    const ty = ccy;
-    const th = cy + hPx - ty;
-    ctx.fillStyle = '#241208';
-    ctx.fillRect(tx - 1, ty, tw + 2, th);
-    ctx.fillStyle = '#583010';
-    ctx.fillRect(tx, ty, tw, th);
-    ctx.fillStyle = '#a06030';
-    ctx.fillRect(tx + 1, ty, 2, th);
-
-    // 2. Canopy shadow
-    ctx.fillStyle = 'rgba(0,20,0,0.35)';
-    ctx.beginPath();
-    ctx.arc(ccx + 3, ccy + 3, r, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 3. Blob cluster canopy — 3 depth layers
-    const layers = [
-        { color: '#102808', rMul: 1.0,  off: 0,   count: 5 },
-        { color: '#1e4010', rMul: 0.85, off: -3,  count: 6 },
-        { color: '#346828', rMul: 0.62, off: -6,  count: 4 },
-    ];
-    layers.forEach(layer => {
-        ctx.fillStyle = layer.color;
-        const lr = r * layer.rMul;
-        for (let i = 0; i < layer.count; i++) {
-            const angle = (i / layer.count) * Math.PI * 2 + (rng(100) / 100);
-            const dist = rng(Math.floor(r * 0.4));
-            const bx = ccx + Math.cos(angle) * dist;
-            const by = ccy + Math.sin(angle) * dist + layer.off;
-            const br = lr * (0.7 + (rng(40) / 100));
-            ctx.beginPath();
-            ctx.arc(bx, by, br, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    });
-
-    // 4. Specular highlights — top-left cluster
-    ctx.fillStyle = '#60b038';
-    for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.arc(ccx - r*0.35 + rng(8), ccy - r*0.45 + rng(8), r * 0.22, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    ctx.fillStyle = '#80d050';
-    ctx.beginPath();
-    ctx.arc(ccx - r*0.3, ccy - r*0.45, r * 0.12, 0, Math.PI * 2);
-    ctx.fill();
 }
 
 // Hash-identicon character sprite — 16×16, seeded from entity id

@@ -162,9 +162,9 @@ This file is an ADR archive, not a roadmap or implementation checklist. If curre
 
 ---
 
-## ADR-018: Daily world-state must have visible mechanical impact when surfaced prominently
+## ADR-019: HUD and status stats are top-aligned to avoid obscuration
 
-**Status:** Decided (Phase 8.4)
-**Do not:** Highlight world-state fields such as scarcity, surplus, or threat in UI/status without wiring them to meaningful gameplay consequences.
+**Status:** Decided (Phase 8.55e)
+**Do not:** Move the player status HUD (HP, Gold, Hunts) back to the bottom of the canvas.
 
-**Why:** Decorative state reads as broken state once it is shown repeatedly to the player. Scarcity and `market_surplus` now affect shop pricing, and threat continues to scale enemies. Flavor state such as mood and weather may still exist, but it should not compete with the mechanical state unless it materially changes play.
+**Why:** The mobile-first UI features a large fixed `#action-buttons` panel at the bottom of the screen. Since the game canvas is scaled to fit and centered, a bottom-aligned HUD is frequently obscured by the buttons and safe-area insets. Moving player stats to the top bar (merging with the Environment Bar) ensures high-visibility information remains accessible at all times without competing for the same space as interaction controls.

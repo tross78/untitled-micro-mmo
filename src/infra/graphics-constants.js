@@ -41,7 +41,7 @@ export const SCENERY_DIMENSIONS = {
  * blocking footprint without changing room collision semantics.
  */
 export const SCENERY_RENDER_STYLE = {
-    tree: { heightTiles: 3, yOffsetTiles: 0 },
+    tree: { heightTiles: 3.75, yOffsetTiles: 0.75 },
     bookshelf: { heightTiles: 2, yOffsetTiles: 1 },
     fireplace: { heightTiles: 2, yOffsetTiles: 1 },
     door_arch: { heightTiles: 2, yOffsetTiles: 1 },

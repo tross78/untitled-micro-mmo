@@ -62,8 +62,8 @@ export const defineRoom = (id, definition) => {
     if (definition.terrain && !definition.tileOverrides?.length && !definition.scenery?.length) {
         const t = definition.terrain;
         const rng = seededRNG(hashStr(id));
-        const width = definition.width;
-        const height = definition.height;
+        const width = definition.width || 11;
+        const height = definition.height || 11;
         const protectedTiles = new Set();
 
         // 1. Identify exit points to protect
@@ -72,7 +72,15 @@ export const defineRoom = (id, definition) => {
         if (definition.exits?.south) exitPoints.push({ x: Math.floor(width / 2), y: height - 1 });
         if (definition.exits?.east)  exitPoints.push({ x: width - 1, y: Math.floor(height / 2) });
         if (definition.exits?.west)  exitPoints.push({ x: 0, y: Math.floor(height / 2) });
-        (definition.exitTiles || []).forEach(et => exitPoints.push({ x: et.x, y: et.y }));
+        (definition.exitTiles || []).forEach(et => {
+            for (let iy = 0; iy < (et.h || 1); iy++) {
+                for (let ix = 0; ix < (et.w || 1); ix++) {
+                    const px = et.x + ix, py = et.y + iy;
+                    exitPoints.push({ x: px, y: py });
+                    protectedTiles.add(`${px},${py}`);
+                }
+            }
+        });
         (definition.staticEntities || []).forEach(se => exitPoints.push({ x: se.x, y: se.y }));
 
         // 2. Protect 3x3 zones around critical points and shortest paths

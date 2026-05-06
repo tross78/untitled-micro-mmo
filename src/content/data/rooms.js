@@ -27,8 +27,8 @@ export const rooms = {
         name: 'The Hallway',
         description: 'A stone passage. Voices drift from the tavern to the north. A guard stands watch near the crossroads east.',
         width: 11, height: 11,
-        exits: {"south":"cellar","north":"tavern","east":"crossroads","west":"library","mill":"mill"},
-        exitTiles: "4,10,cellar,5,0,door,3,1|4,0,tavern,6,10,door,3,1|10,3,crossroads,0,5,edge,1,5|0,3,library,10,5,edge,1,5|10,0,mill,0,5,edge,1,2",
+        exits: {"south":"cellar","north":"tavern","east":"mill","west":"library"},
+        exitTiles: "4,10,cellar,4,0,door,3,1|4,0,tavern,5,10,door,3,1|0,4,library,10,4,edge,1,3|10,4,mill,0,4,edge,1,3",
         scenery: "2,1,torch|8,1,torch|2,9,torch|8,9,torch|4,4,pillar|6,4,pillar",
         staticEntities: [{ id: 'guard', x: 2, y: 2 }],
         tiles: [
@@ -51,7 +51,7 @@ export const rooms = {
         description: 'Dusty shelves and ancient scrolls. A quiet sanctuary of knowledge. Hallway east.',
         width: 11, height: 11,
         exits: {"east":"hallway"},
-        exitTiles: "10,5,hallway,0,5,edge",
+        exitTiles: "10,4,hallway,0,4,edge,1,3",
         scenery: "1,1,bookshelf|7,1,bookshelf|1,7,bookshelf|7,7,bookshelf|5,1,fireplace|5,5,scroll|2,4,chair|8,4,chair|2,6,chair|8,6,chair",
         tiles: [
             'WWWWWWWWWWW',
@@ -115,8 +115,8 @@ export const rooms = {
         name: 'The Crossroads',
         description: 'A hub of activity. Market north, the herbalist south, and the forest edge east. The mill is along the western road.',
         width: 11, height: 11,
-        exits: {"north":"market","west":"mill","south":"herbalist_hut","east":"forest_edge","hallway":"hallway"},
-        exitTiles: "4,0,market,7,14,edge,3,1|0,4,mill,9,5,edge,1,3|4,10,herbalist_hut,5,0,edge,3,1|10,4,forest_edge,0,10,edge,1,3|0,0,hallway,10,5,edge",
+        exits: {"north":"market","west":"mill","south":"herbalist_hut","east":"forest_edge"},
+        exitTiles: "4,0,market,7,14,edge,3,1|0,4,mill,9,4,edge,1,3|4,10,herbalist_hut,5,0,edge,3,1|10,4,forest_edge,0,9,edge,1,3",
         scenery: "5,5,sign|1,1,tree|8,1,tree|1,8,tree|8,8,tree",
         tileOverrides: [
             { x: 4, y: 0, type: 'dirt' }, { x: 5, y: 0, type: 'dirt' }, { x: 6, y: 0, type: 'dirt' },
@@ -135,7 +135,7 @@ export const rooms = {
         description: 'The smell of ground grain fills the air. Crossroads east, hallway west.',
         width: 10, height: 11,
         exits: {"east":"crossroads","west":"hallway"},
-        exitTiles: "9,3,crossroads,0,5,edge,1,5|0,3,hallway,10,1,edge,1,5",
+        exitTiles: "0,4,hallway,10,4,edge,1,3|9,4,crossroads,0,4,edge,1,3",
         scenery: "3,4,wheel|1,1,crate|2,1,crate|1,2,crate|8,1,barrel|7,1,barrel|1,7,crate|1,8,crate|7,8,barrel|8,8,barrel|4,1,torch|6,1,torch",
         tiles: [
             'WWWW...WWW',
@@ -172,7 +172,7 @@ export const rooms = {
         description: 'Twisted pines. A wolf watches from the dark. Crossroads west, ruins north, cave south, depths east.',
         width: 21, height: 21,
         exits: {"west":"crossroads","north":"ruins","south":"cave","east":"forest_depths"},
-        exitTiles: "0,9,crossroads,10,5,edge,1,3|9,0,ruins,10,20,edge,3,1|9,20,cave,6,0,door,3,1|20,9,forest_depths,0,12,edge,1,3",
+        exitTiles: "0,9,crossroads,10,4,edge,1,3|9,0,ruins,9,20,edge,3,1|9,20,cave,5,0,door,3,1|20,9,forest_depths,0,11,edge,1,3",
         scenery: "1,1,tree|15,1,tree|1,14,tree|15,14,tree|5,1,tree|12,1,tree|1,7,tree|16,6,tree|1,11,tree|16,11,tree",
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [2, 4] },
@@ -192,7 +192,7 @@ export const rooms = {
         description: 'Ancient trees block the sky. Goblins lurk in the brush. The edge is west, a lake east, a camp north, cemetery south.',
         width: 25, height: 25,
         exits: {"west":"forest_edge","east":"lake_shore","north":"bandit_camp","south":"cemetery"},
-        exitTiles: "0,11,forest_edge,20,10,edge,1,3|24,11,lake_shore,0,10,edge,1,3|11,0,bandit_camp,7,14,edge,3,1|11,24,cemetery,10,0,edge,3,1",
+        exitTiles: "0,11,forest_edge,20,9,edge,1,3|24,11,lake_shore,0,9,edge,1,3|11,0,bandit_camp,6,14,edge,3,1|11,24,cemetery,9,0,edge,3,1",
         terrain: { floor: 'forest', density: 20, clutter: ['tree', 'shrub', 'rock'] },
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [3, 5] },
@@ -206,7 +206,7 @@ export const rooms = {
         description: 'Tents and a guttering fire. Bandits watch the trail. The forest is south.',
         width: 15, height: 15,
         exits: {"south":"forest_depths"},
-        exitTiles: "6,14,forest_depths,12,0,edge,3,1",
+        exitTiles: "6,14,forest_depths,11,0,edge,3,1",
         scenery: "7,7,torch|4,4,torch|10,4,torch|4,10,torch|10,10,torch|2,3,crate|11,3,crate|2,10,crate|11,10,crate|5,1,tree|7,2,rock",
         enemy: 'bandit',
         tileOverrides: [
@@ -219,7 +219,7 @@ export const rooms = {
         description: 'Low ceilings, dripping water. A cave troll blocks the passage. The forest is north, sea cave south.',
         width: 13, height: 13,
         exits: {"north":"forest_edge","south":"sea_cave"},
-        exitTiles: "6,0,forest_edge,10,20,door|6,12,sea_cave,6,0,door",
+        exitTiles: "5,0,forest_edge,9,20,door,3,1|5,12,sea_cave,6,0,door,3,1",
         scenery: "1,1,rock|10,1,rock|1,10,mushroom|10,10,mushroom|5,3,mushroom|6,3,mushroom|5,8,rock|6,8,rock",
         enemy: 'cave_troll',
         tiles: [
@@ -244,7 +244,7 @@ export const rooms = {
         description: 'Still water reflects the grey sky. The forest is west, mountains north, harbour east.',
         width: 21, height: 21,
         exits: {"west":"forest_depths","north":"mountain_pass","east":"harbour"},
-        exitTiles: "0,9,forest_depths,24,12,edge,1,3|9,0,mountain_pass,10,30,edge,3,1|20,9,harbour,0,7,edge,1,3",
+        exitTiles: "0,9,forest_depths,24,11,edge,1,3|9,0,mountain_pass,9,30,edge,3,1|20,9,harbour,0,6,edge,1,3",
         scenery: "1,1,tree|17,1,tree|7,1,rock|2,9,rock|2,11,rock|5,5,rock|15,5,rock|5,15,rock|15,15,rock",
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [1, 3] }
@@ -261,7 +261,7 @@ export const rooms = {
         description: 'Salty air and the creak of timber. Lake west, sea cave south, smuggler den hidden east.',
         width: 15, height: 15,
         exits: {"west":"lake_shore","south":"sea_cave","east":"smuggler_den"},
-        exitTiles: "0,6,lake_shore,20,10,edge,1,3|7,14,sea_cave,6,0,door|14,7,smuggler_den,0,4,door",
+        exitTiles: "0,6,lake_shore,20,9,edge,1,3|7,14,sea_cave,6,0,door|14,7,smuggler_den,0,4,door",
         scenery: "5,7,anchor|8,7,anchor|3,4,crate|10,4,crate|1,10,rock|13,10,rock",
         tiles: [
             '...............',
@@ -332,7 +332,7 @@ export const rooms = {
         description: 'Thin air and treacherous paths. A troll guards the heights. Lake south, watchtower north, frozen lake east.',
         width: 21, height: 31,
         exits: {"south":"lake_shore","north":"watchtower","east":"frozen_lake"},
-        exitTiles: "9,30,lake_shore,10,0,edge,3,1|9,0,watchtower,3,20,edge,3,1|20,14,frozen_lake,0,5,edge,1,3",
+        exitTiles: "9,30,lake_shore,9,0,edge,3,1|9,0,watchtower,2,20,edge,3,1|20,14,frozen_lake,0,4,edge,1,3",
         terrain: { floor: 'stone_floor', density: 12, clutter: ['rock'] },
         enemy: 'mountain_troll',
     }),
@@ -342,7 +342,7 @@ export const rooms = {
         description: 'A tall stone spire overlooking the realm. Pass south.',
         width: 7, height: 21,
         exits: {"south":"mountain_pass"},
-        exitTiles: "3,20,mountain_pass,10,0,edge",
+        exitTiles: "2,20,mountain_pass,9,0,edge,3,1",
         scenery: "2,5,torch|3,10,ladder|2,15,torch",
         tiles: [
             'WWWWWWW',
@@ -374,7 +374,7 @@ export const rooms = {
         description: 'A wide expanse of treacherous ice. Mountain pass west.',
         width: 25, height: 11,
         exits: {"west":"mountain_pass"},
-        exitTiles: "0,4,mountain_pass,20,15,edge,1,3",
+        exitTiles: "0,4,mountain_pass,20,14,edge,1,3",
         scenery: "12,1,snowflake|6,8,snowflake|18,8,snowflake|1,4,rock|23,5,rock|10,2,rock|15,2,rock",
         tileOverrides: [
             { x: 5, y: 4, type: 'water' }, { x: 6, y: 4, type: 'water' }, { x: 7, y: 4, type: 'water' }, { x: 8, y: 4, type: 'water' }, { x: 9, y: 4, type: 'water' }, { x: 10, y: 4, type: 'water' }, { x: 11, y: 4, type: 'water' }, { x: 12, y: 4, type: 'water' }, { x: 13, y: 4, type: 'water' }, { x: 14, y: 4, type: 'water' }, { x: 15, y: 4, type: 'water' }, { x: 16, y: 4, type: 'water' }, { x: 17, y: 4, type: 'water' }, { x: 18, y: 4, type: 'water' },
@@ -388,7 +388,7 @@ export const rooms = {
         description: 'Cold stone and shifting shadows. A shade drifts between the pillars. The forest is south, a descent leads north.',
         width: 21, height: 21,
         exits: {"south":"forest_edge","north":"ruins_descent"},
-        exitTiles: "10,20,forest_edge,10,0,edge|10,0,ruins_descent,5,10,stairs",
+        exitTiles: "9,20,forest_edge,9,0,edge,3,1|10,0,ruins_descent,5,10,stairs",
         scenery: "8,7,altar|3,3,pillar|16,3,pillar|3,16,pillar|16,16,pillar|3,9,torch|16,9,torch|9,3,torch|9,16,torch|6,6,pillar|13,6,pillar|6,13,pillar|13,13,pillar",
         staticEntities: [{ id: 'sage', x: 8, y: 8 }],
         enemy: 'ruin_shade',
@@ -444,7 +444,7 @@ export const rooms = {
         description: 'Weathered headstones and a lingering mist. The forest lies north, the catacombs south, and an old throne room waits to the east.',
         width: 21, height: 21,
         exits: {"north":"forest_depths","south":"catacombs","east":"throne_room"},
-        exitTiles: "9,0,forest_depths,12,24,edge,3,1|9,20,catacombs,7,1,edge,3,1|20,9,throne_room,1,7,edge,1,3",
+        exitTiles: "9,0,forest_depths,11,24,edge,3,1|9,20,catacombs,7,1,edge,3,1|20,9,throne_room,1,7,edge,1,3",
         terrain: { floor: 'forest', density: 10, clutter: ['grave', 'shrub'] },
         sceneryScatter: [
             { type: 'flora', label: 'mushroom', count: [1, 3] }
