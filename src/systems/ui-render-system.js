@@ -95,7 +95,6 @@ export class UIRenderSystem {
         }
 
         ctx.textBaseline = 'middle';
-        const mid = y + STRIP / 2;
         const fs = Math.floor(STRIP * 0.4);
         ctx.font = `bold ${fs}px monospace`;
 
