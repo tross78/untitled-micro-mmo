@@ -5,3 +5,5 @@ dist/
 arbiter/node_modules/
 arbiter/.env
 generate-master-key.js
+coverage/
+.claude/
