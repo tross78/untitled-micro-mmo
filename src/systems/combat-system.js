@@ -4,7 +4,7 @@ import { Component } from '../domain/components.js';
 import { 
     hashStr, seededRNG, levelBonus, resolveAttack, rollLoot, xpToLevel, getTimeOfDay 
 } from '../rules/index.js';
-import { ENEMIES, ITEMS, QUESTS } from '../content/data.js';
+import { ENEMIES, ITEMS, QUESTS, SPAWN_ROOM_ID, SPAWN_X, SPAWN_Y, roomHasFeature, world } from '../content/data.js';
 import { bus } from '../state/eventbus.js';
 import { selfId } from '../network/transport.js';
 import { signMessage } from '../security/crypto.js';
@@ -95,22 +95,24 @@ export class CombatSystem {
     if (health) health.current += healed;
     
     const isNight = getTimeOfDay() === 'night';
-    const restMsg = (this.localPlayer.location === 'tavern' && isNight) 
-        ? `You sleep until dawn and recover ${healed} HP.` 
+    const atInn = roomHasFeature(this.localPlayer.location, 'inn');
+    const restMsg = (atInn && isNight)
+        ? `You sleep until dawn and recover ${healed} HP.`
         : `You rest and recover ${healed} HP.`;
     const nextHp = Math.min(cap, health?.current ?? this.localPlayer.hp);
     bus.emit('log', { msg: `${restMsg} (HP: ${nextHp}/${cap})`, color: '#0f0' });
 
-    if (this.localPlayer.location === 'tavern' && !hasRestedBuff) {
+    if (atInn && !hasRestedBuff) {
         if (!this.localPlayer.statusEffects) this.localPlayer.statusEffects = [];
         this.localPlayer.statusEffects.push({ id: 'well_rested', duration: 100 });
-        bus.emit('log', { msg: `The Tavern comfort makes you Well Rested! (+5 Max HP)`, color: '#0af' });
+        const innName = world[this.localPlayer.location]?.name ?? 'the inn';
+        bus.emit('log', { msg: `${innName} comfort makes you Well Rested! (+5 Max HP)`, color: '#0af' });
     }
 
     Object.entries(this.localPlayer.quests || {}).forEach(([qid, progress]) => {
       const quest = QUESTS[qid];
       if (!quest || progress.completed || quest.type !== 'rest') return;
-      if (this.localPlayer.location !== 'tavern') return;
+      if (!roomHasFeature(this.localPlayer.location, 'inn')) return;
       if (progress.lastRestDay === this.worldState.day) return;
       progress.lastRestDay = this.worldState.day;
       progress.progress = Math.min(quest.objective?.count || 1, (progress.progress || 0) + 1);
@@ -346,15 +348,16 @@ export class CombatSystem {
     
     const transform = this.world.getComponent(entityId, Component.Transform);
     if (transform) {
-        transform.mapId = 'cellar';
-        transform.x = 5;
-        transform.y = 5;
+        transform.mapId = SPAWN_ROOM_ID;
+        transform.x = SPAWN_X;
+        transform.y = SPAWN_Y;
     }
 
     this.localPlayer.currentEnemy = null;
     this.localPlayer.combatRound = 0;
-    
+
+    const spawnName = world[SPAWN_ROOM_ID]?.name ?? SPAWN_ROOM_ID;
     bus.emit('combat:death', { entity: 'You' });
-    bus.emit('log', { msg: `You awaken in the cellar...`, color: '#aaa' });
+    bus.emit('log', { msg: `You awaken in ${spawnName}...`, color: '#aaa' });
   }
 }

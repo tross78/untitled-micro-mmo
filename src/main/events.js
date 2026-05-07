@@ -20,6 +20,7 @@ import { stepAudioVolume, toggleAudioMute } from '../engine/audio.js';
 
 let _vRefreshTimer = null;
 let _queuedMenuAfterDialogue = null;
+let _globalEventsBound = false;
 const getMenuCtx = () => ({
     localPlayer,
     world,
@@ -183,6 +184,8 @@ export const triggerLogicalRefresh = () => {
 };
 
 export const setupGlobalEvents = () => {
+    if (_globalEventsBound) return;
+    _globalEventsBound = true;
     setVisualRefreshCallback(triggerVisualRefresh);
     setLogicalRefreshCallback(triggerLogicalRefresh);
 

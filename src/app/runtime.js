@@ -78,6 +78,7 @@ class AppRuntime {
     
     this.updateViewport();
     window.addEventListener('resize', () => this.updateViewport());
+    window.addEventListener('orientationchange', () => this.updateViewport());
 
     this.syncSystem = new SyncSystem(this.world, localPlayerStore, this.playerEntityId);
     
@@ -143,6 +144,17 @@ class AppRuntime {
 
   start() {
     if (this.loop) this.loop.start();
+
+    // Flush OffscreenCanvas caches when the tab comes back into view.
+    // Browsers can lose/GC offscreen canvas contexts while the tab is hidden,
+    // causing drawImage() to silently produce nothing on the next paint.
+    this._visibilityHandler = () => {
+      if (document.visibilityState === 'visible') {
+        if (this.mapRender) this.mapRender.tileCache = null;
+        if (this.entityRender) this.entityRender.spriteCache?.clear();
+      }
+    };
+    document.addEventListener('visibilitychange', this._visibilityHandler);
   }
 
   /**

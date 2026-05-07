@@ -4,7 +4,7 @@
  * Declarative serialization for high-frequency messages.
  */
 
-import { world, ENEMIES } from '../content/data.js';
+import { world, ENEMIES, SPAWN_ROOM_ID } from '../content/data.js';
 import { packHLC, unpackHLC } from './hlc.js';
 
 const toUint8Array = (buf) => {
@@ -146,7 +146,7 @@ export const presenceSignaturePayload = (p) => {
     });
     return {
         name: truncateName(p.name, 16),
-        location: ROOM_MAP.includes(p.location) ? p.location : 'cellar',
+        location: ROOM_MAP.includes(p.location) ? p.location : SPAWN_ROOM_ID,
         ph: p.ph ? String(p.ph).slice(0, 8) : null,
         level: p.level || 1,
         xp: p.xp || 0,
@@ -176,8 +176,8 @@ export const packMove = (m) => {
 export const unpackMove = (buf) => {
     const r = new SchemaReader(buf);
     return {
-        from: ROOM_MAP[r.u8()] ?? 'cellar',
-        to: ROOM_MAP[r.u8()] ?? 'cellar',
+        from: ROOM_MAP[r.u8()] ?? SPAWN_ROOM_ID,
+        to: ROOM_MAP[r.u8()] ?? SPAWN_ROOM_ID,
         x: r.u8(),
         y: r.u8(),
         ts: r.ts(),
@@ -221,7 +221,7 @@ export const packPresence = (p) => {
 export const unpackPresence = (buf) => {
     const r = new SchemaReader(buf);
     const name = r.str(16);
-    const location = ROOM_MAP[r.u8()] ?? 'cellar';
+    const location = ROOM_MAP[r.u8()] ?? SPAWN_ROOM_ID;
     let ph = '';
     for (let i = 0; i < 4; i++) ph += r.u8().toString(16).padStart(2, '0');
     const level = r.u8();

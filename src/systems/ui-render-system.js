@@ -23,6 +23,7 @@ export class UIRenderSystem {
         this.heartSprite = null;
         this.emptyHeartSprite = null;
         this.menuHitRegions = [];
+        this.dialogueHitRegions = [];
     }
 
     /**
@@ -198,6 +199,7 @@ export class UIRenderSystem {
 
     drawDialogue(ctx) {
         const players = this.world.query([Component.Dialogue]);
+        this.dialogueHitRegions = [];
         if (players.length === 0) return;
         const dialogue = this.world.getComponent(players[0], Component.Dialogue);
         const BOX_H = Math.floor(this.VP.CH * 0.35);
@@ -240,11 +242,28 @@ export class UIRenderSystem {
             const alpha = 0.5 + Math.sin(Date.now() / 200) * 0.5;
             ctx.fillStyle = `rgba(255, 221, 85, ${alpha})`;
             ctx.textAlign = 'right';
-            let diaHint = 'Space/Enter to advance';
+            let diaHint = 'Space/Enter to close';
             if (inputManager.lastInputMode === 'gamepad') diaHint = '(A) to advance';
             else if (inputManager.lastInputMode === 'touch') diaHint = 'Tap to advance';
             ctx.font = `${Math.floor(this.VP.S * 0.28)}px monospace`;
             ctx.fillText(`${diaHint} ▼`, BOX_X + BOX_W - PAD, BOX_Y + BOX_H - PAD * 0.6);
+
+            const btnW = Math.max(72, Math.floor(this.VP.S * 1.9));
+            const btnH = Math.max(24, Math.floor(this.VP.S * 0.55));
+            const btnX = BOX_X + BOX_W - PAD - btnW;
+            const btnY = BOX_Y + BOX_H - PAD * 1.05 - btnH;
+            ctx.fillStyle = 'rgba(18, 24, 18, 0.9)';
+            roundRect(ctx, btnX, btnY, btnW, btnH, Math.floor(btnH / 2));
+            ctx.fill();
+            ctx.strokeStyle = UI_PALETTE.border;
+            ctx.lineWidth = UI_STYLE.borderW;
+            ctx.stroke();
+            ctx.fillStyle = UI_PALETTE.textHi;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `bold ${Math.floor(this.VP.S * 0.24)}px monospace`;
+            ctx.fillText('Close', btnX + btnW / 2, btnY + btnH / 2);
+            this.dialogueHitRegions.push({ kind: 'close', x: btnX, y: btnY, w: btnW, h: btnH });
         }
     }
 
@@ -382,5 +401,10 @@ export class UIRenderSystem {
         if (players.length === 0 || !this.menuHitRegions.length) return -1;
         const hit = this.menuHitRegions.find((row) => x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h);
         return hit ? hit.index : -1;
+    }
+
+    resolveDialogueClick(x, y) {
+        if (!this.dialogueHitRegions.length) return false;
+        return this.dialogueHitRegions.some((row) => x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h);
     }
 }

@@ -155,7 +155,7 @@
       "logicalWidth": 3,
       "logicalHeight": 3,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 20, "renderHeightTiles": 3.75, "renderYOffsetTiles": 0.75 }
+        "base": { "x": 0, "y": 0, "w": 48, "h": 48, "renderHeightTiles": 3, "renderYOffsetTiles": 0 }
       }
     },
     {
@@ -165,7 +165,7 @@
       "logicalWidth": 2,
       "logicalHeight": 2,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 12 }
+        "base": { "x": 0, "y": 0, "w": 48, "h": 48 }
       }
     },
     {
@@ -175,7 +175,7 @@
       "logicalWidth": 2,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 12, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
+        "base": { "x": 0, "y": 0, "w": 48, "h": 48, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
       }
     },
     {
@@ -185,7 +185,7 @@
       "logicalWidth": 2,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 12, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
+        "base": { "x": 0, "y": 0, "w": 48, "h": 48, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
       }
     }
   ]

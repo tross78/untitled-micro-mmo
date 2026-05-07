@@ -11,6 +11,7 @@ import { updateSimulation, initNetworking, gameActions, initOfflineDayTick } fro
 import { world, GAME_NAME } from '../content/data.js';
 import { GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL } from '../infra/constants.js';
 import { saveLocalState } from '../state/persistence.js';
+import { bindSessionLifecycle } from './lifecycle.js';
 import { setTicker, showDialogue, showToast } from '../graphics/renderer.js';
 import { ensureShell } from '../adapters/dom/shell.js';
 import { requestTextInput } from '../adapters/dom/prompt.js';
@@ -66,6 +67,7 @@ export const start = async () => {
             },
         });
         appRuntime.hydratePlayer(localPlayer);
+        bindSessionLifecycle(localPlayer);
         appRuntime.initSystems(localPlayer, gameActions);
         appRuntime.start();
         

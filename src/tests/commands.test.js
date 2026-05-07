@@ -254,6 +254,31 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             expect(localPlayer.quests.market_recovery.progress).toBe(1);
         });
 
+        test('crafting fails cleanly without required materials', async () => {
+            localPlayer.location = 'mill';
+            localPlayer.inventory = ['wheat'];
+            localPlayer.quests.market_recovery = { progress: 0, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('craft bread');
+
+            expect(localPlayer.inventory).toEqual(['wheat']);
+            expect(localPlayer.quests.market_recovery.progress).toBe(0);
+            expect(emitSpy).not.toHaveBeenCalledWith('item:pickup', expect.anything());
+        });
+
+        test('crafting respects recipe location locks', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['wheat', 'wheat'];
+            localPlayer.quests.market_recovery = { progress: 0, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('craft bread');
+
+            expect(localPlayer.inventory).toEqual(['wheat', 'wheat']);
+            expect(localPlayer.quests.market_recovery.progress).toBe(0);
+        });
+
         test('deliver quests progress generically when talking to the receiver with the item', async () => {
             localPlayer.location = 'ruins';
             localPlayer.inventory = ['ale'];
@@ -316,6 +341,19 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
 
             expect(localPlayer.gold).toBe(6);
             expect(localPlayer.inventory).toContain('wheat');
+        });
+
+        test('quest completion is blocked if the receiver is absent', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['ale'];
+            localPlayer.quests.courier_run = { progress: 1, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('quest complete courier_run');
+
+            expect(localPlayer.quests.courier_run.completed).toBe(false);
+            expect(localPlayer.inventory).toContain('ale');
+            expect(localPlayer.xp).toBe(0);
         });
     });
 

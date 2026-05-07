@@ -99,4 +99,46 @@ describe('Phase 8.5c: Constrained Terrain Generation', () => {
         expect(generatedShrub.h).toBe(SCENERY_DIMENSIONS.shrub[1]);
     });
 
+    test('generated scenery never overlaps exits or static entities', () => {
+        const room = defineRoom('occupied_path_test', {
+            id: 'occupied_path_test',
+            width: 12,
+            height: 12,
+            exits: { north: 'other', south: 'other', east: 'other', west: 'other' },
+            exitTiles: [{ x: 5, y: 0, dest: 'other', destX: 5, destY: 11 }],
+            staticEntities: [{ id: 'npc1', x: 6, y: 6 }],
+            terrain: { floor: 'grass', density: 80, clutter: ['tree', 'shrub', 'rock'] }
+        });
+
+        const blocked = new Set([
+            '5,0',
+            '6,6',
+        ]);
+
+        room.scenery.forEach((s) => {
+            for (let dy = 0; dy < s.h; dy++) {
+                for (let dx = 0; dx < s.w; dx++) {
+                    expect(blocked.has(`${s.x + dx},${s.y + dy}`)).toBe(false);
+                }
+            }
+        });
+    });
+
+    test('generated scenery fits inside room bounds', () => {
+        const room = defineRoom('edge_fit_test', {
+            id: 'edge_fit_test',
+            width: 11,
+            height: 11,
+            exits: { north: 'other', south: 'other' },
+            terrain: { floor: 'forest', density: 100, clutter: ['tree', 'shrub'] }
+        });
+
+        room.scenery.forEach((s) => {
+            expect(s.x).toBeGreaterThanOrEqual(0);
+            expect(s.y).toBeGreaterThanOrEqual(0);
+            expect(s.x + s.w).toBeLessThanOrEqual(room.width);
+            expect(s.y + s.h).toBeLessThanOrEqual(room.height);
+        });
+    });
+
 });

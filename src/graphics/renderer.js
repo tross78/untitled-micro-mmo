@@ -108,8 +108,19 @@ export function renderWorld(state, onTileClick) {
     };
 
     _canvas.onclick = (e) => {
+        const rect = _canvas.getBoundingClientRect();
+        const scaleX = _canvas.width / rect.width;
+        const scaleY = _canvas.height / rect.height;
+
+        const canvasX = (e.clientX - rect.left) * scaleX;
+        const canvasY = (e.clientY - rect.top) * scaleY;
+
         if (isDialogueOpen()) {
-            bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' });
+            if (appRuntime.uiRender?.resolveDialogueClick(canvasX, canvasY)) {
+                bus.emit('input:action', { action: ACTION.CANCEL, type: 'down' });
+            } else {
+                bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' });
+            }
             return;
         }
 
@@ -126,13 +137,6 @@ export function renderWorld(state, onTileClick) {
 
         const room = state.world?.[transform.mapId];
         const { camX, camY, screenOffsetX, screenOffsetY } = appRuntime.getViewportTransform(drawX, drawY, transform.mapId);
-
-        const rect = _canvas.getBoundingClientRect();
-        const scaleX = _canvas.width / rect.width;
-        const scaleY = _canvas.height / rect.height;
-
-        const canvasX = (e.clientX - rect.left) * scaleX;
-        const canvasY = (e.clientY - rect.top) * scaleY;
 
         if (appRuntime.uiRender) {
             const menuIndex = appRuntime.uiRender.resolveMenuClick(canvasX, canvasY);

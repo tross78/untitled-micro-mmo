@@ -1,6 +1,11 @@
 import { buildCanvasMenu, findNearestEnabledIndex } from '../ui/canvas-menu.js';
 import { world, NPCS } from '../content/data.js';
 import { worldState } from '../state/store.js';
+import { getAudioSettings } from '../engine/audio.js';
+
+jest.mock('../engine/audio.js', () => ({
+    getAudioSettings: jest.fn(() => ({ muted: false, music: 0.5, sfx: 0.7 })),
+}));
 
 const makePlayer = (overrides = {}) => ({
     name: 'Tester',
@@ -18,7 +23,7 @@ const makePlayer = (overrides = {}) => ({
     ...overrides,
 });
 
-const makeCtx = (player, timeOfDay = 'day') => ({
+const makeCtx = (player, timeOfDay = 'day', extra = {}) => ({
     localPlayer: player,
     world,
     getNPCsAt: (location) => {
@@ -26,6 +31,7 @@ const makeCtx = (player, timeOfDay = 'day') => ({
         return (room?.staticEntities || []).map((entry) => entry.id);
     },
     getTimeOfDay: () => timeOfDay,
+    ...extra,
 });
 
 describe('canvas menu builder', () => {
@@ -59,6 +65,60 @@ describe('canvas menu builder', () => {
         const menu = buildCanvasMenu('inventory', {}, makeCtx(makePlayer({ inventory: ['potion', 'iron_sword'] })));
         expect(menu.entries.find((entry) => entry.label.startsWith('Health Potion')).action.command).toBe('use health potion');
         expect(menu.entries.find((entry) => entry.label.startsWith('Iron Sword')).action.command).toBe('equip iron sword');
+    });
+
+    test('root menu exposes core actions and close affordance', () => {
+        const player = makePlayer({
+            location: 'market',
+            inventory: ['potion'],
+            currentEnemy: null,
+            level: 4,
+        });
+        const menu = buildCanvasMenu('root', {}, makeCtx(player));
+
+        expect(menu.entries.map((entry) => entry.label)).toEqual(expect.arrayContaining([
+            'Inventory',
+            'Quests',
+            'Craft',
+            'Rest',
+            'Stats',
+            'Status',
+            'Map',
+            'Audio',
+            'Close',
+        ]));
+    });
+
+    test('move menu only includes supported directions plus back', () => {
+        const menu = buildCanvasMenu('move', {}, makeCtx(makePlayer({ location: 'cellar' })));
+        expect(menu.entries.map((entry) => entry.label)).toEqual(expect.arrayContaining(['North', 'Back']));
+        expect(menu.entries.some((entry) => entry.label === 'South')).toBe(false);
+    });
+
+    test('status menu surfaces threat, scarcity, and surplus state', () => {
+        worldState.scarcity = ['wheat'];
+        worldState.surplus = ['potion'];
+        const player = makePlayer({ location: 'market' });
+        const menu = buildCanvasMenu('status', {}, makeCtx(player, 'day', { worldState: { threatLevel: 1, scarcity: ['wheat'], surplus: ['potion'] } }));
+
+        expect(menu.entries.some((entry) => entry.label === 'Threat Level')).toBe(true);
+        expect(menu.entries.some((entry) => entry.label === 'Scarce goods')).toBe(true);
+        expect(menu.entries.some((entry) => entry.label === 'Market surplus')).toBe(true);
+    });
+
+    test('audio menu reflects mute state and returns back', () => {
+        getAudioSettings.mockReturnValueOnce({ muted: true, music: 0.25, sfx: 0.5 });
+        const menu = buildCanvasMenu('audio', {}, makeCtx(makePlayer()));
+
+        expect(menu.entries[0].label).toBe('Unmute Audio');
+        expect(menu.entries.some((entry) => entry.label === 'Back')).toBe(true);
+    });
+
+    test('sell menu lists tradable inventory items', () => {
+        const menu = buildCanvasMenu('sell', { npcId: 'merchant' }, makeCtx(makePlayer({ inventory: ['potion', 'iron_sword', 'gold'] })));
+        expect(menu.entries.some((entry) => entry.label.startsWith('Health Potion'))).toBe(true);
+        expect(menu.entries.some((entry) => entry.label.startsWith('Iron Sword'))).toBe(true);
+        expect(menu.entries.some((entry) => entry.label === 'Back')).toBe(true);
     });
 
     test('selection skips disabled rows', () => {

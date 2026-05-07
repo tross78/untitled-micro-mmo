@@ -74,4 +74,52 @@ describe('arbiter presence cache helpers', () => {
         expect(cache.has('k0')).toBe(false);
         expect(cache.has('overflow')).toBe(true);
     });
+
+    test('addToPresenceCache updates existing keys without evicting other entries', () => {
+        const cache = new Map([
+            ['a', { ph: 'aaaaaaaa', ts: 1 }],
+            ['b', { ph: 'bbbbbbbb', ts: 2 }],
+        ]);
+
+        addToPresenceCache(cache, 'a', { ph: 'aaaaaaaa', name: 'Alice', ts: 99 }, 99);
+
+        expect(cache.size).toBe(2);
+        expect(cache.get('a')).toMatchObject({ ph: 'aaaaaaaa', name: 'Alice', ts: 99 });
+        expect(cache.get('b')).toMatchObject({ ph: 'bbbbbbbb', ts: 2 });
+    });
+
+    test('listPeersForShard returns newest peers first and caps the snapshot', () => {
+        const now = 200000;
+        const cache = new Map();
+
+        for (let i = 0; i < 60; i++) {
+            cache.set(`peer-${i}`, {
+                ph: `${i}`.padStart(8, '0'),
+                name: `P${i}`,
+                location: 'cellar',
+                shard: 's1',
+                level: i + 1,
+                ts: now - i * 10,
+            });
+        }
+
+        const peers = listPeersForShard(cache, 's1', now);
+        expect(peers).toHaveLength(50);
+        expect(peers[0].name).toBe('P0');
+        expect(peers[49].name).toBe('P49');
+    });
+
+    test('sanitizePresenceEntry rejects malformed coordinates and future timestamps', () => {
+        const now = 1000;
+        expect(sanitizePresenceEntry({
+            ph: 'abcdef12',
+            name: 'Alice',
+            location: 'cellar',
+            shard: 'hearthwick-cellar-v1-1',
+            level: 1,
+            x: Number.NaN,
+            y: 2,
+            ts: now,
+        }, now)).toBeNull();
+    });
 });

@@ -15,6 +15,8 @@ jest.mock('@trystero-p2p/torrent', () => ({
 }));
 
 import { packPresence, unpackPresence, ROOM_MAP } from '../network/packer.js';
+import { unpackPresencePacket, seedFromSnapshot } from '../network/presence.js';
+import { players, localPlayer } from '../state/store.js';
 import { world } from '../content/data.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -255,6 +257,33 @@ describe('Bug 3 — ROOM_MAP derived from data.js (wrong room fix)', () => {
         const packed = packPresence(p);
         const unpacked = unpackPresence(packed);
         expect(unpacked.ph).toBe('00da3f33');
+    });
+
+    test('unpackPresencePacket returns null for malformed binary payloads', () => {
+        expect(unpackPresencePacket(null)).toBeNull();
+        expect(unpackPresencePacket(new Uint8Array([1, 2, 3]))).toBeNull();
+    });
+
+    test('unpackPresencePacket passes through presence-like objects', () => {
+        const presence = makePresence();
+        expect(unpackPresencePacket(presence)).toBe(presence);
+    });
+
+    test('seedFromSnapshot skips local ph and uses safe fallback coordinates', () => {
+        players.clear();
+        localPlayer.ph = 'self-ph';
+
+        seedFromSnapshot([
+            { ph: 'self-ph', location: 'tavern', name: 'Self', level: 1, xp: 0 },
+            { ph: 'abcd1234', location: 'market', name: 'Ghost', level: 2, xp: 10 },
+        ]);
+
+        expect(players.has('ghost:self-ph')).toBe(false);
+        expect(players.get('ghost:abcd1234')).toMatchObject({
+            ghost: true,
+            x: 5,
+            y: 5,
+        });
     });
 
     test('unknown room index falls back to first sorted room, not silent corruption', () => {

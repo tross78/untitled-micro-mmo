@@ -1,4 +1,4 @@
-import { NPCS, ENEMIES, ITEMS, RECIPES, QUESTS } from '../content/data.js';
+import { NPCS, ENEMIES, ITEMS, RECIPES, QUESTS, roomHasFeature } from '../content/data.js';
 import { ACTION } from '../engine/input.js';
 import { GAME_NAME } from '../content/data.js';
 import { bus } from '../state/eventbus.js';
@@ -111,7 +111,7 @@ export const renderActionButtons = (ctx, onAction) => {
                 }
             }
 
-            if (localPlayer.location === 'cellar') {
+            if (roomHasFeature(localPlayer.location, 'bank')) {
                 addButton('Bank 🏦', () => { uiState = 'bank'; renderActionButtons(ctx, onAction); });
             }
 

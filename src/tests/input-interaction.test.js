@@ -54,6 +54,8 @@ describe('Input Interaction (Cross-platform)', () => {
         setupGlobalEvents();
         // Setup a mock player with a menu
         appRuntime.playerEntityId = 1;
+        appRuntime.world.setComponent = jest.fn();
+        appRuntime.world.removeComponent = jest.fn();
         appRuntime.world.query = jest.fn((components) => {
             if (components.includes(Component.Menu)) return [1];
             return [];
@@ -115,5 +117,40 @@ describe('Input Interaction (Cross-platform)', () => {
         bus.emit('input:action', { action: ACTION.MOVE_S, type: 'down' });
 
         expect(mockMenu.selectedIndex).toBe(1);
+    });
+
+    test('ui:back closes dialogue without advancing it', () => {
+        const { showDialogue, advanceDialogue } = jest.requireMock('../graphics/renderer.js');
+        appRuntime.world.query = jest.fn(() => []);
+        appRuntime.world.getComponent = jest.fn(() => null);
+
+        bus.emit('ui:back', {});
+
+        expect(advanceDialogue).not.toHaveBeenCalled();
+        expect(showDialogue).toHaveBeenCalledWith(null, null);
+    });
+
+    test('ui:queue-menu opens immediately when no dialogue is active', () => {
+        appRuntime.world.query = jest.fn(() => []);
+        appRuntime.world.getComponent = jest.fn(() => null);
+
+        bus.emit('ui:queue-menu', { type: 'crafting', context: {} });
+
+        expect(appRuntime.world.setComponent).toHaveBeenCalledWith(1, Component.Menu, expect.objectContaining({
+            type: 'crafting',
+        }));
+    });
+
+    test('player:move clears the current menu selection', () => {
+        appRuntime.world.getComponent = jest.fn((id, comp) => {
+            if (comp === Component.Menu) {
+                return { type: 'shop', entries: [], selectedIndex: 0 };
+            }
+            return null;
+        });
+
+        bus.emit('player:move', { from: 'market', to: 'tavern' });
+
+        expect(appRuntime.world.removeComponent).toHaveBeenCalledWith(1, Component.Menu);
     });
 });

@@ -69,7 +69,58 @@ describe('Phase 8.55e: UI Visual Cohesion', () => {
         const id = world.createEntity();
         world.setComponent(id, 'Dialogue', { speakerId: 'Guard', text: 'Stop!', progress: 5 });
         sys.drawDialogue(ctx);
-        // Hint text is last
-        expect(ctx.fillStyle).toContain('rgba(255, 221, 85');
+        expect(ctx.fillStyle).toBe(UI_PALETTE.textHi);
+        expect(sys.dialogueHitRegions.length).toBeGreaterThan(0);
+        const closeBtn = sys.dialogueHitRegions[0];
+        expect(sys.resolveDialogueClick(closeBtn.x + 1, closeBtn.y + 1)).toBe(true);
+    });
+
+    test('mobile dialogue close affordance stays within a narrow viewport', () => {
+        vp = { CW: 360, CH: 640, S: 40 };
+        sys = new UIRenderSystem(world, vp, { tavern: { name: 'Tavern', description: 'Cozy' } });
+        const id = world.createEntity();
+        world.setComponent(id, 'Dialogue', { speakerId: 'Guard', text: 'Stop!', progress: 5 });
+
+        sys.drawDialogue(ctx);
+
+        expect(sys.dialogueHitRegions).toHaveLength(1);
+        const closeBtn = sys.dialogueHitRegions[0];
+        expect(closeBtn.x).toBeGreaterThanOrEqual(0);
+        expect(closeBtn.y).toBeGreaterThanOrEqual(0);
+        expect(closeBtn.x + closeBtn.w).toBeLessThanOrEqual(vp.CW);
+        expect(closeBtn.y + closeBtn.h).toBeLessThanOrEqual(vp.CH);
+        expect(closeBtn.w).toBeGreaterThan(40);
+        expect(closeBtn.h).toBeGreaterThan(20);
+    });
+
+    test('mobile menu layout keeps hit regions inside the viewport', () => {
+        vp = { CW: 360, CH: 640, S: 40 };
+        sys = new UIRenderSystem(world, vp, { tavern: { name: 'Tavern', description: 'Cozy' } });
+        const id = world.createEntity();
+        world.setComponent(id, 'PlayerControlled', {});
+        world.setComponent(id, 'Menu', {
+            type: 'root',
+            title: 'Adventurer Menu',
+            message: 'Select an action.',
+            selectedIndex: 0,
+            entries: [
+                { label: 'Inventory', detail: '0 items', action: {} },
+                { label: 'Quests', detail: '2 active', action: {} },
+                { label: 'Map', detail: 'Connected locations', action: {} },
+                { label: 'Audio', detail: 'Muted', action: {} },
+            ]
+        });
+
+        sys.drawMenu(ctx);
+
+        expect(sys.menuHitRegions.length).toBe(4);
+        sys.menuHitRegions.forEach((row) => {
+            expect(row.x).toBeGreaterThanOrEqual(0);
+            expect(row.y).toBeGreaterThanOrEqual(0);
+            expect(row.x + row.w).toBeLessThanOrEqual(vp.CW);
+            expect(row.y + row.h).toBeLessThanOrEqual(vp.CH);
+        });
+        const first = sys.menuHitRegions[0];
+        expect(sys.resolveMenuClick(first.x + 1, first.y + 1)).toBe(0);
     });
 });

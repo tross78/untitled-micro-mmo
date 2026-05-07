@@ -1,4 +1,4 @@
-import { ITEMS, NPCS, QUESTS, RECIPES } from '../content/data.js';
+import { ITEMS, NPCS, QUESTS, RECIPES, roomHasFeature } from '../content/data.js';
 import { ENEMIES } from '../content/data.js';
 import { levelBonus } from '../rules/index.js';
 import { players, worldState } from '../state/store.js';
@@ -93,7 +93,7 @@ export function buildCanvasMenu(type, context, menuCtx) {
         if (!localPlayer.currentEnemy) {
             entries.push({ label: 'Rest', detail: 'Recover and regroup', action: { kind: 'command', command: 'rest' } });
         }
-        if (localPlayer.location === 'cellar') {
+        if (roomHasFeature(localPlayer.location, 'bank')) {
             entries.push({ label: 'Bank', detail: `${localPlayer.bankedGold || 0}g stored`, action: { kind: 'command', command: 'bank' } });
         }
         if (enemy) {

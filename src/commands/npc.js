@@ -1,5 +1,5 @@
 import { localPlayer, worldState } from '../state/store.js';
-import { ITEMS, NPCS, QUESTS } from '../content/data.js';
+import { ITEMS, NPCS, QUESTS, roomHasFeature, world } from '../content/data.js';
 import { getNPCDialogue, getTimeOfDay, xpToLevel } from '../rules/index.js';
 import { log } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
@@ -222,7 +222,11 @@ export const handleNPCCommands = async (command, args) => {
         }
 
         case 'bank': {
-            if (localPlayer.location !== 'cellar') { log(`You can only bank at your home (the cellar).`); return true; }
+            if (!roomHasFeature(localPlayer.location, 'bank')) {
+                const bankRoom = Object.values(world).find(r => r.features?.includes('bank'));
+                log(`You can only bank at ${bankRoom?.name ?? 'the bank'}.`);
+                return true;
+            }
             const sub = args[1]?.toLowerCase();
             const amount = parseInt(args[2]);
 

@@ -127,6 +127,66 @@ describe('store state helpers', () => {
         expect(localPlayer.inventory).toEqual(['potion']);
     });
 
+    test('loadLocalState repairs saved coordinates that overlap a static NPC spawn', async () => {
+        loadState.mockResolvedValue({
+            _version: 1,
+            name: 'Saved',
+            location: 'cellar',
+            x: 5,
+            y: 5,
+        });
+
+        await loadLocalState();
+
+        expect(localPlayer.location).toBe('cellar');
+        expect({ x: localPlayer.x, y: localPlayer.y }).not.toEqual({ x: 5, y: 5 });
+    });
+
+    test('loadLocalState migrates old saves and fills missing runtime defaults', async () => {
+        loadState.mockResolvedValue({
+            _version: 0,
+            name: 'Old Save',
+            location: 'cellar',
+            x: null,
+            y: undefined,
+            inventory: null,
+            statusEffects: null,
+            equipped: null,
+            combatRound: NaN,
+        });
+
+        await loadLocalState();
+
+        expect(localPlayer.name).toBe('Old Save');
+        expect(localPlayer.location).toBe('cellar');
+        expect(Array.isArray(localPlayer.inventory)).toBe(true);
+        expect(Array.isArray(localPlayer.statusEffects)).toBe(true);
+        expect(localPlayer.equipped).toEqual({ weapon: null, armor: null });
+        expect(localPlayer.combatRound).toBe(0);
+    });
+
+    test('loadLocalState strips ph and clamps hp/gold/xp on malformed saves', async () => {
+        loadState.mockResolvedValue({
+            _version: 2,
+            name: 'Clamp',
+            ph: 'deadbeef',
+            location: 'cellar',
+            hp: 999,
+            maxHp: 20,
+            gold: -5,
+            xp: -12,
+            inventory: ['potion', 'missing_item'],
+        });
+
+        await loadLocalState();
+
+        expect(localPlayer.ph).toBeNull();
+        expect(localPlayer.hp).toBe(20);
+        expect(localPlayer.gold).toBe(0);
+        expect(localPlayer.xp).toBe(0);
+        expect(localPlayer.inventory).toEqual(['potion']);
+    });
+
     test('loadLocalState restores cached derived world state', async () => {
         loadState.mockResolvedValue(null);
         localStorage.setItem(WORLD_STATE_KEY, JSON.stringify({ seed: 'seed-a', day: 4, lastTick: 99 }));

@@ -1,4 +1,6 @@
 import { defineRoom } from '../content/define.js';
+import { getCompiledAssetMeta, hasCompiledAssetShape } from '../graphics/graphics.js';
+import { COMPILED_ASSET_SHAPES } from '../generated/assets/compiled-assets.js';
 describe('Phase 8.55c: Scenery Scale and Size Classes', () => {
     test('defineRoom applies canonical dimensions to scenery string', () => {
         const room = defineRoom('test', {
@@ -35,5 +37,26 @@ describe('Phase 8.55c: Scenery Scale and Size Classes', () => {
         const tree = room.scenery.find(s => s.label === 'tree');
         expect(tree.w).toBe(5);
         expect(tree.h).toBe(5);
+    });
+
+    test('compiled tree asset renders at its canonical 3x3 footprint', () => {
+        expect(getCompiledAssetMeta('tree')).toMatchObject({
+            logicalWidth: 3,
+            logicalHeight: 3,
+            renderHeightTiles: 3,
+            renderYOffsetTiles: 0,
+        });
+        expect(COMPILED_ASSET_SHAPES.tree).toHaveLength(48);
+        expect(COMPILED_ASSET_SHAPES.tree[0]).toHaveLength(48);
+    });
+
+    test('authored scenery assets are large enough to avoid visible source stretching', () => {
+        expect(hasCompiledAssetShape('stall')).toBe(true);
+        expect(hasCompiledAssetShape('bookshelf')).toBe(true);
+        expect(hasCompiledAssetShape('fireplace')).toBe(true);
+
+        expect(COMPILED_ASSET_SHAPES.stall).toHaveLength(48);
+        expect(COMPILED_ASSET_SHAPES.bookshelf).toHaveLength(48);
+        expect(COMPILED_ASSET_SHAPES.fireplace).toHaveLength(48);
     });
 });

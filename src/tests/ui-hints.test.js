@@ -131,7 +131,7 @@ describe('UIRenderSystem Input Mode Hints', () => {
         inputManager.lastInputMode = 'keyboard';
         uiSystem.drawDialogue(ctx);
         expect(ctx.fillText).toHaveBeenCalledWith(
-            expect.stringContaining('Space/Enter to advance'),
+            expect.stringContaining('Space/Enter to close'),
             expect.any(Number), expect.any(Number)
         );
 

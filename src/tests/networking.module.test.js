@@ -48,6 +48,7 @@ import { verifyMessage, importKey } from '../security/crypto.js';
 import { checkAndUpdateHlc } from '../network/hlc.js';
 import { joinRoom } from '@trystero-p2p/torrent';
 import { APP_ID, TORRENT_TRACKERS, STUN_SERVERS } from '../infra/constants.js';
+import * as ui from '../ui/index.js';
 
 describe('networking module hardening', () => {
     beforeEach(async () => {
@@ -222,6 +223,37 @@ describe('networking exported module behavior', () => {
             day: 3,
             lastTick: 77,
         });
+    });
+
+    test('updateSimulation strips personal fields from incoming arbiter packets', () => {
+        const packet = {
+            world_seed: 'seed-y',
+            day: 4,
+            last_tick: 88,
+            name: 'ShouldNotPersist',
+            xp: 999,
+            inventory: ['potion'],
+            quests: { bad: true },
+            ph: 'deadbeef',
+        };
+
+        updateSimulation(packet);
+
+        expect(packet).not.toHaveProperty('name');
+        expect(packet).not.toHaveProperty('xp');
+        expect(packet).not.toHaveProperty('inventory');
+        expect(packet).not.toHaveProperty('quests');
+        expect(packet).not.toHaveProperty('ph');
+        expect(worldState.seed).toBe('seed-y');
+        expect(worldState.day).toBe(4);
+    });
+
+    test('updateSimulation ignores ban packets after logging', () => {
+        const logSpy = jest.spyOn(ui, 'log');
+        updateSimulation({ type: 'ban', target: 'bad-key' });
+
+        expect(logSpy).toHaveBeenCalledWith('[Arbiter] Proposer banned: bad-key', '#f55');
+        expect(worldState.seed).toBe('');
     });
 
     test('updateSimulation new day resets combat counters after initial sync', () => {

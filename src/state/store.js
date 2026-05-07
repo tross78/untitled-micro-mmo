@@ -1,7 +1,7 @@
 // @ts-check
 import { selfId } from '../network/transport.js';
-import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS } from '../content/data.js';
-import { deriveWorldState, xpToLevel } from '../rules/index.js';
+import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS, SPAWN_ROOM_ID, SPAWN_X, SPAWN_Y } from '../content/data.js';
+import { deriveWorldState, findSafeArrival, xpToLevel } from '../rules/index.js';
 import { world } from '../content/data.js';
 import { scopedStorageKey } from '../infra/runtime.js';
 
@@ -96,7 +96,7 @@ export const trackShadowPlayer = (id, data) => {
 
 export let localPlayer = { 
     name: `Peer-${selfId.slice(0, 4)}`, 
-    location: 'cellar', 
+    location: SPAWN_ROOM_ID,
     direction: 'south',
     animState: 'idle',
     statusEffects: [],
@@ -123,6 +123,38 @@ export let pendingTrade = null; // { partnerId, partnerName, partnerOffer: {gold
 export function setPendingTrade(val) {
     pendingTrade = val;
 }
+
+const isRoomTileWalkable = (room, x, y) => {
+    if (!room || x < 0 || y < 0 || x >= room.width || y >= room.height) return false;
+    const wall = (room.tileOverrides || []).find((t) => t.x === x && t.y === y && t.type === 'wall');
+    if (wall) return false;
+    const scenery = (room.scenery || []).find((s) =>
+        x >= s.x && x < s.x + (s.w || 1) &&
+        y >= s.y && y < s.y + (s.h || 1)
+    );
+    if (scenery) return false;
+    const staticEntity = (room.staticEntities || []).find((e) => e.x === x && e.y === y);
+    if (staticEntity) return false;
+    return true;
+};
+
+const resolveSafePlayerSpawn = (location, x, y) => {
+    const room = world[location];
+    if (!room) return { x: 0, y: 0 };
+
+    const targetX = Number.isFinite(x) ? x : Math.floor(room.width / 2);
+    const targetY = Number.isFinite(y) ? y : Math.floor(room.height / 2);
+    const safe = findSafeArrival(targetX, targetY, room.width, room.height, (cx, cy) => isRoomTileWalkable(room, cx, cy));
+    if (safe) return safe;
+
+    for (let yy = 0; yy < room.height; yy++) {
+        for (let xx = 0; xx < room.width; xx++) {
+            if (isRoomTileWalkable(room, xx, yy)) return { x: xx, y: yy };
+        }
+    }
+
+    return { x: targetX, y: targetY };
+};
 
 import { loadState } from './persistence.js';
 // ...
@@ -166,8 +198,11 @@ export const loadLocalState = async (log) => {
             if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
             if (!localPlayer.equipped) localPlayer.equipped = { weapon: null, armor: null };
             if (!world[localPlayer.location]) {
-                localPlayer.location = 'cellar';
+                localPlayer.location = SPAWN_ROOM_ID;
             }
+            const safeSpawn = resolveSafePlayerSpawn(localPlayer.location, localPlayer.x, localPlayer.y);
+            localPlayer.x = safeSpawn.x;
+            localPlayer.y = safeSpawn.y;
             if (log) log(`[System] Welcome back, ${localPlayer.name}.`);
         } catch (e) { console.error('[Store] Load error:', e); }
     }

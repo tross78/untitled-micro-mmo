@@ -41,6 +41,7 @@ const state = {
     exits: {},         // logical exits {north: 'id'}
     exitTiles: [],     // parsed exit objects [{x,y,dest,...}]
     activeTile: '.',   // currently selected tile char
+    exitPlaceMode: false, // when true, click fills exit x/y instead of painting
     graphOffset: { x: 0, y: 0 },
     graphZoom: 1,
     graphDrag: null,
@@ -62,6 +63,7 @@ function init() {
     setupTileCanvas();
     setupToolbar();
     setupExitHandlers();
+    setupExitPlaceMode();
 }
 
 function buildDestSelect() {
@@ -81,7 +83,60 @@ const REVERSE_DIR = {
     up: 'down', down: 'up'
 };
 
+// ── Smart exit position helpers ───────────────────────────────────────────────
+
+const INSET = 1; // tiles inward from wall for landing positions
+
+function wallCenter(dir, room) {
+    // Returns the wall-center tile for a given direction in a room
+    const W = room.width, H = room.height;
+    const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+    switch (dir) {
+        case 'north': return { x: cx, y: 0 };
+        case 'south': return { x: cx, y: H - 1 };
+        case 'east':  return { x: W - 1, y: cy };
+        case 'west':  return { x: 0, y: cy };
+        default:      return { x: cx, y: cy }; // up/down/custom: center
+    }
+}
+
+function inwardLanding(dir, room) {
+    // Returns a landing position inward from the wall for a given direction
+    const W = room.width, H = room.height;
+    const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+    switch (dir) {
+        case 'north': return { x: cx, y: INSET };
+        case 'south': return { x: cx, y: H - 1 - INSET };
+        case 'east':  return { x: W - 1 - INSET, y: cy };
+        case 'west':  return { x: INSET, y: cy };
+        default:      return { x: cx, y: cy };
+    }
+}
+
+function smartFillExitForm() {
+    const dir = document.getElementById('new-exit-dir').value;
+    const destId = document.getElementById('new-exit-dest').value;
+    const srcRoom = rooms[state.roomId];
+    const destRoom = rooms[destId];
+    if (!srcRoom || !destRoom || destId === state.roomId) return;
+
+    const revDir = REVERSE_DIR[dir];
+    const tile = wallCenter(dir, srcRoom);
+    const landing = inwardLanding(revDir, destRoom); // where we land in dest (inward from the wall that faces us)
+
+    document.getElementById('new-exit-x').value = tile.x;
+    document.getElementById('new-exit-y').value = tile.y;
+    document.getElementById('new-exit-dx').value = landing.x;
+    document.getElementById('new-exit-dy').value = landing.y;
+}
+
 function setupExitHandlers() {
+    document.getElementById('btn-smart-fill')?.addEventListener('click', smartFillExitForm);
+
+    // Auto-fill when direction or destination changes
+    document.getElementById('new-exit-dir').addEventListener('change', smartFillExitForm);
+    document.getElementById('new-exit-dest').addEventListener('change', smartFillExitForm);
+
     document.getElementById('btn-add-exit').addEventListener('click', () => {
         const dir = document.getElementById('new-exit-dir').value;
         const dest = document.getElementById('new-exit-dest').value;
@@ -93,7 +148,7 @@ function setupExitHandlers() {
         const reciprocal = document.getElementById('chk-reciprocal').checked;
 
         if (dest === state.roomId) return;
-        
+
         // 1. Update this room
         state.exits[dir] = dest;
         const existing = state.exitTiles.find(e => e.dest === dest);
@@ -104,25 +159,36 @@ function setupExitHandlers() {
             state.exitTiles.push({ x, y, dest, destX: dx, destY: dy, type, w: 1, h: 1 });
         }
 
-        // 2. Handle reciprocal
+        // 2. Handle reciprocal — place return exit on the opposite wall of dest,
+        //    with landing inward from the source exit tile (not on it)
         if (reciprocal) {
             const revDir = REVERSE_DIR[dir];
-            if (revDir) {
-                const destSavedExits = state._savedExits[dest] || { ...(rooms[dest]?.exits || {}) };
+            if (revDir && rooms[dest]) {
+                const destRoom = rooms[dest];
+                const srcRoom = rooms[state.roomId];
+                const retTile = wallCenter(revDir, destRoom);
+                const retLanding = inwardLanding(dir, srcRoom); // land inward from source wall
+
+                const destSavedExits = state._savedExits[dest] || { ...(destRoom.exits || {}) };
                 destSavedExits[revDir] = state.roomId;
                 state._savedExits[dest] = destSavedExits;
-                
-                const destSavedTiles = state._savedExitTiles[dest] || (Array.isArray(rooms[dest]?.exitTiles) ? [...rooms[dest].exitTiles] : []);
-                if (!destSavedTiles.find(e => e.dest === state.roomId)) {
-                    destSavedTiles.push({ x: dx, y: dy, dest: state.roomId, destX: x, destY: y, type, w: 1, h: 1 });
+
+                const destSavedTiles = state._savedExitTiles[dest] || (Array.isArray(destRoom.exitTiles) ? [...destRoom.exitTiles] : []);
+                const existingReturn = destSavedTiles.find(e => e.dest === state.roomId);
+                if (existingReturn) {
+                    existingReturn.x = retTile.x; existingReturn.y = retTile.y;
+                    existingReturn.destX = retLanding.x; existingReturn.destY = retLanding.y;
+                } else {
+                    destSavedTiles.push({ x: retTile.x, y: retTile.y, dest: state.roomId, destX: retLanding.x, destY: retLanding.y, type, w: 1, h: 1 });
                 }
                 state._savedExitTiles[dest] = destSavedTiles;
             }
         }
-        
+
         renderExitsUI();
         renderGraph();
         renderDSL();
+        renderValidation();
         saveEditorState();
     });
 
@@ -179,14 +245,18 @@ function renderExitsUI() {
         btn.style.cursor = 'pointer';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (wouldDisconnect(state.roomId, destId)) {
+                if (!confirm(`Removing this exit would disconnect the world graph (some rooms become unreachable). Remove anyway?`)) return;
+            }
             delete state.exits[dir];
             state.exitTiles = state.exitTiles.filter(e => e.dest !== destId);
             renderExitsUI();
             renderGraph();
             renderDSL();
+            renderValidation();
             saveEditorState();
         });
-        
+
         row.appendChild(label);
         row.appendChild(btn);
         list.appendChild(row);
@@ -300,6 +370,7 @@ function loadRoom(id) {
     renderExitsUI();
     renderDSL();
     renderGraph();
+    renderValidation();
     saveEditorState();
 }
 
@@ -371,16 +442,31 @@ function renderTileCanvas() {
         }
     }
 
-    // Draw exit overlays
+    // Draw exit overlays with destination labels
     (state.exitTiles || []).forEach(ex => {
         if (ex.x < 0 || ex.y < 0) return;
         const exW = (ex.w || 1) * S;
         const exH = (ex.h || 1) * S;
-        ctx.fillStyle = 'rgba(80,200,120,0.35)';
-        ctx.fillRect(ex.x * S, ex.y * S, exW, exH);
-        ctx.strokeStyle = '#33aa55';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(ex.x * S + 0.5, ex.y * S + 0.5, exW - 1, exH - 1);
+        const px = ex.x * S;
+        const py = ex.y * S;
+
+        // Check reciprocal validity
+        const otherExits = state._savedExits[ex.dest] || rooms[ex.dest]?.exits || {};
+        const isReciprocal = Object.values(otherExits).includes(state.roomId);
+
+        ctx.fillStyle = isReciprocal ? 'rgba(80,200,120,0.32)' : 'rgba(220,80,80,0.32)';
+        ctx.fillRect(px, py, exW, exH);
+        ctx.strokeStyle = isReciprocal ? '#33aa55' : '#cc3333';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px + 0.5, py + 0.5, exW - 1, exH - 1);
+
+        // Destination label
+        const label = (rooms[ex.dest]?.name || ex.dest).replace('The ', '');
+        ctx.fillStyle = isReciprocal ? '#88ffaa' : '#ff8888';
+        ctx.font = `bold ${Math.min(9, Math.floor(exW / label.length * 1.4))}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, px + exW / 2, py + exH / 2);
     });
 
     // Draw scenery
@@ -400,6 +486,60 @@ function renderTileCanvas() {
     for (let ty = 0; ty <= h; ty++) {
         ctx.beginPath(); ctx.moveTo(0, ty * S); ctx.lineTo(w * S, ty * S); ctx.stroke();
     }
+}
+
+// ── Graph Connectivity Algorithms ─────────────────────────────────────────────
+
+function buildAdjacency(overrides = {}) {
+    // Build undirected adjacency from all rooms, merging any in-editor overrides.
+    // overrides: { roomId: { exits: {...} } }
+    const adj = {};
+    for (const id of Object.keys(rooms)) {
+        const exits = overrides[id]?.exits ?? (state._savedExits[id] || rooms[id]?.exits || {});
+        adj[id] = new Set(Object.values(exits).filter(d => rooms[d]));
+    }
+    return adj;
+}
+
+function reachableFrom(startId, adj) {
+    const visited = new Set();
+    const queue = [startId];
+    visited.add(startId);
+    while (queue.length) {
+        const id = queue.shift();
+        for (const nb of (adj[id] || [])) {
+            if (!visited.has(nb)) { visited.add(nb); queue.push(nb); }
+        }
+    }
+    return visited;
+}
+
+function graphIsConnected(adj) {
+    const ids = Object.keys(adj).filter(id => rooms[id]);
+    if (ids.length === 0) return true;
+    return reachableFrom(ids[0], adj).size === ids.length;
+}
+
+function wouldDisconnect(roomId, destId) {
+    // Simulate removing the exit from roomId → destId AND destId → roomId
+    const adj = buildAdjacency();
+    adj[roomId]?.delete(destId);
+    adj[destId]?.delete(roomId);
+    return !graphIsConnected(adj);
+}
+
+function orphanedRooms() {
+    const adj = buildAdjacency();
+    const ids = Object.keys(rooms);
+    const reachable = reachableFrom(ids[0], adj);
+    return ids.filter(id => !reachable.has(id));
+}
+
+function getExitAtTile(tx, ty) {
+    return (state.exitTiles || []).find(ex =>
+        tx >= ex.x && tx < ex.x + (ex.w || 1) &&
+        ty >= ex.y && ty < ex.y + (ex.h || 1)
+    ) || null;
 }
 
 function setupTileCanvas() {
@@ -432,23 +572,71 @@ function setupTileCanvas() {
             return;
         }
 
+        // Shift+click on exit tile → navigate to that room
+        if (e.shiftKey) {
+            const ex = getExitAtTile(tx, ty);
+            if (ex && rooms[ex.dest]) { loadRoom(ex.dest); return; }
+        }
+
+        // Exit-place mode: click fills exit x/y coordinates
+        if (state.exitPlaceMode) {
+            document.getElementById('new-exit-x').value = tx;
+            document.getElementById('new-exit-y').value = ty;
+            document.getElementById('status').textContent = `Exit tile set to (${tx},${ty}) — adjust DX/DY then click +`;
+            return;
+        }
+
         painting = true;
         paintTile(tx, ty);
     });
 
     canvas.addEventListener('mousemove', (e) => {
-        if (!painting) return;
         const { tx, ty } = getPos(e);
+        const room = rooms[state.roomId];
+        if (!room || tx < 0 || ty < 0 || tx >= room.width || ty >= room.height) {
+            if (!painting) return;
+        }
+
+        // Always show exit info on hover
+        const ex = getExitAtTile(tx, ty);
+        if (ex) {
+            const destName = rooms[ex.dest]?.name || ex.dest;
+            document.getElementById('status').textContent =
+                `(${tx},${ty}) → ${destName} [${ex.type}] lands at (${ex.destX},${ex.destY}) | Shift+click to visit`;
+            if (!painting) return;
+        }
+
+        if (!painting) return;
         paintTile(tx, ty);
-        // Update status
-        const char = state.grid[ty]?.[tx] || '.';
-        const type = CHAR_TO_TYPE[char] || zoneTileType(state.roomId);
-        document.getElementById('status').textContent = `(${tx},${ty}) ${type}`;
+        if (!ex) {
+            const char = state.grid[ty]?.[tx] || '.';
+            const type = CHAR_TO_TYPE[char] || zoneTileType(state.roomId);
+            document.getElementById('status').textContent = `(${tx},${ty}) ${type}`;
+        }
     });
 
-    canvas.addEventListener('mouseleave', () => { painting = false; });
+    canvas.addEventListener('mouseleave', () => {
+        painting = false;
+        document.getElementById('status').textContent = '';
+    });
     window.addEventListener('mouseup', () => { painting = false; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+function setupExitPlaceMode() {
+    const btn = document.getElementById('btn-exit-place');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        state.exitPlaceMode = !state.exitPlaceMode;
+        btn.style.background = state.exitPlaceMode ? '#33aa55' : '#444';
+        btn.style.color = state.exitPlaceMode ? '#fff' : '#ccc';
+        btn.textContent = state.exitPlaceMode ? 'Exit Place: ON' : 'Exit Place';
+        const canvas = document.getElementById('tile-canvas');
+        canvas.style.cursor = state.exitPlaceMode ? 'cell' : 'crosshair';
+        document.getElementById('status').textContent = state.exitPlaceMode
+            ? 'Click a tile to set the exit position X/Y'
+            : '';
+    });
 }
 
 function paintTile(tx, ty) {
@@ -574,6 +762,150 @@ function getRoomDSL(id) {
     return `    ${id}: defineRoom('${id}', {\n${parts}\n    }),`;
 }
 
+function renderValidation() {
+    const panel = document.getElementById('validation-list');
+    if (!panel) return;
+
+    const issues = [];
+    const room = rooms[state.roomId];
+    const w = room?.width || 0;
+    const h = room?.height || 0;
+
+    // Check outbound exits
+    for (const [dir, dest] of Object.entries(state.exits)) {
+        if (!rooms[dest]) {
+            issues.push({ sev: 'error', msg: `exits.${dir} → "${dest}" does not exist` });
+        } else {
+            const otherExits = state._savedExits[dest] || rooms[dest]?.exits || {};
+            if (!Object.values(otherExits).includes(state.roomId)) {
+                issues.push({ sev: 'warn', msg: `exits.${dir} → "${dest}" has no return exit` });
+            }
+        }
+    }
+
+    // Check exit tiles
+    const tileDestsSeen = new Set();
+    for (const ex of state.exitTiles) {
+        const x2 = ex.x + (ex.w || 1) - 1;
+        const y2 = ex.y + (ex.h || 1) - 1;
+        if (ex.x < 0 || ex.y < 0 || x2 >= w || y2 >= h) {
+            issues.push({ sev: 'error', msg: `exitTile → "${ex.dest}" at (${ex.x},${ex.y}) out of bounds (${w}×${h})` });
+        }
+        if (!rooms[ex.dest]) {
+            issues.push({ sev: 'error', msg: `exitTile → "${ex.dest}" (room not found)` });
+        } else {
+            const dest = rooms[ex.dest];
+            if (ex.destX < 0 || ex.destY < 0 || ex.destX >= dest.width || ex.destY >= dest.height) {
+                issues.push({ sev: 'error', msg: `exitTile → "${ex.dest}" lands at (${ex.destX},${ex.destY}) outside ${dest.width}×${dest.height}` });
+            }
+        }
+        if (tileDestsSeen.has(ex.dest)) {
+            issues.push({ sev: 'warn', msg: `duplicate exitTile for "${ex.dest}"` });
+        }
+        tileDestsSeen.add(ex.dest);
+    }
+
+    // Check exits vs exitTiles agreement
+    const exitDests = new Set(Object.values(state.exits));
+    for (const dest of exitDests) {
+        if (!tileDestsSeen.has(dest)) {
+            issues.push({ sev: 'warn', msg: `exits includes "${dest}" but no exitTile references it` });
+        }
+    }
+    for (const dest of tileDestsSeen) {
+        if (!exitDests.has(dest)) {
+            issues.push({ sev: 'warn', msg: `exitTile references "${dest}" but not in exits` });
+        }
+    }
+
+    // Check exit source tiles are not walled off
+    for (const ex of state.exitTiles) {
+        const exW = ex.w || 1, exH = ex.h || 1;
+        for (let dx = 0; dx < exW; dx++) {
+            for (let dy = 0; dy < exH; dy++) {
+                const tx = ex.x + dx, ty = ex.y + dy;
+                const char = state.grid[ty]?.[tx] || '.';
+                if (char === 'W') {
+                    issues.push({ sev: 'error', msg: `Exit tile to "${ex.dest}" at (${tx},${ty}) is a wall — player can never step on it` });
+                }
+            }
+        }
+    }
+
+    // Check landing tiles in destinations
+    for (const ex of state.exitTiles) {
+        const dest = rooms[ex.dest];
+        if (!dest) continue;
+        const savedGrid = state._savedGrids[ex.dest];
+        const getChar = (x, y) => {
+            if (savedGrid) return savedGrid[y]?.[x] || '.';
+            const ov = (state._savedExitTiles[ex.dest] ? [] : dest.tileOverrides || []).find(o => o.x === x && o.y === y);
+            return ov?.type === 'wall' ? 'W' : '.';
+        };
+        const lx = ex.destX, ly = ex.destY;
+        const sc = (dest.scenery || []).find(s =>
+            lx >= s.x && lx < s.x + (s.w || 1) && ly >= s.y && ly < s.y + (s.h || 1)
+        );
+        const isWall = (() => {
+            if (savedGrid) return savedGrid[ly]?.[lx] === 'W';
+            return (dest.tileOverrides || []).some(o => o.x === lx && o.y === ly && o.type === 'wall');
+        })();
+        if (isWall) issues.push({ sev: 'error', msg: `Exit to "${ex.dest}" lands at (${lx},${ly}) which is a wall in destination` });
+        else if (sc) issues.push({ sev: 'warn', msg: `Exit to "${ex.dest}" lands at (${lx},${ly}) on scenery "${sc.label}"` });
+    }
+
+    // Check landing coords don't fall on an exit tile in the destination (instant bounce)
+    for (const ex of state.exitTiles) {
+        const dest = rooms[ex.dest];
+        if (!dest) continue;
+        const lx = ex.destX, ly = ex.destY;
+        for (const dex of dest.exitTiles || []) {
+            if (lx >= dex.x && lx <= dex.x + (dex.w || 1) - 1 &&
+                ly >= dex.y && ly <= dex.y + (dex.h || 1) - 1) {
+                issues.push({ sev: 'error', msg: `Exit to "${ex.dest}" lands at (${lx},${ly}) ON an exit tile to "${dex.dest}" — player bounces immediately` });
+            }
+        }
+    }
+
+    // Check cardinal direction reciprocals match (east↔west, north↔south)
+    const OPPOSITE = { north: 'south', south: 'north', east: 'west', west: 'east' };
+    for (const [dir, dest] of Object.entries(state.exits)) {
+        if (!OPPOSITE[dir] || !rooms[dest]) continue;
+        const returnDir = Object.entries(rooms[dest].exits || {}).find(([, v]) => v === state.roomId)?.[0];
+        if (returnDir && returnDir !== OPPOSITE[dir]) {
+            issues.push({ sev: 'warn', msg: `${state.roomId} goes ${dir} to "${dest}", but "${dest}" returns via ${returnDir} (expected ${OPPOSITE[dir]})` });
+        }
+    }
+
+    // Global graph health — orphan detection
+    const orphans = orphanedRooms();
+    if (orphans.length > 0) {
+        issues.unshift({ sev: 'error', msg: `Graph disconnected — unreachable rooms: ${orphans.join(', ')}` });
+    }
+
+    panel.innerHTML = '';
+    if (issues.length === 0) {
+        const ok = document.createElement('div');
+        ok.style.color = '#33aa55';
+        ok.style.fontSize = '10px';
+        ok.style.padding = '4px';
+        ok.textContent = '✓ No issues';
+        panel.appendChild(ok);
+        return;
+    }
+    issues.forEach(({ sev, msg }) => {
+        const div = document.createElement('div');
+        div.style.padding = '3px 6px';
+        div.style.fontSize = '10px';
+        div.style.borderLeft = sev === 'error' ? '3px solid #cc3333' : '3px solid #cc9933';
+        div.style.color = sev === 'error' ? '#ff8888' : '#ffcc66';
+        div.style.marginBottom = '2px';
+        div.style.background = '#1a1a1a';
+        div.textContent = (sev === 'error' ? '✖ ' : '⚠ ') + msg;
+        panel.appendChild(div);
+    });
+}
+
 function renderDSL() {
     const dsl = getRoomDSL(state.roomId);
     document.getElementById('dsl-out').value = dsl;
@@ -599,80 +931,102 @@ function exportAll() {
 
 // ── World Graph ───────────────────────────────────────────────────────────────
 
-function computeGraphLayout() {
-    // Simple force-directed layout seed from structure
+function computeGraphLayout(forceReset = false) {
     const ids = Object.keys(rooms);
-    const visited = new Set();
     const positions = {};
-    const spacing = 140; // Increased spacing for better legibility
 
-    const dirOffsets = { 
-        north: [0, -1], 
-        north_east: [0.7, -0.7],
-        east: [1, 0], 
-        south_east: [0.7, 0.7],
-        south: [0, 1], 
-        south_west: [-0.7, 0.7],
-        west: [-1, 0], 
-        north_west: [-0.7, -0.7],
-        up: [-0.4, -0.4], 
-        down: [0.4, 0.4] 
+    // Seed positions from direction hints (BFS pass)
+    const dirOffsets = {
+        north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0],
+        north_east: [0.7, -0.7], south_east: [0.7, 0.7],
+        south_west: [-0.7, 0.7], north_west: [-0.7, -0.7],
+        up: [-0.3, -0.3], down: [0.3, 0.3],
     };
-
-    const isOccupied = (x, y) => {
-        return Object.values(positions).some(p => Math.hypot(p.x - x, p.y - y) < spacing * 0.4);
-    };
-
-    // BFS from first room
+    const SPACING = 150;
+    const visited = new Set();
     const queue = [{ id: ids[0], x: 0, y: 0 }];
     visited.add(ids[0]);
-    while (queue.length > 0) {
+    while (queue.length) {
         const { id, x, y } = queue.shift();
-        
-        let nx = x, ny = y;
-        let nudgeAttempt = 0;
-        while (isOccupied(nx, ny) && nudgeAttempt < 8) {
-            nx += 30;
-            ny += 20;
-            nudgeAttempt++;
-        }
-
-        positions[id] = { x: nx, y: ny };
-        const room = rooms[id];
-        const dirs = room.exits || {};
-        for (const [dir, destId] of Object.entries(dirs)) {
+        positions[id] = { x, y };
+        for (const [dir, destId] of Object.entries(rooms[id].exits || {})) {
             if (!visited.has(destId) && rooms[destId]) {
                 visited.add(destId);
                 const [dx, dy] = dirOffsets[dir] || [0, 0];
-                queue.push({ id: destId, x: nx + dx * spacing, y: ny + dy * spacing });
+                queue.push({ id: destId, x: x + dx * SPACING, y: y + dy * SPACING });
             }
         }
     }
+    ids.forEach((id, i) => { if (!positions[id]) positions[id] = { x: 600 + (i % 4) * SPACING, y: Math.floor(i / 4) * SPACING }; });
 
-    // Any orphans (placed in a separate grid to avoid tangles)
-    let orphanIdx = 0;
-    ids.forEach((id) => {
-        if (!positions[id]) {
-            positions[id] = { x: 800 + (orphanIdx % 3) * spacing, y: Math.floor(orphanIdx / 3) * spacing };
-            orphanIdx++;
-        }
+    // If we have stored positions and not forcing reset, use those for already-placed nodes
+    if (!forceReset) {
+        ids.forEach(id => { if (state.roomPositions[id]) positions[id] = { ...state.roomPositions[id] }; });
+    }
+
+    // Force-directed refinement (spring + repulsion, 300 iterations with cooling)
+    const edges = [];
+    ids.forEach(id => {
+        Object.values(rooms[id].exits || {}).forEach(destId => {
+            if (rooms[destId] && id < destId) edges.push([id, destId]);
+        });
     });
 
-    // Normalize and center
-    const minX = Math.min(...Object.values(positions).map(p => p.x));
-    const minY = Math.min(...Object.values(positions).map(p => p.y));
-    Object.values(positions).forEach((p, i) => { 
-        const id = ids[i];
-        if (state.roomPositions[id]) {
-            p.x = state.roomPositions[id].x;
-            p.y = state.roomPositions[id].y;
-        } else {
-            p.x -= minX - 40; 
-            p.y -= minY - 40; 
-        }
-    });
+    const K_REPULSE = 12000;
+    const K_ATTRACT = 0.04;
+    const REST_LEN = 160;
+    const vel = {};
+    ids.forEach(id => { vel[id] = { x: 0, y: 0 }; });
 
-    state.roomPositions = { ...positions, ...state.roomPositions };
+    for (let iter = 0; iter < 300; iter++) {
+        const cooling = 1 - iter / 300;
+        const forces = {};
+        ids.forEach(id => { forces[id] = { x: 0, y: 0 }; });
+
+        // Repulsion between all pairs
+        for (let i = 0; i < ids.length; i++) {
+            for (let j = i + 1; j < ids.length; j++) {
+                const a = ids[i], b = ids[j];
+                const dx = positions[b].x - positions[a].x;
+                const dy = positions[b].y - positions[a].y;
+                const d = Math.max(Math.hypot(dx, dy), 1);
+                const f = K_REPULSE / (d * d);
+                forces[a].x -= (dx / d) * f;
+                forces[a].y -= (dy / d) * f;
+                forces[b].x += (dx / d) * f;
+                forces[b].y += (dy / d) * f;
+            }
+        }
+
+        // Attraction along edges
+        for (const [a, b] of edges) {
+            const dx = positions[b].x - positions[a].x;
+            const dy = positions[b].y - positions[a].y;
+            const d = Math.max(Math.hypot(dx, dy), 1);
+            const f = K_ATTRACT * (d - REST_LEN);
+            forces[a].x += (dx / d) * f;
+            forces[a].y += (dy / d) * f;
+            forces[b].x -= (dx / d) * f;
+            forces[b].y -= (dy / d) * f;
+        }
+
+        ids.forEach(id => {
+            vel[id].x = (vel[id].x + forces[id].x) * 0.6;
+            vel[id].y = (vel[id].y + forces[id].y) * 0.6;
+            const speed = Math.hypot(vel[id].x, vel[id].y);
+            const maxSpeed = 8 * cooling + 1;
+            if (speed > maxSpeed) { vel[id].x *= maxSpeed / speed; vel[id].y *= maxSpeed / speed; }
+            positions[id].x += vel[id].x;
+            positions[id].y += vel[id].y;
+        });
+    }
+
+    // Normalize to start at (40, 40)
+    const minX = Math.min(...ids.map(id => positions[id].x));
+    const minY = Math.min(...ids.map(id => positions[id].y));
+    ids.forEach(id => { positions[id].x -= minX - 40; positions[id].y -= minY - 40; });
+
+    state.roomPositions = positions;
 }
 
 function renderGraph() {
@@ -756,6 +1110,12 @@ function setupGraphCanvas() {
     const canvas = document.getElementById('graph-canvas');
     const resizeObs = new ResizeObserver(() => renderGraph());
     resizeObs.observe(document.getElementById('graph-panel'));
+
+    document.getElementById('btn-reset-layout')?.addEventListener('click', () => {
+        state.roomPositions = {};
+        computeGraphLayout(true);
+        renderGraph();
+    });
 
     canvas.addEventListener('mousedown', (e) => {
         const r = canvas.getBoundingClientRect();

@@ -3,6 +3,7 @@
 import { Component } from '../domain/components.js';
 import { bus } from '../state/eventbus.js';
 import { playBGM, playHit, playCrit, playDeath, playPickup, playLevelUp, playPortal, playStep } from '../engine/audio.js';
+import { world } from '../content/data.js';
 
 /**
  * AudioSystem manages BGM transitions and sound effect triggers.
@@ -54,15 +55,9 @@ export class AudioSystem {
     }
 
     handleBgmTransition(locId) {
-        const dungeonRooms = new Set(['catacombs', 'dungeon_cell', 'throne_room', 'cave', 'ruins_descent', 'sea_cave', 'smuggler_den']);
-        const townRooms = new Set(['tavern', 'market', 'mill', 'herbalist_hut', 'library', 'hallway', 'cellar']);
-        
-        if (dungeonRooms.has(locId)) {
-            playBGM('dungeon');
-        } else if (townRooms.has(locId)) {
-            playBGM('town');
-        } else {
-            playBGM('grass');
-        }
+        const zone = world[locId]?.zone ?? 'wilderness';
+        if (zone === 'dungeon') playBGM('dungeon');
+        else if (zone === 'town') playBGM('town');
+        else playBGM('grass');
     }
 }

@@ -54,7 +54,7 @@ export class MapRenderSystem {
             this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY, sc.w || 1, sc.h || 1, sc.x, sc.y);
         });
 
-        // 4. Draw Exits — portals glow, stairs get sprite, door/edge are invisible (wall gap is the visual)
+        // 4. Draw Exits — portals glow, stairs get sprite, edge/door get a directional arrow
         (loc.exitTiles || []).forEach(ex => {
             const sx = ex.x - camX;
             const sy = ex.y - camY;
@@ -63,6 +63,8 @@ export class MapRenderSystem {
                 drawTile(ctx, 'exit', screenOffsetX + sx * this.VP.S, screenOffsetY + sy * this.VP.S, 0, this.VP.S);
             } else if (ex.type === 'stairs' || ex.type === 'up' || ex.type === 'down') {
                 this.drawScenery(ctx, sx, sy, 'stairs', screenOffsetX, screenOffsetY);
+            } else {
+                this.drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY);
             }
         });
 
@@ -122,6 +124,63 @@ export class MapRenderSystem {
             }
         }
         this.tileCache = { locKey, camX: floorX, camY: floorY, canvas: off };
+    }
+
+    drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY) {
+        const exW = ex.w || 1;
+        const exH = ex.h || 1;
+        const px = screenOffsetX + sx * this.VP.S;
+        const py = screenOffsetY + sy * this.VP.S;
+        const tileW = exW * this.VP.S;
+        const tileH = exH * this.VP.S;
+
+        // Infer direction from which room edge the exit sits on
+        let dir = null;
+        if (ex.y === 0) dir = 'north';
+        else if (ex.y + exH >= loc.height) dir = 'south';
+        else if (ex.x === 0) dir = 'west';
+        else if (ex.x + exW >= loc.width) dir = 'east';
+
+        const pulse = 0.55 + Math.sin(Date.now() / 600) * 0.2;
+        ctx.save();
+        ctx.globalAlpha = pulse;
+
+        // Subtle tinted background on the exit tile
+        ctx.fillStyle = 'rgba(120, 220, 160, 0.18)';
+        ctx.fillRect(px, py, tileW, tileH);
+
+        // Draw a small chevron arrow in the direction of travel
+        if (dir) {
+            const cx = px + tileW / 2;
+            const cy = py + tileH / 2;
+            const as = Math.min(tileW, tileH) * 0.28; // arrow half-size
+
+            ctx.strokeStyle = 'rgba(120, 230, 160, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            if (dir === 'north') {
+                ctx.moveTo(cx - as, cy + as * 0.5);
+                ctx.lineTo(cx, cy - as * 0.5);
+                ctx.lineTo(cx + as, cy + as * 0.5);
+            } else if (dir === 'south') {
+                ctx.moveTo(cx - as, cy - as * 0.5);
+                ctx.lineTo(cx, cy + as * 0.5);
+                ctx.lineTo(cx + as, cy - as * 0.5);
+            } else if (dir === 'west') {
+                ctx.moveTo(cx + as * 0.5, cy - as);
+                ctx.lineTo(cx - as * 0.5, cy);
+                ctx.lineTo(cx + as * 0.5, cy + as);
+            } else {
+                ctx.moveTo(cx - as * 0.5, cy - as);
+                ctx.lineTo(cx + as * 0.5, cy);
+                ctx.lineTo(cx - as * 0.5, cy + as);
+            }
+            ctx.stroke();
+        }
+
+        ctx.restore();
     }
 
     drawScenery(ctx, sx, sy, label, screenOffsetX = 0, screenOffsetY = 0, w = 1, h = 1, _wx = 0, _wy = 0) {
