@@ -4,13 +4,6 @@ import { SPAWN_ROOM_ID } from '../content/data.js';
 const VALID_ZONES = new Set(['town', 'wilderness', 'dungeon']);
 const ZONE_RANK = { town: 0, wilderness: 1, dungeon: 2 };
 
-const REVERSE_DIR = {
-    north: 'south', south: 'north', east: 'west', west: 'east',
-    up: 'down', down: 'up',
-    north_east: 'south_west', south_west: 'north_east',
-    north_west: 'south_east', south_east: 'north_west',
-};
-
 const roomIds = Object.keys(rooms);
 
 describe('Room connection integrity', () => {

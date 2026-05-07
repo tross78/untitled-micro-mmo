@@ -1,6 +1,6 @@
 // @ts-check
 import { selfId } from '../network/transport.js';
-import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS, SPAWN_ROOM_ID, SPAWN_X, SPAWN_Y } from '../content/data.js';
+import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS, SPAWN_ROOM_ID } from '../content/data.js';
 import { deriveWorldState, findSafeArrival, xpToLevel } from '../rules/index.js';
 import { world } from '../content/data.js';
 import { scopedStorageKey } from '../infra/runtime.js';
