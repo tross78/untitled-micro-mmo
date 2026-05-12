@@ -494,6 +494,21 @@ export const setupGlobalEvents = () => {
     bus.on('monster:damaged', triggerLogicalRefresh);
     bus.on('quest:progress', ({ name, current, total }) => showToast(`${name}: ${current}/${total}`));
     bus.on('quest:complete', ({ name }) => showToast(`COMPLETED: ${name}! ✨`));
+    bus.on('world:event', ({ event }) => {
+        const eventLabels = {
+            market_surplus: 'Market Surplus',
+            scarcity_spike: 'Scarcity Spike',
+            bounty_hunt: 'Bounty Hunt',
+            wandering_trader: 'Wandering Trader',
+            wolf_pack: 'Wolf Pack',
+            ancient_tremor: 'Ancient Tremor',
+            wandering_boss: 'Wandering Boss',
+        };
+        const label = eventLabels[event?.type];
+        if (label) showToast(label);
+        triggerLogicalRefresh();
+        triggerVisualRefresh();
+    });
     bus.on('peer:move', ({ peerId, data }) => {
         const name = getPlayerName(peerId);
         if (data.from === data.to) { triggerLogicalRefresh(); return; }

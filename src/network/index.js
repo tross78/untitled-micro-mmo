@@ -94,6 +94,41 @@ const loadIntroducers = (shard) => {
     } catch (_) { return []; }
 };
 
+const applyActionLogToShadow = (peerId, data) => {
+    let shadow = shadowPlayers.get(peerId) || { level: 1, xp: 0, inventory: [], gold: 0, actionIndex: -1 };
+    if (data.index <= shadow.actionIndex) return;
+    const entry = players.get(peerId);
+    const rng = seededRNG(hashStr(worldState.seed + '|' + entry.publicKey + '|' + data.index));
+    if (data.type === 'kill' && ENEMIES[data.target]) {
+        shadow.xp += ENEMIES[data.target].xp;
+        shadow.level = xpToLevel(shadow.xp);
+        shadow.inventory.push(...rollLoot(data.target, rng));
+        shadow.gold += rng(10);
+    }
+    shadow.actionIndex = data.index;
+    trackShadowPlayer(peerId, shadow);
+};
+
+const replayQueuedActionLogs = async () => {
+    if (hardStateQueue.length === 0) return;
+    const queued = hardStateQueue.splice(0);
+    for (const item of queued) {
+        const { peerId, data, publicKey } = item || {};
+        if (!peerId || !data || !publicKey) continue;
+        try {
+            const pubKey = await importKey(publicKey, 'public');
+            if (!await verifyMessage(JSON.stringify({ type: data.type, index: data.index, target: data.target, data: data.data }), data.signature, pubKey)) continue;
+            const entry = players.get(peerId);
+            if (!entry) {
+                trackPlayer(peerId, { publicKey, ph: (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0'), ts: Date.now() });
+            }
+            applyActionLogToShadow(peerId, data);
+        } catch (_err) {
+            continue;
+        }
+    }
+};
+
 // --- Router election state (item 7) --------------------------------------
 // Routers are the top-8 peers by session uptime. They get prioritized into
 // HyParView's active view to act as a stable backbone layer within each shard.
@@ -201,25 +236,9 @@ export const initNetworking = async (rtcConfig) => {
                     TAB_CHANNEL.postMessage({ type: 'state', packet: data });
                     updateSimulation(typeof state === 'string' ? JSON.parse(state) : state);
                     if (isProposer() && gameActions.relayState) gameActions.relayState(data);
-                    // KNOWN GAP (Phase 8.95h): queued ops are discarded rather than replayed.
-                    // A proper fix submits them as a signed batch for arbiter countersign so XP,
-                    // loot, and quest completions earned during an outage are not silently lost.
                     if (hardStateQueue.length > 0) {
-                        // 8.95h: replay queued ops as a signed batch so XP/loot/quests
-                        // earned during an arbiter outage are not silently discarded.
-                        const batch = hardStateQueue.splice(0);
-                        netLog(`[HardState] Replaying ${batch.length} queued ops`, '#0f0');
-                        if (playerKeys) {
-                            const batchPayload = { ops: batch, ts: Date.now() };
-                            signMessage(JSON.stringify(batchPayload), playerKeys.privateKey).then(async sig => {
-                                gameActions.submitRollup({
-                                    rollup: { shard: getShardName(localPlayer.location, getCurrentInstance()), root: 'hardstate-replay', timestamp: Date.now(), count: batch.length },
-                                    signature: sig,
-                                    publicKey: playerKeys ? await exportKey(playerKeys.publicKey) : null,
-                                    batch: batchPayload,
-                                });
-                            }).catch(() => {});
-                        }
+                        netLog(`[HardState] Replaying ${hardStateQueue.length} queued peer ops`, '#0f0');
+                        await replayQueuedActionLogs();
                     }
                 }
             } catch (e) { console.error(`[Sync] Verification error:`, e); }
@@ -665,21 +684,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             // During an arbiter outage, queue durable peer rewards rather than
             // apply them immediately — shadow state may be reconciled later.
             if (isHardStateFrozen()) {
-                hardStateQueue.push({ type: 'action_log', peerId, data, ts: Date.now() });
+                hardStateQueue.push({ peerId, publicKey: entry.publicKey, data, ts: Date.now() });
                 return;
             }
             try {
                 const pubKey = await importKey(entry.publicKey, 'public');
                 if (!await verifyMessage(JSON.stringify({ type: data.type, index: data.index, target: data.target, data: data.data }), data.signature, pubKey)) return;
-                let shadow = shadowPlayers.get(peerId) || { level: 1, xp: 0, inventory: [], gold: 0, actionIndex: -1 };
-                if (data.index <= shadow.actionIndex) return;
-                const rng = seededRNG(hashStr(worldState.seed + '|' + entry.publicKey + '|' + data.index));
-                if (data.type === 'kill' && ENEMIES[data.target]) {
-                    shadow.xp += ENEMIES[data.target].xp; shadow.level = xpToLevel(shadow.xp);
-                    shadow.inventory.push(...rollLoot(data.target, rng)); shadow.gold += rng(10);
-                }
-                shadow.actionIndex = data.index;
-                trackShadowPlayer(peerId, shadow);
+                applyActionLogToShadow(peerId, data);
             } catch (e) { console.error('[Security] ActionLog fail:', e); }
         });
 
@@ -748,7 +759,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (!knownPeers.has(peerId) || !playerKeys) return;
                 try {
                     sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
-                    const e = await myEntry(); if (e) sendPresenceSingle(e, [peerId]);
+                    const e = await myEntry(); if (e) sendPresenceSingle(await packSignedPresence({ ...e, hlc: sendHLC() }), [peerId]);
                 } catch (_e2) { /* ignore */ }
                 if (!players.get(peerId)?.publicKey) setTimeout(handshake, 3000);
             };
@@ -770,6 +781,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
             sendCommit, sendReveal, plumSend, sendPresenceDelta, sendIdentity,
             processPresenceSingle,
+            seedIntroducers: (peerIds) => hpv.mergeShuffle(peerIds, selfId),
             teardown: () => { clearInterval(shuffleTimer); clearInterval(routerTimer); clearInterval(ghostTimer); },
         };
     };
@@ -781,8 +793,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     // priority when tracker discovery re-connects us to them.
     const cachedIntroducers = loadIntroducers(getShardName(localPlayer.location, instanceId));
     if (cachedIntroducers.length > 0) {
-        // hpv is inside setupShard; we expose a seeding path via the shuffle merge.
-        // For now, log so we can verify caching is working.
+        r.seedIntroducers(cachedIntroducers);
         netLog(`[Introducers] ${cachedIntroducers.length} cached peers loaded for shard`, '#555');
     }
 

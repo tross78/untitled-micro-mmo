@@ -170,6 +170,19 @@ describe('Bug 3 — visitedRooms saved on player:move', () => {
     });
 });
 
+describe('Phase 8.6/8.95 event wiring', () => {
+    test('world:event has a real UI consumer via setupGlobalEvents', async () => {
+        const { setupGlobalEvents } = await import('../main/events.js');
+        const { showToast } = await import('../graphics/renderer.js');
+
+        setupGlobalEvents();
+        bus.emit('world:event', { event: { type: 'wandering_trader' }, scarcity: [], surplus: [], weather: 'clear' });
+        await new Promise(r => setTimeout(r, 0));
+
+        expect(showToast).toHaveBeenCalledWith('Wandering Trader');
+    });
+});
+
 // ─── Phase 8.6: real player-facing event paths ──────────────────────────────
 
 describe('Phase 8.6 — player-facing event behavior', () => {

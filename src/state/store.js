@@ -87,6 +87,7 @@ export const trackShadowPlayer = (id, data) => {
         inventory: data.inventory || [], 
         gold: data.gold || 0,
         quests: data.quests || {},
+        actionIndex: data.actionIndex ?? -1,
         signature: data.signature,
         ts: Date.now()
     };
@@ -126,7 +127,7 @@ export const isHardStateFrozen = () =>
     arbiterLastSeenAt > 0 && (Date.now() - arbiterLastSeenAt) > HARD_STATE_FREEZE_MS;
 
 // Queue of deferred hard-state operations accumulated during an arbiter outage.
-// Each entry: { type: 'kill'|'quest'|'craft', payload: any, ts: number }
+// Each entry: { peerId, data, ts }
 export const hardStateQueue = [];
 
 // --- PVP STATE CHANNELS ---
