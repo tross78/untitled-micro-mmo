@@ -45,6 +45,7 @@ async function startArbiter() {
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY?.trim();
     const GH_GIST_TOKEN = process.env.GH_GIST_TOKEN;
     const GH_GIST_ID = process.env.GH_GIST_ID;
+    const ARBITER_PUBLIC_URL = process.env.PUBLIC_URL?.trim() || '';
 
     if (!MASTER_SECRET_KEY) {
         console.error('ERROR: MASTER_SECRET_KEY not found in .env');
@@ -189,12 +190,12 @@ async function startArbiter() {
         // Save to local disk
         writeFileSync(STATE_FILE, JSON.stringify(packet));
 
-        // 8.95o: Gist carries signed world state only — no IP/endpoint exposed.
-        // Peer discovery uses Trystero BitTorrent tracker (hearthwick-arbiter-v1 room).
         if (GH_GIST_TOKEN && GH_GIST_ID) {
+            const gistPayload = { ...packet, ts: Date.now() };
+            if (ARBITER_PUBLIC_URL) gistPayload.endpoint = ARBITER_PUBLIC_URL;
             const files = {
                 'mmo_arbiter_discovery_v4.json': {
-                    content: JSON.stringify({ ...packet, ts: Date.now() })
+                    content: JSON.stringify(gistPayload)
                 }
             };
             fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {

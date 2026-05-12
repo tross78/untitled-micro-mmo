@@ -633,7 +633,9 @@ export function getGrayscaleTemplate(type, seed = 0) {
     if (!type) return null;
     const resolvedType = SPRITE_ALIASES[type] || type;
     const isPlayer = resolvedType.startsWith('player');
-    const shape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type] || SHAPES[resolvedType];
+    const compiledShape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
+    const compiledHasContent = compiledShape && compiledShape.some(row => row.replace(/0/g, '').length > 0);
+    const shape = (compiledHasContent ? compiledShape : null) || SHAPES[resolvedType];
     if (!shape) return null;
     const baseWidth = Math.max(...shape.map((row) => row.length));
     const baseHeight = shape.length;

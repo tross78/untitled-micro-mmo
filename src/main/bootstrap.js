@@ -1,7 +1,7 @@
 import { localPlayer, hasSyncedWithArbiter, worldState, TAB_CHANNEL, loadLocalState, pruneStale } from '../state/store.js';
 import { log, startTicker } from '../ui/index.js';
 import { initIdentity, arbiterPublicKey, myEntry } from '../security/identity.js';
-import { resolveBootstrapArbiterUrl, getRuntimeParam, isE2EMode, getArbiterUrl } from '../infra/runtime.js';
+import { resolveBootstrapArbiterUrl, getRuntimeParam, isE2EMode, getArbiterUrl, setResolvedArbiterUrl } from '../infra/runtime.js';
 import { initAds, showBanner } from '../engine/ads.js';
 import { inputManager } from '../engine/input.js';
 import { setupGlobalEvents, triggerLogicalRefresh } from './events.js';
@@ -29,6 +29,7 @@ export const processBeacon = async (packet, source) => {
     const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
     const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
     if (valid) {
+        if (packet.endpoint) setResolvedArbiterUrl(packet.endpoint);
         setArbiterLastSeenAt();
         log(`[System] Fast-Path connected via ${source}!`, '#0f0');
         TAB_CHANNEL.postMessage({ type: 'state', packet });
