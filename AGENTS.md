@@ -293,26 +293,16 @@ Suggested implementation slices:
 * `8.6c` UI surfacing and NPC/world flavor integration
 * `8.6d` Balancing and validation for shared daily events
 
-### Phase 8.7: Retention, Progression Depth, and Daily Rituals
+### Phase 8.7: Retention, Progression Depth, and Daily Rituals — COMPLETE
 
 Goal: create reasons to return daily and give players a visible horizon past the 20-minute mark.
 
-Context: the review identified this as the single largest retention gap — no endgame destination means players churn before the world's depth is visible. The fix is not a theme-park gate or a level wall. Ultima Online had no hard gates at all: the world was open, danger was the gate, and sharing dangerous spaces across all skill levels was where social texture came from. Zelda gates with items (toolkit), not numbers. Stardew gates with seasons and energy (consequence), not walls. This game must do the same: progression should feel like the world responding to the player, not like velvet ropes being removed.
-
-* Tighten short daily loops around recovery, fights, world events, and resource pressure
-* Add mobile-friendly short-term goals and clearer midgame continuity
-* Keep sessions light and avoid spreadsheet-MMO drift
-* Make progression feel like the world opening up, not a score unlocking a door
-* Name an endgame destination so there is always a horizon
-
-Suggested implementation slices:
-
-* `8.7a` Daily recovery and short-session ritual pass
-* `8.7b` Short-term goal system and return hooks
-* `8.7c` Midgame quest-chain continuity
-* `8.7d` Retention balancing without grind inflation
-* `8.7f` Throne Room climax content — the Throne Room is currently empty; as the capstone room for `ancient_throne` it must have authored content: a boss enemy (Throne Guardian or Ancient Wraith variant), a loot drop not available elsewhere, and flavour room description prose; the `ancient_throne` quest reward is good but the room itself must feel like an arrival, not a dead end
-* `8.7e` Progression depth and endgame horizon — **do not use hard level gates or minLevel room blocks**; instead: (1) scale enemy difficulty and loot quality by zone so danger is the gate; (2) use NPC threshold warnings via `locationDialogue` (already implemented) so the Sage and Guard voice the danger before you enter; (3) add an equipment soft-check on dungeon entry (already implemented — warns but never blocks); (4) define a named endgame destination in content (the Throne Room already exists) so players can articulate what they are working toward; (5) add a quest chain that leads through the dungeon arc so progression is narrative, not numerical
+* `8.7a` ✅ Daily recovery and short-session ritual pass: `forestFights` reset and recovery loops confirmed.
+* `8.7b` ✅ Short-term goal system and return hooks: Daily Bounty system implemented with gold rewards and `/status` visibility.
+* `8.7c` ✅ Midgame quest-chain continuity: `ancient_throne` updated to capstone kill quest.
+* `8.7d` ✅ Retention balancing without grind inflation: rewards and difficulty tuned for endgame horizon.
+* `8.7f` ✅ Throne Room climax content: Throne Guardian boss, Ancient Crown unique drop, and grand room prose added.
+* `8.7e` ✅ Progression depth and endgame horizon: Zone-based danger gates, NPC threshold warnings, and equipment soft-checks verified.
 
 ### Phase 8.75: Reactive NPC Dialogue and World Voice
 
