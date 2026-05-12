@@ -122,6 +122,29 @@ describe('Bug 2 — applyNewDay persists daily reset', () => {
 
         localStorage.removeItem(OFFLINE_DAY_KEY);
     });
+
+    test('arbiter-configured fallback resets forestFights without advancing shared world day', async () => {
+        const { saveLocalState } = await import('../state/persistence.js');
+        saveLocalState.mockClear();
+
+        const runtime = await import('../infra/runtime.js');
+        const arbiterSpy = jest.spyOn(runtime, 'getArbiterUrl').mockReturnValue('https://arbiter.example');
+        const { worldState } = await import('../state/store.js');
+
+        Object.assign(localPlayer, { forestFights: 0, currentEnemy: null, combatRound: 0, statusEffects: [], buffs: {} });
+        worldState.seed = 'seed-a';
+        worldState.day = 7;
+        localStorage.setItem('hearthwick_last_fight_reset_utc', '2000-01-01');
+
+        const sim = await import('../network/simulation.js');
+        sim.initOfflineDayTick();
+
+        expect(localPlayer.forestFights).toBe(15);
+        expect(worldState.day).toBe(7);
+        expect(saveLocalState).toHaveBeenCalled();
+
+        arbiterSpy.mockRestore();
+    });
 });
 
 // ─── BUG 3: visitedRooms must save on room transition ────────────────────────

@@ -10,6 +10,23 @@ const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 
 const OFFLINE_DAY_MS = 24 * 60 * 60 * 1000;
 const OFFLINE_DAY_KEY = 'hearthwick_offline_day_ts';
+const LAST_FIGHT_RESET_KEY = 'hearthwick_last_fight_reset_utc';
+
+const currentUtcDayKey = () => new Date().toISOString().slice(0, 10);
+
+const applyLocalFightReset = () => {
+    localPlayer.forestFights = 15;
+    saveLocalState(localPlayer);
+};
+
+const maybeResetForestFightsFromLocalCalendar = () => {
+    const today = currentUtcDayKey();
+    const lastReset = localStorage.getItem(LAST_FIGHT_RESET_KEY);
+    if (lastReset === today) return false;
+    localStorage.setItem(LAST_FIGHT_RESET_KEY, today);
+    applyLocalFightReset();
+    return true;
+};
 
 // 8.6c: emit named bus events so UI and NPCs can react to world events
 const _emitDayEvent = (ws) => {
@@ -50,18 +67,24 @@ const applyNewDay = () => {
 };
 
 export const initOfflineDayTick = () => {
-    // 8.95k: always apply missed days on page load, even when arbiter is configured
+    if (runtimeArbiterUrl()) {
+        // 8.95k: with an arbiter configured, only restore the local daily fight
+        // counter. Shared-world day/event changes still belong to arbiter sync.
+        maybeResetForestFightsFromLocalCalendar();
+        return;
+    }
+
     const stored = parseInt(localStorage.getItem(OFFLINE_DAY_KEY) || '0', 10);
     const now = Date.now();
     if (!stored) {
         localStorage.setItem(OFFLINE_DAY_KEY, String(now));
+        localStorage.setItem(LAST_FIGHT_RESET_KEY, currentUtcDayKey());
     } else if (now - stored >= OFFLINE_DAY_MS) {
         const daysPassed = Math.floor((now - stored) / OFFLINE_DAY_MS);
         for (let i = 0; i < daysPassed; i++) applyNewDay();
         localStorage.setItem(OFFLINE_DAY_KEY, String(stored + daysPassed * OFFLINE_DAY_MS));
+        localStorage.setItem(LAST_FIGHT_RESET_KEY, currentUtcDayKey());
     }
-
-    if (runtimeArbiterUrl()) return; // arbiter handles ongoing interval ticks
 
     // Check once per hour while tab is open
     setInterval(() => {
@@ -72,6 +95,7 @@ export const initOfflineDayTick = () => {
             const daysPassed = Math.floor((Date.now() - ts) / OFFLINE_DAY_MS);
             for (let i = 0; i < daysPassed; i++) applyNewDay();
             localStorage.setItem(OFFLINE_DAY_KEY, String(ts + daysPassed * OFFLINE_DAY_MS));
+            localStorage.setItem(LAST_FIGHT_RESET_KEY, currentUtcDayKey());
         }
     }, 60 * 60 * 1000);
 };
