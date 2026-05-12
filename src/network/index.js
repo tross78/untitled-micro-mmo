@@ -27,6 +27,7 @@ import { GAME_NAME } from '../content/data.js';
 import { bus } from '../state/eventbus.js';
 import { saveLocalState } from '../state/persistence.js';
 import { getArbiterUrl } from '../infra/runtime.js';
+import { NETWORK_ACTIONS } from './contracts.js';
 
 // Modular Networking Components
 import { 
@@ -178,10 +179,10 @@ export const initNetworking = async (rtcConfig) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
         globalRooms.torrent = joinTorrent(buildTorrentConfig(config), 'global');
 
-        const [sendRollup] = globalRooms.torrent.makeAction('rollup_submit');
-        const [sendFraud] = globalRooms.torrent.makeAction('fraud_report');
+        const [sendRollup] = globalRooms.torrent.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
+        const [sendFraud] = globalRooms.torrent.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
         const [requestState, getIncomingRequest] = globalRooms.torrent.makeAction('request_state');
-        const [sendWorldState, getState] = globalRooms.torrent.makeAction('world_state');
+        const [sendWorldState, getState] = globalRooms.torrent.makeAction(NETWORK_ACTIONS.WORLD_STATE);
         const [sendStateRequest, getStateRequest] = globalRooms.torrent.makeAction('state_request');
         const [sendRegisterPresence] = globalRooms.torrent.makeAction('register_presence');
         gameActions.sendRegisterPresence = (data) => sendRegisterPresence(data);

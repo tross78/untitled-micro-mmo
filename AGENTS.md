@@ -83,13 +83,24 @@ These event shapes are treated as contracts:
 
 `player:move` is room-transition only. Same-room movement uses `player:step`.
 
+## Drift Control
+
+These rules are meant to stop phase drift:
+
+* A phase is not done until runtime, authored content, UI, and tests all agree.
+* If a change introduces or renames an id, action name, event field, quest, room, or schema key, add a regression test that fails when any consumer is stale.
+* Shared concepts between client, arbiter, and content should live in one source of truth or a generated contract, not copied literals.
+* Prefer `npm run verify` for implementation work. `build` and `test` alone are not enough when behavior or content changed.
+* If a fix is described in prose, the codebase should contain the executable check for that prose.
+
 ## Verification
 
 After implementation work:
 
-1. Run `npm run build`.
-2. Run `npm test`.
+1. Run `npm run verify`.
+2. If `verify` is too expensive for the slice, run `npm run build` and `npm test` and explain why.
 3. If you changed content, room topology, event payloads, quest progression, or player-facing command/UI surface, add or update regression coverage in `src/tests`.
+4. If the change crosses client/arbiter/network/content boundaries, add a contract test or shared validator in the same patch.
 
 Manual checks that still matter:
 

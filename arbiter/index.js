@@ -12,6 +12,7 @@ import {
     getBansVersion,
     restoreBansFromPacket,
 } from '../src/network/arbiter-state.js';
+import { NETWORK_ACTIONS } from '../src/network/contracts.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -59,9 +60,9 @@ async function startArbiter() {
     })();
 
     const room = joinTorrent({ appId: APP_ID, trackers: TORRENT_TRACKERS, iceServers: ICE_SERVERS }, 'hearthwick-arbiter-v1');
-    const [sendState] = room.makeAction('world_state');
-    const [,, getRollup] = room.makeAction('rollup_submit');
-    const [,, getFraud] = room.makeAction('fraud_report');
+    const [sendState] = room.makeAction(NETWORK_ACTIONS.WORLD_STATE);
+    const [,, getRollup] = room.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
+    const [,, getFraud] = room.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
 
     const lastRollups = new Map(); // shard -> { root, ts, proposer }
     const lastRollupTime = new Map(); // publicKey -> ts
