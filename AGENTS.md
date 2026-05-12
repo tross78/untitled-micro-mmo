@@ -455,6 +455,28 @@ Suggested implementation slices:
 * `11d` Contributor and content pipeline: document how to add a quest, room, or NPC without touching engine code; aim for a CONTENT.md that a non-engineer can follow
 * `11e` Live-ops sustainability: automate the daily arbiter event tick so it runs unattended; add an alert if the arbiter has been offline for more than 1 hour
 
+## Bugfix Release Handoff
+
+Current bugfix-release checkpoint:
+
+* `4d8b100` `fix: restore arbiter peer snapshot directory`
+* `6563229` `fix: persist arbiter bans immediately`
+* Earlier bugfix checkpoints:
+  * `59e96ae` `fix: ship first bugfix release networking patch`
+  * `b4a4d63` `fix: scope offline fight reset to local state`
+
+What was fixed in this release slice:
+
+* Arbiter peer snapshots now register, prune, and list through a real presence directory instead of a no-op cache wrapper.
+* Arbiter bans are now persisted in signed state, restored on restart, and broadcast immediately when added.
+* `world:event`, hard-state replay, introducer seeding, and the Phase 8.6 gameplay regressions were already repaired in prior checkpoints.
+
+What remains for the next pass:
+
+* Push/sync the current local commits if upstream has not been updated yet.
+* Do one short release-note / smoke-test pass, then stop unless a regression appears.
+* Do not re-open the completed arbiter presence, ban persistence, or hard-state replay paths unless a new test fails there.
+
 ## References
 
 * [DECISIONS.md](/Users/tysonross/Documents/GitHub/untitled-micro-mmo/DECISIONS.md) is the historical ADR log.
