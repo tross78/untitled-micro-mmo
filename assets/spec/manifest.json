@@ -139,6 +139,16 @@
       }
     },
     {
+      "id": "throne_guardian",
+      "family": "enemy",
+      "source": "../source/enemies/throne_guardian.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+      }
+    },
+    {
       "id": "guard",
       "family": "npc",
       "source": "../source/npcs/guard.png",

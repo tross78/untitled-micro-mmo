@@ -530,11 +530,13 @@ export const rooms = {
     throne_room: defineRoom('throne_room', {
         name: 'The Throne Room',
         zone: 'dungeon',
-        description: 'A shattered throne under a mountain of dust. Shadows dance here. The dungeon cell lies to the west.',
+        description: 'A grand hall of obsidian and gold, now shattered by time. The Ancient Throne sits at the north end, guarded by a towering stone sentinel. The dungeon cell lies to the west.',
         width: 15, height: 15,
         exits: {"west":"dungeon_cell"},
         exitTiles: "0,7,dungeon_cell,9,5,door",
-        scenery: "6,2,crown|2,2,torch|12,2,torch|2,12,torch|12,12,torch|1,6,pillar|13,6,pillar|6,7,chair",
+        enemy: 'throne_guardian',
+        enemyX: 7, enemyY: 4,
+        scenery: "6,2,crown|2,2,torch|12,2,torch|2,12,torch|12,12,torch|1,6,pillar|13,6,pillar|7,2,chair",
         tiles: [
             'WWWWWWW.WWWWWWW',
             'W....SSSSS....W',

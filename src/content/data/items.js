@@ -21,5 +21,7 @@ export const ITEMS = {
     red_mushroom:   defineItem('red_mushroom',   { name: 'Red Mushroom',   type: 'material', price: 7, color: '#c94b4b' }),
     leather_armor:  defineItem('leather_armor',  { name: 'Leather Armor',  type: 'armor',    bonus: 2,  price: 15,  color: '#8b4513' }),
     iron_armor:     defineItem('iron_armor',     { name: 'Iron Armor',     type: 'armor',    bonus: 4,  price: 60,  color: '#aaa' }),
+    steel_armor:    defineItem('steel_armor',    { name: 'Steel Armor',    type: 'armor',    bonus: 7,  price: 200, color: '#0af' }),
     warm_cloak:     defineItem('warm_cloak',     { name: 'Warm Cloak',     type: 'armor',    bonus: 1,  price: 8,   color: '#a52a2a' }),
+    ancient_crown:  defineItem('ancient_crown',  { name: 'Ancient Crown',  type: 'armor',    bonus: 10, price: 500, color: '#ff0' }),
 };

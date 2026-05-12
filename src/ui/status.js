@@ -1,6 +1,6 @@
 import { levelBonus } from '../rules/index.js';
-import { ITEMS } from '../content/data.js';
-import { worldState } from '../state/store.js';
+import { ITEMS, ENEMIES } from '../content/data.js';
+import { worldState, localPlayer } from '../state/store.js';
 import { log } from './index.js';
 import { getShellElement } from '../adapters/dom/shell.js';
 
@@ -52,6 +52,13 @@ export const printStatus = () => {
     } else if (worldState.event?.type === 'wandering_boss') {
         log(`Wandering Boss: ${worldState.event.target} is on the move. ⚔️`, '#f55');
     }
+
+    if (worldState.bountyEnemy) {
+        const enemyName = ENEMIES[worldState.bountyEnemy]?.name || worldState.bountyEnemy;
+        const claimed = localPlayer.dailyBountyClaimed === worldState.day;
+        log(`Today's Bounty: ${enemyName} ${claimed ? '✅' : '🎯'}`, claimed ? '#888' : '#0f0');
+    }
+
     log(`Weather: ${worldState.weather?.toUpperCase() || 'CLEAR'} 🌦️`, '#aaa');
     if (worldState.lastTick) {
         const nextTick = worldState.lastTick + (24 * 60 * 60 * 1000);

@@ -121,11 +121,11 @@ export const QUESTS = {
 
     // Capstone — cross-chain, requires militia + scholar completion
     ancient_throne: defineQuest('ancient_throne', {
-        id: 'ancient_throne', name: 'The Ancient Throne', giver: 'sage', receiver: null, type: 'explore',
-        description: 'Unlock the Throne Room and uncover what lies within. Bring the iron key.',
+        id: 'ancient_throne', name: 'The Ancient Throne', giver: 'sage', receiver: null, type: 'kill',
+        description: 'Defeat the Throne Guardian in the Ancient Throne Room.',
         lore: 'The sage speaks of a sealed chamber beneath the ruins — only one who has faced the darkness above and below may enter.',
-        objective: { type: 'explore', target: 'throne_room', count: 1 },
+        objective: { type: 'kill', target: 'throne_guardian', count: 1 },
         prerequisite: ['wraith_banish', 'cave_troll_bounty'],
-        reward: { xp: 500, gold: 100, item: 'magic_staff' }, chain: 'capstone'
+        reward: { xp: 1000, gold: 200, item: 'steel_armor' }, chain: 'capstone'
     })
 };

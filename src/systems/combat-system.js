@@ -348,6 +348,14 @@ export class CombatSystem {
     });
 
     bus.emit('combat:death', { entity: enemyDef.name, loot });
+
+    // Daily Bounty (Phase 8.7b)
+    if (this.worldState.bountyEnemy === enemyType && this.localPlayer.dailyBountyClaimed !== this.worldState.day) {
+        const bountyGold = 50 + (this.worldState.threatLevel * 10);
+        this.localPlayer.gold += bountyGold;
+        this.localPlayer.dailyBountyClaimed = this.worldState.day;
+        bus.emit('log', { msg: `[Bounty] You claimed the daily bounty for ${enemyDef.name}! (+${bountyGold} gold)`, color: '#ff0' });
+    }
     
     // Quest Progress
     Object.keys(this.localPlayer.quests || {}).forEach(qid => {

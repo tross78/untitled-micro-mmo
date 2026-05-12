@@ -174,6 +174,10 @@ export function deriveWorldState(worldSeed, day) {
     const weatherRoll = rng(100);
     const weather = weatherRoll < 60 ? 'clear' : weatherRoll < 80 ? 'storm' : weatherRoll < 95 ? 'fog' : 'clear';
 
+    // Daily Bounty Enemy (Phase 8.7b)
+    const bountyPool = ['forest_wolf', 'goblin', 'bandit', 'cave_troll', 'ruin_shade', 'skeleton'];
+    const bountyEnemy = bountyPool[rng(bountyPool.length)];
+
     return {
         seed: worldSeed,
         day,
@@ -184,7 +188,8 @@ export function deriveWorldState(worldSeed, day) {
         scarcity,
         surplus,
         event,
-        weather
+        weather,
+        bountyEnemy
     };
 }
 

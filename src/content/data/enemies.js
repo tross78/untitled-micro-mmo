@@ -10,4 +10,5 @@ export const ENEMIES = {
     wraith:      defineEnemy('wraith',      { name: 'Wraith',         hp: 60, attack: 20, defense: 0, xp: 120, loot: ['old_tome', 'magic_staff'], color: '#f0f' }),
     mountain_troll: defineEnemy('mountain_troll', { name: 'Mountain Troll', hp: 90, attack: 22, defense: 9, xp: 220, loot: ['iron_key', 'gold', 'steel_sword'], color: '#ff0' }),
     crab:        defineEnemy('crab',        { name: 'Giant Crab',     hp: 28, attack: 7,  defense: 5, xp: 28, loot: ['gold', 'potion'], color: '#fa0' }),
+    throne_guardian: defineEnemy('throne_guardian', { name: 'Throne Guardian', hp: 150, attack: 30, defense: 12, xp: 1000, loot: ['ancient_crown', 'gold', 'potion'], color: '#ff0' }),
 };

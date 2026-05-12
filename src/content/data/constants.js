@@ -116,6 +116,7 @@ export const DEFAULT_PLAYER_STATS = {
     inventory: [],
     quests: {}, // id -> { progress, completed }
     forestFights: 15, // L.O.R.D style daily limit
+    dailyBountyClaimed: 0,
     combatRound: 0,
     currentEnemy: null,
     actionIndex: 0,
