@@ -1,9 +1,13 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { signMessage, verifyMessage } from '../security/crypto.js';
 import { hashStr } from '../rules/index.js';
+import {
+    buildPersistedArbiterPacket,
+    getBansVersion,
+    restoreBansFromPacket,
+} from '../network/arbiter-state.js';
 
 const ROLLUP_INTERVAL = 10000;
-const FRAUD_BAN_THRESHOLD = 3;
 
 // Generates a real Ed25519 keypair and returns Base64 strings compatible with our crypto module.
 function makeKeyPair() {
@@ -21,16 +25,6 @@ function makeRateLimiter() {
         if (now - last < ROLLUP_INTERVAL * 0.8) return false;
         lastRollupTime.set(publicKey, now);
         return true;
-    };
-}
-
-// Mirror of the arbiter's fraud accumulation logic.
-function makeFraudAccumulator() {
-    const fraudCounts = new Map();
-    return (proposerKey, claimantKey) => {
-        if (!fraudCounts.has(proposerKey)) fraudCounts.set(proposerKey, new Set());
-        fraudCounts.get(proposerKey).add(claimantKey);
-        return fraudCounts.get(proposerKey).size >= FRAUD_BAN_THRESHOLD;
     };
 }
 
@@ -68,9 +62,9 @@ describe('Arbiter: Rate Limiting', () => {
     });
 });
 
-describe('Arbiter: Fraud Accumulation (O(1) witness)', () => {
+describe('Arbiter: Fraud Proof Shape', () => {
     // Catches bug: old fraud proof sent O(n) witness array. New format uses a single witness
-    // object. Arbiter accumulates reports from distinct claimants before banning.
+    // object. The runtime now acts on a single verified proof, not a made-up threshold accumulator.
     test('fraud proof witness is a single object, not an array', () => {
         const proof = {
             rollup: { rollup: {}, signature: 'sig', publicKey: 'pk' },
@@ -82,38 +76,6 @@ describe('Arbiter: Fraud Accumulation (O(1) witness)', () => {
         expect(proof.witness).toHaveProperty('presence');
         expect(proof.witness).toHaveProperty('signature');
         expect(proof.witness).toHaveProperty('publicKey');
-    });
-
-    test('single fraud report does not trigger a ban', () => {
-        const accumulate = makeFraudAccumulator();
-        expect(accumulate('bad-proposer', 'claimant-1')).toBe(false);
-    });
-
-    test('ban triggers at exactly FRAUD_BAN_THRESHOLD distinct claimants', () => {
-        const accumulate = makeFraudAccumulator();
-        for (let i = 1; i < FRAUD_BAN_THRESHOLD; i++) {
-            expect(accumulate('bad-proposer', `claimant-${i}`)).toBe(false);
-        }
-        expect(accumulate('bad-proposer', `claimant-${FRAUD_BAN_THRESHOLD}`)).toBe(true);
-    });
-
-    test('duplicate claimant reports do not count toward ban threshold', () => {
-        const accumulate = makeFraudAccumulator();
-        // Same claimant reporting multiple times should not advance the count
-        for (let i = 0; i < FRAUD_BAN_THRESHOLD + 5; i++) {
-            const result = accumulate('bad-proposer', 'same-claimant');
-            // Set deduplication means count stays at 1 — never reaches threshold
-            expect(result).toBe(false);
-        }
-    });
-
-    test('different proposers have independent fraud counts', () => {
-        const accumulate = makeFraudAccumulator();
-        // Two reports against proposer-A (under threshold)
-        accumulate('proposer-a', 'claimant-1');
-        accumulate('proposer-a', 'claimant-2');
-        // proposer-b has only one report — should not be banned
-        expect(accumulate('proposer-b', 'claimant-1')).toBe(false);
     });
 });
 
@@ -157,53 +119,45 @@ describe('Arbiter: Fraud Proof Cryptographic Verification', () => {
         expect(presenceBad.ph  === phFromKey(witness.pubB64)).toBe(false);
     });
 
-    // Catches bug: old fraud proof passed O(n) witness array; arbiter recomputed full Merkle root.
-    // New O(1) proof: arbiter only verifies one signed presence and accumulates reports.
-    // This test ensures the ban path triggers correctly after threshold distinct signatures.
-    test('end-to-end: threshold distinct signed fraud reports trigger a ban', async () => {
-        const claimants = [makeKeyPair(), makeKeyPair(), makeKeyPair()];
-        const accumulate = makeFraudAccumulator();
-        const proposerKey = 'bad-proposer-pk';
+    test('single verified witness presence is enough to support a state-fraud report', async () => {
+        const witness = makeKeyPair();
+        const presence = { name: 'Peer0', location: 'cellar', ph: (hashStr(witness.pubB64) >>> 0).toString(16).padStart(8, '0'), level: 1, xp: 0, ts: Date.now(), disputedRoot: 'bad-root' };
+        const sig = await signMessage(JSON.stringify(presence), witness.privB64);
 
-        for (let i = 0; i < claimants.length; i++) {
-            const { privB64, pubB64 } = claimants[i];
-            const presence = { name: `Peer${i}`, location: 'cellar', ph: 'aaaabbbb', level: 1, xp: 0, ts: Date.now() };
-            const sig = await signMessage(JSON.stringify(presence), privB64);
-            // Verify signature is valid (Arbiter step 2)
-            const valid = await verifyMessage(JSON.stringify(presence), sig, pubB64);
-            expect(valid).toBe(true);
-            // Accumulate (Arbiter step 4)
-            const shouldBan = accumulate(proposerKey, pubB64);
-            expect(shouldBan).toBe(i === claimants.length - 1);
-        }
+        await expect(verifyMessage(JSON.stringify(presence), sig, witness.pubB64)).resolves.toBe(true);
     });
 });
 
 describe('Arbiter: Ban Persistence', () => {
-    // Catches bug: bans were stored in memory only — lost on arbiter restart.
-    // worldState.bans array should be the source of truth loaded at startup.
-    test('bans Set is initialized from worldState.bans array on startup', () => {
-        const savedState = { world_seed: 'abc', day: 5, last_tick: 1000, bans: ['bad-key-1', 'bad-key-2'] };
-        const bans = new Set(savedState.bans || []);
-        expect(bans.has('bad-key-1')).toBe(true);
-        expect(bans.has('bad-key-2')).toBe(true);
-        expect(bans.size).toBe(2);
+    test('signed world state carries a stable bans version string', () => {
+        const version = getBansVersion(['bad-key-2', 'bad-key-1', 'bad-key-1']);
+        expect(version).toBe(getBansVersion(['bad-key-1', 'bad-key-2']));
+        expect(typeof version).toBe('string');
     });
 
-    test('bans Set is empty when worldState has no bans field', () => {
-        const savedState = { world_seed: 'abc', day: 5, last_tick: 1000 };
-        const bans = new Set(savedState.bans || []);
-        expect(bans.size).toBe(0);
+    test('persisted arbiter packet stores the full bans list for restart recovery', () => {
+        const packet = buildPersistedArbiterPacket(
+            { world_seed: 'abc', day: 5, last_tick: 1000, bans: getBansVersion(['bad-key-1', 'bad-key-2']) },
+            'sig',
+            ['bad-key-2', 'bad-key-1']
+        );
+
+        expect(packet.bans).toEqual(['bad-key-1', 'bad-key-2']);
+        expect(packet.state.bans).toBe(getBansVersion(['bad-key-1', 'bad-key-2']));
     });
 
-    test('new ban is reflected in worldState.bans before persist', () => {
-        const worldState = { bans: ['existing-ban'] };
-        const bans = new Set(worldState.bans);
-        bans.add('new-ban');
-        worldState.bans = Array.from(bans);
-        expect(worldState.bans).toContain('existing-ban');
-        expect(worldState.bans).toContain('new-ban');
-        expect(worldState.bans).toHaveLength(2);
+    test('restart recovery restores bans from persisted top-level packet field', () => {
+        const restored = restoreBansFromPacket({
+            state: { world_seed: 'abc', day: 5, last_tick: 1000, bans: '[]' },
+            signature: 'sig',
+            bans: ['bad-key-1', 'bad-key-2'],
+        });
+
+        expect(restored).toEqual(['bad-key-1', 'bad-key-2']);
+    });
+
+    test('legacy packets without bans restore an empty list', () => {
+        expect(restoreBansFromPacket({ state: { world_seed: 'abc', day: 5, last_tick: 1000 } })).toEqual([]);
     });
 });
 

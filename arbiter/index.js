@@ -7,6 +7,11 @@ import { join, dirname } from 'node:path';
 import {
     createPresenceDirectory,
 } from '../src/network/arbiter-presence-directory.js';
+import {
+    buildPersistedArbiterPacket,
+    getBansVersion,
+    restoreBansFromPacket,
+} from '../src/network/arbiter-state.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -60,15 +65,17 @@ async function startArbiter() {
 
     const lastRollups = new Map(); // shard -> { root, ts, proposer }
     const lastRollupTime = new Map(); // publicKey -> ts
-    const fraudCounts = new Map(); // publicKey -> count
     const bans = new Set();
     const presenceDirectory = createPresenceDirectory();
+    let trackedPublishBeacon = async () => {};
 
     const ROLLUP_INTERVAL = 10000;
 
     const banPeer = (publicKey) => {
+        if (bans.has(publicKey)) return;
         bans.add(publicKey);
         console.warn(`[Arbiter] BANNED: ${publicKey}`);
+        trackedPublishBeacon().catch(err => console.error('[Arbiter] Beacon refresh failed after ban:', err));
     };
 
     console.log(`[Arbiter] Online. ID: ${selfId}`);
@@ -159,6 +166,7 @@ async function startArbiter() {
     if (existsSync(STATE_FILE)) {
         try {
             lastValidStatePacket = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
+            restoreBansFromPacket(lastValidStatePacket).forEach(publicKey => bans.add(publicKey));
             console.log(`[Arbiter] Loaded state from disk.`);
         } catch (_err) { console.error(`[Arbiter] Load error:`, _err); }
     }
@@ -169,11 +177,12 @@ async function startArbiter() {
             world_seed: MASTER_SECRET_KEY.slice(0, 8), // field name must match client expectation
             day,
             last_tick: Date.now(),
-            rollups: Object.fromEntries(lastRollups)
+            rollups: Object.fromEntries(lastRollups),
+            bans: getBansVersion(bans),
         };
         const stateStr = JSON.stringify(state);
         const signature = await signMessage(stateStr, arbiterPrivateKey);
-        const packet = { state, signature };
+        const packet = buildPersistedArbiterPacket(state, signature, bans);
         lastValidStatePacket = packet;
 
         // Save to local disk
@@ -203,7 +212,7 @@ async function startArbiter() {
 
     let lastBeaconAt = 0;
     const _origPublishBeacon = publishBeacon;
-    const trackedPublishBeacon = async () => {
+    trackedPublishBeacon = async () => {
         await _origPublishBeacon();
         lastBeaconAt = Date.now();
     };
@@ -222,7 +231,6 @@ async function startArbiter() {
     // Prune caches every hour
     setInterval(() => {
         lastRollupTime.clear();
-        fraudCounts.clear();
         presenceDirectory.prune();
     }, 3600000);
 
