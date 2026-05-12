@@ -1,7 +1,6 @@
 /**
  * Phase 8.6d — Shared-World Arbiter Events: balancing and validation tests.
  */
-import { jest } from '@jest/globals';
 import { deriveWorldState, getWeatherEffect, getScarcityMultiplier } from '../rules/index.js';
 import { getNPCDialogue } from '../rules/social.js';
 

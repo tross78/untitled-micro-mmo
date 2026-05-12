@@ -1,7 +1,7 @@
 /**
  * Phase 8.6 Spirit Audit — Complex interactions and edge cases.
  */
-import { deriveWorldState, getScarcityMultiplier, getDynamicRoomDescription } from '../rules/index.js';
+import { deriveWorldState, getDynamicRoomDescription } from '../rules/index.js';
 import { getBuyPrice, getSellPrice } from '../commands/helpers.js';
 import { worldState } from '../state/store.js';
 import { ITEMS } from '../content/data.js';
@@ -47,15 +47,21 @@ describe('Phase 8.6 Spirit Audit — Economic Stacking', () => {
 
 describe('Phase 8.6 Spirit Audit — Event Influence', () => {
     test('scarcity_spike increases scarcity count', () => {
-        for (let day = 1; day <= 100; day++) {
-            const ws = deriveWorldState('audit', day);
-            if (ws.event?.type === 'scarcity_spike') {
-                expect(ws.scarcity.length).toBeGreaterThanOrEqual(2);
-            }
-            if (ws.event?.type === 'market_surplus') {
-                expect(ws.surplus.length).toBeGreaterThanOrEqual(1);
-            }
-        }
+        const days = Array.from({ length: 100 }, (_, i) => i + 1);
+        const spikeDays = days.map(d => deriveWorldState('audit', d)).filter(ws => ws.event?.type === 'scarcity_spike');
+        
+        spikeDays.forEach(ws => {
+            expect(ws.scarcity.length).toBeGreaterThanOrEqual(2);
+        });
+    });
+
+    test('market_surplus increases surplus count', () => {
+        const days = Array.from({ length: 100 }, (_, i) => i + 1);
+        const surplusDays = days.map(d => deriveWorldState('audit', d)).filter(ws => ws.event?.type === 'market_surplus');
+        
+        surplusDays.forEach(ws => {
+            expect(ws.surplus.length).toBeGreaterThanOrEqual(1);
+        });
     });
 });
 

@@ -8,7 +8,7 @@ import {
 import { packSignedPresence } from './presence.js';
 import { sendHLC } from './hlc.js';
 import { hashStr } from '../rules/index.js';
-import { signMessage, exportKey } from '../security/crypto.js';
+import { signMessage } from '../security/crypto.js';
 import { localPlayer } from '../state/store.js';
 import { playerKeys } from '../security/identity.js';
 

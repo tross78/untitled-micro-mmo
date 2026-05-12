@@ -30,7 +30,7 @@ import { getArbiterUrl } from '../infra/runtime.js';
 
 // Modular Networking Components
 import { 
-    ROLLUP_INTERVAL, PROPOSER_GRACE_MS, NETWORK_STALL_MS, NETWORK_HEAL_COOLDOWN_MS,
+    ROLLUP_INTERVAL, PROPOSER_GRACE_MS, NETWORK_STALL_MS,
     buildTorrentConfig, isUsingTurnFallback 
 } from './config.js';
 import { 
@@ -82,7 +82,7 @@ const saveIntroducers = (shard) => {
         const cache = JSON.parse(localStorage.getItem(INTRODUCER_CACHE_KEY) || '{}');
         cache[shard] = { peers: top, ts: Date.now() };
         localStorage.setItem(INTRODUCER_CACHE_KEY, JSON.stringify(cache));
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
 };
 
 const loadIntroducers = (shard) => {

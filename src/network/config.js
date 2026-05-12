@@ -53,7 +53,7 @@ export const patchIceGatheringTimeout = () => {
         // 3. SCTP warm-up on inbound data channels.
         pc.addEventListener('datachannel', (e) => {
             const ch = e.channel;
-            const doWarmup = () => { try { ch.send(new Uint8Array(1200)); } catch (_) {} };
+            const doWarmup = () => { try { ch.send(new Uint8Array(1200)); } catch (_) { /* ignore warmup failures */ } };
             if (ch.readyState === 'open') doWarmup();
             else ch.addEventListener('open', doWarmup, { once: true });
         });
