@@ -5,10 +5,8 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import {
-    addToPresenceCache,
-    prunePresenceCache,
-    listPeersForShard,
-} from '../src/network/arbiter-presence-cache.js';
+    createPresenceDirectory,
+} from '../src/network/arbiter-presence-directory.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -64,6 +62,7 @@ async function startArbiter() {
     const lastRollupTime = new Map(); // publicKey -> ts
     const fraudCounts = new Map(); // publicKey -> count
     const bans = new Set();
+    const presenceDirectory = createPresenceDirectory();
 
     const ROLLUP_INTERVAL = 10000;
 
@@ -224,7 +223,7 @@ async function startArbiter() {
     setInterval(() => {
         lastRollupTime.clear();
         fraudCounts.clear();
-        prunePresenceCache();
+        presenceDirectory.prune();
     }, 3600000);
 
     // HTTP Server for fallback discovery and presence cache
@@ -254,16 +253,13 @@ async function startArbiter() {
         } else if (url.pathname === '/peers') {
             const shard = url.searchParams.get('shard');
             res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(listPeersForShard(shard)));
+            res.end(JSON.stringify(presenceDirectory.list(shard)));
         } else if (url.pathname === '/register' && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => { body += chunk; });
             req.on('end', () => {
                 try {
-                    const entry = JSON.parse(body);
-                    if (entry.ph && entry.location) {
-                        addToPresenceCache(entry.ph, entry);
-                    }
+                    presenceDirectory.register(JSON.parse(body));
                     res.writeHead(200, cors);
                     res.end('{}');
                 } catch (_e) { res.writeHead(400); res.end(); }
