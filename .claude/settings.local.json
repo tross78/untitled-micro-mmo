@@ -26,7 +26,8 @@
       "Bash(sed -n '70,75p' /Users/tysonross/Documents/GitHub/untitled-micro-mmo/src/systems/map-render-system.js)",
       "Bash(npx jest *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

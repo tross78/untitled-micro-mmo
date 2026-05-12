@@ -61,6 +61,13 @@ describe('canvas menu builder', () => {
         expect(wheat.disabled).toBe(true);
     });
 
+    test('wandering_trader adds rare wares to the merchant shop menu', () => {
+        worldState.event = { type: 'wandering_trader' };
+        const menu = buildCanvasMenu('shop', { npcId: 'merchant' }, makeCtx(makePlayer({ gold: 500 })));
+        expect(menu.entries.some((entry) => entry.label.startsWith('Old Tome'))).toBe(true);
+        expect(menu.entries.some((entry) => entry.label.startsWith('Steel Sword'))).toBe(true);
+    });
+
     test('inventory menu turns consumables into actionable entries', () => {
         const menu = buildCanvasMenu('inventory', {}, makeCtx(makePlayer({ inventory: ['potion', 'iron_sword'] })));
         expect(menu.entries.find((entry) => entry.label.startsWith('Health Potion')).action.command).toBe('use health potion');
@@ -102,8 +109,8 @@ describe('canvas menu builder', () => {
         const menu = buildCanvasMenu('status', {}, makeCtx(player, 'day', { worldState: { threatLevel: 1, scarcity: ['wheat'], surplus: ['potion'] } }));
 
         expect(menu.entries.some((entry) => entry.label === 'Threat Level')).toBe(true);
-        expect(menu.entries.some((entry) => entry.label === 'Scarce goods')).toBe(true);
-        expect(menu.entries.some((entry) => entry.label === 'Market surplus')).toBe(true);
+        expect(menu.entries.some((entry) => entry.label === 'Scarce')).toBe(true);
+        expect(menu.entries.some((entry) => entry.label === 'Surplus')).toBe(true);
     });
 
     test('audio menu reflects mute state and returns back', () => {

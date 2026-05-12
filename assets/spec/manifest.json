@@ -39,6 +39,16 @@
       }
     },
     {
+      "id": "wolf",
+      "family": "enemy",
+      "source": "../source/enemies/wolf.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+      }
+    },
+    {
       "id": "forest_wolf",
       "family": "enemy",
       "source": "../source/enemies/forest_wolf.png",
@@ -149,6 +159,46 @@
       }
     },
     {
+      "id": "merchant",
+      "family": "npc",
+      "source": "../source/npcs/merchant.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "herbalist",
+      "family": "npc",
+      "source": "../source/npcs/herbalist.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "sage",
+      "family": "npc",
+      "source": "../source/npcs/sage.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "bard",
+      "family": "npc",
+      "source": "../source/npcs/bard.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
       "id": "tree",
       "family": "scenery",
       "source": "../source/scenery/tree.png",
@@ -186,6 +236,206 @@
       "logicalHeight": 1,
       "variants": {
         "base": { "x": 0, "y": 0, "w": 48, "h": 48, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
+      }
+    },
+    {
+      "id": "well",
+      "family": "scenery",
+      "source": "../source/scenery/well.png",
+      "logicalWidth": 2,
+      "logicalHeight": 2,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 32, "h": 32 }
+      }
+    },
+    {
+      "id": "altar",
+      "family": "scenery",
+      "source": "../source/scenery/altar.png",
+      "logicalWidth": 2,
+      "logicalHeight": 2,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 32, "h": 32 }
+      }
+    },
+    {
+      "id": "table",
+      "family": "scenery",
+      "source": "../source/scenery/table.png",
+      "logicalWidth": 2,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 32, "h": 16 }
+      }
+    },
+    {
+      "id": "counter",
+      "family": "scenery",
+      "source": "../source/scenery/counter.png",
+      "logicalWidth": 2,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 32, "h": 16 }
+      }
+    },
+    {
+      "id": "door_arch",
+      "family": "scenery",
+      "source": "../source/scenery/door_arch.png",
+      "logicalWidth": 2,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 32, "h": 16 }
+      }
+    },
+    {
+      "id": "bed",
+      "family": "scenery",
+      "source": "../source/scenery/bed.png",
+      "logicalWidth": 1,
+      "logicalHeight": 2,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 32 }
+      }
+    },
+    {
+      "id": "shrub",
+      "family": "scenery",
+      "source": "../source/scenery/shrub.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "rock",
+      "family": "scenery",
+      "source": "../source/scenery/rock.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "crate",
+      "family": "scenery",
+      "source": "../source/scenery/crate.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "barrel",
+      "family": "scenery",
+      "source": "../source/scenery/barrel.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "chair",
+      "family": "scenery",
+      "source": "../source/scenery/chair.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "sign",
+      "family": "scenery",
+      "source": "../source/scenery/sign.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "torch",
+      "family": "scenery",
+      "source": "../source/scenery/torch.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "candle",
+      "family": "scenery",
+      "source": "../source/scenery/candle.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "ladder",
+      "family": "scenery",
+      "source": "../source/scenery/ladder.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "pillar",
+      "family": "scenery",
+      "source": "../source/scenery/pillar.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "grave",
+      "family": "scenery",
+      "source": "../source/scenery/grave.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "wheel",
+      "family": "scenery",
+      "source": "../source/scenery/wheel.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "anchor",
+      "family": "scenery",
+      "source": "../source/scenery/anchor.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "cauldron",
+      "family": "scenery",
+      "source": "../source/scenery/cauldron.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
       }
     }
   ]

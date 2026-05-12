@@ -2,7 +2,7 @@ import { ITEMS, NPCS, QUESTS, RECIPES, roomHasFeature } from '../content/data.js
 import { ENEMIES } from '../content/data.js';
 import { levelBonus } from '../rules/index.js';
 import { players, worldState } from '../state/store.js';
-import { getBuyPrice, getSellPrice } from '../commands/helpers.js';
+import { getBuyPrice, getSellPrice, getShopInventory } from '../commands/helpers.js';
 import { getAudioSettings } from '../engine/audio.js';
 
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
@@ -26,7 +26,8 @@ const getQuestRowsForNpc = (localPlayer, npcId, npcsHere) => {
     const rows = [];
     Object.values(QUESTS).forEach((quest) => {
         if (quest.giver === npcId && !localPlayer.quests?.[quest.id]) {
-            const prereqOk = !quest.prerequisite || localPlayer.quests?.[quest.prerequisite]?.completed;
+            const prereqIds = Array.isArray(quest.prerequisite) ? quest.prerequisite : (quest.prerequisite ? [quest.prerequisite] : []);
+            const prereqOk = prereqIds.every(pid => localPlayer.quests?.[pid]?.completed);
             if (prereqOk) {
                 rows.push({
                     label: `Accept ${quest.name}`,
@@ -191,9 +192,10 @@ export function buildCanvasMenu(type, context, menuCtx) {
         if (!npc) return null;
         const entries = [];
         const questRows = getQuestRowsForNpc(localPlayer, npcId, npcsHere);
-        if (npc.role === 'shop' && npc.shop?.length) {
+        const shopInventory = getShopInventory(npcId);
+        if (npc.role === 'shop' && shopInventory.length > 0) {
             const closedAtNight = npcId === 'merchant' && timeOfDay === 'night';
-            entries.push({ label: 'Buy', detail: closedAtNight ? 'Shop is closed at night' : `${npc.shop.length} wares`, disabled: closedAtNight, action: { kind: 'menu', menuType: 'shop', context: { npcId } } });
+            entries.push({ label: 'Buy', detail: closedAtNight ? 'Shop is closed at night' : `${shopInventory.length} wares`, disabled: closedAtNight, action: { kind: 'menu', menuType: 'shop', context: { npcId } } });
             if (getSellableItems(localPlayer).length > 0) {
                 entries.push({ label: 'Sell', detail: 'Turn goods into gold', disabled: closedAtNight, action: { kind: 'menu', menuType: 'sell', context: { npcId } } });
             }
@@ -218,7 +220,7 @@ export function buildCanvasMenu(type, context, menuCtx) {
         const npcId = context?.npcId;
         const npc = NPCS[npcId];
         if (!npc) return null;
-        const entries = (npc.shop || []).map((itemId) => {
+        const entries = getShopInventory(npcId).map((itemId) => {
             const item = ITEMS[itemId];
             const detail = item.heal ? `+${item.heal} hp` : item.bonus ? `+${item.bonus}` : item.type;
             const closedAtNight = npcId === 'merchant' && timeOfDay === 'night';
@@ -296,7 +298,7 @@ export function buildCanvasMenu(type, context, menuCtx) {
     if (type === 'status') {
         const { worldState } = menuCtx;
         const effects = localPlayer.statusEffects || [];
-        const effectLabels = { poisoned: 'Poisoned', well_rested: 'Well Rested' };
+        const effectLabels = { poisoned: 'Poisoned', well_rested: 'Well Rested', strength_boost: 'Strength Boost' };
         const entries = [];
         if (effects.length === 0) {
             entries.push({ label: 'No active effects', detail: 'Feeling normal', disabled: true });
@@ -310,9 +312,24 @@ export function buildCanvasMenu(type, context, menuCtx) {
         const threat = worldState?.threatLevel || 0;
         const scarcity = worldState?.scarcity || [];
         const surplus = worldState?.surplus || [];
+        const weather = worldState?.weather;
+        const event = worldState?.event;
         if (threat > 0) entries.push({ label: 'Threat Level', detail: `${threat} — enemies are stronger`, disabled: true });
-        if (scarcity.length > 0) entries.push({ label: 'Scarce goods', detail: scarcity.map(id => ITEMS[id]?.name || id).join(', '), disabled: true });
-        if (surplus.length > 0) entries.push({ label: 'Market surplus', detail: surplus.map(id => ITEMS[id]?.name || id).join(', '), disabled: true });
+        if (scarcity.length > 0) entries.push({ label: 'Scarce', detail: scarcity.map(id => ITEMS[id]?.name || id).join(', ') + ' — prices up', disabled: true });
+        if (surplus.length > 0) entries.push({ label: 'Surplus', detail: surplus.map(id => ITEMS[id]?.name || id).join(', ') + ' — prices down', disabled: true });
+        if (weather && weather !== 'clear') entries.push({ label: 'Weather', detail: weather.charAt(0).toUpperCase() + weather.slice(1), disabled: true });
+        if (event) {
+            const eventLabels = {
+                market_surplus: 'Market Surplus — shop prices down',
+                scarcity_spike: 'Scarcity Spike — goods harder to find',
+                bounty_hunt: 'Bounty Hunt — contraband pays double',
+                wandering_trader: 'Wandering Trader — rare wares available',
+                wolf_pack: 'Wolf Pack — more wolves in the forest',
+                ancient_tremor: 'Ancient Tremor — catacombs enemies hit harder',
+                wandering_boss: `Wandering Boss — ${event.target || 'creature'} spotted!`,
+            };
+            entries.push({ label: 'Today\'s Event', detail: eventLabels[event.type] || event.type, disabled: true });
+        }
         entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
         return { type, title: 'World Status', message: location?.name || '', entries, selectedIndex: entries.length - 1 };
     }
@@ -320,17 +337,45 @@ export function buildCanvasMenu(type, context, menuCtx) {
     if (type === 'map') {
         const visited = localPlayer.visitedRooms || [localPlayer.location];
         const currentLoc = localPlayer.location;
+
+        // Build set of rooms that are quest destinations for active quests
+        const questDestRooms = new Set();
+        const questDestNpcs = new Set();
+        Object.entries(localPlayer.quests || {}).forEach(([qid, pq]) => {
+            if (pq.completed) return;
+            const q = QUESTS[qid];
+            if (!q) return;
+            if (q.objective?.type === 'explore' && q.objective.target) questDestRooms.add(q.objective.target);
+            if ((q.objective?.type === 'fetch' || q.objective?.type === 'deliver' || q.objective?.type === 'talk') && q.receiver) questDestNpcs.add(q.receiver);
+            if (q.giver) questDestNpcs.add(q.giver);
+        });
+        // Map NPC homes to rooms for waypoint display
+        Object.values(NPCS).forEach(npc => {
+            if (questDestNpcs.has(npc.id) && npc.home) questDestRooms.add(npc.home);
+        });
+
         const entries = visited.map(locId => {
             const loc = world[locId];
             if (!loc) return null;
             const exits = Object.keys(loc.exits || {}).join(', ') || 'none';
             const isCurrent = locId === currentLoc;
+            const isQuestDest = questDestRooms.has(locId);
+            const prefix = isCurrent ? '▶ ' : isQuestDest ? '! ' : '';
             return {
-                label: `${isCurrent ? '▶ ' : ''}${loc.name || locId}`,
-                detail: isCurrent ? 'You are here' : `Exits: ${exits}`,
+                label: `${prefix}${loc.name || locId}`,
+                detail: isCurrent ? 'You are here' : isQuestDest ? `Quest destination — Exits: ${exits}` : `Exits: ${exits}`,
                 disabled: true,
             };
         }).filter(Boolean);
+
+        // Also show unvisited quest destinations the player doesn't have on their map yet
+        questDestRooms.forEach(locId => {
+            if (!visited.includes(locId) && world[locId]) {
+                const loc = world[locId];
+                entries.unshift({ label: `! ${loc.name || locId} (unvisited)`, detail: 'Active quest destination', disabled: true });
+            }
+        });
+
         if (entries.length === 0) entries.push({ label: location?.name || currentLoc, detail: 'You are here', disabled: true });
         entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
         return { type, title: 'World Map', message: `${visited.length} location${visited.length !== 1 ? 's' : ''} discovered`, entries, selectedIndex: entries.length - 1 };

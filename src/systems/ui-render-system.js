@@ -2,7 +2,7 @@
 
 import { Component } from '../domain/components.js';
 import { applyPalette, getGrayscaleTemplate, roundRect } from '../graphics/graphics.js';
-import { levelBonus } from '../rules/index.js';
+import { levelBonus, getDynamicRoomDescription } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';
 import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
@@ -15,11 +15,13 @@ export class UIRenderSystem {
      * @param {import('../domain/ecs.js').WorldStore} world
      * @param {object} vp - Viewport metrics
      * @param {any} worldData
+     * @param {any} stores - { worldState }
      */
-    constructor(world, vp, worldData) {
+    constructor(world, vp, worldData, stores = {}) {
         this.world = world;
         this.VP = vp;
         this.worldData = worldData;
+        this.worldState = stores.worldState || {};
         this.heartSprite = null;
         this.emptyHeartSprite = null;
         this.menuHitRegions = [];
@@ -60,10 +62,11 @@ export class UIRenderSystem {
         ctx.fillStyle = UI_PALETTE.textHi;
         ctx.fillText(room.name, PAD, 8);
 
-        // Room Description (truncated)
+        // Room Description (dynamic)
         ctx.font = `${Math.floor(this.VP.S * 0.24)}px monospace`;
         ctx.fillStyle = UI_PALETTE.textLo;
-        const summary = room.description.length > 60 ? `${room.description.slice(0, 57)}...` : room.description;
+        const fullDesc = getDynamicRoomDescription(room, this.worldState);
+        const summary = fullDesc.length > 60 ? `${fullDesc.slice(0, 57)}...` : fullDesc;
         ctx.fillText(summary, PAD, Math.floor(STRIP * 0.55));
 
         // --- RIGHT SIDE: Player Stats ---

@@ -5,10 +5,13 @@ import {
     hashStr, seededRNG, levelBonus, resolveAttack, rollLoot, xpToLevel, getTimeOfDay 
 } from '../rules/index.js';
 import { ENEMIES, ITEMS, QUESTS, SPAWN_ROOM_ID, SPAWN_X, SPAWN_Y, roomHasFeature, world } from '../content/data.js';
+import { getWeatherEffect } from '../rules/index.js';
 import { bus } from '../state/eventbus.js';
 import { selfId } from '../network/transport.js';
 import { signMessage } from '../security/crypto.js';
 import { playerKeys, myEntry } from '../security/identity.js';
+import { grantItem } from '../commands/helpers.js';
+import { saveLocalState } from '../state/persistence.js';
 
 /**
  * CombatSystem handles attack resolution and damage calculation.
@@ -134,7 +137,12 @@ export class CombatSystem {
 
     const locId = transform.mapId;
     const roomDef = this.worldData?.[locId] || {};
-    const enemyType = roomDef.enemy;
+    let enemyType = roomDef.enemy;
+
+    // 8.6b: wandering_boss event overrides normal enemies in specific rooms
+    if (this.worldState.event?.type === 'wandering_boss' && (locId === 'ruins' || locId === 'mountain_pass' || locId === 'forest_edge')) {
+      enemyType = this.worldState.event.target || 'mountain_troll';
+    }
 
     if (!enemyType) {
       bus.emit('log', { msg: `There is nothing to fight here.`, color: '#f55' });
@@ -153,7 +161,10 @@ export class CombatSystem {
 
     let sharedEnemy = this.shardEnemies.get(locId);
     const enemyDef = ENEMIES[enemyType];
-    const scale = 1 + (this.worldState.threatLevel * 0.1);
+    // 8.6b: ancient_tremor (dungeons) and wolf_pack (forest wolves) make enemies hit harder
+    const isDungeon = roomDef.zone === 'dungeon';
+    const eventScale = (this.worldState.event?.type === 'ancient_tremor' && isDungeon) || (this.worldState.event?.type === 'wolf_pack' && enemyType === 'forest_wolf') ? 1.25 : 1;
+    const scale = (1 + (this.worldState.threatLevel * 0.1)) * eventScale;
     const scaledHP = Math.floor(enemyDef.hp * scale);
     const scaledAtk = Math.floor(enemyDef.attack * scale);
     const scaledDef = Math.floor(enemyDef.defense * scale);
@@ -164,7 +175,14 @@ export class CombatSystem {
         bus.emit('log', { msg: `You are too exhausted to fight today.`, color: '#aaa' });
         return;
       }
-      this.localPlayer.forestFights--;
+      // 8.6b: storm costs 2 forest fights per encounter
+      const weatherEffect = getWeatherEffect(this.worldState.weather);
+      const fightCost = weatherEffect?.forestFightCostMult ?? 1;
+      if (this.localPlayer.forestFights < fightCost) {
+        bus.emit('log', { msg: `You are too exhausted to venture out in this storm.`, color: '#aaa' });
+        return;
+      }
+      this.localPlayer.forestFights -= fightCost;
       sharedEnemy = { type: enemyType, hp: scaledHP, maxHp: scaledHP };
       this.shardEnemies.set(locId, sharedEnemy);
       this.localPlayer.currentEnemy = sharedEnemy;
@@ -180,11 +198,21 @@ export class CombatSystem {
     const bonus = levelBonus(this.localPlayer.level);
     
     const gear = this.getBestGear(); 
-    const elixirBonus = (this.localPlayer.buffs?.activeElixir === 'strength_elixir') ? 5 : 0;
+    const strengthEffect = this.localPlayer.statusEffects?.find(s => s.id === 'strength_boost');
+    const elixirBonus = strengthEffect ? (strengthEffect.atkBonus || 5) : 0;
+    if (strengthEffect) {
+        strengthEffect.duration--;
+        if (strengthEffect.duration <= 0) {
+            this.localPlayer.statusEffects = this.localPlayer.statusEffects.filter(s => s.id !== 'strength_boost');
+            bus.emit('log', { msg: `[Effect] Strength boost fades.`, color: '#fa0' });
+        }
+    }
 
     const playerRes = resolveAttack(this.localPlayer.attack + bonus.attack + gear.weaponBonus + elixirBonus, scaledDef, rng);
     const isNight = getTimeOfDay() === 'night';
-    const enemyRes = resolveAttack(scaledAtk, this.localPlayer.defense + bonus.defense + gear.defenseBonus, rng, isNight);
+    // 8.6b: fog gives enemies an extra 20% miss chance
+    const fogMiss = this.worldState.weather === 'fog' && rng(100) < 20;
+    const enemyRes = fogMiss ? { damage: 0, isCrit: false, isDodge: true } : resolveAttack(scaledAtk, this.localPlayer.defense + bonus.defense + gear.defenseBonus, rng, isNight);
 
     // 3. Apply Player Attack
     this.world.setComponent(entityId, Component.AttackAnimation, { dir: transform.facing || 's', progress: 0 });
@@ -254,8 +282,15 @@ export class CombatSystem {
     }
 
     // 6. Handle Death/Loot
+    // 8.95m: claim window prevents double-loot when two players reduce HP to 0
+    // simultaneously before a monster_damage packet arrives.
     if (sharedEnemy.hp <= 0) {
-      this.handleVictory(locId, enemyType, enemyDef, rng);
+      const now = Date.now();
+      const CLAIM_WINDOW_MS = 3000;
+      if (!sharedEnemy.claimedAt || now - sharedEnemy.claimedAt > CLAIM_WINDOW_MS) {
+        sharedEnemy.claimedAt = now;
+        this.handleVictory(locId, enemyType, enemyDef, rng);
+      }
     }
 
     if (health.current <= 0) {
@@ -303,11 +338,13 @@ export class CombatSystem {
 
     loot.forEach(itemId => {
       const item = ITEMS[itemId];
-      if (item?.type === 'gold') this.localPlayer.gold += item.amount;
-      else {
-        this.localPlayer.inventory.push(itemId);
+      if (item?.type === 'gold') {
+        this.localPlayer.gold += item.amount;
+        bus.emit('item:pickup', { item });
+      } else {
+        grantItem(itemId); // use grantItem so fetch quest progress is tracked
+        bus.emit('item:pickup', { item });
       }
-      if (item) bus.emit('item:pickup', { item });
     });
 
     bus.emit('combat:death', { entity: enemyDef.name, loot });
@@ -328,6 +365,8 @@ export class CombatSystem {
       const entry = await myEntry();
       if (entry && this.gameActions.sendPresenceSingle) this.gameActions.sendPresenceSingle(entry);
     }
+
+    saveLocalState(this.localPlayer, true);
   }
 
   /**

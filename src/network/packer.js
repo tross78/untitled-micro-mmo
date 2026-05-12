@@ -4,7 +4,7 @@
  * Declarative serialization for high-frequency messages.
  */
 
-import { world, ENEMIES, SPAWN_ROOM_ID } from '../content/data.js';
+import { world, ENEMIES, SPAWN_ROOM_ID, QUESTS } from '../content/data.js';
 import { packHLC, unpackHLC } from './hlc.js';
 
 const toUint8Array = (buf) => {
@@ -133,8 +133,15 @@ const QUEST_MAP = [
     'ruins_survey', 'tome_collection', 'catacomb_delve', 'wraith_banish',
     'gather_wood', 'iron_supply', 'craft_sword', 'market_recovery',
     'tavern_regular', 'courier_run', 'mountain_trial',
-    'herb_gathering', 'mushroom_study', 'field_tonic'
+    'herb_gathering', 'mushroom_study', 'field_tonic',
+    'ancient_throne'
 ];
+// Validate at module load that all authored quests are packable
+if (typeof QUESTS !== 'undefined') {
+    Object.keys(QUESTS).forEach(id => {
+        if (!QUEST_MAP.includes(id)) console.warn(`[Packer] Quest "${id}" missing from QUEST_MAP — it will serialize as 255 and drop on unpack`);
+    });
+}
 
 export const presenceSignaturePayload = (p) => {
     const activeQuests = Object.entries(p.quests || {})

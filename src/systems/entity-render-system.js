@@ -147,8 +147,15 @@ export class EntityRenderSystem {
         const key = `${seed}:${palette}:${type}`;
         if (this.spriteCache.has(key)) return this.spriteCache.get(key);
         
-        const pal = PALETTES[palette] || PALETTES.peer;
-        
+        let palKey = palette;
+        if (palette === 'peer') {
+            let h = 0;
+            const s = String(seed);
+            for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
+            palKey = `peer${h % 6}`;
+        }
+        const pal = PALETTES[palKey] || PALETTES.peer;
+
         // Use type override if provided (for directional posing)
         let template = null;
         if (type) {
@@ -159,7 +166,7 @@ export class EntityRenderSystem {
             if (palette === 'self' || palette === 'peer') sType = 'player';
             else if (palette === 'enemy') sType = 'wolf';
             else if (palette === 'npc') sType = 'guard';
-            
+
             if (sType) template = getGrayscaleTemplate(sType, seed);
         }
 

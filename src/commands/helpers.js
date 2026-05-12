@@ -49,24 +49,57 @@ export const getBestGear = () => {
     };
 };
 
+const WANDERING_TRADER_WARES = ['old_tome', 'healing_elixir', 'steel_sword'];
+
+export const getShopInventory = (npcId) => {
+    const npc = NPCS[npcId];
+    if (!npc?.shop) return [];
+    const inventory = [...npc.shop];
+    if (npcId === 'merchant' && worldState.event?.type === 'wandering_trader') {
+        WANDERING_TRADER_WARES.forEach((itemId) => {
+            if (!inventory.includes(itemId)) inventory.push(itemId);
+        });
+    }
+    return inventory;
+};
+
 export const getBuyPrice = (itemId) => {
     const item = ITEMS[itemId];
     if (!item) return 0;
-
     let price = item.price || 0;
-    if (worldState.scarcity.includes(itemId)) {
-        price = Math.ceil(price * 1.5);
-    }
+    
+    // 8.6b: scarcity raises buy price; surplus lowers it
+    if (worldState.scarcity?.includes(itemId)) price *= 1.5;
+    if (worldState.surplus?.includes(itemId)) price *= 0.7;
+    
+    // market_surplus event applies to all materials and consumables
     if (worldState.event?.type === 'market_surplus' && (item.type === 'material' || item.type === 'consumable')) {
-        price = Math.max(1, Math.floor(price * 0.8));
+        price *= 0.8;
     }
-    return price;
+    
+    return Math.ceil(price);
 };
 
 export const getSellPrice = (itemId) => {
     const item = ITEMS[itemId];
     if (!item) return 0;
-    return Math.max(1, Math.floor((item.price || 0) * 0.4));
+    let price = (item.price || 0) * 0.4;
+    
+    // 8.6b: scarcity raises sell price; surplus lowers it
+    if (worldState.scarcity?.includes(itemId)) price *= 1.4;
+    if (worldState.surplus?.includes(itemId)) price *= 0.6;
+    
+    // market_surplus event depresses sell prices too
+    if (worldState.event?.type === 'market_surplus' && (item.type === 'material' || item.type === 'consumable')) {
+        price *= 0.7;
+    }
+    
+    // 8.6b: bounty_hunt event doubles bounty price on contraband items
+    if (worldState.event?.type === 'bounty_hunt' && item.bountyPrice) {
+        return (item.bountyPrice || Math.ceil(price)) * 2;
+    }
+    
+    return Math.max(1, Math.ceil(price));
 };
 
 export const grantItem = (itemId) => {

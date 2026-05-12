@@ -37,7 +37,7 @@ export const QUESTS = {
         id: 'tome_collection', name: 'Tome Collection', giver: 'sage', receiver: 'sage', type: 'fetch',
         description: 'Bring 2 old tomes to the Sage.', lore: 'Knowledge is scattered among the dust of the ruins.',
         objective: { type: 'fetch', target: 'old_tome', count: 2 }, prerequisite: 'ruins_survey',
-        reward: { xp: 60, gold: 0, item: 'magic_staff' }, chain: 'scholar'
+        reward: { xp: 60, gold: 0, item: 'steel_sword' }, chain: 'scholar'
     }),
     catacomb_delve: defineQuest('catacomb_delve', {
         id: 'catacomb_delve', name: 'Catacomb Delve', giver: 'sage', receiver: 'sage', type: 'explore',
@@ -117,5 +117,15 @@ export const QUESTS = {
         description: 'Reach the Mountain Pass and survive a Mountain Troll.', lore: 'Only the bravest dare the northern heights.',
         objective: { type: 'kill', target: 'mountain_troll', count: 1 }, prerequisite: 'cave_troll_bounty',
         reward: { xp: 300, gold: 75, item: 'steel_sword' }, chain: 'barkeep'
+    }),
+
+    // Capstone — cross-chain, requires militia + scholar completion
+    ancient_throne: defineQuest('ancient_throne', {
+        id: 'ancient_throne', name: 'The Ancient Throne', giver: 'sage', receiver: null, type: 'explore',
+        description: 'Unlock the Throne Room and uncover what lies within. Bring the iron key.',
+        lore: 'The sage speaks of a sealed chamber beneath the ruins — only one who has faced the darkness above and below may enter.',
+        objective: { type: 'explore', target: 'throne_room', count: 1 },
+        prerequisite: ['wraith_banish', 'cave_troll_bounty'],
+        reward: { xp: 500, gold: 100, item: 'magic_staff' }, chain: 'capstone'
     })
 };

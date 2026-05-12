@@ -98,12 +98,15 @@ class AppRuntime {
     this.combatSystem = new CombatSystem(this.world, { localPlayer: localPlayerStore, worldState, shardEnemies }, worldData, gameActions);
     this.tweenSystem = new TweenSystem(this.world);
     this.dialogueSystem = new DialogueSystem(this.world);
-    this.networkSystem = new NetworkSystem(this.world, gameActions);
+    this.networkSystem = new NetworkSystem(this.world, gameActions, {
+        localPlayer: localPlayerStore,
+        get players() { return getPlayers(); }
+    });
 
     // Initialize Render Systems
     this.mapRender = new MapRenderSystem(this.world, this.VP);
     this.entityRender = new EntityRenderSystem(this.world, this.VP);
-    this.uiRender = new UIRenderSystem(this.world, this.VP, worldData);
+    this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState });
     this.audioSystem = new AudioSystem(this.world);
 
     this.loop = new GameLoop({

@@ -6,8 +6,10 @@
 // Lazy peers receive only a lightweight announcement (msgId + type).
 // On cache miss a lazy peer pulls the full payload, promoting itself to eager.
 
-const ACTIVE_VIEW_SIZE = 3;
+const ACTIVE_VIEW_SIZE = 8;   // k-regular graph; 3 was too sparse for 200-player rooms
+const PASSIVE_VIEW_SIZE = 24; // candidate pool for fast failover and shuffle
 const SEEN_MSG_CAPACITY = 256;
+const SHUFFLE_SIZE = 3;       // passive peers exchanged per shuffle round
 
 export class HyParView {
     constructor() {
@@ -49,6 +51,46 @@ export class HyParView {
             }
             this._passive.delete(peerId);
             this._active.add(peerId);
+        }
+    }
+
+    // Force-promote a peer to active view regardless of current membership.
+    // Used for router-class peers that should always be in the eager set.
+    prioritize(peerId) {
+        if (this._active.has(peerId)) return;
+        if (this._active.size >= ACTIVE_VIEW_SIZE) {
+            // Demote a non-priority active peer
+            const demote = this._active.values().next().value;
+            this._active.delete(demote);
+            this._passive.add(demote);
+        }
+        this._passive.delete(peerId);
+        this._active.add(peerId);
+    }
+
+    // Return a small sample of passive peers to exchange during a SHUFFLE round.
+    // Uses timestamp-based offset instead of Math.random to stay deterministic.
+    shuffle() {
+        const passive = Array.from(this._passive);
+        if (passive.length === 0) return [];
+        const offset = Date.now() % Math.max(passive.length, 1);
+        const result = [];
+        for (let i = 0; i < Math.min(SHUFFLE_SIZE, passive.length); i++) {
+            result.push(passive[(offset + i) % passive.length]);
+        }
+        return result;
+    }
+
+    // Incorporate peers received in a SHUFFLE response into the passive view.
+    mergeShuffle(peerIds, selfId) {
+        for (const pid of peerIds) {
+            if (!pid || pid === selfId) continue;
+            if (this._active.has(pid) || this._passive.has(pid)) continue;
+            if (this._passive.size >= PASSIVE_VIEW_SIZE) {
+                const evict = this._passive.values().next().value;
+                this._passive.delete(evict);
+            }
+            this._passive.add(pid);
         }
     }
 

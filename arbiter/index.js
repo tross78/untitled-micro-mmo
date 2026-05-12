@@ -32,7 +32,7 @@ const STATE_FILE = join(__dirname, 'world_state.json');
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     await import('werift');
-    const { signMessage, verifyMessage } = await import('../src/security/crypto.js');
+    const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
     const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/infra/constants.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
     const dotenv = await import('dotenv');
@@ -80,16 +80,17 @@ async function startArbiter() {
         if (lastValidStatePacket) sendState(lastValidStatePacket, [peerId]);
     });
 
-    getRollup(async (rollup, _peerId) => {
-        const { signature, publicKey, name } = rollup;
+    getRollup(async (packet, _peerId) => {
+        const { rollup, signature, publicKey } = packet;
+        if (!rollup || !signature || !publicKey) return;
         if (bans.has(publicKey)) return;
 
         const last = lastRollupTime.get(publicKey) || 0;
         if (Date.now() - last < ROLLUP_INTERVAL * 0.8) return;
         lastRollupTime.set(publicKey, Date.now());
 
-        if (await verifyMessage(JSON.stringify(rollup), signature, publicKey)) {
-            console.log(`[Arbiter][${name}] Rollup: ${rollup.shard}`);
+        if (await verifyMessage(stableStringify(rollup), signature, publicKey)) {
+            console.log(`[Arbiter] Rollup: ${rollup.shard}`);
             lastRollups.set(rollup.shard, { ...rollup, proposer: publicKey });
         }
     });
@@ -132,11 +133,22 @@ async function startArbiter() {
             const { rollup, signature, publicKey: proposerKey } = rollupData;
             const { presence, signature: witnessPresenceSig } = witness;
 
-            if (!await verifyMessage(JSON.stringify(rollup), signature, proposerKey)) return;
-            if (presence.disputedRoot !== rollup.root) return;
+            // 1. Verify proposer actually signed this rollup
+            if (!await verifyMessage(stableStringify(rollup), signature, proposerKey)) return;
+
+            // 2. Cross-check against our own record of what the proposer submitted
+            //    A witness cannot frame a proposer by supplying an arbitrary disputedRoot —
+            //    we only act if our own lastRollups record for this shard has a different root
+            const ourRecord = lastRollups.get(rollup.shard);
+            if (!ourRecord || ourRecord.proposer !== proposerKey) return;
+            if (ourRecord.root === rollup.root) return; // roots match — no fraud
+
+            // 3. Verify witness signed their presence payload
             if (!await verifyMessage(JSON.stringify(presence), witnessPresenceSig, witnessKey)) return;
 
-            // If we get here, the witness proved the proposer submitted a root that doesn't match presence
+            // 4. Confirm the witness's presence names the same disputed root
+            if (presence.disputedRoot !== rollup.root) return;
+
             console.log(`[Arbiter] STATE FRAUD PROVED against ${proposerKey}`);
             banPeer(proposerKey);
         } catch (err) {
@@ -155,8 +167,9 @@ async function startArbiter() {
     const publishBeacon = async () => {
         const day = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
         const state = {
-            seed: MASTER_SECRET_KEY.slice(0, 8), // Public seed derived from master
+            world_seed: MASTER_SECRET_KEY.slice(0, 8), // field name must match client expectation
             day,
+            last_tick: Date.now(),
             rollups: Object.fromEntries(lastRollups)
         };
         const stateStr = JSON.stringify(state);
@@ -167,15 +180,12 @@ async function startArbiter() {
         // Save to local disk
         writeFileSync(STATE_FILE, JSON.stringify(packet));
 
-        // Sync to Gist for discovery
+        // 8.95o: Gist carries signed world state only — no IP/endpoint exposed.
+        // Peer discovery uses Trystero BitTorrent tracker (hearthwick-arbiter-v1 room).
         if (GH_GIST_TOKEN && GH_GIST_ID) {
             const files = {
                 'mmo_arbiter_discovery_v4.json': {
-                    content: JSON.stringify({
-                        ...packet,
-                        ts: Date.now(),
-                        endpoint: process.env.PUBLIC_URL || null
-                    })
+                    content: JSON.stringify({ ...packet, ts: Date.now() })
                 }
             };
             fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
@@ -192,9 +202,23 @@ async function startArbiter() {
         sendState(packet);
     };
 
+    let lastBeaconAt = 0;
+    const _origPublishBeacon = publishBeacon;
+    const trackedPublishBeacon = async () => {
+        await _origPublishBeacon();
+        lastBeaconAt = Date.now();
+    };
+
+    // Dead-man's switch — warn if no beacon published in 30 minutes
+    setInterval(() => {
+        if (lastBeaconAt > 0 && Date.now() - lastBeaconAt > 30 * 60 * 1000) {
+            console.error(`[Arbiter] WATCHDOG: No beacon published in >30 minutes. Check for errors.`);
+        }
+    }, 5 * 60 * 1000);
+
     // Publish every 60s
-    setTimeout(publishBeacon, 5000);
-    setInterval(publishBeacon, 60000);
+    setTimeout(trackedPublishBeacon, 5000);
+    setInterval(trackedPublishBeacon, 60000);
 
     // Prune caches every hour
     setInterval(() => {
@@ -215,7 +239,16 @@ async function startArbiter() {
 
         const url = new URL(req.url, `http://${req.headers.host}`);
 
-        if (url.pathname === '/state') {
+        if (url.pathname === '/bans') {
+            res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify([...bans]));
+        } else if (url.pathname === '/health') {
+            const uptime = process.uptime();
+            const lastBeaconAge = lastBeaconAt ? Math.floor((Date.now() - lastBeaconAt) / 1000) : null;
+            const healthy = lastBeaconAge !== null && lastBeaconAge < 1800;
+            res.writeHead(healthy ? 200 : 503, { ...cors, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: healthy, uptime, lastBeaconAgeSecs: lastBeaconAge }));
+        } else if (url.pathname === '/state') {
             res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
             res.end(JSON.stringify(lastValidStatePacket));
         } else if (url.pathname === '/peers') {

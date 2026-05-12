@@ -482,8 +482,8 @@ const SHAPES = {
         "00000000", "03303300", "34434430", "34444430", "34444430", "03444300", "00343000", "00030000"
     ],
     tree: [
-        "00033000", "00333300", "00333300", "03333330", "03333330", "33333333",
-        "33333333", "00011000", "00011000", "00011000", "00011000", "00011000"
+        "00034000", "00343400", "00334300", "03443330", "03334430", "33343333",
+        "33333333", "00011000", "00011000", "00012000", "00012000", "00012000"
     ],
     shrub: [
         "00000000", "00000000", "00000000", "00033000", "00333300", "03333330",
@@ -633,7 +633,7 @@ export function getGrayscaleTemplate(type, seed = 0) {
     if (!type) return null;
     const resolvedType = SPRITE_ALIASES[type] || type;
     const isPlayer = resolvedType.startsWith('player');
-    const shape = COMPILED_ASSET_SHAPES[resolvedType] || SHAPES[resolvedType];
+    const shape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type] || SHAPES[resolvedType];
     if (!shape) return null;
     const baseWidth = Math.max(...shape.map((row) => row.length));
     const baseHeight = shape.length;
@@ -696,8 +696,14 @@ export function getGrayscaleTemplate(type, seed = 0) {
 export const PALETTES = {
     // Player — bright lime green, very readable on any background
     self:  { primary: '#20e840', secondary: '#0a8020', outline: '#001800', accent: '#ffffff' },
-    // Other players — sky blue
+    // Other players — variants keyed peer0..peer5, picked by seed hash
     peer:  { primary: '#30c0ff', secondary: '#0878b8', outline: '#001828', accent: '#ffffff' },
+    peer0: { primary: '#30c0ff', secondary: '#0878b8', outline: '#001828', accent: '#ffffff' }, // sky blue
+    peer1: { primary: '#ff9a30', secondary: '#b85008', outline: '#180800', accent: '#ffffff' }, // amber
+    peer2: { primary: '#c030ff', secondary: '#780898', outline: '#180028', accent: '#ffffff' }, // violet
+    peer3: { primary: '#30ff9a', secondary: '#087848', outline: '#001818', accent: '#ffffff' }, // mint
+    peer4: { primary: '#ff3060', secondary: '#980820', outline: '#180010', accent: '#ffffff' }, // rose
+    peer5: { primary: '#f0e830', secondary: '#988000', outline: '#181400', accent: '#ffffff' }, // gold
     // Generic NPC fallback
     npc:   { primary: '#ffd820', secondary: '#a07800', outline: '#201800', accent: '#ffffff' },
     // Guard — steel blue armour, gold trim
@@ -718,7 +724,8 @@ export const PALETTES = {
 
 // Compact grouped palette table: [primary, secondary, outline, accent]
 const _SP = {
-    g: ['#286820','#103808','#000820','#48b030'],  // vivid green (trees/shrubs)
+    g: ['#286820','#103808','#000820','#48b030'],  // vivid green (shrubs)
+    tr: ['#286820','#7a4010','#143810','#48b030'], // tree: green canopy + brown trunk
     w: ['#a06030','#583010','#180800','#d89050'],  // warm wood
     r: ['#707880','#404850','#101418','#a0aab0'],  // slate grey/rock
     s: ['#b0a888','#706848','#181408','#d8d0b0'],  // warm stone/bones
@@ -730,7 +737,7 @@ const _SP = {
     h: ['#e8c878','#b08038','#201000','#fff0b0'],  // pale shell
 };
 const _SM = {
-    tree:'g', shrub:'g',
+    tree:'tr', shrub:'g',
     crate:'w', barrel:'w', stall:'w', wheel:'w', ladder:'w', sign:'w', counter:'w', chair:'w', table:'w', bookshelf:'w',
     rock:'r', anchor:'r', door_arch:'r', cauldron:'r',
     bones:'s', altar:'s', grave:'s', pillar:'s', stairs:'s',
@@ -782,7 +789,15 @@ export function applyPalette(template, palette) {
 
 // Hash-identicon character sprite — 16×16, seeded from entity id
 export function generateCharacterSprite(seed, type) {
-    const pal = PALETTES[type] || PALETTES.peer;
+    let palKey = type;
+    if (type === 'peer') {
+        // Derive a stable variant (0-5) from the seed so each peer has a distinct colour
+        let h = 0;
+        const s = String(seed);
+        for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
+        palKey = `peer${h % 6}`;
+    }
+    const pal = PALETTES[palKey] || PALETTES.peer;
 
     let sType = null;
     if (type === 'self' || type === 'peer') sType = 'player';

@@ -43,7 +43,11 @@ export const NPCS = {
         home: 'ruins',
         patrol: ['ruins', 'forest_edge', 'hallway'],
         role: 'flavor',
-        baseDialogue: "The shadows grow longer with each passing day..."
+        baseDialogue: "The shadows grow longer with each passing day...",
+        locationDialogue: {
+            ruins: "The descent to the north is no place for the unprepared. I have seen strong fighters go down and not return. Go when you are ready, not before.",
+            forest_edge: "The ruins lie north of the forest. Old stones, old shadows. If you seek them, arm yourself well first.",
+        },
     }),
     guard: defineNpc('guard', {
         name: 'Guard',
@@ -52,7 +56,10 @@ export const NPCS = {
         home: 'hallway',
         patrol: ['hallway', 'cellar', 'tavern', 'market', 'crossroads'],
         role: 'quest',
-        baseDialogue: "Keep the peace, or I'll keep you in the cellar. Head north to the tavern if you're looking for work."
+        baseDialogue: "Keep the peace, or I'll keep you in the cellar. Head north to the tavern if you're looking for work.",
+        locationDialogue: {
+            forest_edge: "The depths to the east get darker and meaner the further in you go. Goblins, bandits — worse things too. I wouldn't head in there without a decent weapon and something to eat.",
+        },
     }),
     cellar_guard: defineNpc('cellar_guard', {
         name: 'Guard',

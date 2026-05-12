@@ -77,10 +77,11 @@ export const handleInventoryCommands = async (command, args) => {
                 bus.emit('log', { msg: `You use ${item.name} (+${item.heal} HP).`, color: '#0f0' });
                 saveLocalState(localPlayer);
             } else if (item?.type === 'buff') {
-                if (!localPlayer.buffs) localPlayer.buffs = { rested: false, activeElixir: null };
-                localPlayer.buffs.activeElixir = itemId;
+                if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
+                localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== 'strength_boost');
+                localPlayer.statusEffects.push({ id: 'strength_boost', atkBonus: item.atkBonus || 5, duration: 50 });
                 localPlayer.inventory.splice(idx, 1);
-                bus.emit('log', { msg: `You drink ${item.name} (+${item.atkBonus} ATK).`, color: '#fa0' });
+                bus.emit('log', { msg: `You drink ${item.name} (+${item.atkBonus} ATK for 50 rounds).`, color: '#fa0' });
                 saveLocalState(localPlayer);
             } else bus.emit('log', { msg: `You can't use that.` });
             return true;

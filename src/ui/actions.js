@@ -5,7 +5,7 @@ import { bus } from '../state/eventbus.js';
 import { clearElement, getActionButtonsEl, getInputContainerEl, getInputEl } from '../adapters/dom/shell.js';
 import { requestTextInput } from '../adapters/dom/prompt.js';
 import { getNPCsAt } from '../commands/helpers.js';
-import { getBuyPrice, getSellPrice } from '../commands/helpers.js';
+import { getBuyPrice, getSellPrice, getShopInventory } from '../commands/helpers.js';
 import { getTimeOfDay } from '../rules/index.js';
 
 let uiState = 'root';
@@ -178,8 +178,9 @@ export const renderActionButtons = (ctx, onAction) => {
 
         } else if (uiState === 'buy') {
             const shopNpc = localNpcs.find(id => NPCS[id]?.role === 'shop');
-            if (shopNpc && NPCS[shopNpc].shop) {
-                NPCS[shopNpc].shop.forEach(itemId => {
+            const shopInventory = getShopInventory(shopNpc);
+            if (shopNpc && shopInventory.length > 0) {
+                shopInventory.forEach(itemId => {
                     const item = ITEMS[itemId];
                     if (item) {
                         const price = getBuyPrice(itemId);
@@ -229,7 +230,8 @@ export const renderActionButtons = (ctx, onAction) => {
             Object.values(QUESTS || {}).forEach(q => {
                 if (localPlayer.quests?.[q.id]) return;
                 if (!localNpcs.includes(q.giver)) return;
-                const prereqOk = !q.prerequisite || localPlayer.quests[q.prerequisite]?.completed;
+                const prereqIds = Array.isArray(q.prerequisite) ? q.prerequisite : (q.prerequisite ? [q.prerequisite] : []);
+                const prereqOk = prereqIds.every(pid => localPlayer.quests?.[pid]?.completed);
                 if (prereqOk) addButton(`Accept: ${q.name} 📋`, `quest accept ${q.id}`);
             });
             const completable = active.filter(([qid, data]) => {

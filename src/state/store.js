@@ -17,12 +17,15 @@ export const TAB_CHANNEL = typeof BroadcastChannel !== 'undefined'
 export let worldState = { 
     seed: '', 
     day: 0, 
-    mood: '', 
-    season: '', 
-    seasonNumber: 1, 
-    threatLevel: 0, 
-    scarcity: [], 
-    lastTick: 0 
+    mood: '',
+    season: '',
+    seasonNumber: 1,
+    threatLevel: 0,
+    scarcity: [],
+    surplus: [],
+    event: null,
+    weather: 'clear',
+    lastTick: 0
 };
 
 export const players = new Map(); // id -> {name, location, ph, level, xp, ts, publicKey, rawPresence}
@@ -109,6 +112,22 @@ export let hasSyncedWithArbiter = false;
 export function setHasSyncedWithArbiter(val) {
     hasSyncedWithArbiter = val;
 }
+
+// Tracks the last time a valid signed arbiter beacon was received.
+// Used to distinguish "arbiter never seen" (0) from "arbiter went offline".
+export let arbiterLastSeenAt = 0;
+export const setArbiterLastSeenAt = () => { arbiterLastSeenAt = Date.now(); };
+
+// Hard state is frozen when the arbiter has been absent for >5 minutes.
+// During a freeze, durable rewards (XP, loot, gold) are queued rather than
+// applied immediately — they will be drained when the arbiter returns.
+const HARD_STATE_FREEZE_MS = 5 * 60 * 1000;
+export const isHardStateFrozen = () =>
+    arbiterLastSeenAt > 0 && (Date.now() - arbiterLastSeenAt) > HARD_STATE_FREEZE_MS;
+
+// Queue of deferred hard-state operations accumulated during an arbiter outage.
+// Each entry: { type: 'kill'|'quest'|'craft', payload: any, ts: number }
+export const hardStateQueue = [];
 
 // --- PVP STATE CHANNELS ---
 export let pendingDuel = null; // { challengerId, challengerName, expiresAt, day }
@@ -199,6 +218,11 @@ export const loadLocalState = async (log) => {
             if (!localPlayer.equipped) localPlayer.equipped = { weapon: null, armor: null };
             if (!world[localPlayer.location]) {
                 localPlayer.location = SPAWN_ROOM_ID;
+            }
+            if (!Array.isArray(localPlayer.visitedRooms)) {
+                localPlayer.visitedRooms = [];
+            } else {
+                localPlayer.visitedRooms = localPlayer.visitedRooms.filter(id => world[id]);
             }
             const safeSpawn = resolveSafePlayerSpawn(localPlayer.location, localPlayer.x, localPlayer.y);
             localPlayer.x = safeSpawn.x;

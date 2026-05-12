@@ -38,9 +38,6 @@ export const Component = {
   /** Full-screen interactive menu state */
   Menu: 'Menu', // { type: string, title: string, message?: string, entries: Array<{label,detail?,disabled?,action?}>, selectedIndex: number, context?: any, parent?: any }
 
-  /** Camera State */
-  Camera: 'Camera', // { x: number, y: number, zoom: number }
-
   /** Local identity marker */
   PlayerControlled: 'PlayerControlled', // {}
 

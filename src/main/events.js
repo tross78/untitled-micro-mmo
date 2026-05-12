@@ -1,5 +1,5 @@
 import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, setPendingTrade } from '../state/store.js';
-import { world, NPCS, ENEMIES, ITEMS, QUESTS } from '../content/data.js';
+import { world, NPCS, ENEMIES, ITEMS, QUESTS, RECIPES } from '../content/data.js';
 import { getNPCLocation } from '../rules/index.js';
 import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, showRoomBanner, advanceDialogue, isDialogueOpen } from '../graphics/renderer.js';
 import { renderActionButtons, log } from '../ui/index.js';
@@ -139,6 +139,7 @@ export const triggerVisualRefresh = () => {
             // Ground tiles: set movement target (Phase 8.5a)
             if (appRuntime.playerEntityId) {
                 appRuntime.world.setComponent(appRuntime.playerEntityId, Component.MovementTarget, { x: tx, y: ty });
+                showToast(`→ (${tx}, ${ty})`);
                 triggerLogicalRefresh();
             }
         });
@@ -218,10 +219,42 @@ export const setupGlobalEvents = () => {
     });
     bus.on('player:move', ({ to, from }) => {
         if (to !== from) {
-            const roomName = world[to]?.name;
-            if (roomName) showRoomBanner(roomName);
+            const room = world[to];
+            if (room?.name) showRoomBanner(room.name);
             if (!localPlayer.visitedRooms) localPlayer.visitedRooms = [from];
-            if (!localPlayer.visitedRooms.includes(to)) localPlayer.visitedRooms.push(to);
+            const isFirstVisit = !localPlayer.visitedRooms.includes(to);
+            if (isFirstVisit) localPlayer.visitedRooms.push(to);
+
+            // Season/mood flavor on room entry
+            if (worldState.season && worldState.mood) {
+                const seasonLine = `${worldState.season.charAt(0).toUpperCase() + worldState.season.slice(1)}, ${worldState.mood}. Day ${worldState.day}.`;
+                log(seasonLine, '#556');
+            }
+
+            // Craft station hint — only on first visit to avoid spam
+            const hasCraft = RECIPES.some(r => r.location === to);
+            if (hasCraft && isFirstVisit) {
+                log(`[Tip] This is a crafting station. Open the menu to see available recipes.`, '#aaa');
+            }
+
+            // 8.95i: hint locked exits so players know a key item exists
+            const lockedExits = Object.values(world[to]?.exits || {}).filter(destId => {
+                const keyItem = Object.values(ITEMS).find(it => it.unlocks === destId);
+                if (!keyItem) return false;
+                const keyId = Object.keys(ITEMS).find(id => ITEMS[id] === keyItem);
+                return !localPlayer.inventory.includes(keyId);
+            });
+            lockedExits.forEach(destId => {
+                const keyItem = Object.values(ITEMS).find(it => it.unlocks === destId);
+                const keyId = Object.keys(ITEMS).find(id => ITEMS[id] === keyItem);
+                log(`[Tip] ${world[destId]?.name || destId} is locked. You need a ${keyItem.name}.`, '#f80');
+                const dropperNames = Object.values(ENEMIES)
+                    .filter(e => e.loot?.includes(keyId))
+                    .map(e => e.name);
+                if (dropperNames.length > 0) log(`[Tip] ${keyItem.name} drops from: ${dropperNames.join(', ')}.`, '#888');
+            });
+
+            saveLocalState(localPlayer);
         }
         closeMenu();
         triggerLogicalRefresh();

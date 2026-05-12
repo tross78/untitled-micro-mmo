@@ -4,7 +4,7 @@ import { getNPCDialogue, getTimeOfDay, xpToLevel } from '../rules/index.js';
 import { log } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
 import { saveLocalState } from '../state/persistence.js';
-import { getNPCsAt, getBuyPrice, getSellPrice, grantItem } from './helpers.js';
+import { getNPCsAt, getBuyPrice, getSellPrice, getShopInventory, grantItem } from './helpers.js';
 
 export const handleNPCCommands = async (command, args) => {
     switch (command) {
@@ -15,7 +15,7 @@ export const handleNPCCommands = async (command, args) => {
             if (!targetId) { log(`They aren't here.`); return true; }
             
             const npc = NPCS[targetId];
-            const dialogue = getNPCDialogue(targetId, worldState.seed, worldState.day, worldState.mood);
+            const dialogue = getNPCDialogue(targetId, worldState.seed, worldState.day, worldState.mood, localPlayer.location, worldState);
             if (npc.role === 'shop' || npc.role === 'quest') {
                 bus.emit('npc:speak', { npcName: npc.name, text: dialogue });
                 bus.emit('ui:queue-menu', { type: 'npc', context: { npcId: targetId, text: dialogue } });
@@ -25,7 +25,8 @@ export const handleNPCCommands = async (command, args) => {
 
             const availableQuests = Object.values(QUESTS).filter(q => q.giver === targetId && !localPlayer.quests[q.id]);
             availableQuests.forEach(q => {
-                if (!q.prerequisite || (localPlayer.quests[q.prerequisite] && localPlayer.quests[q.prerequisite].completed)) {
+                const prereqIds = Array.isArray(q.prerequisite) ? q.prerequisite : (q.prerequisite ? [q.prerequisite] : []);
+                if (prereqIds.every(pid => localPlayer.quests[pid]?.completed)) {
                     log(`[Quest] ${npc.name}: "I have a task for you: ${q.name}. ${q.description}"`, '#ff0');
                 }
             });
@@ -70,9 +71,10 @@ export const handleNPCCommands = async (command, args) => {
             }
 
             const npc = NPCS[shopNpc];
+            const shopInventory = getShopInventory(shopNpc);
             if (!query) {
                 log(`\n--- ${npc.name}'s Shop ---`, '#ffa500');
-                npc.shop.forEach(id => {
+                shopInventory.forEach(id => {
                     const item = ITEMS[id];
                     const price = getBuyPrice(id);
                     const scarcityTag = worldState.scarcity.includes(id) ? ' ⚠️' : '';
@@ -83,7 +85,7 @@ export const handleNPCCommands = async (command, args) => {
                 return true;
             }
 
-            const itemId = npc.shop.find(id => ITEMS[id].name.toLowerCase() === query || id === query);
+            const itemId = shopInventory.find(id => ITEMS[id].name.toLowerCase() === query || id === query);
             if (!itemId) { log(`They don't sell that.`); return true; }
             
             const item = ITEMS[itemId];
@@ -101,8 +103,10 @@ export const handleNPCCommands = async (command, args) => {
             const query = args.slice(1).join(' ').toLowerCase();
             const npcs = getNPCsAt(localPlayer.location);
             const shopNpcId = npcs.find(id => NPCS[id].role === 'shop');
-            if (!shopNpcId) { log(`There is no shop here.`); return true; }
-            if (shopNpcId === 'merchant' && getTimeOfDay() === 'night') {
+            const bountyNpcId = npcs.find(id => NPCS[id].role === 'quest');
+
+            if (!shopNpcId && !bountyNpcId) { log(`There is no shop here.`); return true; }
+            if (shopNpcId === 'merchant' && getTimeOfDay() === 'night' && !bountyNpcId) {
                 log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
                 return true;
             }
@@ -115,6 +119,23 @@ export const handleNPCCommands = async (command, args) => {
             const itemId = localPlayer.inventory[invIdx];
             const item = ITEMS[itemId];
             if (!item || item.type === 'gold' || item.price === 0) { log(`They aren't interested in that.`); return true; }
+
+            // Bounty sell path — quest NPCs (guards) pay bountyPrice for flagged items
+            if (bountyNpcId && item.bountyPrice) {
+                const bountyNpc = NPCS[bountyNpcId];
+                const sellPrice = getSellPrice(itemId);
+                localPlayer.gold += sellPrice;
+                localPlayer.inventory.splice(invIdx, 1);
+                bus.emit('log', { msg: `[System] ${bountyNpc.name} pays you ${sellPrice} Gold bounty for the ${item.name}.`, color: '#ff0' });
+                saveLocalState(localPlayer, true);
+                return true;
+            }
+
+            if (!shopNpcId) { log(`There is no shop here.`); return true; }
+            if (shopNpcId === 'merchant' && getTimeOfDay() === 'night') {
+                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
+                return true;
+            }
 
             const sellPrice = getSellPrice(itemId);
             localPlayer.gold += sellPrice;
@@ -151,7 +172,8 @@ export const handleNPCCommands = async (command, args) => {
                     log(`[ ${chain.toUpperCase()} ]`, '#fa0');
                     qs.forEach(q => {
                         const pq = localPlayer.quests[q.id];
-                        const prereqDone = !q.prerequisite || localPlayer.quests[q.prerequisite]?.completed;
+                        const prereqIds2 = Array.isArray(q.prerequisite) ? q.prerequisite : (q.prerequisite ? [q.prerequisite] : []);
+                        const prereqDone = prereqIds2.every(pid => localPlayer.quests[pid]?.completed);
                         if (!prereqDone && !pq) {
                             log(`  ??? (locked)`, '#555');
                         } else if (!pq) {
@@ -172,13 +194,16 @@ export const handleNPCCommands = async (command, args) => {
                 const q = QUESTS[id];
                 const npcs = getNPCsAt(localPlayer.location);
                 if (!npcs.includes(q.giver)) { log(`Nobody here can give you that quest.`); return true; }
-                if (q.prerequisite && !localPlayer.quests[q.prerequisite]?.completed) {
-                    log(`You need to finish ${QUESTS[q.prerequisite]?.name || q.prerequisite} first.`);
+                const acceptPrereqs = Array.isArray(q.prerequisite) ? q.prerequisite : (q.prerequisite ? [q.prerequisite] : []);
+                const missingPrereq = acceptPrereqs.find(pid => !localPlayer.quests[pid]?.completed);
+                if (missingPrereq) {
+                    log(`You need to finish ${QUESTS[missingPrereq]?.name || missingPrereq} first.`);
                     return true;
                 }
                 
                 if (localPlayer.quests[id]) { log(`You already have that quest.`); return true; }
-                localPlayer.quests[id] = { progress: 0, completed: false };
+                const initialProgress = (q.type === 'explore' && q.objective?.target === localPlayer.location) ? 1 : 0;
+                localPlayer.quests[id] = { progress: initialProgress, completed: false };
                 bus.emit('npc:speak', {
                     npcName: NPCS[q.giver]?.name || 'Quest Giver',
                     text: `Good. Take on ${q.name.toLowerCase()}. ${q.description}`
@@ -193,10 +218,15 @@ export const handleNPCCommands = async (command, args) => {
                 const q = QUESTS[id];
                 if (localPlayer.quests[id].completed) { log(`Already completed.`); return true; }
                 
-                if (localPlayer.quests[id].progress < (q.objective.count || 1)) { log(`Quest not finished yet.`); return true; }
+                const required = q.objective.count || 1;
+                if (q.type === 'fetch' && q.objective.target) {
+                    const held = localPlayer.inventory.filter(i => i === q.objective.target).length;
+                    if (held < required) { log(`You need ${required - held} more ${ITEMS[q.objective.target]?.name || q.objective.target}.`); return true; }
+                } else if (localPlayer.quests[id].progress < required) { log(`Quest not finished yet.`); return true; }
                 
                 const npcs = getNPCsAt(localPlayer.location);
                 if (q.receiver !== null && !npcs.includes(q.receiver)) { log(`Return to the receiver to complete this.`); return true; }
+                if (localPlayer.quests[id].completed) { log(`Already completed.`); return true; }
 
                 localPlayer.quests[id].completed = true;
                 localPlayer.xp += q.reward.xp;

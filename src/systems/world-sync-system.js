@@ -17,6 +17,7 @@ export class WorldSyncSystem {
         this.stores = stores;
         this.worldData = worldData;
         this.entityMap = new Map(); // originalId -> entityId
+        this.prevPos = new Map();   // peerId -> { x, y, location }
     }
 
     update() {
@@ -68,13 +69,25 @@ export class WorldSyncSystem {
             if (p.location !== currentLoc || p.ghost) return;
             activeIds.add(id);
 
+            const px = p.x || 0;
+            const py = p.y || 0;
             let eid = this.entityMap.get(id);
             if (!eid) {
                 eid = this.world.createEntity();
                 this.entityMap.set(id, eid);
                 this.world.setComponent(eid, Component.Sprite, { type: 'peer', palette: 'peer', seed: this.hash(id) });
             }
-            this.world.setComponent(eid, Component.Transform, { mapId: p.location, x: p.x || 0, y: p.y || 0 });
+            const prev = this.prevPos.get(id);
+            this.world.setComponent(eid, Component.Transform, { mapId: p.location, x: px, y: py, facing: p.direction || 's' });
+            // Interpolate movement within the same room (same as local player)
+            if (prev && prev.location === p.location && (prev.x !== px || prev.y !== py)) {
+                this.world.setComponent(eid, Component.Tweenable, {
+                    startX: prev.x, startY: prev.y,
+                    targetX: px, targetY: py,
+                    progress: 0
+                });
+            }
+            this.prevPos.set(id, { x: px, y: py, location: p.location });
             this.world.setComponent(eid, Component.Health, { current: p.hp || 10, max: p.maxHp || 10 });
             this.world.setComponent(eid, 'Identity', { name: p.name || id, id });
         });
@@ -115,6 +128,7 @@ export class WorldSyncSystem {
             if (!activeIds.has(id)) {
                 this.world.deleteEntity(eid);
                 this.entityMap.delete(id);
+                this.prevPos.delete(id);
             }
         }
     }

@@ -8,6 +8,8 @@ import { setupGlobalEvents, triggerLogicalRefresh } from './events.js';
 import { initCrossTabSync } from './sync.js';
 import { verifyMessage } from '../security/crypto.js';
 import { updateSimulation, initNetworking, gameActions, initOfflineDayTick } from '../network/index.js';
+import { patchIceGatheringTimeout } from '../network/config.js';
+import { setArbiterLastSeenAt } from '../state/store.js';
 import { world, GAME_NAME } from '../content/data.js';
 import { GH_GIST_ID, GH_GIST_USERNAME, ARBITER_URL } from '../infra/constants.js';
 import { saveLocalState } from '../state/persistence.js';
@@ -27,6 +29,7 @@ export const processBeacon = async (packet, source) => {
     const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
     const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
     if (valid) {
+        setArbiterLastSeenAt();
         log(`[System] Fast-Path connected via ${source}!`, '#0f0');
         TAB_CHANNEL.postMessage({ type: 'state', packet });
         const stateObj = typeof state === 'string' ? JSON.parse(state) : state;
@@ -47,6 +50,7 @@ export const processBeacon = async (packet, source) => {
 
 export const start = async () => {
     try {
+        patchIceGatheringTimeout();
         ensureShell();
         const validation = validateContent();
         if (!validation.ok) {

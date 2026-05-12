@@ -281,7 +281,7 @@ describe('networking exported module behavior', () => {
         expect(config).toEqual({
             appId: APP_ID,
             relayUrls: TORRENT_TRACKERS,
-            rtcConfig: { iceServers: STUN_SERVERS },
+            rtcConfig: { iceServers: STUN_SERVERS, iceCandidatePoolSize: 3 },
         });
         expect(config.trackerUrls).toBeUndefined();
     });

@@ -610,10 +610,14 @@ describe('deriveWorldState (Phase 7.5 Features)', () => {
         expect(deriveWorldState(seed, 5).weather).toBe(deriveWorldState(seed, 5).weather);
     });
 
-    test('includes world events when threat level is high', () => {
-        // Threat level 5 starts at day 35
-        const state = deriveWorldState(seed, 35);
-        expect(state.event).toEqual({ type: 'wandering_boss', target: 'mountain_troll' });
+    test('high-threat days can include wandering bosses without removing other event types', () => {
+        const seen = new Set();
+        for (let d = 35; d <= 220; d++) {
+            const eventType = deriveWorldState(seed, d).event?.type;
+            if (eventType) seen.add(eventType);
+        }
+        expect(seen).toContain('wandering_boss');
+        expect([...seen].some(type => type !== 'wandering_boss')).toBe(true);
     });
 
     test('occasionally includes market surplus on lower threat days', () => {

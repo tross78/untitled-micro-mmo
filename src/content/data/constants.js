@@ -122,6 +122,7 @@ export const DEFAULT_PLAYER_STATS = {
     buffs: { rested: false, activeElixir: null },
     x: 5, y: 5, // Spatial Coordinates
     ph: null,
+    visitedRooms: [],
 };
 
 export const INSTANCE_CAP = 50;

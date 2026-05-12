@@ -155,6 +155,23 @@ export async function verifyMessage(message, signatureBase64, publicKey) {
 }
 
 /**
+ * Deterministic JSON serialisation — sorts object keys alphabetically at every
+ * depth so that the same logical object produces the same string across all
+ * JS engines regardless of insertion order. Use this when signing or verifying
+ * any cross-peer payload (rollups, presence signature payloads, etc.).
+ */
+export function stableStringify(value) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return JSON.stringify(value);
+    }
+    const sorted = Object.keys(value).sort().reduce((acc, k) => {
+        acc[k] = value[k];
+        return acc;
+    }, {});
+    return '{' + Object.keys(sorted).map(k => JSON.stringify(k) + ':' + stableStringify(sorted[k])).join(',') + '}';
+}
+
+/**
  * Computes a SHA-256 hash of a string.
  */
 export async function computeHash(message) {

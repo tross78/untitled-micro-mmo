@@ -193,6 +193,27 @@ export class MovementSystem {
   */
   async performTransition(entityId, transform, destId, tx, ty) {
     const loc = this.worldData[destId];
+
+    // Key-item gate — Zelda style: item in inventory is the gate, not a level number
+    const keyItem = Object.values(ITEMS).find(it => it.unlocks === destId);
+    if (keyItem) {
+        const keyId = Object.keys(ITEMS).find(id => ITEMS[id] === keyItem);
+        const keyIdx = localPlayer.inventory.indexOf(keyId);
+        if (keyIdx === -1) {
+            log(`[Locked] The door to ${loc?.name || destId} will not open. You need a ${keyItem.name}.`, '#f80');
+            this.world.setComponent(entityId, Component.CollisionBump, { dir: transform.facing || 's', progress: 0 });
+            this.world.removeComponent(entityId, Component.MovementTarget);
+            return;
+        }
+        // Consume the key
+        localPlayer.inventory.splice(keyIdx, 1);
+        log(`You use the ${keyItem.name}. The door swings open.`, '#ff0');
+    }
+
+    // Soft equipment warning on dungeon entry — no hard block, just a heads-up like a Zelda NPC at the threshold
+    if (loc?.zone === 'dungeon' && !localPlayer.equipped?.weapon) {
+        log(`You venture into ${loc.name || destId} unarmed. Equip a weapon first.`, '#f80');
+    }
     const safePos = loc ? findSafeArrival(tx, ty, loc.width, loc.height, (x, y) => this.isWalkable(destId, x, y)) : { x: tx, y: ty };
     
     transform.mapId = destId;
@@ -295,7 +316,7 @@ export class MovementSystem {
 
   openNpcInteraction(npcId) {
     if (!NPCS[npcId]) return;
-    const text = getNPCDialogue(npcId, worldState.seed, worldState.day, worldState.mood);
+    const text = getNPCDialogue(npcId, worldState.seed, worldState.day, worldState.mood, localPlayer.location, worldState);
     const role = NPCS[npcId].role;
     if (role === 'shop' || role === 'quest') {
       bus.emit('npc:speak', { npcName: NPCS[npcId].name, text });

@@ -3,7 +3,7 @@ import { defineItem } from '../define.js';
 export const ITEMS = {
     wolf_pelt:      defineItem('wolf_pelt',      { name: 'Wolf Pelt',      type: 'material', price: 5, color: '#aaa' }),
     old_tome:       defineItem('old_tome',       { name: 'Old Tome',       type: 'material', price: 10, color: '#0af' }),
-    iron_key:       defineItem('iron_key',       { name: 'Iron Key',       type: 'key',      price: 0, color: '#ff0' }),
+    iron_key:       defineItem('iron_key',       { name: 'Iron Key',       type: 'key',      price: 0, color: '#ff0', unlocks: 'throne_room' }),
     gold:           defineItem('gold',           { name: 'Gold (5)',       type: 'gold',       amount: 5, color: '#ff0' }),
     potion:         defineItem('potion',         { name: 'Health Potion',  type: 'consumable',  heal: 20, price: 18, color: '#0f0' }),
     ale:            defineItem('ale',            { name: 'Ale',            type: 'consumable',  heal: 6,  price: 4, color: '#aaa' }),
@@ -13,7 +13,7 @@ export const ITEMS = {
     magic_staff:    defineItem('magic_staff',    { name: 'Magic Staff',    type: 'weapon',      bonus: 8, price: 300, color: '#f0f' }),
     healing_elixir: defineItem('healing_elixir', { name: 'Healing Elixir', type: 'consumable',  heal: 45, price: 36, color: '#0f0' }),
     strength_elixir: defineItem('strength_elixir', { name: 'Strength Elixir', type: 'buff',      atkBonus: 5, price: 54, color: '#fa0' }),
-    bandit_mask:    defineItem('bandit_mask',    { name: 'Bandit Mask',    type: 'material',    price: 25, color: '#aaa' }),
+    bandit_mask:    defineItem('bandit_mask',    { name: 'Bandit Mask',    type: 'material',    price: 25, bountyPrice: 40, color: '#aaa' }),
     wheat:          defineItem('wheat',          { name: 'Wheat Bundle',   type: 'material', price: 3, color: '#ddc36b' }),
     wood:           defineItem('wood',           { name: 'Wood Bundle',    type: 'material', price: 2, color: '#aaa' }),
     iron:           defineItem('iron',           { name: 'Iron Ore',       type: 'material', price: 10, color: '#aaa' }),

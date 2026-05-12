@@ -241,6 +241,16 @@ export const validateContent = (defs) => {
     }
   }
 
+  // Phase 8.55d: Key rooms must have at least one scenery item as a visual landmark.
+  const KEY_ROOMS = new Set(['cellar', 'tavern', 'market', 'herbalist_hut', 'forest_edge', 'ruins', 'crossroads', 'mill']);
+  for (const room of rooms) {
+    if (!KEY_ROOMS.has(room.id)) continue;
+    const sceneryCount = (room.scenery || []).length;
+    if (sceneryCount === 0) {
+      problems.push(`Room "${room.id}" is a key room but has no scenery landmarks`);
+    }
+  }
+
   for (const npc of npcs) {
     if (npc.home && !roomIds.has(String(npc.home))) {
       problems.push(`NPC "${npc.id}" references missing home room "${npc.home}"`);
@@ -253,9 +263,12 @@ export const validateContent = (defs) => {
   }
 
   for (const quest of quests) {
-    if (quest.prerequisite && !questIds.has(String(quest.prerequisite))) {
-      problems.push(`Quest "${quest.id}" references missing prerequisite "${quest.prerequisite}"`);
-    }
+    const prereqList = Array.isArray(quest.prerequisite) ? quest.prerequisite : (quest.prerequisite ? [quest.prerequisite] : []);
+    prereqList.forEach(pid => {
+      if (!questIds.has(String(pid))) {
+        problems.push(`Quest "${quest.id}" references missing prerequisite "${pid}"`);
+      }
+    });
     if (quest.giver && !npcs.find((npc) => npc.id === quest.giver)) {
       problems.push(`Quest "${quest.id}" references missing giver "${quest.giver}"`);
     }
