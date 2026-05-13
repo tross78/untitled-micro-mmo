@@ -92,7 +92,7 @@ export class MovementSystem {
   }
 
   /**
-   * @param {number} _entityId
+   * @param {number} entityId
    * @param {any} transform
    * @param {string} dir
    */
@@ -316,7 +316,7 @@ export class MovementSystem {
 
   openNpcInteraction(npcId) {
     if (!NPCS[npcId]) return;
-    const text = getNPCDialogue(npcId, worldState.seed, worldState.day, worldState.mood, localPlayer.location, worldState);
+    const text = getNPCDialogue(npcId, worldState.seed, worldState.day, worldState.mood, localPlayer.location, worldState, localPlayer);
     const role = NPCS[npcId].role;
     if (role === 'shop' || role === 'quest') {
       bus.emit('npc:speak', { npcName: NPCS[npcId].name, text });

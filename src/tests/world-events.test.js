@@ -168,3 +168,35 @@ describe('getDynamicRoomDescription', () => {
         expect(desc).toMatch(/storm|rain lashes/i);
     });
 });
+
+describe('getNPCDialogue — Phase 8.75 contextual tagging and interpolation', () => {
+    const defaultLocalPlayer = { ph: 'abcd123', quests: {} };
+    const baseWs = { event: null, weather: 'clear', scarcity: [], surplus: [], season: 'spring' };
+
+    test('returns generated sentence from base pool without crashing', () => {
+        const line = getNPCDialogue('barkeep', 'seed', 1, 'weary', null, baseWs, defaultLocalPlayer);
+        expect(typeof line).toBe('string');
+        expect(line.length).toBeGreaterThan(0);
+    });
+
+    test('returns post_quest line if quest is completed', () => {
+        const localPlayer = { ph: 'test', quests: { tavern_regular: { completed: true } } };
+        const line = getNPCDialogue('barkeep', 'seed', 1, 'weary', null, baseWs, localPlayer);
+        expect(typeof line).toBe('string');
+        expect(line.length).toBeGreaterThan(0);
+    });
+
+    test('switches to scarcity pool if scarce item exists', () => {
+        const ws = { ...baseWs, scarcity: ['bread'] };
+        const line = getNPCDialogue('merchant', 'seed', 1, 'weary', null, ws, defaultLocalPlayer);
+        expect(typeof line).toBe('string');
+        expect(line.length).toBeGreaterThan(0);
+    });
+
+    test('switches to season pool', () => {
+        const ws = { ...baseWs, season: 'winter' };
+        const line = getNPCDialogue('guard', 'seed', 1, 'weary', null, ws, defaultLocalPlayer);
+        expect(typeof line).toBe('string');
+        expect(line.length).toBeGreaterThan(0);
+    });
+});

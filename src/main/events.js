@@ -2,7 +2,7 @@ import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTra
 import { world, NPCS, ENEMIES, ITEMS, QUESTS, RECIPES } from '../content/data.js';
 import { getNPCLocation } from '../rules/index.js';
 import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, showRoomBanner, advanceDialogue, isDialogueOpen } from '../graphics/renderer.js';
-import { renderActionButtons, log } from '../ui/index.js';
+import { log } from '../ui/index.js';
 import { triggerShake } from '../ui/helpers.js';
 import { ACTION } from '../engine/input.js';
 import { handleCommand, getPlayerName, startStateChannel, resolveRound, grantItem } from '../commands/index.js';

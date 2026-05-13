@@ -1,6 +1,7 @@
 import { NPCS, CORPORA, ITEMS } from '../content/data.js';
 import { generateSentence } from '../engine/markov.js';
 import { seededRNG, hashStr } from './utils.js';
+import { getTimeOfDay } from './world.js';
 
 export function getNPCLocation(npcId, worldSeed, day) {
     const npc = NPCS[npcId];
@@ -70,7 +71,7 @@ const EVENT_LINES = {
 const WEATHER_LINES = {
     storm: {
         barkeep:  "Nasty weather out there. Stay inside, have another drink.",
-        merchant: "Few customers in this storm. Can't blame them.",
+        merchant: "Few customers in this storm. Can Blame them.",
         shop:     "The rain is keeping the crowds away. Perfect time for some quiet browsing.",
         guard:    "Storm's making the rounds miserable tonight. Watch your footing.",
         sage:     "The storm speaks of change. Whether for better or worse, I cannot say.",
@@ -91,7 +92,7 @@ function interpolate(line, ctx) {
     return line.replace(/\$\{(\w+)\}/g, (_, k) => ctx[k] ?? _);
 }
 
-export function getNPCDialogue(npcId, worldSeed, day, mood, playerLocation, worldState) {
+export function getNPCDialogue(npcId, worldSeed, day, mood, playerLocation, worldState, localPlayer) {
     const npc = NPCS[npcId];
     if (!npc) return "";
 
@@ -104,11 +105,18 @@ export function getNPCDialogue(npcId, worldSeed, day, mood, playerLocation, worl
 
     // 8.6c: contextual line — event takes priority, then weather, then mood, then base corpus
     const role = npc.role || npcId;
+    
+    // 8.75b: Template string interpolation
+    const scarcityItem = worldState?.scarcity?.[0] ? (ITEMS[worldState.scarcity[0]]?.name || worldState.scarcity[0]) : 'goods';
+    const surplusItem = worldState?.surplus?.[0] ? (ITEMS[worldState.surplus[0]]?.name || worldState.surplus[0]) : 'goods';
+    const playerName = localPlayer?.ph ? `Traveler ${localPlayer.ph.substring(0, 4)}` : 'Friend';
+
     const ctx = {
         season: worldState?.season || '',
         day: String(day),
-        scarcityItem: worldState?.scarcity?.[0] ? (ITEMS[worldState.scarcity[0]]?.name || worldState.scarcity[0]) : 'goods',
-        surplusItem: worldState?.surplus?.[0] ? (ITEMS[worldState.surplus[0]]?.name || worldState.surplus[0]) : 'goods',
+        scarcityItem,
+        surplusItem,
+        playerName
     };
 
     const eventType = worldState?.event?.type;
@@ -123,6 +131,44 @@ export function getNPCDialogue(npcId, worldSeed, day, mood, playerLocation, worl
         return interpolate(weatherLine, ctx);
     }
 
-    const corpus = CORPORA[npcId] || CORPORA[role] || CORPORA['sage'];
-    return generateSentence(corpus, rng);
+    // 8.75a, 8.75c, 8.75d: Contextual corpus tagging and Richer corpora
+    const npcCorpus = CORPORA[npcId] || CORPORA[role] || CORPORA['sage'];
+    let selectedPool = Array.isArray(npcCorpus) ? npcCorpus : (npcCorpus.base || []);
+
+    if (!Array.isArray(npcCorpus)) {
+        // Priority: post_quest > time_night > scarcity/surplus > season > base
+        let questOverride = false;
+        
+        if (localPlayer?.quests) {
+            const completedTags = Object.keys(npcCorpus).filter(k => k.startsWith('post_quest_'));
+            for (const tag of completedTags) {
+                const qid = tag.replace('post_quest_', '');
+                if (localPlayer.quests[qid]?.completed && npcCorpus[tag] && npcCorpus[tag].length > 0) {
+                    selectedPool = npcCorpus[tag];
+                    questOverride = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!questOverride) {
+            const timeOfDay = getTimeOfDay();
+            const hasScarcity = worldState?.scarcity?.length > 0;
+            const hasSurplus = worldState?.surplus?.length > 0;
+            const season = worldState?.season;
+
+            if (timeOfDay === 'night' && npcCorpus.time_night?.length > 0) {
+                selectedPool = npcCorpus.time_night;
+            } else if (hasScarcity && npcCorpus.scarcity?.length > 0) {
+                selectedPool = npcCorpus.scarcity;
+            } else if (hasSurplus && npcCorpus.surplus?.length > 0) {
+                selectedPool = npcCorpus.surplus;
+            } else if (season && npcCorpus[`season_${season}`]?.length > 0) {
+                selectedPool = npcCorpus[`season_${season}`];
+            }
+        }
+    }
+
+    const generated = generateSentence(selectedPool, rng);
+    return interpolate(generated, ctx);
 }

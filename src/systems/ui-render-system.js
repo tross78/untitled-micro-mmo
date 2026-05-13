@@ -6,7 +6,7 @@ import { levelBonus, getDynamicRoomDescription } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';
 import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
-import { ENEMIES, NPCS, roomHasFeature } from '../content/data.js';
+import { ENEMIES, roomHasFeature } from '../content/data.js';
 
 /**
  * UIRenderSystem handles HUD, dialogue, menus, and overlays.

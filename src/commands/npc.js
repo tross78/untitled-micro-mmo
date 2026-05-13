@@ -15,7 +15,7 @@ export const handleNPCCommands = async (command, args) => {
             if (!targetId) { log(`They aren't here.`); return true; }
             
             const npc = NPCS[targetId];
-            const dialogue = getNPCDialogue(targetId, worldState.seed, worldState.day, worldState.mood, localPlayer.location, worldState);
+            const dialogue = getNPCDialogue(targetId, worldState.seed, worldState.day, worldState.mood, localPlayer.location, worldState, localPlayer);
             if (npc.role === 'shop' || npc.role === 'quest') {
                 bus.emit('npc:speak', { npcName: npc.name, text: dialogue });
                 bus.emit('ui:queue-menu', { type: 'npc', context: { npcId: targetId, text: dialogue } });
