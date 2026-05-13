@@ -629,6 +629,12 @@ const SPRITE_ALIASES = {
     forest_troll:   'cave_troll',
 };
 
+export function usesCompiledShape(type) {
+    const resolvedType = SPRITE_ALIASES[type] || type;
+    const compiledShape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
+    return compiledShape ? compiledShape.some(row => row.replace(/0/g, '').length > 0) : false;
+}
+
 export function getGrayscaleTemplate(type, seed = 0) {
     if (!type) return null;
     const resolvedType = SPRITE_ALIASES[type] || type;

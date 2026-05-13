@@ -58,6 +58,7 @@ jest.mock('../graphics/renderer.js', () => ({
     isDialogueOpen: jest.fn(() => false),
     setVisualRefreshCallback: jest.fn(),
     setLogicalRefreshCallback: jest.fn(),
+    renderWorld: jest.fn(),
 }));
 
 // ─── BUG 1: Combat loot must go through grantItem to advance fetch quests ───

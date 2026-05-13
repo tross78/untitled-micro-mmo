@@ -130,10 +130,10 @@ export const triggerVisualRefresh = () => {
             const loc = world[localPlayer.location];
             if (tx < 0 || tx >= loc.width || ty < 0 || ty >= loc.height) return;
             if (entity?.type === 'self') {
-                openMenu('root');
+                // tap self: no-op — use the Menu button to open the main menu
                 return;
             }
-            if (entity?.type === 'npc') { handleCommand(`talk ${entity.id}`).then(triggerLogicalRefresh); return; }
+            if (entity?.type === 'npc') { openMenu('npc', { npcId: entity.id }); return; }
             if (entity?.type === 'enemy') { handleCommand('attack').then(triggerLogicalRefresh); return; }
             
             // Ground tiles: set movement target (Phase 8.5a)
@@ -151,35 +151,6 @@ export const triggerLogicalRefresh = () => {
     if (_lRefreshTimer) return;
     _lRefreshTimer = setTimeout(() => {
         _lRefreshTimer = null;
-        const ctx = {
-            localPlayer, world, NPCS, worldState, getNPCLocation, ENEMIES, ITEMS, QUESTS, pendingDuel, pendingTrade, players, shardEnemies
-        };
-        renderActionButtons(ctx, (cmdOrAction) => {
-            const ACTION_VALUES = new Set(Object.values(ACTION));
-            if (ACTION_VALUES.has(cmdOrAction)) {
-                bus.emit('input:action', { action: cmdOrAction, type: 'down' });
-            } else if (cmdOrAction === 'help-keys') {
-                log(`\n--- Keyboard Shortcuts ---`, '#aaa');
-                log(`WASD / Arrows — Move one tile`, '#aaa');
-                log(`Space / E — Interact (talk / use exit)`, '#aaa');
-                log(`F / Z — Attack`, '#aaa');
-                log(`I / Tab — Inventory`, '#aaa');
-                log(`Escape — Back / Cancel`, '#aaa');
-                log(`\` (backtick) — Toggle radar view`, '#aaa');
-                log(`~ (tilde) — Toggle log panel`, '#aaa');
-                log(`--------------------------\n`, '#aaa');
-            } else if (cmdOrAction === 'help-controls') {
-                log(`\n--- Interaction Guide ---`, '#aaa');
-                log(`Tap Floor — Walk to location`, '#aaa');
-                log(`Tap NPC — Talk to them`, '#aaa');
-                log(`Tap Enemy — Start combat`, '#aaa');
-                log(`Tap Yourself — Open main menu`, '#aaa');
-                log(`Action Buttons — Use skills and items`, '#aaa');
-                log(`--------------------------\n`, '#aaa');
-            } else {
-                handleCommand(cmdOrAction).then(triggerLogicalRefresh);
-            }
-        });
         triggerVisualRefresh();
     }, 50);
 };
@@ -294,6 +265,29 @@ export const setupGlobalEvents = () => {
         openMenu(type, context || {});
     });
 
+    bus.on('ui:hud-action', ({ action, payload }) => {
+        switch (action) {
+            case 'menu': openMenu('root'); break;
+            case 'inventory': {
+                const existing = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+                if (existing?.type === 'inventory') closeMenu();
+                else openMenu('inventory');
+                break;
+            }
+            case 'quests': {
+                const existing = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+                if (existing?.type === 'quests') closeMenu();
+                else openMenu('quests');
+                break;
+            }
+            case 'attack': handleCommand('attack').then(triggerLogicalRefresh); break;
+            case 'flee': handleCommand('flee').then(triggerLogicalRefresh); break;
+            case 'pickup': bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' }); break;
+            case 'npc': if (payload?.npcId) openMenu('npc', payload); break;
+            case 'bank': handleCommand('bank').then(triggerLogicalRefresh); break;
+        }
+    });
+
     bus.on('ui:menu-select', ({ index }) => {
         activateMenuEntry(index);
     });
@@ -386,6 +380,12 @@ export const setupGlobalEvents = () => {
                 break;
             }
             case ACTION.CONFIRM: return; // no-op; menus handle confirm via their own input path
+            case ACTION.QUESTS: {
+                const existing = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Menu);
+                if (existing?.type === 'quests') closeMenu();
+                else openMenu('quests');
+                return;
+            }
             case ACTION.MENU:
                 openMenu('root');
                 return;

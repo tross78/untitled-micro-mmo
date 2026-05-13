@@ -25,11 +25,11 @@ export const SCENERY_DIMENSIONS = {
     table: [2, 1],
     bed: [2, 1],
     stall: [2, 2],
-    altar: [2, 1],
+    altar: [1, 1],
     counter: [2, 1],
     door_arch: [2, 1],
-    shrub: [2, 2],
-    cauldron: [2, 1],
+    shrub: [1, 1],
+    cauldron: [1, 1],
     sign: [1, 1],
     ladder: [1, 1],
     pillar: [1, 1],
@@ -47,6 +47,8 @@ export const SCENERY_RENDER_STYLE = {
     door_arch: { heightTiles: 2, yOffsetTiles: 1 },
     pillar: { heightTiles: 2, yOffsetTiles: 1 },
     well: { heightTiles: 1.5, yOffsetTiles: 0.5 },
+    altar: { heightTiles: 1.5, yOffsetTiles: 0.5 },
+    shrub: { heightTiles: 1.5, yOffsetTiles: 0.5 },
 };
 
 /**

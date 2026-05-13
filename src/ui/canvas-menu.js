@@ -104,6 +104,7 @@ export function buildCanvasMenu(type, context, menuCtx) {
         entries.push({ label: 'Status', detail: 'Effects & world state', action: { kind: 'menu', menuType: 'status' } });
         entries.push({ label: 'Map', detail: 'Connected locations', action: { kind: 'menu', menuType: 'map' } });
         entries.push({ label: 'Audio', detail: audio.muted ? 'Muted' : `Music ${Math.round(audio.music * 100)}% / SFX ${Math.round(audio.sfx * 100)}%`, action: { kind: 'menu', menuType: 'audio' } });
+        entries.push({ label: 'Help', detail: 'Controls & shortcuts', action: { kind: 'menu', menuType: 'help' } });
         entries.push({ label: 'Close', detail: 'Return to the world', action: { kind: 'close' } });
         return { type, title: 'Adventurer Menu', message: 'Select an action.', entries, selectedIndex: 0 };
     }
@@ -379,6 +380,21 @@ export function buildCanvasMenu(type, context, menuCtx) {
         if (entries.length === 0) entries.push({ label: location?.name || currentLoc, detail: 'You are here', disabled: true });
         entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
         return { type, title: 'World Map', message: `${visited.length} location${visited.length !== 1 ? 's' : ''} discovered`, entries, selectedIndex: entries.length - 1 };
+    }
+
+    if (type === 'help') {
+        const entries = [
+            { label: 'Move', detail: 'WASD / Arrows / Tap floor tile', disabled: true },
+            { label: 'Attack', detail: 'F key / Tap enemy / Attack button', disabled: true },
+            { label: 'Interact', detail: 'E / Space / Tap NPC', disabled: true },
+            { label: 'Inventory', detail: 'I key / Tab / Bag button', disabled: true },
+            { label: 'Quests', detail: 'Q key / Quests button', disabled: true },
+            { label: 'Menu', detail: 'M key / = Menu button', disabled: true },
+            { label: 'Dismiss menu', detail: 'Escape / Back', disabled: true },
+            { label: 'Debug console', detail: '~ key (power users)', disabled: true },
+            { label: 'Back', detail: 'Return', action: { kind: 'back' } },
+        ];
+        return { type, title: 'Controls', message: 'Works on mobile and desktop.', entries, selectedIndex: entries.length - 1 };
     }
 
     return null;

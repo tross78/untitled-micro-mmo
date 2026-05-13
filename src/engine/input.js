@@ -12,6 +12,7 @@ export const ACTION = {
   SPRINT: 'sprint',
   PAGE_UP: 'page_up',
   PAGE_DOWN: 'page_down',
+  QUESTS: 'quests',
 };
 
 const KEY_MAP = {
@@ -26,6 +27,7 @@ const KEY_MAP = {
   'Enter': ACTION.CONFIRM,
   'Shift': ACTION.SPRINT,
   'm': ACTION.MENU, 'M': ACTION.MENU,
+  'q': ACTION.QUESTS, 'Q': ACTION.QUESTS,
   'PageUp': ACTION.PAGE_UP, 'PageDown': ACTION.PAGE_DOWN,
 };
 

@@ -6,6 +6,7 @@ import { levelBonus, getDynamicRoomDescription } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';
 import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
+import { ENEMIES, NPCS, roomHasFeature } from '../content/data.js';
 
 /**
  * UIRenderSystem handles HUD, dialogue, menus, and overlays.
@@ -22,10 +23,13 @@ export class UIRenderSystem {
         this.VP = vp;
         this.worldData = worldData;
         this.worldState = stores.worldState || {};
+        this.shardEnemies = stores.shardEnemies || null;
+        this.getNPCsAt = stores.getNPCsAt || (() => []);
         this.heartSprite = null;
         this.emptyHeartSprite = null;
         this.menuHitRegions = [];
         this.dialogueHitRegions = [];
+        this.hudHitRegions = [];
     }
 
     /**
@@ -35,9 +39,97 @@ export class UIRenderSystem {
     draw(ctx, localPlayerStore) {
         const topBarH = this.drawTopBar(ctx, localPlayerStore);
         this.drawTicker(ctx, topBarH);
+        this.drawHUDBar(ctx, localPlayerStore);
         this.drawDialogue(ctx);
         this.drawMenu(ctx, localPlayerStore);
         this.drawOverlays(ctx);
+    }
+
+    getHudHeight() {
+        return Math.max(56, Math.floor(this.VP.S * 1.25));
+    }
+
+    drawHUDBar(ctx, player) {
+        this.hudHitRegions = [];
+        const HUD_H = this.getHudHeight();
+        const barY = this.VP.CH - HUD_H;
+        const PAD = 8;
+        const loc = this.worldData?.[player.location];
+
+        // Background strip
+        ctx.fillStyle = 'rgba(8, 12, 8, 0.93)';
+        ctx.fillRect(0, barY, this.VP.CW, HUD_H);
+        ctx.fillStyle = 'rgba(199, 216, 171, 0.22)';
+        ctx.fillRect(0, barY, this.VP.CW, 2);
+
+        const btnH = HUD_H - PAD * 2;
+        const fs = Math.max(11, Math.floor(this.VP.S * 0.24));
+
+        // Persistent buttons (right side): Bag, Quests, Menu
+        const persistent = [
+            { label: 'Bag', action: 'inventory' },
+            { label: 'Quests', action: 'quests' },
+            { label: '= Menu', action: 'menu' },
+        ];
+        const pBtnW = Math.max(52, Math.floor(this.VP.S * 1.35));
+        let rx = this.VP.CW - PAD;
+        for (let i = persistent.length - 1; i >= 0; i--) {
+            const btn = persistent[i];
+            rx -= pBtnW;
+            this._drawHUDBtn(ctx, rx, barY + PAD, pBtnW, btnH, btn.label, false, fs);
+            this.hudHitRegions.push({ x: rx, y: barY + PAD, w: pBtnW, h: btnH, action: btn.action });
+            rx -= PAD;
+        }
+
+        // Contextual buttons (left side): up to 3
+        const contextual = this._getContextualBtns(player, loc);
+        const cBtnW = Math.max(60, Math.floor(this.VP.S * 1.6));
+        let cx = PAD;
+        for (const btn of contextual.slice(0, 3)) {
+            this._drawHUDBtn(ctx, cx, barY + PAD, cBtnW, btnH, btn.label, btn.danger || false, fs);
+            this.hudHitRegions.push({ x: cx, y: barY + PAD, w: cBtnW, h: btnH, action: btn.action, payload: btn.payload || null });
+            cx += cBtnW + PAD;
+        }
+    }
+
+    _getContextualBtns(player, loc) {
+        if (!loc) return [];
+        const btns = [];
+        const sharedEnemy = this.shardEnemies?.get(player.location);
+        const enemyDead = !!sharedEnemy && sharedEnemy.hp <= 0;
+        const enemyAlive = !!loc.enemy && !enemyDead && ENEMIES[loc.enemy];
+        const hasLoot = enemyDead && (sharedEnemy?.loot?.length ?? 0) > 0;
+        const inCombat = !!player.currentEnemy;
+        const npcs = this.getNPCsAt(player.location);
+        const hasBank = roomHasFeature(player.location, 'bank');
+
+        if (enemyAlive) {
+            btns.push({ label: inCombat ? 'Strike' : 'Attack', action: 'attack', danger: inCombat });
+            if (inCombat) btns.push({ label: 'Flee', action: 'flee' });
+        }
+        if (hasLoot) btns.push({ label: 'Pickup', action: 'pickup' });
+        if (npcs.length > 0 && !inCombat) btns.push({ label: 'Talk', action: 'npc', payload: { npcId: npcs[0] } });
+        if (hasBank && !inCombat) btns.push({ label: 'Bank', action: 'bank' });
+        return btns;
+    }
+
+    _drawHUDBtn(ctx, x, y, w, h, label, danger, fs) {
+        ctx.fillStyle = danger ? 'rgba(180, 40, 40, 0.35)' : 'rgba(56, 78, 48, 0.88)';
+        roundRect(ctx, x, y, w, h, UI_STYLE.radius);
+        ctx.fill();
+        ctx.strokeStyle = danger ? '#ff6666' : UI_PALETTE.border;
+        ctx.lineWidth = UI_STYLE.borderW;
+        ctx.stroke();
+
+        ctx.font = `bold ${fs}px monospace`;
+        ctx.fillStyle = danger ? '#ffaaaa' : UI_PALETTE.textHi;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, x + w / 2, y + h / 2);
+    }
+
+    resolveHUDClick(x, y) {
+        return this.hudHitRegions.find(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) || null;
     }
 
     drawTopBar(ctx, player) {
@@ -208,7 +300,7 @@ export class UIRenderSystem {
         const BOX_H = Math.floor(this.VP.CH * 0.35);
         const BOX_W = this.VP.CW - 32;
         const BOX_X = 16;
-        const BOX_Y = this.VP.CH - BOX_H - 48;
+        const BOX_Y = this.VP.CH - BOX_H - this.getHudHeight() - 8;
         const PAD = UI_STYLE.pad * 1.5;
 
         ctx.fillStyle = UI_PALETTE.bg;

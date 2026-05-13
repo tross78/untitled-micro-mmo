@@ -144,6 +144,11 @@ export function renderWorld(state, onTileClick) {
                 bus.emit('ui:menu-select', { index: menuIndex });
                 return;
             }
+            const hudHit = appRuntime.uiRender.resolveHUDClick(canvasX, canvasY);
+            if (hudHit) {
+                bus.emit('ui:hud-action', hudHit);
+                return;
+            }
         }
 
         const localCanvasX = canvasX - screenOffsetX;

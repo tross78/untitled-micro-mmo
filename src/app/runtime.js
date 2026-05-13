@@ -18,6 +18,7 @@ import { AudioSystem } from '../systems/audio-system.js';
 import { bus } from '../state/eventbus.js';
 import { world as worldData, NPCS } from '../content/data.js';
 import { worldState, shardEnemies } from '../state/store.js';
+import { getNPCsAt } from '../commands/helpers.js';
 
 class AppRuntime {
   constructor() {
@@ -106,7 +107,7 @@ class AppRuntime {
     // Initialize Render Systems
     this.mapRender = new MapRenderSystem(this.world, this.VP);
     this.entityRender = new EntityRenderSystem(this.world, this.VP);
-    this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState });
+    this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState, shardEnemies, getNPCsAt });
     this.audioSystem = new AudioSystem(this.world);
 
     this.loop = new GameLoop({

@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta } from '../graphics/graphics.js';
+import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta, usesCompiledShape } from '../graphics/graphics.js';
 import { SCENERY_RENDER_STYLE } from '../infra/graphics-constants.js';
 import { getScatteredContent, hashStr } from '../rules/index.js';
 
@@ -188,12 +188,13 @@ export class MapRenderSystem {
         const py = screenOffsetY + sy * this.VP.S;
 
         const compiledMeta = getCompiledAssetMeta(label);
-        const logicalW = compiledMeta?.logicalWidth || w;
-        const logicalH = compiledMeta?.logicalHeight || h;
+        const usingCompiledShape = compiledMeta && usesCompiledShape(label);
+        const logicalW = usingCompiledShape ? compiledMeta.logicalWidth : w;
+        const logicalH = usingCompiledShape ? compiledMeta.logicalHeight : h;
         const template = getGrayscaleTemplate(label) || getGrayscaleTemplate('rock');
         const palette = getSceneryPalette(label);
         const colored = applyPalette(template, palette);
-        const renderStyle = compiledMeta ? {
+        const renderStyle = usingCompiledShape ? {
             heightTiles: compiledMeta.renderHeightTiles,
             yOffsetTiles: compiledMeta.renderYOffsetTiles,
         } : SCENERY_RENDER_STYLE[label];

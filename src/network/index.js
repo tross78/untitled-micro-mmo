@@ -475,7 +475,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendTradeFinal, getTradeFinal] = r.makeAction('trade_finalized');
         const [sendSketch, getSketch] = r.makeAction('presence_sketch');
         const [sendRequest, getRequest] = r.makeAction('request_presence');
-        const [sendIdentity] = r.makeAction('identity_handshake');
+        const [sendIdentity, getIdentity] = r.makeAction('identity_handshake');
         const [sendPresenceDelta, getPresenceDelta] = r.makeAction('presence_delta');
         const [sendAnnounce, getAnnounce] = r.makeAction('presence_announce');
         const [sendCommit, getCommit] = r.makeAction('commit_action');
@@ -487,6 +487,14 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         // HyParView SHUFFLE (item 2) — periodic passive-view exchange keeps the
         // overlay self-healing under churn without manual re-discovery.
+        getIdentity(({ publicKey }, peerId) => {
+            if (!publicKey || peerId === selfId) return;
+            const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+            trackPlayer(peerId, { publicKey, ph, ts: Date.now() });
+            const pending = _pendingPresence.get(peerId);
+            if (pending) { _pendingPresence.delete(peerId); processPresenceSingle(pending, peerId); }
+        });
+
         getShuffle((peerIds, peerId) => {
             hpv.mergeShuffle(peerIds, selfId);
             const reply = hpv.shuffle();
