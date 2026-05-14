@@ -2,6 +2,15 @@ import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
 
 const ICE_GATHER_TIMEOUT_MS = 1500;
 
+/**
+ * @typedef {RTCPeerConnection & { __dcPatched?: boolean }} PatchedPeerInstance
+ * @typedef {(new (configuration?: RTCConfiguration) => PatchedPeerInstance) & {
+ *   prototype: PatchedPeerInstance,
+ *   generateCertificate: typeof RTCPeerConnection.generateCertificate,
+ *   __iceTimeoutPatched?: boolean
+ * }} PatchedPeerCtor
+ */
+
 // One-time RTCPeerConnection patches applied at startup:
 //   1. ICE gathering timeout — prevents Chromium's 10 s hang on VPN/virtual adapters.
 //   2. Unreliable data channels — all Trystero channels get UDP-like semantics
@@ -11,8 +20,10 @@ const ICE_GATHER_TIMEOUT_MS = 1500;
 //      discovery and stabilises the congestion window before real traffic flows.
 export const patchIceGatheringTimeout = () => {
     if (typeof RTCPeerConnection === 'undefined') return;
-    if (RTCPeerConnection.__iceTimeoutPatched) return;
-    const _NativePeer = RTCPeerConnection;
+    /** @type {PatchedPeerCtor} */
+    const NativePeer = /** @type {PatchedPeerCtor} */ (RTCPeerConnection);
+    if (NativePeer.__iceTimeoutPatched) return;
+    const _NativePeer = NativePeer;
 
     // 2. Unreliable data channels (patch the native prototype once).
     if (!_NativePeer.prototype.__dcPatched) {
@@ -29,7 +40,7 @@ export const patchIceGatheringTimeout = () => {
     }
 
     // 1. ICE gathering timeout wrapper.
-    function PatchedPeer(...args) {
+    const PatchedPeer = function(...args) {
         const pc = new _NativePeer(...args);
         let timer = null;
         const flush = () => {
@@ -58,13 +69,16 @@ export const patchIceGatheringTimeout = () => {
             else ch.addEventListener('open', doWarmup, { once: true });
         });
         return pc;
-    }
-    PatchedPeer.prototype = _NativePeer.prototype;
-    PatchedPeer.__iceTimeoutPatched = true;
-    Object.defineProperty(PatchedPeer, 'name', { value: 'RTCPeerConnection' });
+    };
+    /** @type {PatchedPeerCtor} */
+    const patchedPeerCtor = /** @type {PatchedPeerCtor} */ (/** @type {unknown} */ (PatchedPeer));
+    patchedPeerCtor.prototype = _NativePeer.prototype;
+    patchedPeerCtor.generateCertificate = _NativePeer.generateCertificate.bind(_NativePeer);
+    patchedPeerCtor.__iceTimeoutPatched = true;
+    Object.defineProperty(patchedPeerCtor, 'name', { value: 'RTCPeerConnection' });
     try {
-        globalThis.RTCPeerConnection = PatchedPeer;
-        RTCPeerConnection.__iceTimeoutPatched = true;
+        globalThis.RTCPeerConnection = /** @type {typeof RTCPeerConnection} */ (patchedPeerCtor);
+        NativePeer.__iceTimeoutPatched = true;
     } catch (_) { /* sandboxed env — skip silently */ }
 };
 

@@ -14,7 +14,7 @@ export class NetworkSystem {
   /**
    * @param {import('../domain/ecs.js').WorldStore} world
    * @param {any} gameActions - Modular game actions from network/index.js
-   * @param {{ localPlayer: any, players: Map<string,any> }} stores
+   * @param {{ localPlayer?: any, players?: Map<string,any> | Iterable<[string, any]> }} [stores]
    */
   constructor(world, gameActions, stores = {}) {
     this.world = world;

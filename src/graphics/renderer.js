@@ -57,7 +57,9 @@ export function initCanvas() {
 
     // Dev Key Toggle
     window.addEventListener('keydown', (e) => {
-        if (e.key === '`' && !e.target.matches('input,textarea')) {
+        const target = e.target;
+        const isFormField = target instanceof Element && target.matches('input,textarea');
+        if (e.key === '`' && !isFormField) {
             toggleDevRadar();
         }
     });
