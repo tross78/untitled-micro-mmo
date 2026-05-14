@@ -6,11 +6,10 @@ on:
       - main
     paths:
       - 'arbiter/**'
-      - 'src/rules.js'
-      - 'src/crypto.js'
-      - 'src/constants.js'
-      - 'src/iblt.js'
-      - 'src/packer.js'
+      - 'src/network/arbiter-presence-directory.js'
+      - 'src/network/arbiter-state.js'
+      - 'src/network/contracts.js'
+      - 'src/infra/constants.js'
       - 'package.json'
 
 jobs:
