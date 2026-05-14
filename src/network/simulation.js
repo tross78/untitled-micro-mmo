@@ -1,3 +1,12 @@
+// simulation.js — arbiter sync and day-tick logic.
+//
+// Two paths for day advancement:
+//   1. Arbiter online: updateSimulation() receives signed beacon state; derives world from seed+day.
+//   2. Arbiter offline: initOfflineDayTick() runs a local 24h timer as fallback (8.95k).
+//
+// All world state derives from (seed, day) via deriveWorldState() — clients never trust
+// arbiter-supplied event/weather/scarcity values directly; they re-derive from seed+day.
+// The arbiter only supplies the authoritative (seed, day, tick) triple.
 import { worldState, localPlayer, setHasSyncedWithArbiter, hasSyncedWithArbiter, setBans, bansHash, WORLD_STATE_KEY, arbiterLastSeenAt } from '../state/store.js';
 import { saveLocalState } from '../state/persistence.js';
 import { deriveWorldState, getTimeOfDay } from '../rules/index.js';
@@ -100,9 +109,12 @@ export const initOfflineDayTick = () => {
     }, 60 * 60 * 1000);
 };
 
+// updateSimulation — called on each incoming arbiter beacon.
+// Strips any player-personal fields the arbiter should never send (defence against a
+// compromised or buggy arbiter mutating localPlayer via the world-state path).
 export const updateSimulation = (state) => {
     if (!state) return;
-    
+
     const personalFields = ['ph', 'name', 'xp', 'level', 'gold', 'inventory', 'quests', 'hp', 'maxHp'];
     personalFields.forEach(f => { if (f in state) delete state[f]; });
 

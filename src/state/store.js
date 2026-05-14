@@ -14,9 +14,15 @@ export const TAB_CHANNEL = typeof BroadcastChannel !== 'undefined'
         return { postMessage: () => {}, onmessage: null, close: () => {} };
     })();
 
-export let worldState = { 
-    seed: '', 
-    day: 0, 
+// worldState — the live shared world snapshot, always derived from (seed, day).
+// Mutated by simulation.js when the arbiter beacon arrives or the offline day ticks.
+// Consumers should read it but never write to it directly (use updateSimulation or applyNewDay).
+// weather: 'clear'|'storm'|'fog' — affects combat and movement cost (getWeatherEffect in world.js).
+// scarcity/surplus: item id arrays — affect shop prices (getScarcityMultiplier in world.js).
+// threatLevel: 0–5 — gates wild events and enemy stat bonuses.
+export let worldState = {
+    seed: '',
+    day: 0,
     mood: '',
     season: '',
     seasonNumber: 1,
@@ -28,9 +34,9 @@ export let worldState = {
     lastTick: 0
 };
 
-export const players = new Map(); // id -> {name, location, ph, level, xp, ts, publicKey, rawPresence}
-export const shadowPlayers = new Map(); // id -> {level, xp, inventory, gold, actionIndex}
-export const shardEnemies = new Map(); // roomId -> {hp, maxHp, lastUpdate}
+export const players = new Map();       // id → {name, location, ph, level, xp, ts, publicKey, rawPresence} — live presence view
+export const shadowPlayers = new Map(); // id → {level, xp, inventory, gold, actionIndex} — untrusted peer state for display only; never used for authoritative game logic
+export const shardEnemies = new Map();  // roomId → {hp, maxHp, lastUpdate} — shared enemy HP for co-op combat; race condition patched in 8.95m
 export const bans = new Set();
 export let bansHash = '';
 

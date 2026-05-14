@@ -1,3 +1,7 @@
+// Pure deterministic world derivation — no side effects, no Math.random() (ADR-008).
+// All outputs are a pure function of (seed, day). Same inputs always produce same outputs,
+// which is required for P2P consensus across clients (ADR-008).
+// Entry point for consumers: deriveWorldState(seed, day) in src/rules/index.js.
 import { SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL } from '../content/data.js';
 import { seededRNG, hashStr } from './utils.js';
 
@@ -30,6 +34,9 @@ export function rollScarcity(rng, _season) {
     return pool.slice(0, count);
 }
 
+// Mood is a Markov chain: each day's mood transitions from the previous day's.
+// Sequences are memoised per seed to avoid re-computing from day 1 each call.
+// MOOD_SEQ_CAP = 3650 (10 years) limits memory; beyond it mood is computed on the fly without caching.
 const _moodSeqs = new Map();
 const MOOD_SEQ_CAP = 3650;
 export const _resetMoodCache = () => _moodSeqs.clear();
@@ -55,6 +62,8 @@ export function getTimeOfDay() {
     return 'night';
 }
 
+// Threat rises by 1 every 7 days, caps at 5. Affects event table weights and enemy combat bonuses.
+// threat >= 3 unlocks wild events (Phase 8.77); threat == 5 enables wandering boss spawns.
 export function getThreatLevel(day) {
     return Math.min(5, Math.floor(day / 7));
 }

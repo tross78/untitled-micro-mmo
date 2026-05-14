@@ -1,5 +1,5 @@
 import { commandDefinitions } from '../content/commands.js';
-import { ITEMS, SCARCITY_ITEMS } from '../content/data.js';
+import { ITEMS, SCARCITY_ITEMS, QUESTS, NPCS, world as ROOMS } from '../content/data.js';
 import { validateContent } from '../content/validate.js';
 import { getCommandDefinition, parseCommandInput } from '../commands/registry.js';
 import * as defs from '../content/index.js';
@@ -169,6 +169,53 @@ describe('content validation', () => {
         expect(result.ok).toBe(false);
         expect(result.problems).toContain('Room "bad_room" exitTile footprint exceeds source room bounds');
         expect(result.problems).toContain('Room "bad_room" has overlapping exitTiles at "3,1"');
+    });
+});
+
+describe('contract: room exit resolution', () => {
+    test('every room exit id resolves to a defined room', () => {
+        const roomIds = new Set(Object.keys(ROOMS));
+        const broken = [];
+        for (const [roomId, room] of Object.entries(ROOMS)) {
+            for (const [dir, targetId] of Object.entries(room.exits || {})) {
+                if (!roomIds.has(targetId)) {
+                    broken.push(`Room "${roomId}" exit "${dir}" → "${targetId}" does not exist`);
+                }
+            }
+        }
+        expect(broken).toEqual([]);
+    });
+});
+
+describe('contract: NPC shop stock integrity', () => {
+    test('every item id in NPC shop arrays exists in ITEMS', () => {
+        const broken = [];
+        for (const [npcId, npc] of Object.entries(NPCS)) {
+            for (const itemId of npc.shop || []) {
+                if (!ITEMS[itemId]) {
+                    broken.push(`NPC "${npcId}" shop lists item "${itemId}" which is not in ITEMS`);
+                }
+            }
+        }
+        expect(broken).toEqual([]);
+    });
+});
+
+describe('contract: quest prerequisite resolution', () => {
+    test('every quest prerequisite id resolves to a defined quest', () => {
+        const questIds = new Set(Object.keys(QUESTS));
+        const broken = [];
+        for (const [questId, quest] of Object.entries(QUESTS)) {
+            const prereqs = Array.isArray(quest.prerequisite)
+                ? quest.prerequisite
+                : quest.prerequisite ? [quest.prerequisite] : [];
+            for (const prereqId of prereqs) {
+                if (!questIds.has(prereqId)) {
+                    broken.push(`Quest "${questId}" prerequisite "${prereqId}" does not exist`);
+                }
+            }
+        }
+        expect(broken).toEqual([]);
     });
 });
 

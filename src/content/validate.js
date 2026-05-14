@@ -25,7 +25,8 @@ const FORAGE_LABEL_TO_ITEM = {
 const hasDuplicateIds = (definitions) => new Set(definitions.map((entry) => entry.id)).size !== definitions.length;
 
 export const validateContent = (defs) => {
-  const { itemDefinitions, enemyDefinitions, roomDefinitions, npcDefinitions, questDefinitions, recipeDefinitions } = defs || require('./index.js');
+  if (!defs) throw new Error('validateContent: defs argument is required (ESM module — cannot use require). Pass the result of importing ./index.js.');
+  const { itemDefinitions, enemyDefinitions, roomDefinitions, npcDefinitions, questDefinitions, recipeDefinitions } = defs;
   /** @type {string[]} */
   const problems = [];
   const rooms = /** @type {Array<Record<string, any>>} */ (roomDefinitions);

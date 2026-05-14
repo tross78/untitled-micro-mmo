@@ -77,7 +77,8 @@ This file is an ADR archive, not a roadmap or implementation checklist. If curre
 
 **Why:** Determinism. The entire simulation must be reproducible from `world_seed + event_log`. `Math.random()` produces different values on every peer and every run, breaking consensus.
 
-**Use instead:** `seededRNG(hashStr(seed_string))`.
+**Use instead:** `seededRNG(hashStr(seed_string))` — defined in `src/rules/utils.js:seededRNG`.  
+**Enforced by:** `src/rules/world.js` (all event/weather/mood derivation uses seededRNG), `arbiter/index.js` (beacon and fraud logic).
 
 ---
 
@@ -86,7 +87,7 @@ This file is an ADR archive, not a roadmap or implementation checklist. If curre
 **Status:** Non-negotiable
 **Do not:** Run `npm install <anything>` without explicit approval.
 
-**Why:** Bundle size limit is 250KB (raised from 175KB in Phase 8.2 to accommodate procedural tile art and shape data). Every new dependency risks exceeding it. Trystero (nostr + torrent), esbuild, and jest are the full dependency set by design.
+**Why:** Bundle size limit is 500KB minified (current build ~297KB; raised from 175KB → 250KB in Phase 8.2, then to 500KB in Phase 8.95g to accommodate procedural tile art and shape data). Every new dependency risks exceeding it. Trystero (torrent), esbuild, and jest are the full dependency set by design. Treat growth over ~50KB as a design review trigger.
 
 ---
 
@@ -133,6 +134,8 @@ This file is an ADR archive, not a roadmap or implementation checklist. If curre
 
 **Why:** UI and audio consumers treat `player:move` as a room transition event. Overloading it for ordinary tile motion caused duplicate room banners, incorrect menu resets, and event payload drift. Same-room motion must use a distinct event (`player:step`) so listeners can opt into the lower-level signal explicitly.
 
+**Enforced by:** `src/systems/movement-system.js` (emits `player:step` for tile motion, `player:move` only on `mapId` change), `src/main/events.js` (room-transition side-effects gated on `player:move`).
+
 ---
 
 ## ADR-015: Authored exit aliases may exist in content but not in directional UI by default
@@ -150,6 +153,8 @@ This file is an ADR archive, not a roadmap or implementation checklist. If curre
 **Do not:** Introduce item ids, quest targets, NPC ids, enemy ids, or room references in authored content unless they resolve to a defined entity and are covered by validation or tests.
 
 **Why:** Several regressions came from authored data referencing nonexistent items or from room prose/UI/runtime disagreeing about the same room. Content is code in this project: if IDs do not resolve cleanly, the build may still pass while gameplay silently degrades. Validation and regression tests must be updated in the same change that introduces new authored references.
+
+**Enforced by:** `src/content/validate.js` (runtime referential integrity check — run via `npm run validate:content`), `src/tests/content.test.js` (regression suite for id resolution).
 
 ---
 
