@@ -25,7 +25,7 @@ export class TweenSystem {
     for (const entityId of tweens) {
       const tween = this.world.getComponent(entityId, Component.Tweenable);
       if (!tween) continue;
-      tween.progress += dt * TWEEN_SPEED;
+      tween.progress += dt * (tween.speed || TWEEN_SPEED);
       if (tween.progress >= 1.0) this.world.removeComponent(entityId, Component.Tweenable);
     }
 

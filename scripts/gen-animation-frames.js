@@ -40,66 +40,91 @@ const framesToPng = (frames) => {
     return encodePng({ width, height: frameH, rgba });
 };
 
+const makeCharCanvas = (width, height, fill = '0') =>
+    Array.from({ length: height }, () => Array.from({ length: width }, () => fill));
+
+const putChar = (canvas, x, y, value) => {
+    if (x < 0 || y < 0 || y >= canvas.length || x >= canvas[0].length) return;
+    canvas[y][x] = value;
+};
+
+const fillRectChar = (canvas, x, y, w, h, value) => {
+    for (let yy = y; yy < y + h; yy++) {
+        for (let xx = x; xx < x + w; xx++) putChar(canvas, xx, yy, value);
+    }
+};
+
+const fillEllipseChar = (canvas, cx, cy, rx, ry, value) => {
+    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
+        for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+            const dx = (x - cx) / rx;
+            const dy = (y - cy) / ry;
+            if (dx * dx + dy * dy <= 1) putChar(canvas, x, y, value);
+        }
+    }
+};
+
+const addOutlineChar = (canvas) => {
+    const out = canvas.map((row) => [...row]);
+    for (let y = 0; y < canvas.length; y++) {
+        for (let x = 0; x < canvas[0].length; x++) {
+            if (canvas[y][x] === '0') continue;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx < 0 || ny < 0 || ny >= canvas.length || nx >= canvas[0].length) continue;
+                if (canvas[ny][nx] === '0') out[ny][nx] = '1';
+            }
+        }
+    }
+    return out.map((row) => row.join(''));
+};
+
+const buildTreeRows = () => {
+    const canvas = makeCharCanvas(48, 48);
+
+    // ALttP-like canopy: side-heavy puffball with irregular bulges and a brighter crown.
+    fillEllipseChar(canvas, 24, 10, 5, 4, '4');
+    fillEllipseChar(canvas, 19, 13, 5, 4, '4');
+    fillEllipseChar(canvas, 30, 14, 5, 4, '4');
+    fillEllipseChar(canvas, 24, 17, 12, 8, '3');
+    fillEllipseChar(canvas, 14, 19, 8, 7, '3');
+    fillEllipseChar(canvas, 35, 20, 9, 8, '3');
+    fillEllipseChar(canvas, 10, 24, 6, 5, '3');
+    fillEllipseChar(canvas, 38, 24, 6, 5, '3');
+    fillEllipseChar(canvas, 18, 26, 8, 6, '3');
+    fillEllipseChar(canvas, 31, 27, 8, 6, '3');
+    fillEllipseChar(canvas, 24, 25, 8, 5, '3');
+    fillEllipseChar(canvas, 23, 28, 6, 3, '3');
+    fillEllipseChar(canvas, 24, 16, 4, 3, '4');
+    fillEllipseChar(canvas, 18, 18, 3, 2, '4');
+    fillEllipseChar(canvas, 30, 19, 3, 2, '4');
+    fillEllipseChar(canvas, 22, 21, 2, 2, '4');
+    fillEllipseChar(canvas, 28, 21, 2, 2, '4');
+    fillEllipseChar(canvas, 17, 24, 2, 2, '4');
+    fillEllipseChar(canvas, 31, 25, 2, 2, '4');
+
+    // Lower-canopy texture, kept above the trunk join.
+    fillEllipseChar(canvas, 20, 23, 3, 2, '4');
+    fillEllipseChar(canvas, 28, 24, 3, 2, '4');
+    fillEllipseChar(canvas, 24, 22, 2, 2, '4');
+
+    // Trunk and root flare. No canopy/highlight pixels extend into this zone.
+    fillRectChar(canvas, 22, 31, 4, 9, '2');
+    fillRectChar(canvas, 23, 32, 2, 8, '2');
+    fillRectChar(canvas, 21, 40, 6, 2, '2');
+    fillRectChar(canvas, 20, 42, 8, 2, '2');
+    fillRectChar(canvas, 18, 43, 12, 1, '2');
+
+    return addOutlineChar(canvas);
+};
+
 // Sprite data: 0=transparent, 1=outline, 2=secondary, 3=primary, 4=accent
 // Colors resolve through each sprite's scenery/entity palette at render time.
 
-// Tree: 48×48, single frame. Wide bushy oval with irregular leafy edges and surface texture.
-// Ellipse center (23,19) rx=17 ry=14; jagged boundary via angle perturbation.
-// Palette via 'tr': 1=#143810 outline, 2=#7a4010 trunk, 3=#286820 body, 4=#48b030 highlight
-const TREE_ROWS = [
-    '000000000000000000000000000000000000000000000000',
-    '000000000000000000000000000000000000000000000000',
-    '000000000000000000000000000000000000000000000000',
-    '000000000000000000000011110000000000000000000000',
-    '000000000000000000001111111100000000000000000000',
-    '000000000000001111111111111110000000000000000000',
-    '000000000000011111111141441111111100000000000000',
-    '000000000000011111411111114111111111000000000000',
-    '000000000000111111141141441444411111100000000000',
-    '000000000000114141141414111141413111100000000000',
-    '000000000001114144141141444141144111110000000000',
-    '000000000011114144441411414114141441110000000000',
-    '000000000111144441414414411141411411111000000000',
-    '000000001111441414111111144411114111111000000000',
-    '000000011111141111141444444144111441111000000000',
-    '000000111144111113111111413114144111111000000000',
-    '000011114444441444111114111114411441111000000000',
-    '000011144144441141111411444111411441111100000000',
-    '000111114111111411111414114111414111111111000000',
-    '000001111414111441141111114144141311133111100000',
-    '000000111141414411141141414411111311111111100000',
-    '000000111414431141444114114111311131111111110000',
-    '000000111141111111441114141111113311111111100000',
-    '000000111144111411114111111111131113111111000000',
-    '000000111434414441441113111111131311111111000000',
-    '000000111144111411341111111111111111111110000000',
-    '000000111114111114141111113111111311111110000000',
-    '000000111144114441111113111111111111111100000000',
-    '000000011111114441311111111131111111111100000000',
-    '000000001114114111111311111131311111111000000000',
-    '000000001111111111111311111113111111000000000000',
-    '000000000111111111111311111111111100000000000000',
-    '000000000001110000011111111111110000000000000000',
-    '000000000000000000000000000000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000001222221000000000000000000000',
-    '000000000000000000122222222210000000000000000000',
-    '000000000000000000122222222210000000000000000000',
-    '000000000000000000000000000000000000000000000000',
-    '000000000000000000000000000000000000000000000000',
-];
-
 const ANIMATIONS = {
     // Tree: 48×48 single frame — must be compiled before assets:compile overwrites it
-    'scenery/tree': { frames: [TREE_ROWS] },
+    'scenery/tree': { frames: [buildTreeRows()] },
     // Torch: 3 frames × 16×16. Flame cycles left → center → right.
     'scenery/torch': { frames: [
         [   // frame 0 — flame leans left

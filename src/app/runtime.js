@@ -205,37 +205,78 @@ class AppRuntime {
         drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
     }
 
-    const { camX, camY, screenOffsetX, screenOffsetY } = this.getViewportTransform(drawX, drawY, transform.mapId);
+    const { camX, camY, screenOffsetX, screenOffsetY, worldVP } = this.getViewportTransform(drawX, drawY, transform.mapId);
 
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
 
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, worldVP.topChrome, this.VP.CW, worldVP.worldPxH);
+    ctx.clip();
+
+    if (this.mapRender) this.mapRender.VP = worldVP;
+    if (this.entityRender) this.entityRender.VP = worldVP;
+    if (this.weatherRender) this.weatherRender.VP = worldVP;
     this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY);
     this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY);
     if (this.weatherRender) this.weatherRender.draw(ctx, worldState, transform.mapId);
+    if (this.mapRender) this.mapRender.VP = this.VP;
+    if (this.entityRender) this.entityRender.VP = this.VP;
+    if (this.weatherRender) this.weatherRender.VP = this.VP;
+    ctx.restore();
+
     this.uiRender.draw(ctx, localPlayerStore);
+  }
+
+  getTopChromeHeight() {
+    const topBar = Math.max(56, Math.floor(this.VP.S * 1.35));
+    const ticker = Math.max(18, Math.floor(this.VP.S * 0.38));
+    return topBar + ticker;
+  }
+
+  getBottomChromeHeight() {
+    return Math.max(64, Math.floor(this.VP.S * 1.7));
+  }
+
+  getWorldViewport() {
+    const topChrome = this.getTopChromeHeight();
+    const bottomChrome = this.getBottomChromeHeight();
+    const worldPxH = Math.max(this.VP.S * 4, this.VP.CH - topChrome - bottomChrome);
+    const worldRows = Math.max(4, Math.ceil(worldPxH / this.VP.S));
+    return {
+      W: this.VP.W,
+      H: worldRows,
+      S: this.VP.S,
+      CW: this.VP.CW,
+      CH: worldRows * this.VP.S,
+      topChrome,
+      bottomChrome,
+      worldPxH,
+    };
   }
 
   getViewportTransform(drawX, drawY, mapId) {
     const room = worldData[mapId];
-    if (!room) return { camX: 0, camY: 0, screenOffsetX: 0, screenOffsetY: 0 };
+    const worldVP = this.getWorldViewport();
+    if (!room) return { camX: 0, camY: 0, screenOffsetX: 0, screenOffsetY: worldVP.topChrome, worldVP };
 
-    const roomFitsX = room.width <= this.VP.W;
-    const roomFitsY = room.height <= this.VP.H;
+    const roomFitsX = room.width <= worldVP.W;
+    const roomFitsY = room.height <= worldVP.H;
 
     const camX = roomFitsX
       ? 0
-      : Math.max(0, Math.min(room.width - this.VP.W, drawX - (this.VP.W / 2)));
+      : Math.max(0, Math.min(room.width - worldVP.W, drawX - (worldVP.W / 2)));
 
     const camY = roomFitsY
       ? 0
-      : Math.max(0, Math.min(room.height - this.VP.H, drawY - (this.VP.H / 2)));
+      : Math.max(0, Math.min(room.height - worldVP.H, drawY - (worldVP.H / 2)));
 
-    const screenOffsetX = roomFitsX ? Math.floor(((this.VP.W - room.width) * this.VP.S) / 2) : 0;
-    const screenOffsetY = roomFitsY ? Math.floor(((this.VP.H - room.height) * this.VP.S) / 2) : 0;
+    const screenOffsetX = roomFitsX ? Math.floor(((worldVP.W - room.width) * worldVP.S) / 2) : 0;
+    const screenOffsetY = worldVP.topChrome + (roomFitsY ? Math.floor(((worldVP.H - room.height) * worldVP.S) / 2) : 0);
 
-    return { camX, camY, screenOffsetX, screenOffsetY };
+    return { camX, camY, screenOffsetX, screenOffsetY, worldVP };
   }
 
   getCamera(drawX, drawY, mapId) {

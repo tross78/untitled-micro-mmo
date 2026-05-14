@@ -63,8 +63,15 @@ export class MovementSystem {
 
       const transform = this.world.getComponent(entityId, Component.Transform);
       const target = this.world.getComponent(entityId, Component.MovementTarget);
+      const targetX = Math.floor(target.x);
+      const targetY = Math.floor(target.y);
 
-      if (transform.x === target.x && transform.y === target.y) {
+      if (target.x !== targetX || target.y !== targetY) {
+        target.x = targetX;
+        target.y = targetY;
+      }
+
+      if (transform.x === targetX && transform.y === targetY) {
         this.world.removeComponent(entityId, Component.MovementTarget);
         continue;
       }
@@ -75,15 +82,14 @@ export class MovementSystem {
         this.handleMove(entityId, transform, nextStepDir);
       } else {
         // Path blocked: give feedback and clear target
-        const dx = target.x - transform.x;
-        const dy = target.y - transform.y;
+        const dx = targetX - transform.x;
+        const dy = targetY - transform.y;
         let failDir;
         if (Math.abs(dx) > Math.abs(dy)) failDir = dx > 0 ? 'e' : 'w';
         else failDir = dy > 0 ? 's' : 'n';
 
         this.world.setComponent(entityId, Component.CollisionBump, { dir: failDir, progress: 0 });
         this.world.removeComponent(entityId, Component.MovementTarget);
-        log('Path blocked.', '#888');
       }
     }
     
@@ -163,7 +169,6 @@ export class MovementSystem {
         transform.facing = dir;
         this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
         this.world.removeComponent(entityId, Component.MovementTarget);
-        log('Blocked.', '#888');
         return;
     }
 
@@ -178,13 +183,13 @@ export class MovementSystem {
     const prev = this.world.getComponent(entityId, Component.Tweenable);
     const vx = prev ? prev.startX + (prev.targetX - prev.startX) * prev.progress : oldX;
     const vy = prev ? prev.startY + (prev.targetY - prev.startY) * prev.progress : oldY;
-
     this.world.setComponent(entityId, Component.Tweenable, {
       startX: vx,
       startY: vy,
       targetX: nx,
       targetY: ny,
-      progress: 0
+      progress: 0,
+      speed: 6.0
     });
   }
 

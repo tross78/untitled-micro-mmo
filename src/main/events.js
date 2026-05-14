@@ -191,7 +191,6 @@ export const setupGlobalEvents = () => {
     bus.on('player:move', ({ to, from }) => {
         if (to !== from) {
             const room = world[to];
-            if (room?.name) showRoomBanner(room.name);
             if (!localPlayer.visitedRooms) localPlayer.visitedRooms = [from];
             const isFirstVisit = !localPlayer.visitedRooms.includes(to);
             if (isFirstVisit) localPlayer.visitedRooms.push(to);
@@ -199,13 +198,13 @@ export const setupGlobalEvents = () => {
             // Season/mood flavor on room entry
             if (worldState.season && worldState.mood) {
                 const seasonLine = `${worldState.season.charAt(0).toUpperCase() + worldState.season.slice(1)}, ${worldState.mood}. Day ${worldState.day}.`;
-                log(seasonLine, '#556');
+                bus.emit('log', { msg: seasonLine, color: '#556', toast: false });
             }
 
             // Craft station hint — only on first visit to avoid spam
             const hasCraft = RECIPES.some(r => r.location === to);
             if (hasCraft && isFirstVisit) {
-                log(`[Tip] This is a crafting station. Open the menu to see available recipes.`, '#aaa');
+                bus.emit('log', { msg: `[Tip] This is a crafting station. Open the menu to see available recipes.`, color: '#aaa', toast: false });
             }
 
             // 8.95i: hint locked exits so players know a key item exists
@@ -218,11 +217,11 @@ export const setupGlobalEvents = () => {
             lockedExits.forEach(destId => {
                 const keyItem = Object.values(ITEMS).find(it => it.unlocks === destId);
                 const keyId = Object.keys(ITEMS).find(id => ITEMS[id] === keyItem);
-                log(`[Tip] ${world[destId]?.name || destId} is locked. You need a ${keyItem.name}.`, '#f80');
+                bus.emit('log', { msg: `[Tip] ${world[destId]?.name || destId} is locked. You need a ${keyItem.name}.`, color: '#f80', toast: false });
                 const dropperNames = Object.values(ENEMIES)
                     .filter(e => e.loot?.includes(keyId))
                     .map(e => e.name);
-                if (dropperNames.length > 0) log(`[Tip] ${keyItem.name} drops from: ${dropperNames.join(', ')}.`, '#888');
+                if (dropperNames.length > 0) bus.emit('log', { msg: `[Tip] ${keyItem.name} drops from: ${dropperNames.join(', ')}.`, color: '#888', toast: false });
             });
 
             saveLocalState(localPlayer);
@@ -292,7 +291,8 @@ export const setupGlobalEvents = () => {
         activateMenuEntry(index);
     });
 
-    bus.on('log', ({ msg }) => {
+    bus.on('log', ({ msg, toast = true }) => {
+        if (toast === false) return;
         const cleanMsg = msg.replace(/<[^>]*>?/gm, '');
         showToast(cleanMsg);
     });

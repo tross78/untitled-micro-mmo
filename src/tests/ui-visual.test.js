@@ -58,6 +58,48 @@ describe('Phase 8.55e: UI Visual Cohesion', () => {
         expect(ctx.fillStyle).toBe(UI_PALETTE.accent);
     });
 
+    test('chrome heights stay compact relative to tile size', () => {
+        vp = { CW: 1200, CH: 600, S: 46 };
+        sys = new UIRenderSystem(world, vp, { tavern: { name: 'Tavern', description: 'Cozy' } });
+
+        expect(sys.getTopBarHeight()).toBeLessThan(80);
+        expect(sys.getTickerHeight()).toBeLessThan(24);
+        expect(sys.getHudHeight()).toBeLessThan(90);
+    });
+
+    test('top bar keeps stat text inside a dedicated right-side panel on narrow viewports', () => {
+        vp = { CW: 404, CH: 581, S: 39 };
+        sys = new UIRenderSystem(world, vp, {
+            tavern: {
+                name: 'The Forest Depths',
+                description: 'Ancient trees block the sky. Goblins lurk in the brush.',
+            }
+        });
+        ctx = makeCtx();
+
+        sys.drawTopBar(ctx, {
+            location: 'tavern',
+            hp: 5,
+            maxHp: 90,
+            attack: 18,
+            defense: 7,
+            gold: 8,
+            forestFights: 15,
+            statusEffects: [],
+            level: 1
+        });
+
+        const calls = ctx.fillText.mock.calls;
+        const statTexts = new Set(['5/90', '18', '7', '8', '15 hunts']);
+        const statCalls = calls.filter(([text]) => statTexts.has(text));
+        expect(statCalls).toHaveLength(5);
+
+        const panelX = vp.CW - Math.min(Math.floor(vp.CW * 0.42), Math.max(180, Math.floor(vp.S * 5.1))) - Math.max(10, Math.floor(vp.S * 0.24));
+        statCalls.forEach(([, x]) => {
+            expect(x).toBeGreaterThanOrEqual(panelX);
+        });
+    });
+
     test('Toasts use UI_PALETTE and rounded rects', () => {
         sys.drawToast(ctx, 'Hello', Date.now(), Date.now() + 1000);
         expect(ctx.fillStyle).toBe(UI_PALETTE.textHi); // Last style set for text

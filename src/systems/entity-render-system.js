@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { generateCharacterSprite, getWalkPose, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, PALETTES } from '../graphics/graphics.js';
+import { generateCharacterSprite, getWalkPose, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES } from '../graphics/graphics.js';
 
 /**
  * EntityRenderSystem draws all spatial entities (Players, NPCs, Enemies).
@@ -49,7 +49,9 @@ export class EntityRenderSystem {
             if (tween) {
                 drawX = tween.startX + (tween.targetX - tween.startX) * tween.progress;
                 drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
-                walkPose = getWalkPose(Date.now());
+                if (spriteDef.palette !== 'enemy') {
+                    walkPose = getWalkPose(Date.now());
+                }
             }
 
             // Apply Bump Offset (Juice Phase 8.5a)
@@ -99,16 +101,33 @@ export class EntityRenderSystem {
 
             // 3. Draw Sprite
             const sprite = this.getSprite(spriteDef.seed, spriteDef.palette, variant, frameIdx);
+            const spriteBounds = getSpriteBounds(variant, frameIdx);
             const bounceY = walkPose.bodyY;
+            const drawW = spriteDef.palette === 'enemy' && spriteBounds
+                ? Math.max(Math.floor(this.VP.S * 0.42), Math.floor(this.VP.S * (spriteBounds.sourceWidth / spriteBounds.canvasWidth)))
+                : Math.floor(this.VP.S * 0.7);
+            const drawH = spriteDef.palette === 'enemy' && spriteBounds
+                ? Math.max(Math.floor(this.VP.S * 0.62), Math.floor(this.VP.S * (spriteBounds.sourceHeight / spriteBounds.canvasHeight)))
+                : this.VP.S;
+            const drawLeft = Math.floor((this.VP.S - drawW) / 2);
+            const drawTop = screenOffsetY + sy * this.VP.S + bounceY + (this.VP.S - drawH);
             
             ctx.save();
             if (facing === 'w') {
                 // Flip horizontally
                 ctx.translate(screenOffsetX + sx * this.VP.S + this.VP.S, 0);
                 ctx.scale(-1, 1);
-                ctx.drawImage(sprite, Math.floor(this.VP.S * 0.15), screenOffsetY + sy * this.VP.S + bounceY, Math.floor(this.VP.S * 0.7), this.VP.S);
+                if (spriteDef.palette === 'enemy' && spriteBounds) {
+                    ctx.drawImage(sprite, spriteBounds.sourceX, spriteBounds.sourceY, spriteBounds.sourceWidth, spriteBounds.sourceHeight, drawLeft, drawTop, drawW, drawH);
+                } else {
+                    ctx.drawImage(sprite, drawLeft, drawTop, drawW, drawH);
+                }
             } else {
-                ctx.drawImage(sprite, screenOffsetX + sx * this.VP.S + Math.floor(this.VP.S * 0.15), screenOffsetY + sy * this.VP.S + bounceY, Math.floor(this.VP.S * 0.7), this.VP.S);
+                if (spriteDef.palette === 'enemy' && spriteBounds) {
+                    ctx.drawImage(sprite, spriteBounds.sourceX, spriteBounds.sourceY, spriteBounds.sourceWidth, spriteBounds.sourceHeight, screenOffsetX + sx * this.VP.S + drawLeft, drawTop, drawW, drawH);
+                } else {
+                    ctx.drawImage(sprite, screenOffsetX + sx * this.VP.S + drawLeft, drawTop, drawW, drawH);
+                }
             }
 
             // 4. Combat Effects (Phase 8.1)
@@ -120,9 +139,9 @@ export class EntityRenderSystem {
                 // transform is still active here, so west-facing must use the same
                 // inset x as the drawImage call, not screen-space screenOffsetX.
                 const flashX = facing === 'w'
-                    ? Math.floor(this.VP.S * 0.15)
-                    : screenOffsetX + sx * this.VP.S + Math.floor(this.VP.S * 0.15);
-                ctx.fillRect(flashX, screenOffsetY + sy * this.VP.S + bounceY, Math.floor(this.VP.S * 0.7), this.VP.S);
+                    ? drawLeft
+                    : screenOffsetX + sx * this.VP.S + drawLeft;
+                ctx.fillRect(flashX, drawTop, drawW, drawH);
             }
             ctx.restore();
 

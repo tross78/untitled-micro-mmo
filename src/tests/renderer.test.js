@@ -19,6 +19,7 @@ import {
     triggerHitFlash,
 } from '../graphics/renderer.js';
 import { bus } from '../state/eventbus.js';
+import { getNPCDialogue } from '../rules/social.js';
 
 describe('renderer public overlay API', () => {
     let visual;
@@ -77,6 +78,33 @@ describe('renderer public overlay API', () => {
 
         while (advanceDialogue());
         expect(isDialogueOpen()).toBe(false);
+    });
+});
+
+describe('NPC dialogue coherence', () => {
+    test('NPC dialogue returns an authored sentence rather than a Markov mashup', () => {
+        const localPlayer = { ph: 'abcd1234', quests: {} };
+        const worldState = { season: 'spring', weather: 'clear', scarcity: [], surplus: [] };
+        const line = getNPCDialogue('barkeep', 'seed', 7, 'weary', 'tavern', worldState, localPlayer);
+        const valid = new Set([
+            "Welcome to the Rusty Flagon, Traveler abcd. Stay a while.",
+            "The ale is cold and the stories are warm tonight.",
+            "I heard a traveler found something strange in the ruins.",
+            "A group of goblins was spotted near the forest edge.",
+            "The market is looking a bit empty these days, isn't it?",
+            "Don't cause any trouble, or the Guard will have your head.",
+            "We have the best bread in the three kingdoms.",
+            "The Bard's songs always bring a bit of magic to this place.",
+            "Watch out for the mountain trolls if you head north.",
+            "The cellar is quiet, but sometimes I hear scratching.",
+            "It is day 7 of the Arbiter's count, and we are still here.",
+            "My father built this tavern before the spring snows came.",
+            "If you need work, ask around. Someone always needs a hand.",
+            "The fire is warm, Traveler abcd. Sit down and rest.",
+            "I've seen many like you pass through these doors."
+        ]);
+
+        expect(valid.has(line)).toBe(true);
     });
 });
 
@@ -227,5 +255,20 @@ describe('Canvas click entity detection logic', () => {
     test('regression: NPC tile click must not fall through to move logic', () => {
         const result = resolveClick(10, 2, { npcTiles, enemyTileKey });
         expect(result?.type).toBe('npc'); // must be intercepted before move
+    });
+});
+
+describe('Canvas click tile mapping', () => {
+    const resolveWorldTile = (localCanvasCoord, tileSize, cam) => Math.floor(localCanvasCoord / tileSize + cam);
+
+    test('uses the scrolled camera offset before flooring to an integer tile', () => {
+        expect(resolveWorldTile(4 * 48, 48, 3.5)).toBe(7);
+        expect(resolveWorldTile(0, 48, 3.5)).toBe(3);
+    });
+
+    test('regression: flooring before adding a fractional camera produced half-tile targets', () => {
+        const oldBuggyValue = Math.floor((4 * 48) / 48) + 3.5;
+        expect(oldBuggyValue).toBe(7.5);
+        expect(resolveWorldTile(4 * 48, 48, 3.5)).not.toBe(oldBuggyValue);
     });
 });

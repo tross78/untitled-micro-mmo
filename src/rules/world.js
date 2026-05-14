@@ -4,6 +4,7 @@
 // Entry point for consumers: deriveWorldState(seed, day) in src/rules/index.js.
 import { SEASONS, SEASON_LENGTH, moodMarkov, SCARCITY_ITEMS, MOOD_INITIAL } from '../content/data.js';
 import { seededRNG, hashStr } from './utils.js';
+import { SCENERY_DIMENSIONS, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants.js';
 
 export function getSeason(day) {
     return SEASONS[(Math.floor((Math.max(1, day) - 1) / SEASON_LENGTH) | 0) % 4];
@@ -211,6 +212,39 @@ export function roomDaySeed(roomKey, day) {
     return hashStr(roomKey) ^ (week * 0x9e3779b9);
 }
 
+const SCENERY_CLASS_BY_LABEL = Object.entries(SCENERY_SIZE_CLASSES).reduce((acc, [size, labels]) => {
+    labels.forEach((label) => { acc[label] = size; });
+    return acc;
+}, /** @type {Record<string, string>} */ ({}));
+
+function markFootprint(blockedTiles, x, y, w = 1, h = 1) {
+    for (let oy = 0; oy < h; oy++) {
+        for (let ox = 0; ox < w; ox++) blockedTiles.add(`${x + ox},${y + oy}`);
+    }
+}
+
+function hasBlockedFootprint(blockedTiles, x, y, w = 1, h = 1) {
+    for (let oy = 0; oy < h; oy++) {
+        for (let ox = 0; ox < w; ox++) {
+            if (blockedTiles.has(`${x + ox},${y + oy}`)) return true;
+        }
+    }
+    return false;
+}
+
+function buildScatterBlockedTiles(roomDef) {
+    const blockedTiles = new Set();
+
+    (roomDef.exitTiles || []).forEach((tile) => markFootprint(blockedTiles, tile.x, tile.y, tile.w || 1, tile.h || 1));
+    (roomDef.staticEntities || []).forEach((entity) => markFootprint(blockedTiles, entity.x, entity.y));
+    (roomDef.scenery || []).forEach((scenery) => markFootprint(blockedTiles, scenery.x, scenery.y, scenery.w || 1, scenery.h || 1));
+    (roomDef.tileOverrides || []).forEach((tile) => {
+        if (tile.type === 'wall' || tile.type === 'water') markFootprint(blockedTiles, tile.x, tile.y);
+    });
+
+    return blockedTiles;
+}
+
 /**
  * Deterministically scatters scenery/items within a room based on the week's seed.
  * @param {string} roomKey
@@ -221,22 +255,39 @@ export function getScatteredContent(roomKey, day, roomDef) {
     const seed = roomDaySeed(roomKey, day);
     const rng = seededRNG(seed);
     const scattered = [];
+    const blockedTiles = buildScatterBlockedTiles(roomDef);
     
     // If the room has scatter rules, apply them
     if (roomDef.sceneryScatter) {
         roomDef.sceneryScatter.forEach(rule => {
             const count = rule.count[0] + rng(rule.count[1] - rule.count[0] + 1);
-            for (let i = 0; i < count; i++) {
-                const x = rng(roomDef.width);
-                const y = rng(roomDef.height);
-                
-                // Ensure not on an exit or occupied tile
-                const isExit = (roomDef.exitTiles || []).some(t => t.x === x && t.y === y);
-                const isOccupied = scattered.some(s => s.x === x && s.y === y);
-                const isStatic = (roomDef.staticEntities || []).some(e => e.x === x && e.y === y);
-                
-                if (!isExit && !isOccupied && !isStatic) {
-                    scattered.push({ x, y, type: rule.type, label: rule.label });
+            const [w, h] = SCENERY_DIMENSIONS[rule.label] || [1, 1];
+            const isLarge = SCENERY_CLASS_BY_LABEL[rule.label] === 'large';
+            const edgeClearance = isLarge ? 1 : 0;
+            let placed = 0;
+            let attempts = 0;
+            const maxAttempts = Math.max(16, count * 10);
+            while (placed < count && attempts < maxAttempts) {
+                attempts++;
+                const maxX = Math.max(1, roomDef.width - w - edgeClearance * 2 + 1);
+                const maxY = Math.max(1, roomDef.height - h - edgeClearance * 2 + 1);
+                const x = edgeClearance + rng(maxX);
+                const y = edgeClearance + rng(maxY);
+
+                if (hasBlockedFootprint(blockedTiles, x, y, w, h)) continue;
+
+                scattered.push({ x, y, type: rule.type, label: rule.label, w, h });
+                markFootprint(blockedTiles, x, y, w, h);
+                placed++;
+            }
+            if (placed < count) {
+                for (let y = edgeClearance; y <= roomDef.height - h - edgeClearance && placed < count; y++) {
+                    for (let x = edgeClearance; x <= roomDef.width - w - edgeClearance && placed < count; x++) {
+                        if (hasBlockedFootprint(blockedTiles, x, y, w, h)) continue;
+                        scattered.push({ x, y, type: rule.type, label: rule.label, w, h });
+                        markFootprint(blockedTiles, x, y, w, h);
+                        placed++;
+                    }
                 }
             }
         });

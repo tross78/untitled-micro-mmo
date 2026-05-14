@@ -36,12 +36,18 @@ export class PatrolSystem {
             const target = patrol.path[patrol.index];
             if (transform.x === target.x && transform.y === target.y) {
                 // Reached point
-                const nextIdx = patrol.index + patrol.dir;
-                if (nextIdx < 0 || nextIdx >= patrol.path.length) {
-                    patrol.dir *= -1;
-                    patrol.waitTicks = 60; // Pause at endpoints (Phase 8.76 P4)
+                const pauseTicks = patrol.pauseTicks ?? 60;
+                if (patrol.mode === 'loop') {
+                    patrol.index = (patrol.index + 1) % patrol.path.length;
+                    patrol.waitTicks = pauseTicks;
                 } else {
-                    patrol.index = nextIdx;
+                    const nextIdx = patrol.index + patrol.dir;
+                    if (nextIdx < 0 || nextIdx >= patrol.path.length) {
+                        patrol.dir *= -1;
+                        patrol.waitTicks = pauseTicks; // Pause at endpoints (Phase 8.76 P4)
+                    } else {
+                        patrol.index = nextIdx;
+                    }
                 }
                 continue;
             }
@@ -55,6 +61,7 @@ export class PatrolSystem {
 
             if (dir) {
                 this.world.setComponent(id, Component.Intent, { action: 'move', dir });
+                patrol.waitTicks = patrol.stepPauseTicks ?? 0;
             }
         }
     }

@@ -1,6 +1,7 @@
 import { defineRoom } from '../content/define.js';
 import { validateContent } from '../content/validate.js';
 import { SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
+import { getScatteredContent } from '../rules/world.js';
 
 describe('Phase 8.5c: Constrained Terrain Generation', () => {
     const roomConfig = {
@@ -138,6 +139,47 @@ describe('Phase 8.5c: Constrained Terrain Generation', () => {
             expect(s.y).toBeGreaterThanOrEqual(0);
             expect(s.x + s.w).toBeLessThanOrEqual(room.width);
             expect(s.y + s.h).toBeLessThanOrEqual(room.height);
+        });
+    });
+
+    test('generated clutter applies composition caps to avoid prop spam', () => {
+        const room = defineRoom('rock_spam_test', {
+            id: 'rock_spam_test',
+            width: 25,
+            height: 25,
+            exits: { north: 'other', south: 'other', east: 'other', west: 'other' },
+            terrain: { floor: 'forest', density: 100, clutter: ['rock'] }
+        });
+
+        const rocks = room.scenery.filter((s) => s.label === 'rock');
+        expect(rocks.length).toBeGreaterThan(0);
+        expect(rocks.length).toBeLessThanOrEqual(10);
+    });
+
+    test('weekly scatter avoids walls, exits, static entities, and scenery footprints', () => {
+        const room = defineRoom('scatter_guard_test', {
+            id: 'scatter_guard_test',
+            width: 9,
+            height: 9,
+            exitTiles: [{ x: 4, y: 0, dest: 'other', destX: 4, destY: 8, w: 1, h: 1 }],
+            staticEntities: [{ id: 'npc1', x: 2, y: 2 }],
+            scenery: [{ x: 5, y: 4, label: 'tree' }],
+            tileOverrides: [
+                { x: 0, y: 0, type: 'wall' },
+                { x: 1, y: 0, type: 'wall' },
+                { x: 7, y: 7, type: 'water' }
+            ],
+            sceneryScatter: [{ type: 'flora', label: 'mushroom', count: [12, 12] }]
+        });
+
+        const blocked = new Set(['4,0', '2,2', '0,0', '1,0', '7,7']);
+        for (let dy = 0; dy < 3; dy++) {
+            for (let dx = 0; dx < 3; dx++) blocked.add(`${5 + dx},${4 + dy}`);
+        }
+
+        const scattered = getScatteredContent(room.id, 7, room);
+        scattered.forEach((entry) => {
+            expect(blocked.has(`${entry.x},${entry.y}`)).toBe(false);
         });
     });
 

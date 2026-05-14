@@ -47,6 +47,7 @@ jest.mock('../graphics/graphics.js', () => ({
 
 import { setupGlobalEvents } from '../main/events.js';
 import { handleCommand } from '../commands/index.js';
+import { showRoomBanner, showToast } from '../graphics/renderer.js';
 
 describe('Input Interaction (Cross-platform)', () => {
     beforeEach(() => {
@@ -152,5 +153,19 @@ describe('Input Interaction (Cross-platform)', () => {
         bus.emit('player:move', { from: 'market', to: 'tavern' });
 
         expect(appRuntime.world.removeComponent).toHaveBeenCalledWith(1, Component.Menu);
+    });
+
+    test('player:move does not stack a room banner over the persistent room header', () => {
+        appRuntime.world.getComponent = jest.fn(() => null);
+
+        bus.emit('player:move', { from: 'forest_edge', to: 'forest_depths' });
+
+        expect(showRoomBanner).not.toHaveBeenCalled();
+    });
+
+    test('log events can opt out of toasts for room-entry flavor text', () => {
+        bus.emit('log', { msg: 'Spring, weary. Day 7.', color: '#556', toast: false });
+
+        expect(showToast).not.toHaveBeenCalledWith('Spring, weary. Day 7.');
     });
 });

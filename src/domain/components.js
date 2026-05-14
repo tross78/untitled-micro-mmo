@@ -15,7 +15,7 @@ export const Component = {
   Transform: 'Transform',
 
   /** Visual interpolation state for smooth tile-to-tile movement.
-   *  Shape: { startX, startY, targetX, targetY, progress }
+   *  Shape: { startX, startY, targetX, targetY, progress, speed? }
    *  Owner: tween-system.js (advances progress), movement-system.js (sets on move) */
   Tweenable: 'Tweenable',
 
@@ -80,7 +80,7 @@ export const Component = {
   Dialogue: 'Dialogue',
 
   /** NPC & Enemy patrol state.
-   *  Shape: { path: [{x,y},...], index: number, dir: 1|-1, waitTicks: number }
+   *  Shape: { path: [{x,y},...], index: number, dir: 1|-1, waitTicks: number, mode?: 'pingpong'|'loop', pauseTicks?: number, stepPauseTicks?: number }
    *  Owner: patrol-system.js (writes) */
   Patrol: 'Patrol',
 

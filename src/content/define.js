@@ -1,5 +1,5 @@
 import { seededRNG, hashStr } from '../rules/utils.js';
-import { SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
+import { SCENERY_DIMENSIONS, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants.js';
 
 // @ts-check
 
@@ -20,6 +20,65 @@ const TILE_CHAR_MAP = {
     'V': 'water', 'S': 'stone_floor', 'D': 'dungeon', 'C': 'cave', 'Z': 'ice',
     'P': 'dirt', 'A': 'sand', 'F': 'forest', 'K': 'cobble'
 };
+
+const SCENERY_CLASS_BY_LABEL = Object.entries(SCENERY_SIZE_CLASSES).reduce((acc, [size, labels]) => {
+    labels.forEach((label) => { acc[label] = size; });
+    return acc;
+}, /** @type {Record<string, string>} */ ({}));
+
+const GENERATED_SCENERY_RULES = {
+    tree: { edgeClearance: 1, minSpacing: 1, sameLabelSpacing: 2, maxCount: (area) => Math.max(2, Math.ceil(area / 110)) },
+    rock: { edgeClearance: 1, minSpacing: 1, sameLabelSpacing: 1, maxCount: (area) => Math.max(2, Math.ceil(area / 72)) },
+    shrub: { edgeClearance: 1, minSpacing: 0, sameLabelSpacing: 0, maxCount: (area) => Math.max(3, Math.ceil(area / 44)) },
+    grave: { edgeClearance: 1, minSpacing: 1, sameLabelSpacing: 1, maxCount: (area) => Math.max(2, Math.ceil(area / 84)) },
+    default: { edgeClearance: 1, minSpacing: 0, sameLabelSpacing: 0, maxCount: (area) => Math.max(2, Math.ceil(area / 60)) },
+};
+
+function getSceneryRule(label) {
+    const rule = GENERATED_SCENERY_RULES[label] || GENERATED_SCENERY_RULES.default;
+    if (SCENERY_CLASS_BY_LABEL[label] === 'large') {
+        return {
+            ...rule,
+            edgeClearance: Math.max(rule.edgeClearance, 1),
+            minSpacing: Math.max(rule.minSpacing, 1),
+        };
+    }
+    return rule;
+}
+
+function rectsOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function canPlaceGeneratedScenery(candidate, placedScenery, blockedTiles, width, height) {
+    const rule = getSceneryRule(candidate.label);
+    if (candidate.x < rule.edgeClearance || candidate.y < rule.edgeClearance) return false;
+    if (candidate.x + candidate.w > width - rule.edgeClearance) return false;
+    if (candidate.y + candidate.h > height - rule.edgeClearance) return false;
+
+    for (let oy = 0; oy < candidate.h; oy++) {
+        for (let ox = 0; ox < candidate.w; ox++) {
+            if (blockedTiles.has(`${candidate.x + ox},${candidate.y + oy}`)) return false;
+        }
+    }
+
+    for (const placed of placedScenery) {
+        const placedRule = getSceneryRule(placed.label);
+        let pad = Math.max(rule.minSpacing, placedRule.minSpacing);
+        if (placed.label === candidate.label) pad = Math.max(pad, rule.sameLabelSpacing, placedRule.sameLabelSpacing);
+        if (SCENERY_CLASS_BY_LABEL[placed.label] === 'large' || SCENERY_CLASS_BY_LABEL[candidate.label] === 'large') {
+            pad = Math.max(pad, 1);
+        }
+        if (rectsOverlap(
+            { x: candidate.x - pad, y: candidate.y - pad, w: candidate.w + pad * 2, h: candidate.h + pad * 2 },
+            { x: placed.x, y: placed.y, w: placed.w || 1, h: placed.h || 1 }
+        )) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 export const defineRoom = (id, definition) => {
     // Compression parsing (Phase 7.9.9.4)
@@ -116,7 +175,11 @@ export const defineRoom = (id, definition) => {
         // 3. Fill terrain
         const overrides = [];
         const scenery = [];
-        const occupiedScenery = new Set();
+        const placedScenery = [];
+        const blockedTiles = new Set(protectedTiles);
+        const area = width * height;
+        const placedByLabel = new Map();
+        const maxByLabel = new Map((t.clutter || []).map((label) => [label, getSceneryRule(label).maxCount(area)]));
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const isEdge = x === 0 || x === width - 1 || y === 0 || y === height - 1;
@@ -125,34 +188,27 @@ export const defineRoom = (id, definition) => {
 
                 if (isEdge && !isExit) {
                     overrides.push({ x, y, type: 'wall' });
-                } else if (!isProtected && rng(100) < (t.density || 10)) {
-                    if (t.clutter) {
+                } else {
+                    let placed = false;
+                    if (!isProtected && t.clutter && rng(100) < (t.density || 10)) {
                         const label = t.clutter[rng(t.clutter.length)];
+                        const currentCount = placedByLabel.get(label) || 0;
+                        const maxCount = maxByLabel.get(label) || Infinity;
                         const [w, h] = SCENERY_DIMENSIONS[label] || [1, 1];
-                        const fits = x + w <= width && y + h <= height;
-                        let clear = fits;
-                        if (clear) {
-                            for (let oy = 0; oy < h && clear; oy++) {
-                                for (let ox = 0; ox < w; ox++) {
-                                    const key = `${x + ox},${y + oy}`;
-                                    if (protectedTiles.has(key) || occupiedScenery.has(key)) {
-                                        clear = false;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (clear) {
-                            scenery.push({ x, y, label, w, h });
+                        const candidate = { x, y, label, w, h };
+                        if (currentCount < maxCount && canPlaceGeneratedScenery(candidate, placedScenery, blockedTiles, width, height)) {
+                            scenery.push(candidate);
+                            placedScenery.push(candidate);
+                            placedByLabel.set(label, currentCount + 1);
+                            placed = true;
                             for (let oy = 0; oy < h; oy++) {
                                 for (let ox = 0; ox < w; ox++) {
-                                    occupiedScenery.add(`${x + ox},${y + oy}`);
+                                    blockedTiles.add(`${x + ox},${y + oy}`);
                                 }
                             }
                         }
                     }
-                } else if (t.floor) {
-                    overrides.push({ x, y, type: t.floor });
+                    if (!placed && t.floor) overrides.push({ x, y, type: t.floor });
                 }
             }
         }

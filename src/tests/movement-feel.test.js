@@ -1,10 +1,12 @@
+import { jest } from '@jest/globals';
 import { WorldStore } from '../domain/ecs.js';
 import { Component } from '../domain/components.js';
 import { MovementSystem } from '../systems/movement-system.js';
 import { TweenSystem } from '../systems/tween-system.js';
+import { bus } from '../state/eventbus.js';
 
 describe('Phase 8.5a: Movement Feel and Touch Affordances', () => {
-    let world, movementSystem, tweenSystem, worldData;
+    let world, movementSystem, tweenSystem, worldData, emitSpy;
 
     beforeEach(() => {
         world = new WorldStore();
@@ -15,8 +17,13 @@ describe('Phase 8.5a: Movement Feel and Touch Affordances', () => {
                 tileOverrides: [{ x: 5, y: 5, type: 'wall' }]
             }
         };
+        emitSpy = jest.spyOn(bus, 'emit');
         movementSystem = new MovementSystem(world, worldData, {});
         tweenSystem = new TweenSystem(world);
+    });
+
+    afterEach(() => {
+        emitSpy.mockRestore();
     });
 
     test('CollisionBump is added when moving into a wall', () => {
@@ -97,5 +104,17 @@ describe('Phase 8.5a: Movement Feel and Touch Affordances', () => {
 
         expect(world.getComponent(player, Component.CollisionBump)).toBeDefined();
         expect(world.getComponent(player, Component.MovementTarget)).toBeUndefined();
+        expect(emitSpy).not.toHaveBeenCalledWith('log', expect.objectContaining({ msg: 'Path blocked.' }));
+    });
+
+    test('enemy movement uses the same tween speed as player movement', () => {
+        const enemy = world.createEntity();
+        world.setComponent(enemy, Component.Transform, { mapId: 'room1', x: 0, y: 0, facing: 'e' });
+        world.setComponent(enemy, Component.Sprite, { type: 'goblin', palette: 'enemy', seed: 1 });
+
+        movementSystem.handleMove(enemy, world.getComponent(enemy, Component.Transform), 'e');
+
+        const tween = world.getComponent(enemy, Component.Tweenable);
+        expect(tween.speed).toBeCloseTo(6.0);
     });
 });

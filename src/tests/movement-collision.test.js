@@ -66,5 +66,6 @@ describe('movement collisions against occupants and scenery', () => {
         expect(world.getComponent(player, Component.CollisionBump)).toMatchObject({ dir: 'e', progress: 0 });
         expect(world.getComponent(player, Component.MovementTarget)).toBeUndefined();
         expect(world.getComponent(player, Component.Transform)).toMatchObject({ x: 4, y: 5, mapId: 'room' });
+        expect(emitSpy).not.toHaveBeenCalledWith('log', expect.objectContaining({ msg: 'Blocked.' }));
     });
 });

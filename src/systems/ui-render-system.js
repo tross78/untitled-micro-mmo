@@ -45,8 +45,16 @@ export class UIRenderSystem {
         this.drawOverlays(ctx);
     }
 
+    getTopBarHeight() {
+        return Math.max(56, Math.floor(this.VP.S * 1.35));
+    }
+
+    getTickerHeight() {
+        return Math.max(18, Math.floor(this.VP.S * 0.38));
+    }
+
     getHudHeight() {
-        return Math.max(56, Math.floor(this.VP.S * 1.25)) + this.VP.S;
+        return Math.max(64, Math.floor(this.VP.S * 1.7));
     }
 
     drawHUDBar(ctx, player) {
@@ -62,8 +70,8 @@ export class UIRenderSystem {
         ctx.fillStyle = 'rgba(199, 216, 171, 0.22)';
         ctx.fillRect(0, barY, this.VP.CW, 2);
 
-        const btnH = HUD_H - PAD * 2;
-        const fs = Math.max(11, Math.floor(this.VP.S * 0.24));
+        const btnH = Math.max(36, HUD_H - PAD * 2);
+        const fs = Math.max(11, Math.floor(this.VP.S * 0.22));
 
         // Persistent buttons (right side): Bag, Quests, Menu
         const persistent = [
@@ -136,8 +144,10 @@ export class UIRenderSystem {
         const room = this.worldData?.[player.location];
         if (!room) return 0;
 
-        const STRIP = Math.max(64, Math.floor(this.VP.S * 1.35));
-        const PAD = 12;
+        const STRIP = this.getTopBarHeight();
+        const PAD = Math.max(10, Math.floor(this.VP.S * 0.24));
+        const statsPanelW = Math.min(Math.floor(this.VP.CW * 0.42), Math.max(180, Math.floor(this.VP.S * 5.1)));
+        const leftMaxWidth = Math.max(80, this.VP.CW - statsPanelW - PAD * 3);
         
         // Background
         ctx.fillStyle = UI_PALETTE.overlay;
@@ -152,18 +162,15 @@ export class UIRenderSystem {
         // Room Name
         ctx.font = `bold ${Math.floor(this.VP.S * 0.38)}px monospace`;
         ctx.fillStyle = UI_PALETTE.textHi;
-        ctx.fillText(room.name, PAD, 8);
+        ctx.fillText(this.fitText(ctx, room.name, leftMaxWidth), PAD, 8);
 
         // Room Description (dynamic)
         ctx.font = `${Math.floor(this.VP.S * 0.24)}px monospace`;
         ctx.fillStyle = UI_PALETTE.textLo;
         const fullDesc = getDynamicRoomDescription(room, this.worldState);
-        const summary = fullDesc.length > 60 ? `${fullDesc.slice(0, 57)}...` : fullDesc;
-        ctx.fillText(summary, PAD, Math.floor(STRIP * 0.55));
+        ctx.fillText(this.fitText(ctx, fullDesc, leftMaxWidth), PAD, Math.floor(STRIP * 0.52));
 
         // --- RIGHT SIDE: Player Stats (Phase 8.76 P0c) ---
-        ctx.textAlign = 'right';
-
         if (!this.heartSprite) {
             const template = getGrayscaleTemplate('heart');
             if (template) {
@@ -178,42 +185,86 @@ export class UIRenderSystem {
         const maxHp = (player.maxHp ?? 10) + (bonus.maxHp ?? 0) + (rested ? 5 : 0);
         const atk = (player.attack || 1) + bonus.attack;
         const def = (player.defense || 0) + bonus.defense;
-
-        const statsX = this.VP.CW - PAD;
-        const statsY = 12;
-
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.32)}px monospace`;
-        
-        // HP
-        if (this.heartSprite) {
-            ctx.drawImage(this.heartSprite, statsX - 165, statsY - 4, 20, 20);
-        }
-        ctx.fillStyle = '#ffaaaa';
-        ctx.fillText(`${hp}/${maxHp}`, statsX - 110, statsY);
-
-        // ATK
-        ctx.fillStyle = '#ffcc00';
-        ctx.fillText(`⚔ ${atk}`, statsX - 55, statsY);
-
-        // DEF
-        ctx.fillStyle = '#66ccff';
-        ctx.fillText(`🛡 ${def}`, statsX, statsY);
-
-        // Gold & Hunts
         const gold = player.gold ?? 0;
         const hunts = player.forestFights ?? 0;
-        ctx.font = `bold ${Math.floor(this.VP.S * 0.3)}px monospace`;
-        ctx.fillStyle = UI_PALETTE.accent;
-        ctx.fillText(`◆ ${gold}   ⚡ ${hunts}`, this.VP.CW - PAD, Math.floor(STRIP * 0.55));
+        const panelX = this.VP.CW - statsPanelW - PAD;
+        const panelY = PAD - 2;
+        const panelH = STRIP - PAD * 2 + 2;
+        const gap = Math.max(4, Math.floor(this.VP.S * 0.1));
+        const cellW = Math.floor((statsPanelW - gap) / 2);
+        const rowH = Math.floor((panelH - gap * 2) / 3);
+
+        ctx.fillStyle = 'rgba(18, 24, 18, 0.9)';
+        roundRect(ctx, panelX, panelY, statsPanelW, panelH, UI_STYLE.radius);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(199, 216, 171, 0.24)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        this.drawStatCell(ctx, panelX, panelY, cellW, rowH, {
+            icon: 'heart',
+            text: `${hp}/${maxHp}`,
+            color: '#ffaaaa'
+        });
+        this.drawStatCell(ctx, panelX + cellW + gap, panelY, cellW, rowH, {
+            icon: '⚔',
+            text: String(atk),
+            color: '#ffcc00'
+        });
+        this.drawStatCell(ctx, panelX, panelY + rowH + gap, cellW, rowH, {
+            icon: '🛡',
+            text: String(def),
+            color: '#66ccff'
+        });
+        this.drawStatCell(ctx, panelX + cellW + gap, panelY + rowH + gap, cellW, rowH, {
+            icon: '◆',
+            text: String(gold),
+            color: UI_PALETTE.accent
+        });
+        this.drawStatCell(ctx, panelX, panelY + (rowH + gap) * 2, statsPanelW, rowH, {
+            icon: '⚡',
+            text: `${hunts} hunts`,
+            color: UI_PALETTE.accent
+        });
 
         return STRIP;
+    }
+
+    drawStatCell(ctx, x, y, w, h, { icon, text, color }) {
+        const pad = Math.max(6, Math.floor(this.VP.S * 0.14));
+        const iconSize = Math.max(14, Math.floor(this.VP.S * 0.34));
+        const textSize = Math.max(12, Math.floor(this.VP.S * 0.28));
+
+        ctx.fillStyle = 'rgba(56, 78, 48, 0.22)';
+        roundRect(ctx, x, y, w, h, Math.max(4, Math.floor(UI_STYLE.radius * 0.6)));
+        ctx.fill();
+
+        const iconX = x + pad;
+        const textX = x + pad + iconSize + 6;
+        const textY = y + h / 2;
+
+        if (icon === 'heart' && this.heartSprite) {
+            ctx.drawImage(this.heartSprite, iconX, y + Math.floor((h - iconSize) / 2), iconSize, iconSize);
+        } else {
+            ctx.font = `bold ${iconSize}px monospace`;
+            ctx.fillStyle = color;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(icon, iconX, textY);
+        }
+
+        ctx.font = `bold ${textSize}px monospace`;
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.fitText(ctx, text, Math.max(20, w - (textX - x) - pad)), textX, textY);
     }
 
     drawTicker(ctx, yOffset = 0) {
         const text = getTickerText();
         if (!text) return;
 
-        const barH = Math.max(24, Math.floor(this.VP.S * 0.5));
+        const barH = this.getTickerHeight();
         const barY = yOffset;
         
         ctx.fillStyle = 'rgba(8, 12, 8, 0.6)';
@@ -497,6 +548,16 @@ export class UIRenderSystem {
             }
         });
         if (line) ctx.fillText(line, x, drawY);
+    }
+
+    fitText(ctx, text, maxWidth) {
+        const str = String(text || '');
+        if (ctx.measureText(str).width <= maxWidth) return str;
+        let out = str;
+        while (out.length > 1 && ctx.measureText(`${out}...`).width > maxWidth) {
+            out = out.slice(0, -1);
+        }
+        return `${out}...`;
     }
 
     resolveMenuClick(x, y) {

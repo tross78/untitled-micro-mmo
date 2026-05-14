@@ -71,4 +71,17 @@ describe('Movement Pathfinding (Obstacle-Aware Tap Movement)', () => {
         const mt = world.getComponent(player, Component.MovementTarget);
         expect(mt).toBeUndefined();
     });
+
+    test('normalizes fractional movement targets before pathfinding', () => {
+        const player = world.createEntity();
+        world.setComponent(player, Component.Transform, { mapId: 'room1', x: 0, y: 0, facing: 's' });
+        world.setComponent(player, Component.MovementTarget, { x: 1.5, y: 0.25 });
+
+        movementSystem.update();
+
+        const transform = world.getComponent(player, Component.Transform);
+        const target = world.getComponent(player, Component.MovementTarget);
+        expect(transform).toMatchObject({ x: 1, y: 0 });
+        expect(target).toMatchObject({ x: 1, y: 0 });
+    });
 });

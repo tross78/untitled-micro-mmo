@@ -39,4 +39,28 @@ describe('PatrolSystem', () => {
         expect(patrol.dir).toBe(-1);
         expect(patrol.waitTicks).toBe(60);
     });
+
+    it('should loop patrol paths instead of ping-pong when mode is loop', () => {
+        const id = world.createEntity();
+        const path = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }];
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'test' });
+        world.setComponent(id, Component.Patrol, { path, index: 2, dir: 1, waitTicks: 0, mode: 'loop', pauseTicks: 24 });
+
+        system.update();
+        const patrol = world.getComponent(id, Component.Patrol);
+        expect(patrol.index).toBe(0);
+        expect(patrol.waitTicks).toBe(24);
+    });
+
+    it('should apply a step pause after issuing patrol movement intent', () => {
+        const id = world.createEntity();
+        const path = [{ x: 0, y: 0 }, { x: 0, y: 1 }];
+        world.setComponent(id, Component.Transform, { x: 0, y: 0, mapId: 'test' });
+        world.setComponent(id, Component.Patrol, { path, index: 1, dir: 1, waitTicks: 0, mode: 'loop', stepPauseTicks: 10 });
+
+        system.update();
+
+        expect(world.getComponent(id, Component.Intent)).toEqual({ action: 'move', dir: 's' });
+        expect(world.getComponent(id, Component.Patrol).waitTicks).toBe(10);
+    });
 });

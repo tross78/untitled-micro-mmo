@@ -3,6 +3,11 @@ import { generateSentence } from '../engine/markov.js';
 import { seededRNG, hashStr } from './utils.js';
 import { getTimeOfDay } from './world.js';
 
+const pickLine = (pool, rng) => {
+    if (!Array.isArray(pool) || pool.length === 0) return '';
+    return pool[rng(pool.length)] || '';
+};
+
 export function getNPCLocation(npcId, worldSeed, day) {
     const npc = NPCS[npcId];
     if (!npc) return null;
@@ -169,6 +174,9 @@ export function getNPCDialogue(npcId, worldSeed, day, mood, playerLocation, worl
         }
     }
 
-    const generated = generateSentence(selectedPool, rng);
-    return interpolate(generated, ctx);
+    const selectedLine = pickLine(selectedPool, rng);
+    if (selectedLine) return interpolate(selectedLine, ctx);
+
+    const fallbackLine = npc.baseDialogue || pickLine(npcCorpus.base, rng) || generateSentence(selectedPool, rng);
+    return interpolate(fallbackLine, ctx);
 }

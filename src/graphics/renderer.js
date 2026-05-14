@@ -161,8 +161,8 @@ export function renderWorld(state, onTileClick) {
             }
         }
 
-        const tx = Math.floor(localCanvasX / appRuntime.VP.S) + camX;
-        const ty = Math.floor(localCanvasY / appRuntime.VP.S) + camY;
+        const tx = Math.floor(localCanvasX / appRuntime.VP.S + camX);
+        const ty = Math.floor(localCanvasY / appRuntime.VP.S + camY);
 
         // Find entity at logical coordinate
         const entities = appRuntime.world.query([Component.Transform, Component.Sprite]);

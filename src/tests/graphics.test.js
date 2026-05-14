@@ -1,4 +1,4 @@
-import { drawTile, generateCharacterSprite, getWalkPose, zoneTileType, roundRect, hasCompiledAssetShape, getCompiledAssetMeta, getGrayscaleTemplate } from '../graphics/graphics.js';
+import { drawTile, generateCharacterSprite, getWalkPose, zoneTileType, roundRect, hasCompiledAssetShape, getCompiledAssetMeta, getGrayscaleTemplate, getSpriteBounds } from '../graphics/graphics.js';
 import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants.js';
 import { ENEMIES } from '../content/data/enemies.js';
 import { NPCS } from '../content/data/npcs.js';
@@ -116,6 +116,17 @@ describe('graphics procedural primitives', () => {
         const tree = getGrayscaleTemplate('tree');
         expect(tree.width).toBeGreaterThanOrEqual(16);
         expect(tree.height).toBeGreaterThan(16);
+    });
+
+    test('sprite bounds expose goblin active frame inside padded canvas', () => {
+        expect(getSpriteBounds('goblin')).toMatchObject({
+            sourceX: 4,
+            sourceY: 3,
+            sourceWidth: 8,
+            sourceHeight: 13,
+            canvasWidth: 16,
+            canvasHeight: 16,
+        });
     });
 
     test('drawTile is deterministic for same tile type and seed', () => {

@@ -112,11 +112,14 @@ export class WorldSyncSystem {
                 this.entityMap.set(enemyId, eid);
             }
             this.world.setComponent(eid, Component.Sprite, { type: enemyType, palette: 'enemy', seed: this.hash(enemyType) });
-            this.world.setComponent(eid, Component.Transform, { 
-                mapId: currentLoc, 
-                x: roomData.enemyX ?? 5, 
-                y: roomData.enemyY ?? 5 
-            });
+            const existingTransform = this.world.getComponent(eid, Component.Transform);
+            if (!existingTransform || existingTransform.mapId !== currentLoc) {
+                this.world.setComponent(eid, Component.Transform, {
+                    mapId: currentLoc,
+                    x: roomData.enemyX ?? 5,
+                    y: roomData.enemyY ?? 5
+                });
+            }
             const { ENEMIES } = require('../content/data.js');
             const enemyDef = ENEMIES[enemyType];
             const scale = 1 + (worldState.threatLevel * 0.1);
@@ -133,7 +136,7 @@ export class WorldSyncSystem {
                 if (transform) {
                     const h = this.hash(enemyId);
                     const path = this.generatePatrol(transform.x, transform.y, h, roomData);
-                    this.world.setComponent(eid, Component.Patrol, { path, index: 0, dir: 1, waitTicks: 0 });
+                    this.world.setComponent(eid, Component.Patrol, { path, index: 0, dir: 1, waitTicks: 0, mode: 'loop', pauseTicks: 36, stepPauseTicks: 10 });
                 }
             }
         }
@@ -155,18 +158,48 @@ export class WorldSyncSystem {
     }
 
     generatePatrol(sx, sy, seed, room) {
+        const isWalkable = (x, y) => {
+            if (x < 0 || x >= room.width || y < 0 || y >= room.height) return false;
+            const isWall = (room.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'wall');
+            const isScenery = (room.scenery || []).some(s =>
+                x >= s.x && x < s.x + (s.w || 1) &&
+                y >= s.y && y < s.y + (s.h || 1)
+            );
+            return !isWall && !isScenery;
+        };
+
+        const radiusX = 1 + (seed % 2);
+        const radiusY = 1 + ((seed >> 1) % 2);
+        const loopCandidates = [
+            { x: sx, y: sy - radiusY },
+            { x: sx + radiusX, y: sy - Math.max(1, radiusY - 1) },
+            { x: sx + radiusX, y: sy + radiusY },
+            { x: sx, y: sy + radiusY },
+            { x: sx - radiusX, y: sy + Math.max(1, radiusY - 1) },
+            { x: sx - radiusX, y: sy - radiusY },
+        ];
+
         const path = [{ x: sx, y: sy }];
-        const count = 1 + (seed % 2); // 1-2 extra points
-        let cx = sx, cy = sy;
-        for (let i = 0; i < count; i++) {
-            const dir = (seed >> (i * 2)) % 4;
-            const dx = [0, 1, 0, -1][dir], dy = [-1, 0, 1, 0][dir];
-            const nx = cx + dx, ny = cy + dy;
-            if (nx >= 0 && nx < room.width && ny >= 0 && ny < room.height) {
-                path.push({ x: nx, y: ny });
-                cx = nx; cy = ny;
-            }
+        for (const point of loopCandidates) {
+            if (!isWalkable(point.x, point.y)) continue;
+            const prev = path[path.length - 1];
+            if (prev.x === point.x && prev.y === point.y) continue;
+            path.push(point);
         }
-        return path;
+
+        if (path.length >= 4) return path;
+
+        const fallback = [{ x: sx, y: sy }];
+        const dirs = [
+            [0, -1], [1, 0], [0, 1], [-1, 0],
+            [1, -1], [1, 1], [-1, 1], [-1, -1]
+        ];
+        for (const [dx, dy] of dirs) {
+            const nx = sx + dx;
+            const ny = sy + dy;
+            if (isWalkable(nx, ny)) fallback.push({ x: nx, y: ny });
+            if (fallback.length >= 4) break;
+        }
+        return fallback;
     }
 }

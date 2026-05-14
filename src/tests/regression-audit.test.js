@@ -169,8 +169,9 @@ describe('Bug 3 — visitedRooms saved on player:move', () => {
     });
 
     test('crafting hint fires on first visit to a crafting room', async () => {
-        const { log } = await import('../ui/index.js');
-        log.mockClear();
+        const seenLogs = [];
+        const handler = (payload) => seenLogs.push(payload);
+        bus.on('log', handler);
 
         const { setupGlobalEvents } = await import('../main/events.js');
         setupGlobalEvents();
@@ -180,7 +181,8 @@ describe('Bug 3 — visitedRooms saved on player:move', () => {
         bus.emit('player:move', { to: 'mill', from: 'hallway' });
         await new Promise(r => setTimeout(r, 0));
 
-        expect(log.mock.calls.some(([msg]) => String(msg).includes('crafting station'))).toBe(true);
+        expect(seenLogs.some(({ msg }) => String(msg).includes('crafting station'))).toBe(true);
+        bus.off('log', handler);
     });
 
     test('saveLocalState not called when to === from', async () => {

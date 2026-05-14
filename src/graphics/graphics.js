@@ -483,7 +483,7 @@ const SHAPES = {
     ],
     tree: [
         "00034000", "00343400", "00334300", "03443330", "03334430", "33343333",
-        "33333333", "00011000", "00011000", "00012000", "00012000", "00012000"
+        "33333333", "00011000", "00012000", "00012000", "00012000", "00012000"
     ],
     shrub: [
         "00000000", "00000000", "00000000", "00033000", "00333300", "03333330",
@@ -650,6 +650,30 @@ export function usesCompiledShape(type) {
     return compiledShape ? compiledShape.some(row => row.replace(/0/g, '').length > 0) : false;
 }
 
+export function getSpriteBounds(type, frameIdx = 0) {
+    if (!type) return null;
+    const resolvedType = SPRITE_ALIASES[type] || type;
+    const meta = COMPILED_ASSET_META[resolvedType] || COMPILED_ASSET_META[type];
+    let shape;
+    if (meta?.frames && meta.frames[frameIdx]) {
+        shape = decodeRLEFrame(meta.frames[frameIdx]);
+    } else {
+        const compiledShape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
+        const compiledHasContent = compiledShape && compiledShape.some(row => row.replace(/0/g, '').length > 0);
+        shape = (compiledHasContent ? compiledShape : null) || SHAPES[resolvedType];
+    }
+    if (!shape) return null;
+
+    const sourceWidth = Math.max(...shape.map((row) => row.length));
+    const sourceHeight = shape.length;
+    const canvasWidth = Math.max(16, sourceWidth);
+    const canvasHeight = Math.max(16, sourceHeight);
+    const sourceX = Math.max(0, Math.floor((canvasWidth - sourceWidth) / 2));
+    const sourceY = Math.max(0, canvasHeight - sourceHeight);
+
+    return { sourceX, sourceY, sourceWidth, sourceHeight, canvasWidth, canvasHeight };
+}
+
 export function getGrayscaleTemplate(type, seed = 0, frameIdx = 0) {
     if (!type) return null;
     const resolvedType = SPRITE_ALIASES[type] || type;
@@ -757,7 +781,7 @@ export const PALETTES = {
 // Compact grouped palette table: [primary, secondary, outline, accent]
 const _SP = {
     g: ['#286820','#103808','#000820','#48b030'],  // vivid green (shrubs)
-    tr: ['#286820','#7a4010','#143810','#48b030'], // tree: green canopy + brown trunk
+    tr: ['#357f2b','#8a5318','#214b1f','#79cf56'], // tree: softer outline + brighter fluffy highlights
     w: ['#a06030','#583010','#180800','#d89050'],  // warm wood
     r: ['#707880','#404850','#101418','#a0aab0'],  // slate grey/rock
     s: ['#b0a888','#706848','#181408','#d8d0b0'],  // warm stone/bones
