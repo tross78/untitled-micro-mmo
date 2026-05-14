@@ -10,11 +10,13 @@ import { CombatSystem } from '../systems/combat-system.js';
 import { TweenSystem } from '../systems/tween-system.js';
 import { DialogueSystem } from '../systems/dialogue-system.js';
 import { NetworkSystem } from '../systems/network-system.js';
+import { PatrolSystem } from '../systems/patrol-system.js';
 import { MapRenderSystem } from '../systems/map-render-system.js';
 import { EntityRenderSystem } from '../systems/entity-render-system.js';
 import { UIRenderSystem } from '../systems/ui-render-system.js';
 import { WorldSyncSystem } from '../systems/world-sync-system.js';
 import { AudioSystem } from '../systems/audio-system.js';
+import { WeatherRenderSystem } from '../systems/weather-render-system.js';
 import { bus } from '../state/eventbus.js';
 import { world as worldData, NPCS } from '../content/data.js';
 import { worldState, shardEnemies } from '../state/store.js';
@@ -99,6 +101,7 @@ class AppRuntime {
     this.combatSystem = new CombatSystem(this.world, { localPlayer: localPlayerStore, worldState, shardEnemies }, worldData, gameActions);
     this.tweenSystem = new TweenSystem(this.world);
     this.dialogueSystem = new DialogueSystem(this.world);
+    this.patrolSystem = new PatrolSystem(this.world);
     this.networkSystem = new NetworkSystem(this.world, gameActions, {
         localPlayer: localPlayerStore,
         get players() { return getPlayers(); }
@@ -107,6 +110,7 @@ class AppRuntime {
     // Initialize Render Systems
     this.mapRender = new MapRenderSystem(this.world, this.VP);
     this.entityRender = new EntityRenderSystem(this.world, this.VP);
+    this.weatherRender = new WeatherRenderSystem(this.VP);
     this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState, shardEnemies, getNPCsAt });
     this.audioSystem = new AudioSystem(this.world);
 
@@ -137,6 +141,7 @@ class AppRuntime {
 
     if (this.mapRender) this.mapRender.VP = this.VP;
     if (this.entityRender) this.entityRender.VP = this.VP;
+    if (this.weatherRender) this.weatherRender.VP = this.VP;
     if (this.uiRender) this.uiRender.VP = this.VP;
 
     const canvas = document.getElementById('game-canvas');
@@ -154,8 +159,8 @@ class AppRuntime {
     // causing drawImage() to silently produce nothing on the next paint.
     this._visibilityHandler = () => {
       if (document.visibilityState === 'visible') {
-        if (this.mapRender) this.mapRender.tileCache = null;
-        if (this.entityRender) this.entityRender.spriteCache?.clear();
+        if (this.mapRender) this.mapRender.invalidate();
+        if (this.entityRender) this.entityRender.invalidate();
       }
     };
     document.addEventListener('visibilitychange', this._visibilityHandler);
@@ -167,6 +172,7 @@ class AppRuntime {
   update(dt) {
     // 0. Sync World State to ECS
     if (this.worldSync) this.worldSync.update();
+    if (this.patrolSystem) this.patrolSystem.update();
 
     // 1. Run Game Systems
     if (this.inputSystem) this.inputSystem.update();
@@ -207,6 +213,7 @@ class AppRuntime {
 
     this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY);
     this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY);
+    if (this.weatherRender) this.weatherRender.draw(ctx, worldState, transform.mapId);
     this.uiRender.draw(ctx, localPlayerStore);
   }
 

@@ -232,6 +232,18 @@ export const frameToMaskRows = ({ width, height, rgba }, palette, colorMode = 's
   return rows;
 };
 
+const rleEncodeRow = (row) => {
+  if (!row.length) return [];
+  const runs = [];
+  let cur = row[0], count = 1;
+  for (let i = 1; i < row.length; i++) {
+    if (row[i] === cur) { count++; }
+    else { runs.push([count, cur]); cur = row[i]; count = 1; }
+  }
+  runs.push([count, cur]);
+  return runs;
+};
+
 const cropFrame = (png, rect) => {
   const rgba = new Uint8Array(rect.w * rect.h * 4);
   let out = 0;
@@ -266,18 +278,46 @@ export const compileAssets = async (manifest, baseDir) => {
   for (const spec of manifest.assetManifest || []) {
     const sourcePath = path.resolve(baseDir, spec.source);
     const png = decodePng(await fs.readFile(sourcePath));
+    const frameCount = spec.frameCount ?? 1;
+    const frameRate = spec.frameRate ?? null;
+
     for (const [variant, rect] of Object.entries(spec.variants || {})) {
-      const frame = cropFrame(png, rect);
       const key = variant === 'base' ? spec.id : `${spec.id}_${variant}`;
-      assets[key] = frameToMaskRows(frame, palette, colorMode);
-      meta[key] = {
-        family: spec.family,
-        variant,
-        logicalWidth: rect.logicalWidth ?? spec.logicalWidth ?? 1,
-        logicalHeight: rect.logicalHeight ?? spec.logicalHeight ?? 1,
-        ...(rect.renderHeightTiles != null ? { renderHeightTiles: rect.renderHeightTiles } : {}),
-        ...(rect.renderYOffsetTiles != null ? { renderYOffsetTiles: rect.renderYOffsetTiles } : {}),
-      };
+
+      if (frameCount > 1) {
+        // Multi-frame: source PNG is a horizontal strip (frameCount × rect.w wide)
+        // Frame 0 goes into COMPILED_ASSET_SHAPES as the static fallback.
+        // All frames are RLE-encoded into COMPILED_ASSET_META.frames.
+        const encodedFrames = [];
+        for (let f = 0; f < frameCount; f++) {
+          const frameRect = { ...rect, x: rect.x + f * rect.w };
+          const framePng = cropFrame(png, frameRect);
+          const rows = frameToMaskRows(framePng, palette, colorMode);
+          encodedFrames.push(rows.map(rleEncodeRow));
+          if (f === 0) assets[key] = rows; // frame 0 as static fallback
+        }
+        meta[key] = {
+          family: spec.family,
+          variant,
+          logicalWidth: rect.logicalWidth ?? spec.logicalWidth ?? 1,
+          logicalHeight: rect.logicalHeight ?? spec.logicalHeight ?? 1,
+          ...(rect.renderHeightTiles != null ? { renderHeightTiles: rect.renderHeightTiles } : {}),
+          ...(rect.renderYOffsetTiles != null ? { renderYOffsetTiles: rect.renderYOffsetTiles } : {}),
+          frames: encodedFrames,
+          frameRate,
+        };
+      } else {
+        const frame = cropFrame(png, rect);
+        assets[key] = frameToMaskRows(frame, palette, colorMode);
+        meta[key] = {
+          family: spec.family,
+          variant,
+          logicalWidth: rect.logicalWidth ?? spec.logicalWidth ?? 1,
+          logicalHeight: rect.logicalHeight ?? spec.logicalHeight ?? 1,
+          ...(rect.renderHeightTiles != null ? { renderHeightTiles: rect.renderHeightTiles } : {}),
+          ...(rect.renderYOffsetTiles != null ? { renderYOffsetTiles: rect.renderYOffsetTiles } : {}),
+        };
+      }
     }
   }
 

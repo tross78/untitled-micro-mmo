@@ -21,7 +21,7 @@ export class TweenSystem {
 
     // 1. Process Movement Tweens
     const tweens = this.world.query([Component.Tweenable]);
-    const TWEEN_SPEED = 10.0;
+    const TWEEN_SPEED = 6.0;
     for (const entityId of tweens) {
       const tween = this.world.getComponent(entityId, Component.Tweenable);
       if (!tween) continue;

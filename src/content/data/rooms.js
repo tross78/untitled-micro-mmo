@@ -125,7 +125,7 @@ export const rooms = {
         width: 11, height: 11,
         exits: {"north":"market","west":"mill","south":"herbalist_hut","east":"forest_edge"},
         exitTiles: "4,0,market,7,13,edge,3,1|0,4,mill,8,4,edge,1,3|4,10,herbalist_hut,5,1,edge,3,1|10,4,forest_edge,1,10,edge,1,3",
-        scenery: "5,5,sign|1,1,tree|8,1,tree|1,8,tree|8,8,tree",
+        scenery: "5,5,sign|1,1,tree|7,1,tree|1,7,tree|7,7,tree",
         tileOverrides: [
             { x: 4, y: 0, type: 'dirt' }, { x: 5, y: 0, type: 'dirt' }, { x: 6, y: 0, type: 'dirt' },
             { x: 4, y: 10, type: 'dirt' }, { x: 5, y: 10, type: 'dirt' }, { x: 6, y: 10, type: 'dirt' },
@@ -184,7 +184,7 @@ export const rooms = {
         width: 21, height: 21,
         exits: {"west":"crossroads","north":"ruins","south":"cave","east":"forest_depths"},
         exitTiles: "0,9,crossroads,9,4,edge,1,3|9,0,ruins,9,19,edge,3,1|9,20,cave,5,1,door,3,1|20,9,forest_depths,1,11,edge,1,3",
-        scenery: "1,1,tree|15,1,tree|1,14,tree|15,14,tree|5,1,tree|12,1,tree|1,7,tree|16,6,tree|1,11,tree|16,11,tree",
+        scenery: "1,1,tree|16,1,tree|1,15,tree|16,15,tree|5,1,tree|12,1,tree|1,7,tree|16,6,tree|1,11,tree|16,11,tree",
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [2, 4] },
             { type: 'flora', label: 'mushroom', count: [1, 2] }

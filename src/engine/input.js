@@ -34,6 +34,7 @@ const KEY_MAP = {
 export class InputManager {
   constructor() {
     this.activeActions = new Set();
+    this.repeatIntervals = new Map();
     this.prevGamepadButtons = new Set();
     this.gamepadConnected = false;
     this.touchStart = { x: 0, y: 0 };
@@ -98,6 +99,14 @@ export class InputManager {
       if (!this.activeActions.has(action)) {
         this.activeActions.add(action);
         bus.emit('input:action', { action, type: 'down' });
+
+        // Phase 8.76 P0b: Set key-repeat interval to 167ms for movement
+        if (action.startsWith('move_')) {
+          const id = setInterval(() => {
+            bus.emit('input:action', { action, type: 'down' });
+          }, 167);
+          this.repeatIntervals.set(action, id);
+        }
       }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
         e.preventDefault();
@@ -110,6 +119,11 @@ export class InputManager {
     if (action && this.activeActions.has(action)) {
       this.activeActions.delete(action);
       bus.emit('input:action', { action, type: 'up' });
+
+      if (this.repeatIntervals.has(action)) {
+        clearInterval(this.repeatIntervals.get(action));
+        this.repeatIntervals.delete(action);
+      }
     }
   }
 

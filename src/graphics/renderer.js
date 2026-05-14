@@ -107,7 +107,7 @@ export function renderWorld(state, onTileClick) {
         bus.emit('input:action', { action: e.deltaY > 0 ? ACTION.PAGE_DOWN : ACTION.PAGE_UP, type: 'down' });
     };
 
-    _canvas.onclick = (e) => {
+    _canvas.onpointerdown = (e) => {
         const rect = _canvas.getBoundingClientRect();
         const scaleX = _canvas.width / rect.width;
         const scaleY = _canvas.height / rect.height;
@@ -174,10 +174,25 @@ export function renderWorld(state, onTileClick) {
             const t = appRuntime.world.getComponent(id, Component.Transform);
             const s = appRuntime.world.getComponent(id, Component.Sprite);
             const identity = appRuntime.world.getComponent(id, 'Identity');
-            if (t.x === tx && t.y === ty && !appRuntime.world.getComponent(id, Component.PlayerControlled)) {
-                clickedEntity = { id: identity?.id || id, type: getSpriteKind(s) };
+            
+            // Phase 8.76 P1: ±1 tile fat-finger tolerance for interactables
+            const dx = Math.abs(t.x - tx);
+            const dy = Math.abs(t.y - ty);
+            const kind = getSpriteKind(s);
+            const isInteractable = ['npc', 'enemy', 'item'].includes(kind);
+            const hit = isInteractable ? (dx <= 1 && dy <= 1) : (t.x === tx && t.y === ty);
+
+            if (hit && !appRuntime.world.getComponent(id, Component.PlayerControlled)) {
+                clickedEntity = { id: identity?.id || id, type: kind };
                 break;
             }
+        }
+
+        // P1: pulsing circle affordance at the tapped tile
+        if (appRuntime.playerEntityId != null) {
+            appRuntime.world.setComponent(appRuntime.playerEntityId, Component.TapPulse, {
+                x: tx, y: ty, expiresAt: Date.now() + 600
+            });
         }
 
         onTileClick(tx, ty, clickedEntity);

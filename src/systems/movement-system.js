@@ -175,9 +175,13 @@ export class MovementSystem {
     transform.facing = dir;
 
     // 5. Add Tweenable for visual interpolation
+    const prev = this.world.getComponent(entityId, Component.Tweenable);
+    const vx = prev ? prev.startX + (prev.targetX - prev.startX) * prev.progress : oldX;
+    const vy = prev ? prev.startY + (prev.targetY - prev.startY) * prev.progress : oldY;
+
     this.world.setComponent(entityId, Component.Tweenable, {
-      startX: oldX,
-      startY: oldY,
+      startX: vx,
+      startY: vy,
       targetX: nx,
       targetY: ny,
       progress: 0

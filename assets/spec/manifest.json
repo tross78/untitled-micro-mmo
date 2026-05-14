@@ -42,6 +42,8 @@
       "id": "wolf",
       "family": "enemy",
       "source": "../source/enemies/wolf.png",
+      "frameCount": 2,
+      "frameRate": 2,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -52,6 +54,8 @@
       "id": "forest_wolf",
       "family": "enemy",
       "source": "../source/enemies/forest_wolf.png",
+      "frameCount": 2,
+      "frameRate": 2,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -112,6 +116,8 @@
       "id": "wraith",
       "family": "enemy",
       "source": "../source/enemies/wraith.png",
+      "frameCount": 2,
+      "frameRate": 1,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -372,6 +378,8 @@
       "id": "torch",
       "family": "scenery",
       "source": "../source/scenery/torch.png",
+      "frameCount": 3,
+      "frameRate": 8,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {

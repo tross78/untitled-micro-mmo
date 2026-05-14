@@ -54,6 +54,11 @@ export class WorldSyncSystem {
                 });
                 if (staticEntry) {
                     this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: staticEntry.x, y: staticEntry.y });
+                    if (staticEntry.patrol && npcDef?.role !== 'static') {
+                        if (!this.world.getComponent(eid, Component.Patrol)) {
+                            this.world.setComponent(eid, Component.Patrol, { path: staticEntry.patrol, index: 0, dir: 1, waitTicks: 0 });
+                        }
+                    }
                 } else {
                     const hash = this.hash(id + currentLoc);
                     const nx = (hash % Math.max(1, roomData.width - 2)) + 1;
@@ -121,6 +126,16 @@ export class WorldSyncSystem {
                 max: maxHp 
             });
             this.world.setComponent(eid, 'Identity', { name: enemyDef?.name || 'Enemy', id: enemyId });
+
+            // 8.76 P4: Auto-patrol for enemies
+            if (!this.world.getComponent(eid, Component.Patrol)) {
+                const transform = this.world.getComponent(eid, Component.Transform);
+                if (transform) {
+                    const h = this.hash(enemyId);
+                    const path = this.generatePatrol(transform.x, transform.y, h, roomData);
+                    this.world.setComponent(eid, Component.Patrol, { path, index: 0, dir: 1, waitTicks: 0 });
+                }
+            }
         }
 
         // 4. Cleanup
@@ -137,5 +152,21 @@ export class WorldSyncSystem {
         let h = 0;
         for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 0x9e3779b9) >>> 0; }
         return h;
+    }
+
+    generatePatrol(sx, sy, seed, room) {
+        const path = [{ x: sx, y: sy }];
+        const count = 1 + (seed % 2); // 1-2 extra points
+        let cx = sx, cy = sy;
+        for (let i = 0; i < count; i++) {
+            const dir = (seed >> (i * 2)) % 4;
+            const dx = [0, 1, 0, -1][dir], dy = [-1, 0, 1, 0][dir];
+            const nx = cx + dx, ny = cy + dy;
+            if (nx >= 0 && nx < room.width && ny >= 0 && ny < room.height) {
+                path.push({ x: nx, y: ny });
+                cx = nx; cy = ny;
+            }
+        }
+        return path;
     }
 }

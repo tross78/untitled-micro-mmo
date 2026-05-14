@@ -160,6 +160,18 @@ export const defineRoom = (id, definition) => {
         definition.scenery = (definition.scenery || []).concat(scenery);
     }
 
+    // Parse patrol paths (Phase 8.76 P4)
+    if (Array.isArray(definition.staticEntities)) {
+        definition.staticEntities.forEach(se => {
+            if (typeof se.patrol === 'string') {
+                se.patrol = se.patrol.split('|').map(p => {
+                    const [px, py] = p.split(',');
+                    return { x: +px, y: +py };
+                });
+            }
+        });
+    }
+
     return define('room', id, definition);
 };
 export const defineNpc = (id, definition) => define('npc', id, definition);

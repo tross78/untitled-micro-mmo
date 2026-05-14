@@ -19,6 +19,10 @@ export class MapRenderSystem {
         this.tileCache = null; // { locKey: string, camX: number, camY: number, canvas: OffscreenCanvas }
     }
 
+    invalidate() {
+        this.tileCache = null;
+    }
+
     /**
      * @param {CanvasRenderingContext2D} ctx
      * @param {object} state - { localPlayer, worldState, worldData }
@@ -96,6 +100,30 @@ export class MapRenderSystem {
             ctx.stroke();
             ctx.beginPath();
             ctx.arc(px, py, this.VP.S / 6, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+
+        // 7. Draw tap/click pulse affordance (P1)
+        const playersWithTap = this.world.query([Component.PlayerControlled, Component.TapPulse]);
+        playersWithTap.forEach(id => {
+            const tap = this.world.getComponent(id, Component.TapPulse);
+            if (!tap) return;
+            if (Date.now() > tap.expiresAt) {
+                this.world.removeComponent(id, Component.TapPulse);
+                return;
+            }
+            const progress = 1 - (tap.expiresAt - Date.now()) / 600;
+            const tx = tap.x - camX;
+            const ty = tap.y - camY;
+            if (tx < -1 || tx >= this.VP.W || ty < -1 || ty >= this.VP.H) return;
+            const px = screenOffsetX + tx * this.VP.S + this.VP.S / 2;
+            const py = screenOffsetY + ty * this.VP.S + this.VP.S / 2;
+            const alpha = (1 - progress) * 0.7;
+            const radius = (this.VP.S / 3) * (0.6 + progress * 0.8);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(px, py, radius, 0, Math.PI * 2);
             ctx.stroke();
         });
 
@@ -188,10 +216,17 @@ export class MapRenderSystem {
         const py = screenOffsetY + sy * this.VP.S;
 
         const compiledMeta = getCompiledAssetMeta(label);
+        
+        // Phase 8.76 P3: Animation frame for scenery
+        let frameIdx = 0;
+        if (compiledMeta?.frames?.length > 1 && compiledMeta.frameRate) {
+            frameIdx = Math.floor(Date.now() / (1000 / compiledMeta.frameRate)) % compiledMeta.frames.length;
+        }
+
         const usingCompiledShape = compiledMeta && usesCompiledShape(label);
         const logicalW = usingCompiledShape ? compiledMeta.logicalWidth : w;
         const logicalH = usingCompiledShape ? compiledMeta.logicalHeight : h;
-        const template = getGrayscaleTemplate(label) || getGrayscaleTemplate('rock');
+        const template = getGrayscaleTemplate(label, 0, frameIdx) || getGrayscaleTemplate('rock');
         const palette = getSceneryPalette(label);
         const colored = applyPalette(template, palette);
         const renderStyle = usingCompiledShape ? {

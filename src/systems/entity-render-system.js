@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { generateCharacterSprite, getWalkPose, applyPalette, getGrayscaleTemplate, PALETTES } from '../graphics/graphics.js';
+import { generateCharacterSprite, getWalkPose, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, PALETTES } from '../graphics/graphics.js';
 
 /**
  * EntityRenderSystem draws all spatial entities (Players, NPCs, Enemies).
@@ -17,6 +17,10 @@ export class EntityRenderSystem {
         this.spriteCache = new Map(); // seed:type -> canvas
     }
 
+    invalidate() {
+        this.spriteCache.clear();
+    }
+
     /**
      * @param {CanvasRenderingContext2D} ctx
      * @param {number} camX
@@ -24,6 +28,12 @@ export class EntityRenderSystem {
      */
     draw(ctx, camX, camY, screenOffsetX = 0, screenOffsetY = 0) {
         const entities = this.world.query([Component.Transform, Component.Sprite]);
+
+        // Cap cache growth (Phase 8.76 P0)
+        if (this.spriteCache.size > 64) {
+            const firstKey = this.spriteCache.keys().next().value;
+            this.spriteCache.delete(firstKey);
+        }
 
         for (const id of entities) {
             const transform = this.world.getComponent(id, Component.Transform);
@@ -80,8 +90,15 @@ export class EntityRenderSystem {
                 else variant = 'player';
             }
 
+            // Phase 8.76 P3: Animation frame cycling
+            const meta = getCompiledAssetMeta(variant);
+            let frameIdx = 0;
+            if (meta?.frames?.length > 1 && meta.frameRate) {
+                frameIdx = Math.floor(Date.now() / (1000 / meta.frameRate)) % meta.frames.length;
+            }
+
             // 3. Draw Sprite
-            const sprite = this.getSprite(spriteDef.seed, spriteDef.palette, variant);
+            const sprite = this.getSprite(spriteDef.seed, spriteDef.palette, variant, frameIdx);
             const bounceY = walkPose.bodyY;
             
             ctx.save();
@@ -143,8 +160,8 @@ export class EntityRenderSystem {
         }
     }
 
-    getSprite(seed, palette, type = null) {
-        const key = `${seed}:${palette}:${type}`;
+    getSprite(seed, palette, type = null, frameIdx = 0) {
+        const key = `${seed}:${palette}:${type}:${frameIdx}`;
         if (this.spriteCache.has(key)) return this.spriteCache.get(key);
         
         let palKey = palette;
@@ -159,7 +176,7 @@ export class EntityRenderSystem {
         // Use type override if provided (for directional posing)
         let template = null;
         if (type) {
-            template = getGrayscaleTemplate(type, seed);
+            template = getGrayscaleTemplate(type, seed, frameIdx);
         } else {
             // Standard detection if no override
             let sType = null;
@@ -167,7 +184,7 @@ export class EntityRenderSystem {
             else if (palette === 'enemy') sType = 'wolf';
             else if (palette === 'npc') sType = 'guard';
 
-            if (sType) template = getGrayscaleTemplate(sType, seed);
+            if (sType) template = getGrayscaleTemplate(sType, seed, frameIdx);
         }
 
         const canvas = template ? applyPalette(template, pal) : generateCharacterSprite(seed, palette);

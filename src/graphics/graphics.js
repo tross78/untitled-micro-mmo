@@ -618,6 +618,21 @@ const SHAPES = {
 };
 
 /**
+ * Decodes an RLE-encoded frame into a string array (shape).
+ * Each row is an array of [count, char] pairs.
+ */
+export function decodeRLEFrame(rleRows) {
+    if (!rleRows) return [];
+    return rleRows.map(row => {
+        let line = '';
+        for (const [count, char] of row) {
+            line += char.repeat(count);
+        }
+        return line;
+    });
+}
+
+/**
  * Generates a grayscale template canvas for a shape.
  */
 // Maps content IDs to sprite shape keys
@@ -635,13 +650,22 @@ export function usesCompiledShape(type) {
     return compiledShape ? compiledShape.some(row => row.replace(/0/g, '').length > 0) : false;
 }
 
-export function getGrayscaleTemplate(type, seed = 0) {
+export function getGrayscaleTemplate(type, seed = 0, frameIdx = 0) {
     if (!type) return null;
     const resolvedType = SPRITE_ALIASES[type] || type;
     const isPlayer = resolvedType.startsWith('player');
-    const compiledShape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
-    const compiledHasContent = compiledShape && compiledShape.some(row => row.replace(/0/g, '').length > 0);
-    const shape = (compiledHasContent ? compiledShape : null) || SHAPES[resolvedType];
+    
+    // Phase 8.76 P3: support RLE frames from meta
+    const meta = COMPILED_ASSET_META[resolvedType] || COMPILED_ASSET_META[type];
+    let shape;
+    if (meta?.frames && meta.frames[frameIdx]) {
+        shape = decodeRLEFrame(meta.frames[frameIdx]);
+    } else {
+        const compiledShape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
+        const compiledHasContent = compiledShape && compiledShape.some(row => row.replace(/0/g, '').length > 0);
+        shape = (compiledHasContent ? compiledShape : null) || SHAPES[resolvedType];
+    }
+    
     if (!shape) return null;
     const baseWidth = Math.max(...shape.map((row) => row.length));
     const baseHeight = shape.length;

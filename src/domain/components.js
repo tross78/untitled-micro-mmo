@@ -78,4 +78,14 @@ export const Component = {
    *  Shape: { text, speakerId, progress, page, onComplete?: string }
    *  Owner: talk command (writes), ui-render-system.js (reads), dialogue-close handler (removes) */
   Dialogue: 'Dialogue',
+
+  /** NPC & Enemy patrol state.
+   *  Shape: { path: [{x,y},...], index: number, dir: 1|-1, waitTicks: number }
+   *  Owner: patrol-system.js (writes) */
+  Patrol: 'Patrol',
+
+  /** Short-lived tap/click feedback pulse on a tile.
+   *  Shape: { x, y, expiresAt: number (ms timestamp) }
+   *  Owner: renderer.js (writes on pointer tap), map-render-system.js (reads, draws, removes expired) */
+  TapPulse: 'TapPulse',
 };

@@ -41,12 +41,12 @@ export class UIRenderSystem {
         this.drawTicker(ctx, topBarH);
         this.drawHUDBar(ctx, localPlayerStore);
         this.drawDialogue(ctx);
-        this.drawMenu(ctx, localPlayerStore);
+        this.drawMenu(ctx);
         this.drawOverlays(ctx);
     }
 
     getHudHeight() {
-        return Math.max(56, Math.floor(this.VP.S * 1.25));
+        return Math.max(56, Math.floor(this.VP.S * 1.25)) + this.VP.S;
     }
 
     drawHUDBar(ctx, player) {
@@ -161,10 +161,9 @@ export class UIRenderSystem {
         const summary = fullDesc.length > 60 ? `${fullDesc.slice(0, 57)}...` : fullDesc;
         ctx.fillText(summary, PAD, Math.floor(STRIP * 0.55));
 
-        // --- RIGHT SIDE: Player Stats ---
+        // --- RIGHT SIDE: Player Stats (Phase 8.76 P0c) ---
         ctx.textAlign = 'right';
 
-        // Hearts (HP)
         if (!this.heartSprite) {
             const template = getGrayscaleTemplate('heart');
             if (template) {
@@ -177,19 +176,28 @@ export class UIRenderSystem {
         const bonus = levelBonus(player.level ?? 1);
         const rested = !!player.statusEffects?.find(s => s.id === 'well_rested');
         const maxHp = (player.maxHp ?? 10) + (bonus.maxHp ?? 0) + (rested ? 5 : 0);
-        const heartsCount = Math.ceil(maxHp / 10);
-        const fullHearts = Math.floor(hp / 10);
+        const atk = (player.attack || 1) + bonus.attack;
+        const def = (player.defense || 0) + bonus.defense;
 
-        if (this.heartSprite && this.emptyHeartSprite) {
-            const hSize = 16;
-            const hGap = 20;
-            for (let i = 0; i < heartsCount; i++) {
-                const hx = this.VP.CW - PAD - (heartsCount - i) * hGap;
-                const hy = 8;
-                const sprite = (i < fullHearts) ? this.heartSprite : this.emptyHeartSprite;
-                ctx.drawImage(sprite, hx, hy, hSize, hSize);
-            }
+        const statsX = this.VP.CW - PAD;
+        const statsY = 12;
+
+        ctx.font = `bold ${Math.floor(this.VP.S * 0.32)}px monospace`;
+        
+        // HP
+        if (this.heartSprite) {
+            ctx.drawImage(this.heartSprite, statsX - 165, statsY - 4, 20, 20);
         }
+        ctx.fillStyle = '#ffaaaa';
+        ctx.fillText(`${hp}/${maxHp}`, statsX - 110, statsY);
+
+        // ATK
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillText(`⚔ ${atk}`, statsX - 55, statsY);
+
+        // DEF
+        ctx.fillStyle = '#66ccff';
+        ctx.fillText(`🛡 ${def}`, statsX, statsY);
 
         // Gold & Hunts
         const gold = player.gold ?? 0;

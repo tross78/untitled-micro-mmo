@@ -48,6 +48,20 @@ Made PNGs the authoring input without changing the palette-driven runtime model.
 
 ---
 
+## Phase 8.75: Reactive NPC Dialogue and World Voice — COMPLETE
+
+Gave NPCs context-aware dialogue that reflects world state and player history.
+
+* ✅ Expanded NPC dialogue corpora with contextual pools (`base`, `scarcity`, `time_night`, `season_*`, `post_quest_*`)
+* ✅ Template string interpolation for dialogue lines (`${playerName}`, `${scarcityItem}`, `${season}`)
+* ✅ `getNPCDialogue` resolves context-aware tags from `worldState` and `localPlayer`
+* ✅ `localPlayer` context threaded through command and movement systems to dialogue generation
+* ✅ Regression tests for dialogue context tagging and template interpolation
+
+Delivered in commit `44c7b04`.
+
+---
+
 ## Phase 8.55: Visual Identity, Sprites, Tiles, and Room Art — COMPLETE
 
 Made the game look intentional and screenshot-worthy before private alpha.
