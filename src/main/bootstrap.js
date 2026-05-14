@@ -18,6 +18,7 @@ import { setTicker, showDialogue, showToast } from '../graphics/renderer.js';
 import { ensureShell } from '../adapters/dom/shell.js';
 import { requestTextInput } from '../adapters/dom/prompt.js';
 import { validateContent } from '../content/validate.js';
+import * as contentDefs from '../content/index.js';
 import { appRuntime } from '../app/runtime.js';
 import { selfId } from '../network/transport.js';
 
@@ -53,7 +54,7 @@ export const start = async () => {
     try {
         patchIceGatheringTimeout();
         ensureShell();
-        const validation = validateContent();
+        const validation = validateContent(contentDefs);
         if (!validation.ok) {
             throw new Error(`Content validation failed: ${validation.problems.join('; ')}`);
         }
