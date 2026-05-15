@@ -14,7 +14,7 @@ export const drawRadar = (ctx, onTileClick) => {
 
     // 1. Static Scenery
     (loc.scenery || []).forEach(s => {
-        if (s.x < loc.width && s.y < loc.height) grid[s.y][s.x] = { type: 'scenery', label: s.label || 'B' };
+        if (s.x < loc.width && s.y < loc.height) grid[s.y][s.x] = { type: 'scenery', label: '·' };
     });
 
     // 2. Deterministic Scattered Scenery (Phase 7.9.9.2)
@@ -30,10 +30,14 @@ export const drawRadar = (ctx, onTileClick) => {
         if (p.x < loc.width && p.y < loc.height) grid[p.y][p.x] = { type: 'exit', label: '▸' };
     });
     const sharedEnemy = shardEnemies.get(localPlayer.location);
-    if ((sharedEnemy && sharedEnemy.hp > 0) || (loc.enemy && !sharedEnemy)) {
-        const ex = loc.enemyX ?? Math.floor(loc.width / 2);
-        const ey = loc.enemyY ?? Math.floor(loc.height / 2);
-        if (ex < loc.width && ey < loc.height) grid[ey][ex] = { type: 'enemy', label: 'E' };
+    const enemyAlive = (sharedEnemy && sharedEnemy.hp > 0) || (loc.enemy && !sharedEnemy);
+    if (enemyAlive) {
+        // Prefer synced transform position, then authored spawn, then give up (no center fallback).
+        const ex = sharedEnemy?.x ?? loc.enemyX;
+        const ey = sharedEnemy?.y ?? loc.enemyY;
+        if (ex !== undefined && ey !== undefined && ex < loc.width && ey < loc.height) {
+            grid[ey][ex] = { type: 'enemy', label: 'E' };
+        }
     }
     if (worldState.seed) Object.keys(NPCS || {}).forEach(id => {
         if (getNPCLocation(id, worldState.seed, worldState.day) === localPlayer.location) {

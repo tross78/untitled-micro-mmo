@@ -54,6 +54,9 @@ class AppRuntime {
     /** @type {AudioSystem | null} */
     this.audioSystem = null;
 
+    // Transition fade overlay state
+    this._transition = { active: false, phase: 'idle', alpha: 0 };
+
     // Viewport Config (Responsive Phase 8)
     this.VP = { 
         W: 20, H: 12, S: 48,
@@ -97,7 +100,10 @@ class AppRuntime {
         localPlayer: localPlayerStore 
     }, worldData);
     this.inputSystem = new InputSystem(this.world, bus);
-    this.movementSystem = new MovementSystem(this.world, worldData, gameActions);
+    this.movementSystem = new MovementSystem(this.world, worldData, gameActions, {
+        onTransitionStart: () => this._startFade(),
+        onTransitionEnd:   () => this._endFade(),
+    });
     this.combatSystem = new CombatSystem(this.world, { localPlayer: localPlayerStore, worldState, shardEnemies }, worldData, gameActions);
     this.tweenSystem = new TweenSystem(this.world);
     this.dialogueSystem = new DialogueSystem(this.world);
@@ -228,6 +234,7 @@ class AppRuntime {
     ctx.restore();
 
     this.uiRender.draw(ctx, localPlayerStore);
+    this._drawTransitionFade(ctx);
   }
 
   getTopChromeHeight() {
@@ -255,6 +262,30 @@ class AppRuntime {
       bottomChrome,
       worldPxH,
     };
+  }
+
+  _startFade() {
+    this._transition = { active: true, phase: 'out', alpha: 0 };
+  }
+
+  _endFade() {
+    this._transition.phase = 'in';
+  }
+
+  _drawTransitionFade(ctx) {
+    const t = this._transition;
+    if (!t.active) return;
+    const SPEED = 1 / (0.2 * 60); // 200ms at 60fps
+    if (t.phase === 'out') {
+        t.alpha = Math.min(1, t.alpha + SPEED);
+    } else if (t.phase === 'in') {
+        t.alpha = Math.max(0, t.alpha - SPEED);
+        if (t.alpha === 0) t.active = false;
+    }
+    if (t.alpha > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${t.alpha})`;
+        ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
+    }
   }
 
   getViewportTransform(drawX, drawY, mapId) {
@@ -296,6 +327,8 @@ class AppRuntime {
     this.world.setComponent(this.playerEntityId, Component.PlayerControlled, {});
     this.world.removeComponent(this.playerEntityId, Component.Menu);
     this.world.removeComponent(this.playerEntityId, Component.Dialogue);
+    this.world.removeComponent(this.playerEntityId, Component.Tweenable);
+    this.world.removeComponent(this.playerEntityId, Component.CollisionBump);
     this.world.setComponent(this.playerEntityId, 'Identity', {
       name: player.name,
       ph: player.ph,

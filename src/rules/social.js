@@ -11,7 +11,8 @@ const pickLine = (pool, rng) => {
 export function getNPCLocation(npcId, worldSeed, day) {
     const npc = NPCS[npcId];
     if (!npc) return null;
-    if (!npc.patrol) return npc.home;
+    // Static placement wins: NPCs with a fixed room entry never roam.
+    if (!npc.patrol || npc.role === 'quest' || npc.role === 'shop') return npc.home;
     const rng = seededRNG(hashStr(worldSeed + npcId + day));
     const patrolArray = Array.isArray(npc.patrol) ? [npc.home, ...npc.patrol] : [npc.home];
     return patrolArray[rng(patrolArray.length)];

@@ -115,6 +115,6 @@ describe('Phase 8.5a: Movement Feel and Touch Affordances', () => {
         movementSystem.handleMove(enemy, world.getComponent(enemy, Component.Transform), 'e');
 
         const tween = world.getComponent(enemy, Component.Tweenable);
-        expect(tween.speed).toBeCloseTo(6.0);
+        expect(tween.speed).toBeCloseTo(9.0);
     });
 });

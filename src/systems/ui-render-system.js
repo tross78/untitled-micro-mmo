@@ -473,11 +473,13 @@ export class UIRenderSystem {
             this.drawWrappedText(ctx, menu.message, panel.x + panel.pad, panel.y + panel.headerH + panel.pad, panel.w - panel.pad * 2, Math.max(18, Math.floor(bodySize * 1.35)));
         }
 
-        menu.entries.forEach((entry, index) => {
-            const row = panel.rows[index];
+        const visibleEntries = menu.entries.slice(panel.scrollOffset, panel.scrollOffset + panel.visibleCount);
+        visibleEntries.forEach((entry, visIdx) => {
+            const absoluteIndex = panel.scrollOffset + visIdx;
+            const row = panel.rows[visIdx];
             if (!row) return;
-            const selected = index === (menu.selectedIndex || 0);
-            
+            const selected = absoluteIndex === (menu.selectedIndex || 0);
+
             if (selected) {
                 ctx.fillStyle = entry.disabled ? 'rgba(120, 120, 80, 0.4)' : UI_PALETTE.bgLight;
                 roundRect(ctx, row.x, row.y, row.w, row.h, 4);
@@ -502,8 +504,21 @@ export class UIRenderSystem {
                 ctx.fillStyle = entry.disabled ? 'rgba(150,150,150,0.5)' : (selected ? UI_PALETTE.textHi : UI_PALETTE.textLo);
                 ctx.fillText(entry.detail, row.x + panel.pad * 0.75, row.y + 8 + bodySize + 4);
             }
-            this.menuHitRegions.push({ index, ...row });
+            this.menuHitRegions.push({ index: absoluteIndex, ...row });
         });
+
+        // Scroll indicators
+        ctx.font = `${detailSize}px monospace`;
+        ctx.fillStyle = UI_PALETTE.textLo;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (panel.scrollOffset > 0) {
+            ctx.fillText('▲', panel.x + panel.w / 2, panel.rowsTop - detailSize);
+        }
+        if (panel.scrollOffset + panel.visibleCount < menu.entries.length) {
+            const lastRow = panel.rows[panel.rows.length - 1];
+            if (lastRow) ctx.fillText('▼', panel.x + panel.w / 2, lastRow.y + lastRow.h + detailSize);
+        }
 
         // Footer Hint
         ctx.font = `${detailSize}px monospace`;
@@ -515,7 +530,7 @@ export class UIRenderSystem {
         if (inputManager.lastInputMode === 'gamepad') {
             hint = 'D-Pad / Stick to navigate  •  (A) to confirm  •  (B) to back';
         } else if (inputManager.lastInputMode === 'touch') {
-            hint = 'Tap to choose  •  Swipe to move  •  Esc/Back to exit';
+            hint = 'Tap to choose  •  Swipe ↑↓ to scroll  •  Tap outside to back';
         }
         
         ctx.fillText(hint, panel.x + panel.w / 2, panel.y + panel.h - panel.pad * 0.85);
@@ -533,14 +548,24 @@ export class UIRenderSystem {
         const rowsTop = y + headerH + messageH + pad * 0.4;
         const availableH = h - headerH - messageH - footerH - pad * 1.2;
         const rowGap = Math.max(4, Math.floor(this.VP.S * 0.09));
-        const rowH = Math.max(28, Math.floor((availableH - rowGap * Math.max(0, menu.entries.length - 1)) / Math.max(1, menu.entries.length)));
-        const rows = menu.entries.map((_, index) => ({
+        const MAX_VISIBLE = 7;
+        const visibleCount = Math.min(MAX_VISIBLE, menu.entries.length);
+        const rowH = Math.max(36, Math.floor((availableH - rowGap * Math.max(0, visibleCount - 1)) / Math.max(1, visibleCount)));
+
+        // Derive scroll offset to keep selectedIndex visible
+        const selectedIndex = menu.selectedIndex || 0;
+        const scrollOffset = Math.max(0, Math.min(
+            menu.entries.length - visibleCount,
+            selectedIndex - Math.floor(visibleCount / 2)
+        ));
+
+        const rows = menu.entries.slice(scrollOffset, scrollOffset + visibleCount).map((_, i) => ({
             x: x + pad,
-            y: rowsTop + index * (rowH + rowGap),
+            y: rowsTop + i * (rowH + rowGap),
             w: w - pad * 2,
             h: rowH,
         }));
-        return { x, y, w, h, pad, headerH, rows };
+        return { x, y, w, h, pad, headerH, rows, scrollOffset, visibleCount, rowH, rowGap, rowsTop };
     }
 
     drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {

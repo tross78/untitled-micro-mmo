@@ -100,11 +100,10 @@ export class InputManager {
         this.activeActions.add(action);
         bus.emit('input:action', { action, type: 'down' });
 
-        // Phase 8.76 P0b: Set key-repeat interval to 167ms for movement
         if (action.startsWith('move_')) {
           const id = setInterval(() => {
             bus.emit('input:action', { action, type: 'down' });
-          }, 167);
+          }, 110);
           this.repeatIntervals.set(action, id);
         }
       }

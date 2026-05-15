@@ -31,11 +31,13 @@ export class MovementSystem {
    * @param {Record<string, any>} worldData - Authored world data (rooms, exits)
    * @param {any} gameActions - Network actions
    */
-  constructor(world, worldData, gameActions) {
+  constructor(world, worldData, gameActions, hooks = {}) {
     this.world = world;
     this.worldData = worldData;
     this.gameActions = gameActions;
     this.isProcessing = false;
+    this._onTransitionStart = hooks.onTransitionStart || null;
+    this._onTransitionEnd   = hooks.onTransitionEnd   || null;
   }
 
   update() {
@@ -47,6 +49,10 @@ export class MovementSystem {
       const transform = this.world.getComponent(entityId, Component.Transform);
 
       if (intent.action === 'move') {
+        // Allow the next step to fire once the active tween is 70% complete,
+        // so held movement feels continuous rather than serialized.
+        const activeTween = this.world.getComponent(entityId, Component.Tweenable);
+        if (activeTween && activeTween.progress < 0.7) continue;
         this.handleMove(entityId, transform, intent.dir);
         this.world.removeComponent(entityId, Component.Intent);
         this.world.removeComponent(entityId, Component.MovementTarget);
@@ -202,7 +208,7 @@ export class MovementSystem {
       targetX: nx,
       targetY: ny,
       progress: 0,
-      speed: 6.0
+      speed: 9.0
     });
   }
 
@@ -237,10 +243,14 @@ export class MovementSystem {
         log(`You venture into ${loc.name || destId} unarmed. Equip a weapon first.`, '#f80');
     }
     const safePos = loc ? findSafeArrival(tx, ty, loc.width, loc.height, (x, y) => this.isWalkable(destId, x, y)) : { x: tx, y: ty };
-    
+
+    if (this._onTransitionStart) this._onTransitionStart();
+
     transform.mapId = destId;
     transform.x = safePos?.x ?? tx;
     transform.y = safePos?.y ?? ty;
+
+    if (this._onTransitionEnd) this._onTransitionEnd();
 
     // Network Sync
     await joinInstance(destId, getCurrentInstance(), currentRtcConfig);

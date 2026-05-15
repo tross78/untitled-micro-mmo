@@ -42,7 +42,7 @@ export const NPCS = {
         palette: 'npcSage',
         home: 'ruins',
         patrol: ['ruins', 'forest_edge', 'hallway'],
-        role: 'flavor',
+        role: 'quest',
         baseDialogue: "The shadows grow longer with each passing day...",
         locationDialogue: {
             ruins: "The descent to the north is no place for the unprepared. I have seen strong fighters go down and not return. Go when you are ready, not before.",

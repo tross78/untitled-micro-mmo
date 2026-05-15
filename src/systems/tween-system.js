@@ -49,7 +49,7 @@ export class TweenSystem {
         if (anim.progress >= 1.0) this.world.removeComponent(entityId, Component.AttackAnimation);
     }
 
-    // 3. Process Visual Effects (Hit Flashes)
+    // 4. Process Visual Effects (Hit Flashes)
     const effects = this.world.query([Component.VisualEffect]);
     for (const entityId of effects) {
         const fx = this.world.getComponent(entityId, Component.VisualEffect);

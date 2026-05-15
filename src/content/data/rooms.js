@@ -27,7 +27,7 @@ export const rooms = {
 
     hallway: defineRoom('hallway', {
         name: 'The Hallway',
-        description: 'A stone passage. Voices drift from the tavern to the north. A guard stands watch near the crossroads east.',
+        description: 'A stone passage. Voices drift from the tavern to the north. A guard stands watch near the mill to the east.',
         zone: 'town',
         width: 11, height: 11,
         exits: {"south":"cellar","north":"tavern","east":"mill","west":"library"},

@@ -244,9 +244,9 @@ Goal: prepare a small invite-only browser alpha.
 
 Suggested implementation slices:
 
-* `8.9a` Mobile layout and interaction polish
-* `8.9b` Reconnect, persistence, and session resilience pass
-* `8.9c` First-10-minute onboarding pass
+* `8.9a` Mobile layout and interaction polish — full spec: [docs/phases/8.9a-mobile-polish.md](docs/phases/8.9a-mobile-polish.md)
+* `8.9b` Reconnect, persistence, and session resilience pass — full spec: [docs/phases/8.9b-session-resilience.md](docs/phases/8.9b-session-resilience.md)
+* `8.9c` First-10-minute onboarding pass — full spec: [docs/phases/8.9c-onboarding.md](docs/phases/8.9c-onboarding.md)
 * `8.9d` Private-alpha feedback and bug-report workflow
 
 ### Phase 8.95: Engineering Hardening — COMPLETE
@@ -271,6 +271,8 @@ Suggested implementation slices:
 * `9c` Economy and combat balancing operations: audit XP curve, loot tables, and gold sinks against 10-, 30-, and 60-minute session data
 * `9d` Analytics-informed pruning: remove or demote dead-end mechanics surfaced by Phase 8.8 counters
 * `9e` Shard load balancing: arbiter tracks per-shard census and broadcasts migrate hints to clients above 80-peer threshold — *references: Naumenko et al. SIGCOMM 2019 (Erlay) for reconciliation set-size estimation applicable to shard migration; Cannon GDC 2011 / Fiedler 2010 (GGPO / Gaffer on Games) for rollback netcode on top of `hardStateQueue` to improve feel at 200–400ms latency*
+* `9g` Audio completeness pass — weather (storm/fog ambient loops), quest-complete stinger, and audio resume affordance ("tap to enable sound") on first load; sourced from 2026-05-15 audit
+* `9h` Sprite cache tuning — replace FIFO-evict-at-64 with LRU sized against animated frame count; add entity y-sort pass before draw; sourced from 2026-05-15 audit
 * `9f` World expansion — the dungeon currently has 5 rooms — *reference: Gumin 2016 (Wave Function Collapse) for constraint-based tile map generation; entirely browser-runnable, no dependencies, usable for new dungeon or seasonal layout variants*; the dungeon currently has 5 rooms and 2 enemy types (wraith, cave_troll); the mountain pass has 1 room and 1 enemy (mountain_troll); there is no weapon-progression gap between `steel_sword` (mountain_trial reward) and `magic_staff` (capstone reward); add at least one new zone (e.g. the Undercroft or Collapsed Tower) with a new enemy type, new loot, and a connecting quest chain; new content must pass the room-integrity cohesion check before merge
 
 ### Phase 10: Public Beta Preparation
