@@ -276,7 +276,9 @@ export const rooms = {
         tileOverrides: [
             { x: 9, y: 0, type: 'sand' }, { x: 10, y: 0, type: 'sand' }, { x: 11, y: 0, type: 'sand' },
             { x: 0, y: 9, type: 'sand' }, { x: 0, y: 10, type: 'sand' }, { x: 0, y: 11, type: 'sand' },
-            { x: 20, y: 9, type: 'sand' }, { x: 20, y: 10, type: 'sand' }, { x: 20, y: 11, type: 'sand' }
+            { x: 20, y: 9, type: 'sand' }, { x: 20, y: 10, type: 'sand' }, { x: 20, y: 11, type: 'sand' },
+            { x: 10, y: 10, type: 'water' }, { x: 11, y: 10, type: 'water' }, { x: 12, y: 10, type: 'water' },
+            { x: 10, y: 11, type: 'water' }, { x: 11, y: 11, type: 'water' }, { x: 12, y: 11, type: 'water' },
         ],
     }),
 
@@ -304,6 +306,10 @@ export const rooms = {
             '...............',
             '...............',
             '...............'
+        ],
+        tileOverrides: [
+            { x: 2, y: 12, type: 'water' }, { x: 3, y: 12, type: 'water' }, { x: 4, y: 12, type: 'water' },
+            { x: 2, y: 13, type: 'water' }, { x: 3, y: 13, type: 'water' }, { x: 4, y: 13, type: 'water' },
         ],
     }),
 

@@ -170,28 +170,30 @@ export class CombatSystem {
     const scaledDef = Math.floor(enemyDef.defense * scale);
 
     // 1. Initialize enemy if not present
+    // forestFights limit only applies to wilderness zones — dungeon runs are unlimited
+    const costsHunt = !isDungeon;
     if (!sharedEnemy || sharedEnemy.hp <= 0) {
-      if (this.localPlayer.forestFights <= 0) {
+      if (costsHunt && this.localPlayer.forestFights <= 0) {
         const msUntilReset = 86400000 - (Date.now() % 86400000);
         const hh = Math.floor(msUntilReset / 3600000);
         const mm = Math.floor((msUntilReset % 3600000) / 60000);
-        bus.emit('log', { msg: `You are too exhausted to fight today. Hunts reset in ${hh}h ${mm}m (UTC midnight).`, color: '#aaa' });
+        bus.emit('log', { msg: `You are too exhausted to hunt today. Hunts reset in ${hh}h ${mm}m (UTC midnight).`, color: '#aaa' });
         return;
       }
-      // 8.6b: storm costs 2 forest fights per encounter
-      const weatherEffect = getWeatherEffect(this.worldState.weather);
+      // 8.6b: storm costs 2 forest fights per encounter (wilderness only)
+      const weatherEffect = costsHunt ? getWeatherEffect(this.worldState.weather) : null;
       const fightCost = weatherEffect?.forestFightCostMult ?? 1;
-      if (fightCost > 1) {
-        bus.emit('log', { msg: `Storm: each fight costs ${fightCost} hunts. (${this.localPlayer.forestFights} remaining)`, color: '#f80' });
+      if (costsHunt && fightCost > 1) {
+        bus.emit('log', { msg: `Storm: each hunt costs ${fightCost} hunts. (${this.localPlayer.forestFights} remaining)`, color: '#f80' });
       }
-      if (this.localPlayer.forestFights < fightCost) {
+      if (costsHunt && this.localPlayer.forestFights < fightCost) {
         const msUntilReset = 86400000 - (Date.now() % 86400000);
         const hh = Math.floor(msUntilReset / 3600000);
         const mm = Math.floor((msUntilReset % 3600000) / 60000);
         bus.emit('log', { msg: `Too exhausted to venture out in this storm. Hunts reset in ${hh}h ${mm}m.`, color: '#aaa' });
         return;
       }
-      this.localPlayer.forestFights -= fightCost;
+      if (costsHunt) this.localPlayer.forestFights -= fightCost;
       sharedEnemy = { type: enemyType, hp: scaledHP, maxHp: scaledHP };
       this.shardEnemies.set(locId, sharedEnemy);
       this.localPlayer.currentEnemy = sharedEnemy;
@@ -208,12 +210,20 @@ export class CombatSystem {
     
     const gear = this.getBestGear(); 
     const strengthEffect = this.localPlayer.statusEffects?.find(s => s.id === 'strength_boost');
-    const elixirBonus = strengthEffect ? (strengthEffect.atkBonus || 5) : 0;
+    const mealEffect = this.localPlayer.statusEffects?.find(s => s.id === 'meal_boost');
+    const elixirBonus = (strengthEffect ? (strengthEffect.atkBonus || 5) : 0) + (mealEffect ? (mealEffect.atkBonus || 5) : 0);
     if (strengthEffect) {
         strengthEffect.duration--;
         if (strengthEffect.duration <= 0) {
             this.localPlayer.statusEffects = this.localPlayer.statusEffects.filter(s => s.id !== 'strength_boost');
             bus.emit('log', { msg: `[Effect] Strength boost fades.`, color: '#fa0' });
+        }
+    }
+    if (mealEffect) {
+        mealEffect.duration--;
+        if (mealEffect.duration <= 0) {
+            this.localPlayer.statusEffects = this.localPlayer.statusEffects.filter(s => s.id !== 'meal_boost');
+            bus.emit('log', { msg: `[Effect] Meal boost fades.`, color: '#e0a868' });
         }
     }
 

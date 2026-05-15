@@ -121,7 +121,7 @@ export const QUESTS = {
 
     // Capstone — cross-chain, requires militia + scholar completion
     ancient_throne: defineQuest('ancient_throne', {
-        id: 'ancient_throne', name: 'The Ancient Throne', giver: 'sage', receiver: null, type: 'kill',
+        id: 'ancient_throne', name: 'The Ancient Throne', giver: 'sage', receiver: 'sage', type: 'kill',
         description: 'Defeat the Throne Guardian in the Ancient Throne Room.',
         lore: 'The sage speaks of a sealed chamber beneath the ruins — only one who has faced the darkness above and below may enter.',
         objective: { type: 'kill', target: 'throne_guardian', count: 1 },

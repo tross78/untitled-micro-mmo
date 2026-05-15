@@ -493,7 +493,14 @@ export const setupGlobalEvents = () => {
     bus.on('trade:initiated', startTradeTimeout);
     bus.on('monster:damaged', triggerLogicalRefresh);
     bus.on('quest:progress', ({ name, current, total }) => showToast(`${name}: ${current}/${total}`));
-    bus.on('quest:complete', ({ name }) => showToast(`COMPLETED: ${name}! ✨`));
+    bus.on('quest:complete', ({ name, questId }) => {
+        if (questId === 'ancient_throne') {
+            showToast(`VICTORY: ${name}! The realm is saved.`);
+            bus.emit('log', { msg: `\n=== YOU HAVE CONQUERED THE ANCIENT THRONE ===\nHearthwick is saved. Your legend will be remembered.`, color: '#ff0' });
+        } else {
+            showToast(`COMPLETED: ${name}! ✨`);
+        }
+    });
     bus.on('world:event', ({ event }) => {
         const eventLabels = {
             market_surplus: 'Market Surplus',

@@ -225,7 +225,7 @@ export const handleNPCCommands = async (command, args) => {
                 });
                 
                 const newLevel = xpToLevel(localPlayer.xp);
-                bus.emit('quest:complete', { name: q.name, rewards: q.reward });
+                bus.emit('quest:complete', { name: q.name, questId: q.id, rewards: q.reward });
                 if (newLevel > localPlayer.level) {
                     localPlayer.level = newLevel;
                     bus.emit('player:levelup', { level: localPlayer.level });

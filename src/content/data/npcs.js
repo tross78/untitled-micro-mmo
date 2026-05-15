@@ -7,7 +7,7 @@ export const NPCS = {
         palette: 'npcWarm',
         home: 'tavern', 
         role: 'shop', 
-        shop: ['ale', 'bread', 'potion'],
+        shop: ['ale', 'bread', 'potion', 'warm_cloak'],
         baseDialogue: "Welcome to the Rusty Flagon. Stay a while, have a drink. You look like you could use a rest."
     }),
     bard: defineNpc('bard', {

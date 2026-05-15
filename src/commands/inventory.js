@@ -78,8 +78,8 @@ export const handleInventoryCommands = async (command, args) => {
                     localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== item.clears);
                 }
                 if (item.atkBonus) {
-                    localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== 'strength_boost');
-                    localPlayer.statusEffects.push({ id: 'strength_boost', atkBonus: item.atkBonus, duration: 50 });
+                    localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== 'meal_boost');
+                    localPlayer.statusEffects.push({ id: 'meal_boost', atkBonus: item.atkBonus, duration: 50 });
                 }
                 localPlayer.inventory.splice(idx, 1);
                 const msg = [
