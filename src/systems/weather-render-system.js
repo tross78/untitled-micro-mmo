@@ -20,8 +20,9 @@ export class WeatherRenderSystem {
      * @param {CanvasRenderingContext2D} ctx
      * @param {object} worldState
      * @param {string} roomId
+     * @param {number} gameTime - Monotonic game time in seconds from the loop
      */
-    draw(ctx, worldState, roomId) {
+    draw(ctx, worldState, roomId, gameTime = 0) {
         const room = worldData[roomId];
         if (!room || room.zone === 'town' || room.zone === 'interior') return;
 
@@ -38,38 +39,35 @@ export class WeatherRenderSystem {
         }
 
         if (this.targetWeather === 'storm') {
-            this.drawStorm(ctx, this.overlayAlpha);
+            this.drawStorm(ctx, this.overlayAlpha, gameTime);
         } else if (this.targetWeather === 'fog') {
-            this.drawFog(ctx, room.zone, this.overlayAlpha);
+            this.drawFog(ctx, room.zone, this.overlayAlpha, gameTime);
         }
     }
 
-    drawStorm(ctx, alpha = 1) {
-        const now = Date.now();
-        
+    drawStorm(ctx, alpha = 1, gameTime = 0) {
         // Dark blue tint
         ctx.fillStyle = `rgba(20, 30, 80, ${0.08 * alpha})`;
         ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
 
-        // Rain streaks
+        // Rain streaks — scroll position driven by game time, not wall clock
         ctx.strokeStyle = `rgba(200, 220, 255, ${0.35 * alpha})`;
         ctx.lineWidth = 1;
         ctx.beginPath();
         for (let i = 0; i < 40; i++) {
             const offset = i * 137.5; // Golden angle-ish distribution
-            const x = (offset + (now / 10)) % this.VP.CW;
-            const y = (offset * 1.5 + (now / 2)) % this.VP.CH;
-            
+            const x = (offset + gameTime * 100) % this.VP.CW;
+            const y = (offset * 1.5 + gameTime * 500) % this.VP.CH;
+
             ctx.moveTo(x, y);
             ctx.lineTo(x - 3, y + 6); // 30 degree diagonal
         }
         ctx.stroke();
     }
 
-    drawFog(ctx, zone, alpha = 1) {
-        const now = Date.now();
+    drawFog(ctx, zone, alpha = 1, gameTime = 0) {
         const maxAlpha = zone === 'wilderness' ? 0.4 : 0.2;
-        const pulse = Math.sin(now / 3000) * 0.05;
+        const pulse = Math.sin(gameTime * (1000 / 3000)) * 0.05;
         const effectiveAlpha = (maxAlpha + pulse) * alpha;
 
         const grad = ctx.createRadialGradient(

@@ -17,10 +17,12 @@ export class MapRenderSystem {
         this.world = world;
         this.VP = vp;
         this.tileCache = null; // { locKey: string, canvas: OffscreenCanvas } — full room, blit by camera offset
+        this._scatterCache = null; // { key: string, content: array } — memoized scattered content
     }
 
     invalidate() {
         this.tileCache = null;
+        this._scatterCache = null;
     }
 
     /**
@@ -28,8 +30,11 @@ export class MapRenderSystem {
      * @param {object} state - { localPlayer, worldState, worldData }
      * @param {number} camX
      * @param {number} camY
+     * @param {number} screenOffsetX
+     * @param {number} screenOffsetY
+     * @param {number} gameTime - Monotonic game time in seconds from the loop
      */
-    draw(ctx, state, camX, camY, screenOffsetX = 0, screenOffsetY = 0) {
+    draw(ctx, state, camX, camY, screenOffsetX = 0, screenOffsetY = 0, gameTime = 0) {
         const { localPlayer, worldState, worldData } = state;
         const locId = localPlayer.location;
         const loc = worldData[locId];
@@ -57,7 +62,7 @@ export class MapRenderSystem {
             const sx = sc.x - camX;
             const sy = sc.y - camY;
             if (sx < -(sc.w || 1) || sx >= this.VP.W || sy < -(sc.h || 1) || sy >= this.VP.H) return;
-            this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY, sc.w || 1, sc.h || 1, sc.x, sc.y);
+            this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY, sc.w || 1, sc.h || 1, sc.x, sc.y, gameTime);
         });
 
         // 4. Draw Exits — portals glow, stairs get sprite, edge/door get a directional arrow
@@ -68,24 +73,25 @@ export class MapRenderSystem {
             if (ex.type === 'portal') {
                 drawTile(ctx, 'exit', screenOffsetX + sx * this.VP.S, screenOffsetY + sy * this.VP.S, 0, this.VP.S);
             } else if (ex.type === 'stairs' || ex.type === 'up' || ex.type === 'down') {
-                this.drawScenery(ctx, sx, sy, 'stairs', screenOffsetX, screenOffsetY);
+                this.drawScenery(ctx, sx, sy, 'stairs', screenOffsetX, screenOffsetY, 1, 1, ex.x, ex.y, gameTime);
             } else {
-                this.drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY);
+                this.drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY, gameTime);
             }
         });
 
-        // 5. Draw Scattered Content — skip nodes already gathered today
+        // 5. Draw Scattered Content — memoized per (locId, day), filtered per frame for gathered nodes
+        const scatterKey = `${locId}:${worldState.day}`;
+        if (!this._scatterCache || this._scatterCache.key !== scatterKey) {
+            this._scatterCache = { key: scatterKey, content: getScatteredContent(locId, worldState.day, loc) };
+        }
         const gatheredNodes = localPlayer.gatheredNodes;
         const gatheredSameDay = gatheredNodes?.day === worldState.day;
-        const scattered = getScatteredContent(locId, worldState.day, loc).filter(sc => {
-            if (!gatheredSameDay || !gatheredNodes?.nodes) return true;
-            return !gatheredNodes.nodes.has(`${locId}:${sc.x},${sc.y}`);
-        });
-        scattered.forEach(sc => {
+        this._scatterCache.content.forEach(sc => {
+            if (gatheredSameDay && gatheredNodes?.nodes?.has(`${locId}:${sc.x},${sc.y}`)) return;
             const sx = sc.x - camX;
             const sy = sc.y - camY;
             if (sx < -1 || sx >= this.VP.W || sy < -1 || sy >= this.VP.H) return;
-            this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY);
+            this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY, 1, 1, sc.x, sc.y, gameTime);
         });
 
         // 6. Draw Movement Target (Affordance Phase 8.5a)
@@ -98,7 +104,7 @@ export class MapRenderSystem {
 
             const px = screenOffsetX + tx * this.VP.S + this.VP.S / 2;
             const py = screenOffsetY + ty * this.VP.S + this.VP.S / 2;
-            const alpha = 0.5 + Math.sin(Date.now() / 150) * 0.3;
+            const alpha = 0.5 + Math.sin(gameTime * (1000 / 150)) * 0.3;
 
             ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
             ctx.lineWidth = 2;
@@ -111,15 +117,16 @@ export class MapRenderSystem {
         });
 
         // 7. Draw tap/click pulse affordance (P1)
+        const now = Date.now();
         const playersWithTap = this.world.query([Component.PlayerControlled, Component.TapPulse]);
         playersWithTap.forEach(id => {
             const tap = this.world.getComponent(id, Component.TapPulse);
             if (!tap) return;
-            if (Date.now() > tap.expiresAt) {
+            if (now > tap.expiresAt) {
                 this.world.removeComponent(id, Component.TapPulse);
                 return;
             }
-            const progress = 1 - (tap.expiresAt - Date.now()) / 600;
+            const progress = 1 - (tap.expiresAt - now) / 600;
             const tx = tap.x - camX;
             const ty = tap.y - camY;
             if (tx < -1 || tx >= this.VP.W || ty < -1 || ty >= this.VP.H) return;
@@ -161,7 +168,7 @@ export class MapRenderSystem {
         this.tileCache = { locKey, canvas: off };
     }
 
-    drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY) {
+    drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY, gameTime = 0) {
         const exW = ex.w || 1;
         const exH = ex.h || 1;
         const px = screenOffsetX + sx * this.VP.S;
@@ -176,7 +183,7 @@ export class MapRenderSystem {
         else if (ex.x === 0) dir = 'west';
         else if (ex.x + exW >= loc.width) dir = 'east';
 
-        const pulse = 0.55 + Math.sin(Date.now() / 600) * 0.2;
+        const pulse = 0.55 + Math.sin(gameTime * (1000 / 600)) * 0.2;
         ctx.save();
         ctx.globalAlpha = pulse;
 
@@ -218,16 +225,16 @@ export class MapRenderSystem {
         ctx.restore();
     }
 
-    drawScenery(ctx, sx, sy, label, screenOffsetX = 0, screenOffsetY = 0, w = 1, h = 1, _wx = 0, _wy = 0) {
+    drawScenery(ctx, sx, sy, label, screenOffsetX = 0, screenOffsetY = 0, w = 1, h = 1, _wx = 0, _wy = 0, gameTime = 0) {
         const px = screenOffsetX + sx * this.VP.S;
         const py = screenOffsetY + sy * this.VP.S;
 
         const compiledMeta = getCompiledAssetMeta(label);
-        
-        // Phase 8.76 P3: Animation frame for scenery
+
+        // Phase 8.76 P3: Animation frame for scenery — game-time-based, frame-rate-independent
         let frameIdx = 0;
         if (compiledMeta?.frames?.length > 1 && compiledMeta.frameRate) {
-            frameIdx = Math.floor(Date.now() / (1000 / compiledMeta.frameRate)) % compiledMeta.frames.length;
+            frameIdx = Math.floor(gameTime * compiledMeta.frameRate) % compiledMeta.frames.length;
         }
 
         const usingCompiledShape = compiledMeta && usesCompiledShape(label);

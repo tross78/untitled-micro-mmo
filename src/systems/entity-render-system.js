@@ -25,8 +25,11 @@ export class EntityRenderSystem {
      * @param {CanvasRenderingContext2D} ctx
      * @param {number} camX
      * @param {number} camY
+     * @param {number} screenOffsetX
+     * @param {number} screenOffsetY
+     * @param {number} gameTime - Monotonic game time in seconds from the loop
      */
-    draw(ctx, camX, camY, screenOffsetX = 0, screenOffsetY = 0) {
+    draw(ctx, camX, camY, screenOffsetX = 0, screenOffsetY = 0, gameTime = 0) {
         const entities = this.world.query([Component.Transform, Component.Sprite]);
 
         // Cap cache growth (Phase 8.76 P0)
@@ -45,12 +48,13 @@ export class EntityRenderSystem {
             let drawY = transform.y;
             let walkPose = { legOffset: 0, bodyY: 0 };
 
-            // Apply Tweening & Animation (Zelda-style)
+            // Apply Tweening & Animation (Zelda-style) — ease-out quad for snappy feel
             if (tween) {
-                drawX = tween.startX + (tween.targetX - tween.startX) * tween.progress;
-                drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
+                const t = 1 - (1 - tween.progress) * (1 - tween.progress); // ease-out quad
+                drawX = tween.startX + (tween.targetX - tween.startX) * t;
+                drawY = tween.startY + (tween.targetY - tween.startY) * t;
                 if (spriteDef.palette !== 'enemy') {
-                    walkPose = getWalkPose(Date.now());
+                    walkPose = getWalkPose(gameTime * 1000);
                 }
             }
 
@@ -96,7 +100,7 @@ export class EntityRenderSystem {
             const meta = getCompiledAssetMeta(variant);
             let frameIdx = 0;
             if (meta?.frames?.length > 1 && meta.frameRate) {
-                frameIdx = Math.floor(Date.now() / (1000 / meta.frameRate)) % meta.frames.length;
+                frameIdx = Math.floor(gameTime * meta.frameRate) % meta.frames.length;
             }
 
             // 3. Draw Sprite

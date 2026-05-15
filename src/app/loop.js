@@ -16,11 +16,13 @@ export class GameLoop {
     this.delta = 1 / fps;
     this.update = update;
     this.render = render;
-    
+
     this.accumulator = 0;
     this.last = 0;
     this.rafId = null;
     this.stopped = true;
+    /** Monotonically increasing game time in seconds, advances only on fixed steps */
+    this.gameTime = 0;
   }
 
   start() {
@@ -46,10 +48,11 @@ export class GameLoop {
 
       while (this.accumulator >= this.delta) {
         this.update(this.delta);
+        this.gameTime += this.delta;
         this.accumulator -= this.delta;
       }
 
-      this.render();
+      this.render(this.gameTime);
       this.rafId = requestAnimationFrame(this.frame);
     };
     this.rafId = requestAnimationFrame(this.frame);

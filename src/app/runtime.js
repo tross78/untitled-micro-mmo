@@ -57,6 +57,13 @@ class AppRuntime {
     // Transition fade overlay state
     this._transition = { active: false, phase: 'idle', alpha: 0 };
 
+    // Cached canvas element (set in initSystems)
+    this._canvas = null;
+
+    // Cached chrome heights — recomputed only in updateViewport()
+    this._topChrome = 0;
+    this._bottomChrome = 0;
+
     // Viewport Config (Responsive Phase 8)
     this.VP = { 
         W: 20, H: 12, S: 48,
@@ -120,14 +127,16 @@ class AppRuntime {
     this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState, shardEnemies, getNPCsAt });
     this.audioSystem = new AudioSystem(this.world);
 
+    this._canvas = document.getElementById('game-canvas');
+
     this.loop = new GameLoop({
       fps: 60,
       update: (dt) => this.update(dt),
-      render: () => {
-          const canvas = document.getElementById('game-canvas');
-          if (canvas instanceof HTMLCanvasElement) {
-              const ctx = canvas.getContext('2d');
-              if (ctx) this.draw(ctx, localPlayerStore);
+      render: (gameTime) => {
+          if (!this._canvas) this._canvas = document.getElementById('game-canvas');
+          if (this._canvas instanceof HTMLCanvasElement) {
+              const ctx = this._canvas.getContext('2d');
+              if (ctx) this.draw(ctx, localPlayerStore, gameTime);
           }
       },
     });
@@ -144,6 +153,10 @@ class AppRuntime {
     this.VP.S = Math.max(40, Math.min(72, Math.min(sFromW, sFromH)));
     this.VP.W = Math.floor(width  / this.VP.S);
     this.VP.H = Math.floor(height / this.VP.S);
+
+    // Cache chrome heights — these only change on resize
+    this._topChrome = this.getTopChromeHeight();
+    this._bottomChrome = this.getBottomChromeHeight();
 
     if (this.mapRender) this.mapRender.VP = this.VP;
     if (this.entityRender) this.entityRender.VP = this.VP;
@@ -196,8 +209,9 @@ class AppRuntime {
   /**
    * @param {CanvasRenderingContext2D} ctx
    * @param {object} localPlayerStore
+   * @param {number} gameTime - Monotonic game time in seconds (from GameLoop)
    */
-  draw(ctx, localPlayerStore) {
+  draw(ctx, localPlayerStore, gameTime = 0) {
     const transform = this.world.getComponent(this.playerEntityId, Component.Transform);
     const tween = this.world.getComponent(this.playerEntityId, Component.Tweenable);
     if (!transform || !this.mapRender || !this.entityRender || !this.uiRender) return;
@@ -207,8 +221,9 @@ class AppRuntime {
     let drawX = transform.x;
     let drawY = transform.y;
     if (tween) {
-        drawX = tween.startX + (tween.targetX - tween.startX) * tween.progress;
-        drawY = tween.startY + (tween.targetY - tween.startY) * tween.progress;
+        const t = 1 - (1 - tween.progress) * (1 - tween.progress); // ease-out quad, matches entity render
+        drawX = tween.startX + (tween.targetX - tween.startX) * t;
+        drawY = tween.startY + (tween.targetY - tween.startY) * t;
     }
 
     const { camX, camY, screenOffsetX, screenOffsetY, worldVP } = this.getViewportTransform(drawX, drawY, transform.mapId);
@@ -225,9 +240,9 @@ class AppRuntime {
     if (this.mapRender) this.mapRender.VP = worldVP;
     if (this.entityRender) this.entityRender.VP = worldVP;
     if (this.weatherRender) this.weatherRender.VP = worldVP;
-    this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY);
-    this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY);
-    if (this.weatherRender) this.weatherRender.draw(ctx, worldState, transform.mapId);
+    this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY, gameTime);
+    this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY, gameTime);
+    if (this.weatherRender) this.weatherRender.draw(ctx, worldState, transform.mapId, gameTime);
     if (this.mapRender) this.mapRender.VP = this.VP;
     if (this.entityRender) this.entityRender.VP = this.VP;
     if (this.weatherRender) this.weatherRender.VP = this.VP;
@@ -248,8 +263,8 @@ class AppRuntime {
   }
 
   getWorldViewport() {
-    const topChrome = this.getTopChromeHeight();
-    const bottomChrome = this.getBottomChromeHeight();
+    const topChrome = this._topChrome || this.getTopChromeHeight();
+    const bottomChrome = this._bottomChrome || this.getBottomChromeHeight();
     const worldPxH = Math.max(this.VP.S * 4, this.VP.CH - topChrome - bottomChrome);
     const worldRows = Math.max(4, Math.ceil(worldPxH / this.VP.S));
     return {
