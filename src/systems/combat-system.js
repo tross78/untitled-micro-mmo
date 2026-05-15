@@ -217,11 +217,21 @@ export class CombatSystem {
         }
     }
 
+    const torchEffect = this.localPlayer.statusEffects?.find(s => s.id === 'coal_torch');
+    if (torchEffect) {
+        torchEffect.duration--;
+        if (torchEffect.duration <= 0) {
+            this.localPlayer.statusEffects = this.localPlayer.statusEffects.filter(s => s.id !== 'coal_torch');
+            bus.emit('log', { msg: `[Effect] Coal torch burns out.`, color: '#f07820' });
+        }
+    }
+
     const playerRes = resolveAttack(this.localPlayer.attack + bonus.attack + gear.weaponBonus + elixirBonus, scaledDef, rng);
     const isNight = getTimeOfDay() === 'night';
+    const hasTorch = !!torchEffect;
     // 8.6b: fog gives enemies an extra 20% miss chance
     const fogMiss = this.worldState.weather === 'fog' && rng(100) < 20;
-    const enemyRes = fogMiss ? { damage: 0, isCrit: false, isDodge: true } : resolveAttack(scaledAtk, this.localPlayer.defense + bonus.defense + gear.defenseBonus, rng, isNight);
+    const enemyRes = fogMiss ? { damage: 0, isCrit: false, isDodge: true } : resolveAttack(scaledAtk, this.localPlayer.defense + bonus.defense + gear.defenseBonus, rng, isNight && !hasTorch);
 
     // 3. Apply Player Attack
     this.world.setComponent(entityId, Component.AttackAnimation, { dir: transform.facing || 's', progress: 0 });

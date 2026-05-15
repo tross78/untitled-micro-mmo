@@ -43,6 +43,7 @@ const TILE_PAL = {
     sand:        { base: '#d8bc70', hi: '#ead898', lo: '#a88840', accent: '#f8eebc' },
     forest:      { base: '#204818', hi: '#346828', lo: '#102808', accent: '#50a030' },
     cobble:      { base: '#585048', hi: '#787060', lo: '#343028', accent: '#989088' },
+    mud:         { base: '#3a2c1e', hi: '#5a4c3e', lo: '#1a100a', accent: '#6a5848' },
 };
 
 const zoneTileType = (locationId) => {
@@ -57,10 +58,10 @@ const zoneTileType = (locationId) => {
         frozen_lake: 'ice',
         lake_shore: 'sand',      harbour: 'sand',
         mountain_pass: 'stone_floor', watchtower: 'stone_floor',
-        catacombs: 'dungeon',    dungeon_cell: 'dungeon',
         throne_room: 'dungeon',
-        cave: 'cave',            sea_cave: 'cave',
-        smuggler_den: 'cave',
+        cave: 'mud',             sea_cave: 'mud',
+        smuggler_den: 'mud',     catacombs: 'mud',
+        dungeon_cell: 'mud',
     };
     return map[locationId] || 'stone_floor';
 };
@@ -79,14 +80,18 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
     ctx.fillRect(cx, cy, S, S);
 
     if (tileType === 'grass' || tileType === 'forest') {
-        // Structured tufts — 4 tuft position templates, picked by variant
+        // 8 tuft position templates — variant selects from all 8
         const tufts = [
-            [[2, S-6], [S-5, 3]],           // v0: two corner tufts
-            [[h-1, 2], [3, S-5]],            // v1: top-center + bottom-left
-            [[2, 3], [S-5, S-6], [h, h-2]],  // v2: three tufts
-            [[h-1, h-2]],                     // v3: single center tuft
+            [[2, S-6], [S-5, 3]],                       // v0: two corner tufts
+            [[h-1, 2], [3, S-5]],                        // v1: top-center + bottom-left
+            [[2, 3], [S-5, S-6], [h, h-2]],              // v2: three tufts
+            [[h-1, h-2]],                                 // v3: single center tuft
+            [[1, 2], [S-4, 2], [h-1, S-5]],              // v4: top-two + bottom-center
+            [[q, h-1], [S-q-1, h-1]],                    // v5: mid-row pair
+            [[2, S-4], [h, 3], [S-4, S-5]],              // v6: sparse triangle
+            [[q, 2], [h, h-1], [S-q-2, S-5]],            // v7: diagonal scatter
         ];
-        const tgroup = tufts[variant % 4];
+        const tgroup = tufts[variant % 8];
         tgroup.forEach(([tx, ty]) => {
             ctx.fillStyle = p.hi;
             ctx.fillRect(cx + tx, cy + ty, 1, 3);      // stem
@@ -138,10 +143,21 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
         ctx.fillRect(cx + 1,     cy + h + 3, 1, h - 3); // Q3 left
         ctx.fillRect(cx + h + 3, cy + h + 3, h - 3, 1); // Q4 top
         ctx.fillRect(cx + h + 3, cy + h + 3, 1, h - 3); // Q4 left
-        // Occasional wear mark (variant-dependent, not random)
+        // Wear mark (v0-v1), crack (v4-v5), moss patch (v6-v7)
         if (variant < 2) {
             ctx.fillStyle = p.lo;
             ctx.fillRect(cx + q + 1, cy + q + 1, 2, 1);
+        } else if (variant >= 4 && variant <= 5) {
+            // Diagonal crack line across one quadrant
+            ctx.fillStyle = p.lo;
+            const cx0 = variant === 4 ? 2 : h + 3;
+            for (let i = 0; i < h - 3; i++) { ctx.fillRect(cx + cx0 + i, cy + 2 + i, 1, 1); }
+        } else if (variant >= 6) {
+            // Moss patch — small green spot in corner
+            ctx.fillStyle = '#486830';
+            ctx.fillRect(cx + 2, cy + h + 3, 3, 2);
+            ctx.fillStyle = '#60883a';
+            ctx.fillRect(cx + 3, cy + h + 3, 1, 1);
         }
 
     } else if (tileType === 'cobble') {
@@ -171,14 +187,40 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
                 ctx.fillRect(cx + x + (y/4 % 2)*2, cy + y, 2, 1);
             }
         }
-        // Variant: occasional pebble at fixed position
         if (variant < 3) {
+            // Pebble
             ctx.fillStyle = p.lo;
-            const px = q + (variant * q) % (h);
+            const px = q + (variant * q) % h;
             ctx.fillRect(cx + px, cy + h, 3, 2);
             ctx.fillStyle = p.accent;
             ctx.fillRect(cx + px, cy + h, 3, 1);
+        } else if (variant >= 3 && variant <= 5) {
+            // Rut — a shallow horizontal groove
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + 1, cy + h - 1, S - 2, 1);
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + 1, cy + h - 2, S - 2, 1);
+        } else if (variant >= 6) {
+            // Cracked-earth — two intersecting fissure lines
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + q, cy + 2, 1, h - 2);
+            ctx.fillRect(cx + h, cy + h, 1, h - 2);
         }
+
+    } else if (tileType === 'mud') {
+        // Wet cave mud — dark base with damp sheen and pebble texture
+        for (let y = 0; y < S; y += 3) {
+            for (let x = 0; x < S; x += 3) {
+                const off = (x + y + variant) % 5;
+                ctx.fillStyle = off === 0 ? p.lo : off === 4 ? p.hi : p.base;
+                ctx.fillRect(cx + x, cy + y, 3, 3);
+            }
+        }
+        // Damp sheen — one highlight pixel per tile, position varies by variant
+        ctx.fillStyle = p.accent;
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(cx + (q + variant * 2) % (S - 2), cy + (variant * 3) % (S - 2), 2, 1);
+        ctx.globalAlpha = 1.0;
 
     } else if (tileType === 'sand') {
         // Horizontal ripple bands at consistent Y positions
@@ -625,6 +667,26 @@ const SHAPES = {
         "24422242", "22442222", "22244222", "02222220",
         "00222200", "00000000", "00000000", "00000000"
     ],
+    herbs: [
+        "00000000", "00030000", "00330300", "03303330",
+        "03333300", "00033030", "00333000", "00133100",
+        "00111000", "00010000", "00010000", "00000000"
+    ],
+    fiber: [
+        "00000000", "00300030", "03003003", "30030030",
+        "03300303", "00330030", "00033000", "00133100",
+        "00111000", "00010000", "00010000", "00000000"
+    ],
+    stone: [
+        "00000000", "00000000", "00222200", "02333220",
+        "23333322", "23222322", "23333322", "02222220",
+        "00222200", "00000000", "00000000", "00000000"
+    ],
+    coal: [
+        "00000000", "00000000", "00222200", "02222220",
+        "22122212", "21222222", "22212122", "02222220",
+        "00222200", "00000000", "00000000", "00000000"
+    ],
 };
 
 /**
@@ -797,6 +859,10 @@ const _SP = {
     s: ['#b0a888','#706848','#181408','#d8d0b0'],  // warm stone/bones
     L: ['#a06030','#603010','#180800','#d09060'],  // warm brown wood/log
     O: ['#808898','#484858','#101018','#c8d8b0'],  // grey-green ore with pale accent
+    H: ['#48a030','#205810','#081800','#80e050'],  // vivid herb green
+    F: ['#78b848','#386818','#081808','#b8e888'],  // pale fiber green
+    T: ['#909898','#585858','#181818','#c8d0c8'],  // light stone grey
+    C: ['#282828','#101010','#000000','#484848'],  // near-black coal
     p: ['#d8c080','#906820','#180800','#f8e8a8'],  // parchment/scroll
     d: ['#f0c020','#a06800','#181000','#fff088'],  // bright gold
     f: ['#f07820','#a03008','#180800','#ffe040'],  // vivid fire/torch
@@ -815,6 +881,9 @@ const _SM = {
     snowflake:'i',
     mushroom:'m', shell:'h',
     log:'L', ore:'O',
+    herbs:'H', fiber:'F',
+    stone:'T', coal:'C',
+    well:'s', flower_pot:'w',
 };
 
 export function getSceneryPalette(label) {

@@ -9,6 +9,7 @@ import { shardEnemies, localPlayer, worldState } from '../state/store.js';
 import { ITEMS, NPCS } from '../content/data.js';
 import { getScatteredContent, getNPCDialogue, findSafeArrival } from '../rules/index.js';
 import { getNPCsAt, grantItem } from '../commands/helpers.js';
+import { seededRNG, hashStr } from '../rules/utils.js';
 import { ACTION } from '../engine/input.js';
 import { log } from '../ui/index.js';
 
@@ -293,7 +294,7 @@ export class MovementSystem {
 
         let itemId;
         if (itemAtFeet.type === 'resource') {
-            const RESOURCE_LABEL_TO_ITEM = { log: 'wood', ore: 'iron' };
+            const RESOURCE_LABEL_TO_ITEM = { log: 'wood', ore: 'iron', stone: 'stone', fiber: 'fiber', coal: 'coal' };
             itemId = RESOURCE_LABEL_TO_ITEM[itemAtFeet.label] || itemAtFeet.label;
         } else {
             itemId = itemAtFeet.label === 'mushroom' ? 'red_mushroom' : 'herbs';
@@ -306,7 +307,33 @@ export class MovementSystem {
         return;
     }
 
-    // 3. Check for Loot
+    // 3. Check for water tile adjacent (fishing)
+    const facingTarget = this.getFacingTarget(transform);
+    const facingTile = (loc.tileOverrides || []).find(t => t.x === facingTarget.x && t.y === facingTarget.y && t.type === 'water');
+    if (facingTile) {
+        const nodeKey = `${locId}:fish:${facingTarget.x},${facingTarget.y}`;
+        if (localPlayer.gatheredNodes.day !== worldState.day) {
+            localPlayer.gatheredNodes.nodes.clear();
+            localPlayer.gatheredNodes.day = worldState.day;
+        }
+        if (localPlayer.gatheredNodes.nodes.has(nodeKey)) {
+            bus.emit('log', { msg: `You already fished here today.`, color: '#aaa' });
+            return;
+        }
+        localPlayer.gatheredNodes.nodes.add(nodeKey);
+        const fishSeed = hashStr(`${locId}:${worldState.day}:fish:${facingTarget.x},${facingTarget.y}`);
+        const rng = seededRNG(fishSeed);
+        if (rng() < 0.6) {
+            grantItem('fish');
+            bus.emit('item:pickup', { item: ITEMS['fish'] });
+            bus.emit('log', { msg: `You caught a fish!`, color: '#4080c0' });
+        } else {
+            bus.emit('log', { msg: `Nothing biting here today.`, color: '#aaa' });
+        }
+        return;
+    }
+
+    // 4. Check for Loot
     const sharedEnemy = shardEnemies.get(locId);
     if (sharedEnemy && sharedEnemy.hp <= 0 && sharedEnemy.loot && sharedEnemy.loot.length > 0) {
       const loot = [...sharedEnemy.loot];

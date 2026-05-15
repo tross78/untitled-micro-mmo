@@ -13,6 +13,7 @@ const RUNTIME_SPRITE_NAMES = new Set([
     'anchor', 'snowflake', 'crown', 'ladder', 'shell', 'door_arch', 'candle',
     'bookshelf', 'fireplace', 'chair', 'counter', 'cauldron', 'pillar', 'table',
     'bed', 'well', 'flower_pot', 'stairs', 'log', 'ore',
+    'herbs', 'fiber', 'stone', 'coal',
 ]);
 
 const VALID_TILES = new Set(Object.values(TILE_TAXONOMY).flat());
@@ -25,6 +26,9 @@ const FORAGE_LABEL_TO_ITEM = {
 const RESOURCE_LABEL_TO_ITEM = {
   log: 'wood',
   ore: 'iron',
+  stone: 'stone',
+  fiber: 'fiber',
+  coal: 'coal',
 };
 
 const hasDuplicateIds = (definitions) => new Set(definitions.map((entry) => entry.id)).size !== definitions.length;

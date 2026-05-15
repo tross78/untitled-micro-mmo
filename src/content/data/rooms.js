@@ -188,7 +188,8 @@ export const rooms = {
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [2, 4] },
             { type: 'flora', label: 'mushroom', count: [1, 2] },
-            { type: 'resource', label: 'log', count: [2, 3] }
+            { type: 'resource', label: 'log', count: [2, 3] },
+            { type: 'resource', label: 'fiber', count: [1, 2] }
         ],
         enemy: 'forest_wolf',
         tileOverrides: [
@@ -238,7 +239,9 @@ export const rooms = {
         exitTiles: "5,0,forest_edge,9,19,door,3,1",
         scenery: "1,1,rock|10,1,rock|1,10,mushroom|10,10,mushroom|5,3,mushroom|6,3,mushroom|5,8,rock|6,8,rock",
         sceneryScatter: [
-            { type: 'resource', label: 'ore', count: [2, 3] }
+            { type: 'resource', label: 'ore', count: [2, 3] },
+            { type: 'resource', label: 'stone', count: [1, 2] },
+            { type: 'resource', label: 'coal', count: [1, 2] }
         ],
         enemy: 'cave_troll',
         tiles: [
@@ -267,7 +270,8 @@ export const rooms = {
         exitTiles: "0,9,forest_depths,23,11,edge,1,3|9,0,mountain_pass,9,19,edge,3,1|20,9,harbour,1,6,edge,1,3",
         scenery: "1,1,tree|17,1,tree|7,1,rock|2,9,rock|2,11,rock|5,5,rock|15,5,rock|5,15,rock|15,15,rock",
         sceneryScatter: [
-            { type: 'flora', label: 'herbs', count: [1, 3] }
+            { type: 'flora', label: 'herbs', count: [1, 3] },
+            { type: 'resource', label: 'fiber', count: [1, 3] }
         ],
         tileOverrides: [
             { x: 9, y: 0, type: 'sand' }, { x: 10, y: 0, type: 'sand' }, { x: 11, y: 0, type: 'sand' },
@@ -359,7 +363,9 @@ export const rooms = {
         exitTiles: "9,30,lake_shore,9,1,edge,3,1|9,0,watchtower,2,19,edge,3,1|20,14,frozen_lake,1,5,edge,1,3",
         terrain: { floor: 'stone_floor', density: 12, clutter: ['rock'] },
         sceneryScatter: [
-            { type: 'resource', label: 'ore', count: [1, 2] }
+            { type: 'resource', label: 'ore', count: [1, 2] },
+            { type: 'resource', label: 'stone', count: [1, 2] },
+            { type: 'resource', label: 'coal', count: [1, 2] }
         ],
         enemy: 'mountain_troll',
     }),
@@ -420,6 +426,9 @@ export const rooms = {
         exits: {"south":"forest_edge","north":"ruins_descent"},
         exitTiles: "9,20,forest_edge,9,1,edge,3,1|10,0,ruins_descent,5,9,stairs",
         scenery: "8,7,altar|3,3,pillar|16,3,pillar|3,16,pillar|16,16,pillar|3,9,torch|16,9,torch|9,3,torch|9,16,torch|6,6,pillar|13,6,pillar|6,13,pillar|13,13,pillar",
+        sceneryScatter: [
+            { type: 'resource', label: 'stone', count: [1, 2] }
+        ],
         staticEntities: [{ id: 'sage', x: 8, y: 8 }],
         enemy: 'ruin_shade',
         tiles: [

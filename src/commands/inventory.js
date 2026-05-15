@@ -72,16 +72,33 @@ export const handleInventoryCommands = async (command, args) => {
             if (item?.type === 'consumable') {
                 const bonus = levelBonus(localPlayer.level);
                 const cap = localPlayer.maxHp + bonus.maxHp + (localPlayer.statusEffects?.find(s => s.id === 'well_rested') ? 5 : 0);
-                localPlayer.hp = Math.min(cap, localPlayer.hp + item.heal);
+                if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
+                if (item.heal > 0) localPlayer.hp = Math.min(cap, localPlayer.hp + item.heal);
+                if (item.clears) {
+                    localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== item.clears);
+                }
+                if (item.atkBonus) {
+                    localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== 'strength_boost');
+                    localPlayer.statusEffects.push({ id: 'strength_boost', atkBonus: item.atkBonus, duration: 50 });
+                }
                 localPlayer.inventory.splice(idx, 1);
-                bus.emit('log', { msg: `You use ${item.name} (+${item.heal} HP).`, color: '#0f0' });
+                const msg = [
+                    item.heal > 0 ? `+${item.heal} HP` : null,
+                    item.clears ? `clears ${item.clears}` : null,
+                    item.atkBonus ? `+${item.atkBonus} ATK for 50 rounds` : null,
+                ].filter(Boolean).join(', ');
+                bus.emit('log', { msg: `You use ${item.name}${msg ? ` (${msg})` : ''}.`, color: '#0f0' });
                 saveLocalState(localPlayer);
             } else if (item?.type === 'buff') {
                 if (!localPlayer.statusEffects) localPlayer.statusEffects = [];
-                localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== 'strength_boost');
-                localPlayer.statusEffects.push({ id: 'strength_boost', atkBonus: item.atkBonus || 5, duration: 50 });
+                const effectId = item.id || 'strength_boost';
+                localPlayer.statusEffects = localPlayer.statusEffects.filter(s => s.id !== effectId);
+                localPlayer.statusEffects.push({ id: effectId, atkBonus: item.atkBonus, duration: item.duration || 50 });
                 localPlayer.inventory.splice(idx, 1);
-                bus.emit('log', { msg: `You drink ${item.name} (+${item.atkBonus} ATK for 50 rounds).`, color: '#fa0' });
+                const buffMsg = effectId === 'coal_torch'
+                    ? `You light ${item.name} (negates night penalty for ${item.duration} rounds).`
+                    : `You drink ${item.name} (+${item.atkBonus} ATK for ${item.duration || 50} rounds).`;
+                bus.emit('log', { msg: buffMsg, color: '#fa0' });
                 saveLocalState(localPlayer);
             } else bus.emit('log', { msg: `You can't use that.` });
             return true;
