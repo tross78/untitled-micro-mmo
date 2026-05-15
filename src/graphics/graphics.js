@@ -80,52 +80,72 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
     ctx.fillRect(cx, cy, S, S);
 
     if (tileType === 'grass' || tileType === 'forest') {
-        // 8 tuft position templates — variant selects from all 8
-        const tufts = [
-            [[2, S-6], [S-5, 3]],                       // v0: two corner tufts
-            [[h-1, 2], [3, S-5]],                        // v1: top-center + bottom-left
-            [[2, 3], [S-5, S-6], [h, h-2]],              // v2: three tufts
-            [[h-1, h-2]],                                 // v3: single center tuft
-            [[1, 2], [S-4, 2], [h-1, S-5]],              // v4: top-two + bottom-center
-            [[q, h-1], [S-q-1, h-1]],                    // v5: mid-row pair
-            [[2, S-4], [h, 3], [S-4, S-5]],              // v6: sparse triangle
-            [[q, 2], [h, h-1], [S-q-2, S-5]],            // v7: diagonal scatter
+        // 4 distinct sub-types (pairs of variants) each with a shifted base color
+        // v0-1: standard, v2-3: lush/damp, v4-5: dry/warm, v6-7: patchy/sparse
+        const grassBases = [
+            p.base,    // v0-1: standard green
+            '#386e22', // v2-3: lush, slightly cooler
+            '#5a8a28', // v4-5: dry, warmer/yellower
+            p.base,    // v6-7: patchy — same base, different detail
         ];
-        const tgroup = tufts[variant % 8];
-        tgroup.forEach(([tx, ty]) => {
-            ctx.fillStyle = p.hi;
-            ctx.fillRect(cx + tx, cy + ty, 1, 3);      // stem
-            ctx.fillRect(cx + tx - 1, cy + ty + 1, 1, 1); // left blade
-            ctx.fillRect(cx + tx + 1, cy + ty, 1, 1);     // right tip
+        const grassHi = [p.hi, '#58a030', '#78aa38', p.hi];
+        const subType = Math.floor(variant / 2);
+        const baseColor = tileType === 'forest' ? (variant < 4 ? p.lo : '#1a3a10') : grassBases[subType];
+        const hiColor   = tileType === 'forest' ? p.hi : grassHi[subType];
+
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(cx, cy, S, S);
+
+        // 2 tuft patterns per sub-type
+        const tufts = [
+            [[2, S-6], [S-5, 3]],                    // v0
+            [[h-1, 2], [3, S-5], [S-4, h-1]],        // v1
+            [[2, 3], [S-5, S-6], [h, h-2]],           // v2
+            [[h-1, h-2], [2, h+1]],                   // v3
+            [[1, 2], [S-4, 2], [h-1, S-5]],           // v4
+            [[q, h-1], [S-q-1, h-1], [h-1, 3]],      // v5
+            [[h, 3], [S-4, S-4]],                     // v6: sparse
+            [[q, 2], [h, h-1]],                       // v7: minimal
+        ][variant];
+
+        tufts.forEach(([tx, ty]) => {
+            ctx.fillStyle = hiColor;
+            ctx.fillRect(cx + tx, cy + ty, 1, 3);
+            ctx.fillRect(cx + tx - 1, cy + ty + 1, 1, 1);
+            ctx.fillRect(cx + tx + 1, cy + ty, 1, 1);
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + tx, cy + ty, 1, 1);          // tip highlight
+            ctx.fillRect(cx + tx, cy + ty, 1, 1);
         });
-        // Forest: denser + darker patches + leaf litter
-        if (tileType === 'forest') {
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(cx, cy, S, S); // darker base for forest
-            tgroup.forEach(([tx, ty]) => {
-                ctx.fillStyle = p.hi;
-                ctx.fillRect(cx + tx, cy + ty, 1, 3);
-                ctx.fillRect(cx + tx - 1, cy + ty + 1, 1, 1);
-                ctx.fillRect(cx + tx + 1, cy + ty, 1, 1);
-                ctx.fillStyle = p.accent;
-                ctx.fillRect(cx + tx, cy + ty, 1, 1);
-            });
-            // Leaf debris (brown, at fixed positions per variant)
-            const leafPos = [[1,1],[S-4,S-3],[q,S-2]];
-            leafPos.slice(0, 1 + variant % 2).forEach(([lx, ly]) => {
-                ctx.fillStyle = '#6a4020';
-                ctx.fillRect(cx + lx, cy + ly, 2, 1);
-            });
+
+        // Sub-type detail overlays
+        if (subType === 1) {
+            // Lush: small damp patch
+            ctx.fillStyle = tileType === 'forest' ? '#0e2008' : '#2a6018';
+            ctx.fillRect(cx + h + 1, cy + h + 2, 3, 2);
+        } else if (subType === 2) {
+            // Dry: a few pale straw pixels
+            ctx.fillStyle = '#c8b050';
+            ctx.fillRect(cx + 2, cy + h, 1, 2);
+            ctx.fillRect(cx + S-4, cy + h-1, 1, 2);
+        } else if (subType === 3) {
+            // Patchy: bare dirt patch
+            ctx.fillStyle = tileType === 'forest' ? '#3a1e0a' : '#906830';
+            ctx.fillRect(cx + h - 1, cy + h, 4, 3);
         }
-        // Rare flower — only on specific variants
-        if (variant === 0) {
-            const fx = cx + q + 1, fy = cy + q;
-            ctx.fillStyle = variant % 2 ? '#ffc840' : '#ff80aa';
-            ctx.fillRect(fx, fy, 2, 2);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(fx, fy, 1, 1);
+
+        // Forest: leaf debris on all variants
+        if (tileType === 'forest') {
+            ctx.fillStyle = '#5a3010';
+            ctx.fillRect(cx + 1, cy + S-4, 2, 1);
+            if (variant % 2 === 0) ctx.fillRect(cx + S-4, cy + 2, 2, 1);
+        }
+
+        // Small flower on v0 only
+        if (variant === 0 && tileType === 'grass') {
+            ctx.fillStyle = '#ff80aa';
+            ctx.fillRect(cx + q + 1, cy + q, 2, 2);
+            ctx.fillStyle = '#fff8c0';
+            ctx.fillRect(cx + q + 1, cy + q, 1, 1);
         }
 
     } else if (tileType === 'stone_floor') {
@@ -133,27 +153,25 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
         ctx.fillStyle = p.lo;
         ctx.fillRect(cx, cy + h, S, 2);       // horizontal mortar
         ctx.fillRect(cx + h, cy, 2, S);       // vertical mortar
-        // Bevel top-left of each quadrant
         ctx.fillStyle = p.hi;
-        ctx.fillRect(cx + 1,     cy + 1,     h - 3, 1); // Q1 top
-        ctx.fillRect(cx + 1,     cy + 1,     1, h - 3); // Q1 left
-        ctx.fillRect(cx + h + 3, cy + 1,     h - 3, 1); // Q2 top
-        ctx.fillRect(cx + h + 3, cy + 1,     1, h - 3); // Q2 left
-        ctx.fillRect(cx + 1,     cy + h + 3, h - 3, 1); // Q3 top
-        ctx.fillRect(cx + 1,     cy + h + 3, 1, h - 3); // Q3 left
-        ctx.fillRect(cx + h + 3, cy + h + 3, h - 3, 1); // Q4 top
-        ctx.fillRect(cx + h + 3, cy + h + 3, 1, h - 3); // Q4 left
-        // Wear mark (v0-v1), crack (v4-v5), moss patch (v6-v7)
+        ctx.fillRect(cx + 1,     cy + 1,     h - 3, 1);
+        ctx.fillRect(cx + 1,     cy + 1,     1, h - 3);
+        ctx.fillRect(cx + h + 3, cy + 1,     h - 3, 1);
+        ctx.fillRect(cx + h + 3, cy + 1,     1, h - 3);
+        ctx.fillRect(cx + 1,     cy + h + 3, h - 3, 1);
+        ctx.fillRect(cx + 1,     cy + h + 3, 1, h - 3);
+        ctx.fillRect(cx + h + 3, cy + h + 3, h - 3, 1);
+        ctx.fillRect(cx + h + 3, cy + h + 3, 1, h - 3);
+        // Wear (v0-v1), nothing extra (v2-v3), crack (v4-v5), moss (v6-v7)
         if (variant < 2) {
             ctx.fillStyle = p.lo;
             ctx.fillRect(cx + q + 1, cy + q + 1, 2, 1);
         } else if (variant >= 4 && variant <= 5) {
-            // Diagonal crack line across one quadrant
+            // Diagonal crack — use x0 offset, not 'cx' to avoid shadowing canvas position
             ctx.fillStyle = p.lo;
-            const cx0 = variant === 4 ? 2 : h + 3;
-            for (let i = 0; i < h - 3; i++) { ctx.fillRect(cx + cx0 + i, cy + 2 + i, 1, 1); }
+            const x0 = variant === 4 ? 2 : h + 3;
+            for (let i = 0; i < h - 3; i++) { ctx.fillRect(cx + x0 + i, cy + 2 + i, 1, 1); }
         } else if (variant >= 6) {
-            // Moss patch — small green spot in corner
             ctx.fillStyle = '#486830';
             ctx.fillRect(cx + 2, cy + h + 3, 3, 2);
             ctx.fillStyle = '#60883a';
@@ -208,18 +226,22 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
         }
 
     } else if (tileType === 'mud') {
-        // Wet cave mud — dark base with damp sheen and pebble texture
-        for (let y = 0; y < S; y += 3) {
-            for (let x = 0; x < S; x += 3) {
-                const off = (x + y + variant) % 5;
-                ctx.fillStyle = off === 0 ? p.lo : off === 4 ? p.hi : p.base;
-                ctx.fillRect(cx + x, cy + y, 3, 3);
+        // Wet cave mud — irregular 1-2px stipple for an organic damp-earth look
+        const rng = tileRng(rngSeed ^ 0xdeadbeef);
+        for (let y = 0; y < S; y++) {
+            for (let x = 0; x < S; x++) {
+                const n = (x * 7 + y * 13 + variant * 3) % 11;
+                ctx.fillStyle = n < 2 ? p.lo : n < 4 ? p.hi : p.base;
+                ctx.fillRect(cx + x, cy + y, 1, 1);
             }
         }
-        // Damp sheen — one highlight pixel per tile, position varies by variant
+        // Damp sheen — small water-glint patch, position seeded per tile
+        const sx = rng(S - 4) + 1;
+        const sy = rng(S - 3) + 1;
         ctx.fillStyle = p.accent;
-        ctx.globalAlpha = 0.55;
-        ctx.fillRect(cx + (q + variant * 2) % (S - 2), cy + (variant * 3) % (S - 2), 2, 1);
+        ctx.globalAlpha = 0.45;
+        ctx.fillRect(cx + sx, cy + sy, 2, 1);
+        ctx.fillRect(cx + sx + 1, cy + sy + 1, 1, 1);
         ctx.globalAlpha = 1.0;
 
     } else if (tileType === 'sand') {
