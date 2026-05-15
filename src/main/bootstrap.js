@@ -81,6 +81,9 @@ export const start = async () => {
         if (E2E_MODE && getRuntimeParam('debugnet') === '1') {
             localStorage.setItem(`${GAME_NAME}_debug`, 'true');
         }
+        if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
+            window.__debug = { worldState, localPlayer };
+        }
         
         initAds();
         showBanner();

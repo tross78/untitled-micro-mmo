@@ -1,4 +1,4 @@
-# Hearthwick — Gemini Working Guide
+# Fenhollow — Gemini Working Guide
 
 Read `AGENTS.md` first. This file does not repeat it — it tells you *how to behave* when implementing phases in this repo.
 

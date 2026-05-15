@@ -1,5 +1,5 @@
 /**
- * Hearthwick Cryptography Module
+ * Fenhollow Cryptography Module
  * Universal implementation for Browser (WebCrypto) and Node (crypto)
  */
 

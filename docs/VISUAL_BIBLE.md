@@ -2,7 +2,7 @@
 
 ## Visual Direction
 
-Hearthwick should sit between:
+Fenhollow should sit between:
 
 * SNES Zelda readability and silhouette clarity
 * Stardew Valley warmth, texture, and environmental liveliness

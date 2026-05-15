@@ -10,7 +10,7 @@ const normalizeTargets = (target) => {
 };
 
 const makeRoom = (peerId, appId, roomId) => {
-    const channelName = `hearthwick-e2e:${appId}:${roomId}`;
+    const channelName = `fenhollow-e2e:${appId}:${roomId}`;
     const channel = new BroadcastChannel(channelName);
     const peers = new Set();
     const joinHandlers = new Set();
@@ -106,7 +106,7 @@ export const installFakeTransport = () => {
     const params = new URLSearchParams(window.location.search);
     const peerId = params.get('peer') || `peer-${crypto.randomUUID().slice(0, 8)}`;
 
-    window.__HEARTHWICK_TRANSPORT__ = {
+    window.__FENHOLLOW_TRANSPORT__ = {
         selfId: peerId,
         joinRoom(config, roomId) {
             return makeRoom(peerId, config.appId, roomId);

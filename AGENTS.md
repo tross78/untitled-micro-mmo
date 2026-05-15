@@ -1,10 +1,10 @@
-# Hearthwick Agent Handbook
+# Fenhollow Agent Handbook
 
 This file is the current source of truth for AI agents working in this repo. It is intentionally short. Historical design discussion and superseded phase notes belong in [DECISIONS.md](/Users/tysonross/Documents/GitHub/untitled-micro-mmo/DECISIONS.md), not here.
 
 ## Architecture
 
-Hearthwick is a serverless P2P browser MMO:
+Fenhollow is a serverless P2P browser MMO:
 
 * Trystero (WebTorrent/WebRTC) for transport
 * Ed25519 for identity and signing
@@ -284,7 +284,7 @@ Goal: move from private alpha to a small public launch without overbuilding.
 
 Suggested implementation slices:
 
-* `10a` External pitch and differentiator clarity: update README, social preview, and any landing page to lead with what makes Hearthwick different
+* `10a` External pitch and differentiator clarity: update README, social preview, and any landing page to lead with what makes Fenhollow different
 * `10b` Landing/onboarding/share-surface pass: shareable room screenshots, invite links that deep-link to a location, first-5-minute clarity audit
 * `10c` Content cadence: bi-weekly authored world event (new quest chain, scarcity arc, or seasonal variant) without requiring a code deploy
 * `10d` Post-retention monetization evaluation: define the bar (DAU, session length, repeat visits) that would justify introducing IAP cosmetics; do not ship IAP before that bar is met

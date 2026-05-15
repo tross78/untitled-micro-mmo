@@ -1,5 +1,5 @@
 /**
- * Hearthwick Autocomplete Engine
+ * Fenhollow Autocomplete Engine
  * Pure function — no DOM, no side effects. Fully testable.
  */
 

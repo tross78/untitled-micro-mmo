@@ -23,7 +23,7 @@ export const getArbiterUrl = (fallback = '') => {
     }
 
     if (typeof window !== 'undefined') {
-        const storedUrl = window.localStorage?.getItem('hearthwick_arbiter_url') || '';
+        const storedUrl = window.localStorage?.getItem('fenhollow_arbiter_url') || '';
         if (storedUrl) return storedUrl;
     }
 
@@ -38,14 +38,14 @@ export const setResolvedArbiterUrl = (url) => {
 
 export const getBootstrapDomain = () =>
     getRuntimeParam('bootstrap') || (typeof window !== 'undefined'
-        ? window.localStorage?.getItem('hearthwick_bootstrap_domain') || ''
+        ? window.localStorage?.getItem('fenhollow_bootstrap_domain') || ''
         : '');
 
 export const resolveBootstrapArbiterUrl = async (domain = getBootstrapDomain()) => {
     if (!domain || typeof window === 'undefined' || typeof fetch !== 'function') return '';
 
     const normalizedDomain = domain.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-    const bootstrapUrl = `${window.location.protocol === 'http:' ? 'http' : 'https'}://${normalizedDomain}/.well-known/hearthwick-bootstrap.json`;
+    const bootstrapUrl = `${window.location.protocol === 'http:' ? 'http' : 'https'}://${normalizedDomain}/.well-known/fenhollow-bootstrap.json`;
 
     try {
         const response = await fetch(bootstrapUrl, { signal: AbortSignal.timeout(5000) });

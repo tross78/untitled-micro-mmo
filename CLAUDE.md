@@ -1,4 +1,4 @@
-# Hearthwick Implementation Guardrails
+# Fenhollow Implementation Guardrails
 
 This file is intentionally short. Use it for current implementation constraints. Use `AGENTS.md` for the active roadmap and working model of the product. Use `DECISIONS.md` for historical ADRs and non-negotiable architectural decisions. Use `docs/*` for model-neutral product, architecture, content, and visual rules.
 

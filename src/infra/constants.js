@@ -10,7 +10,7 @@ export const TILE_PX = 16;     // pixels per tile
 // Runtime overrides:
 // - `?arbiter=https://...`
 // - `?arbiter=self` to use the current origin
-// - `localStorage.hearthwick_arbiter_url = 'https://...'`
+// - `localStorage.fenhollow_arbiter_url = 'https://...'`
 export const ARBITER_URL = '';
 // Set this to the ID of a Gist you want to use for discovery (leave empty if not used)
 export const GH_GIST_ID = '2e8f42685ce96e29f60da95ed9ca3be9';

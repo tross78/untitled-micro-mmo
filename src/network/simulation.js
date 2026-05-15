@@ -14,12 +14,13 @@ import { log, printStatus } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
 import { getArbiterUrl } from '../infra/runtime.js';
 import { ARBITER_URL } from '../infra/constants.js';
+import { GAME_NAME } from '../content/data/constants.js';
 
 const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 
 const OFFLINE_DAY_MS = 24 * 60 * 60 * 1000;
-const OFFLINE_DAY_KEY = 'hearthwick_offline_day_ts';
-const LAST_FIGHT_RESET_KEY = 'hearthwick_last_fight_reset_utc';
+const OFFLINE_DAY_KEY = `${GAME_NAME}_offline_day_ts`;
+const LAST_FIGHT_RESET_KEY = `${GAME_NAME}_last_fight_reset_utc`;
 
 const currentUtcDayKey = () => new Date().toISOString().slice(0, 10);
 

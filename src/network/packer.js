@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Hearthwick Schema-Based Binary Packer
+ * Fenhollow Schema-Based Binary Packer
  * Declarative serialization for high-frequency messages.
  */
 

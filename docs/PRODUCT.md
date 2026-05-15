@@ -2,7 +2,7 @@
 
 ## Elevator Pitch
 
-Hearthwick is a mobile-first browser MMO slice where most play is solo, but everyone inhabits the same Arbiter-synced world. The target feel is closer to a compact shared-world life/adventure game than a feature-complete social MMO.
+Fenhollow is a mobile-first browser MMO slice where most play is solo, but everyone inhabits the same Arbiter-synced world. The target feel is closer to a compact shared-world life/adventure game than a feature-complete social MMO.
 
 Short version:
 

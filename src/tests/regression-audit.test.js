@@ -111,7 +111,7 @@ describe('Bug 2 — applyNewDay persists daily reset', () => {
         worldState.seed = 1;
         worldState.day = 1;
 
-        const OFFLINE_DAY_KEY = 'hearthwick_offline_day_ts';
+        const OFFLINE_DAY_KEY = 'fenhollow_offline_day_ts';
         const past = Date.now() - 25 * 60 * 60 * 1000;
         localStorage.setItem(OFFLINE_DAY_KEY, String(past));
 
@@ -135,7 +135,7 @@ describe('Bug 2 — applyNewDay persists daily reset', () => {
         Object.assign(localPlayer, { forestFights: 0, currentEnemy: null, combatRound: 0, statusEffects: [], buffs: {} });
         worldState.seed = 'seed-a';
         worldState.day = 7;
-        localStorage.setItem('hearthwick_last_fight_reset_utc', '2000-01-01');
+        localStorage.setItem('fenhollow_last_fight_reset_utc', '2000-01-01');
 
         const sim = await import('../network/simulation.js');
         sim.initOfflineDayTick();

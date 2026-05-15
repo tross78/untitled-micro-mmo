@@ -1,4 +1,4 @@
-# Architecture Decision Records — Hearthwick
+# Architecture Decision Records — Fenhollow
 
 These decisions are final. Do not relitigate them without explicit instruction.
 This file is an ADR archive, not a roadmap or implementation checklist. If current product guidance and historical notes appear to conflict, follow `AGENTS.md` for current direction and use this file to understand why underlying constraints exist.
@@ -39,7 +39,7 @@ This file is an ADR archive, not a roadmap or implementation checklist. If curre
 **Status:** Decided
 **Do not:** Introduce js-libp2p, GossipSub, or any new P2P library.
 
-**Why:** Adding js-libp2p would exceed the 175KB bundle limit by ~3×. Trystero already provides WebRTC negotiation. Changing the room name (`hearthwick-tavern-2`) achieves the same isolation as a separate pub-sub topic at zero additional dependency cost.
+**Why:** Adding js-libp2p would exceed the 175KB bundle limit by ~3×. Trystero already provides WebRTC negotiation. Changing the room name (`fenhollow-tavern-2`) achieves the same isolation as a separate pub-sub topic at zero additional dependency cost.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Runtime Model
 
-Hearthwick is a serverless P2P browser game with a lightweight authoritative Arbiter:
+Fenhollow is a serverless P2P browser game with a lightweight authoritative Arbiter:
 
 * clients simulate and render locally
 * peers exchange signed state/action information

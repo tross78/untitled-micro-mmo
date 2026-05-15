@@ -11,11 +11,11 @@ describe('Discovery Race & Networking Logic', () => {
     });
 
     test('Global room name is unique and prefixed with APP_ID', () => {
-        const APP_ID = 'hearthwick-test';
+        const APP_ID = 'fenhollow-test';
         const getGlobalRoomName = (appId) => appId + '-global';
         
         const roomName = getGlobalRoomName(APP_ID);
-        expect(roomName).toBe('hearthwick-test-global');
+        expect(roomName).toBe('fenhollow-test-global');
         expect(roomName).toContain(APP_ID);
     });
 

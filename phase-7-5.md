@@ -2,7 +2,7 @@
 
 ## Context
 
-Hearthwick is headed for a full pixel-art graphical client (Phase 8: SNES Zelda ALttP style, top-down, 16×11 tile viewport). Phase 7.5 is the bridge: every system that currently relies on slash commands, the text radar, or the scrolling log needs to be restructured so Phase 8 can swap in a canvas renderer, keyboard/gamepad input, and a graphical HUD without rewriting game logic. No new npm deps allowed (ADR-009).
+Fenhollow is headed for a full pixel-art graphical client (Phase 8: SNES Zelda ALttP style, top-down, 16×11 tile viewport). Phase 7.5 is the bridge: every system that currently relies on slash commands, the text radar, or the scrolling log needs to be restructured so Phase 8 can swap in a canvas renderer, keyboard/gamepad input, and a graphical HUD without rewriting game logic. No new npm deps allowed (ADR-009).
 
 **Phase 8 targets:**
 - All movement/interaction via keyboard (WASD/arrows) and gamepad (D-pad + face buttons)
@@ -251,7 +251,7 @@ Replace `localStorage.setItem/getItem` with an async IndexedDB wrapper. Same `ST
 
 ```js
 // Thin async wrapper (no library needed)
-const db = await openDB('hearthwick', 1, (db) => {
+const db = await openDB('fenhollow', 1, (db) => {
   db.createObjectStore('player');
   db.createObjectStore('world');
 });

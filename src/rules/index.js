@@ -1,5 +1,5 @@
 /**
- * Hearthwick Simulation Rules
+ * Fenhollow Simulation Rules
  * Modular re-exports of deterministic simulation logic.
  */
 

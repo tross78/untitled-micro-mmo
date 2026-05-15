@@ -13,7 +13,7 @@ import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_DIMENSIONS } from '../infr
 import { COMPILED_ASSET_SHAPES, COMPILED_ASSET_META } from '../generated/assets/compiled-assets.js';
 
 /**
- * Hearthwick Graphics Bible & Tile Taxonomy (Phase 8.55a)
+ * Fenhollow Graphics Bible & Tile Taxonomy (Phase 8.55a)
  * 
  * PALETTE RULES:
  * All procedural assets use a 4-color unified palette [primary, secondary, outline, accent].

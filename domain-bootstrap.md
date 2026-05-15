@@ -6,7 +6,7 @@ Use your domain as a stable, no-cost discovery front door for the arbiter.
 
 Host this at:
 
-`https://tysonross.com/.well-known/hearthwick-bootstrap.json`
+`https://tysonross.com/.well-known/fenhollow-bootstrap.json`
 
 Example contents:
 
@@ -18,13 +18,13 @@ Example contents:
 
 ## Client behavior
 
-The client now checks for this bootstrap JSON at startup when `bootstrap=tysonross.com` is set or when `hearthwick_bootstrap_domain` is present in `localStorage`.
+The client now checks for this bootstrap JSON at startup when `bootstrap=tysonross.com` is set or when `fenhollow_bootstrap_domain` is present in `localStorage`.
 
 The arbiter URL can still be overridden manually with:
 
 - `?arbiter=https://...`
 - `?arbiter=self`
-- `localStorage.hearthwick_arbiter_url`
+- `localStorage.fenhollow_arbiter_url`
 
 ## Practical setup
 

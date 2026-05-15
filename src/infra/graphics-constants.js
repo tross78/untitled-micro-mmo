@@ -1,5 +1,5 @@
 /**
- * Hearthwick Graphics Bible & Tile Taxonomy (Phase 8.55a)
+ * Fenhollow Graphics Bible & Tile Taxonomy (Phase 8.55a)
  */
 
 export const TILE_TAXONOMY = {

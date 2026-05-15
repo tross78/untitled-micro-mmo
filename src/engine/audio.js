@@ -1,9 +1,10 @@
 /**
- * Hearthwick Web Audio System
+ * Fenhollow Web Audio System
  * Lightweight procedural music and feedback tuned for the friend-demo slice.
  */
+import { GAME_NAME } from '../content/data/constants.js';
 
-const AUDIO_SETTINGS_KEY = 'hearthwick_audio_settings_v1';
+const AUDIO_SETTINGS_KEY = `${GAME_NAME}_audio_settings_v1`;
 const DEFAULT_AUDIO_SETTINGS = Object.freeze({
     muted: false,
     music: 0.5,

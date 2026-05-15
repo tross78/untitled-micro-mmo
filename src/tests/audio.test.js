@@ -73,6 +73,6 @@ describe('Audio System (Phase 7.5 Audit)', () => {
 
         const changed = audio.stepAudioVolume('music', 0.2);
         expect(changed.music).toBeGreaterThanOrEqual(start.music);
-        expect(JSON.parse(localStorage.getItem('hearthwick_audio_settings_v1')).muted).toBe(true);
+        expect(JSON.parse(localStorage.getItem('fenhollow_audio_settings_v1')).muted).toBe(true);
     });
 });

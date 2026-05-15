@@ -72,7 +72,7 @@ describe('Movement', () => {
 describe('hashStr determinism', () => {
     test('same input always yields same output', () => {
         expect(hashStr('hello')).toBe(hashStr('hello'));
-        expect(hashStr('hearthwick1')).toBe(hashStr('hearthwick1'));
+        expect(hashStr('fenhollow1')).toBe(hashStr('fenhollow1'));
     });
 
     test('different inputs yield different hashes', () => {
@@ -85,9 +85,9 @@ describe('hashStr determinism', () => {
         expect(Number.isInteger(h)).toBe(true);
 
         // Test string known to have a negative signed 32-bit hash
-        const h2 = hashStr('hearthwick1');
+        const h2 = hashStr('fenhollow1');
         expect(h2).toBeGreaterThan(0);
-        expect(h2).toBe(4271852821); 
+        expect(h2).toBe(3088766643);
 
         // Test Uint8Array input
         const buf = new Uint8Array([104, 101, 108, 108, 111]); // "hello"
@@ -334,7 +334,7 @@ describe('getMood', () => {
     test('output is always a valid mood', () => {
         const valid = ['fearful', 'weary', 'joyful'];
         for (let day = 1; day <= 30; day++) {
-            expect(valid).toContain(getMood('hearthwick-seed', day));
+            expect(valid).toContain(getMood('fenhollow-seed', day));
         }
     });
 

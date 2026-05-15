@@ -1,4 +1,4 @@
-export const GAME_NAME = 'hearthwick';
+export const GAME_NAME = 'fenhollow';
 
 export const ENABLE_ADS = false; // Toggle for Phase 4.4 Ads architecture
 
@@ -84,7 +84,7 @@ export const CORPORA = {
             "I saved a fresh loaf of bread just for you.",
             "The Bard was asking if you'd be coming by tonight.",
             "You know your way around here now. Feels like home, doesn't it?",
-            "We need more folks like you in Hearthwick.",
+            "We need more folks like you in Fenhollow.",
             "I'll pour you a drink on the house next time.",
             "You've survived another ${season}. Let's drink to that."
         ]
@@ -98,7 +98,7 @@ export const CORPORA = {
             "A rare tome was brought in by a shade hunter recently.",
             "I'll buy your wolf pelts if they're in good condition.",
             "Don't mind the dust, these items are ancient and powerful.",
-            "Gold is the only language everyone in Hearthwick speaks.",
+            "Gold is the only language everyone in Fenhollow speaks.",
             "I saw a dragon's scale once, but it was too expensive for me.",
             "The ruins descent is no place for an unarmed traveler.",
             "Welcome, ${playerName}. Have a look at my goods.",
@@ -126,7 +126,7 @@ export const CORPORA = {
             "I am practically giving ${surplusItem} away at these prices.",
             "The supply wagons finally arrived. We have plenty of ${surplusItem}.",
             "My storeroom is full of ${surplusItem}. I need to clear space.",
-            "It is a good day to be a buyer in Hearthwick.",
+            "It is a good day to be a buyer in Fenhollow.",
             "Take advantage of the surplus. It will not last forever.",
             "I can offer you a fantastic deal on ${surplusItem} today.",
             "A bounty of goods! The Arbiter smiles upon us this day."
@@ -169,7 +169,7 @@ export const CORPORA = {
             "Do not let the panic of the town distract you from the truth.",
             "The ancients knew of times like these. They built the catacombs.",
             "Hunger and want breed dark thoughts in weak minds.",
-            "This ${season} will test the very foundations of Hearthwick.",
+            "This ${season} will test the very foundations of Fenhollow.",
             "Observe how the people react to the loss of ${scarcityItem}.",
             "True wealth is not measured in ${scarcityItem}, but in wisdom.",
             "The cycle of plenty and famine is as old as the world."
@@ -286,7 +286,7 @@ export const CORPORA = {
         ],
         time_night: [
             "The night brings out the deepest sorrows in my voice.",
-            "A lullaby for the weary town. Sleep well, Hearthwick.",
+            "A lullaby for the weary town. Sleep well, Fenhollow.",
             "The shadows dance to the tune of my lute.",
             "I play to drown out the howling from the forest.",
             "Music sounds sweeter when the world is quiet and dark.",

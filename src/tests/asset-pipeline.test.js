@@ -19,7 +19,7 @@ describe('asset pipeline', () => {
     });
 
     test('compiles strict 4-color PNGs into mask rows', async () => {
-        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearthwick-assets-'));
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fenhollow-assets-'));
         const pngPath = path.join(dir, 'player.png');
         const manifestPath = path.join(dir, 'manifest.json');
         const outputPath = path.join(dir, 'compiled-assets.js');
@@ -58,7 +58,7 @@ describe('asset pipeline', () => {
     });
 
     test('rejects unsupported colors under strict palette mode', async () => {
-        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearthwick-assets-bad-'));
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fenhollow-assets-bad-'));
         const pngPath = path.join(dir, 'bad.png');
         const pixels = rgba([12, 34, 56, 255]);
         await fs.writeFile(pngPath, encodePng({ width: 1, height: 1, rgba: pixels }));
@@ -81,7 +81,7 @@ describe('asset pipeline', () => {
     });
 
     test('quantized color mode reduces arbitrary pixel colors into the 4-role mask palette', async () => {
-        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearthwick-assets-quantized-'));
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fenhollow-assets-quantized-'));
         const pngPath = path.join(dir, 'tile.png');
         const pixels = rgba(
             [5, 5, 5, 255],

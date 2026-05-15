@@ -26,7 +26,7 @@ import('./main.js').then(async () => {
         await new Promise(resolve => setTimeout(resolve, 50));
     };
 
-    window.__HEARTHWICK_TEST__ = {
+    window.__FENHOLLOW_TEST__ = {
         getSnapshot: () => buildTestSnapshot(),
         issueCommand: async (cmd) => {
             await handleCommand(cmd);
