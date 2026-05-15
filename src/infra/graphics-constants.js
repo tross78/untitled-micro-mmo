@@ -10,7 +10,7 @@ export const TILE_TAXONOMY = {
 };
 
 export const SCENERY_SIZE_CLASSES = {
-    small:  ['torch', 'candle', 'scroll', 'mushroom', 'shell', 'bones', 'flower', 'potion', 'heart', 'crown', 'crate', 'barrel', 'snowflake', 'pillar', 'chair', 'well', 'flower_pot'],
+    small:  ['torch', 'candle', 'scroll', 'mushroom', 'shell', 'bones', 'flower', 'potion', 'heart', 'crown', 'crate', 'barrel', 'snowflake', 'pillar', 'chair', 'well', 'flower_pot', 'log', 'ore'],
     medium: ['shrub', 'rock', 'sign', 'wheel', 'ladder', 'table', 'altar', 'counter', 'cauldron', 'bed', 'door_arch', 'stall', 'anchor', 'grave', 'stairs'],
     large:  ['tree', 'bookshelf', 'fireplace']
 };

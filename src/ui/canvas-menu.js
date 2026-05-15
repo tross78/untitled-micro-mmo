@@ -34,6 +34,16 @@ const getQuestRowsForNpc = (localPlayer, npcId, npcsHere) => {
                     detail: quest.description,
                     action: { kind: 'command', command: `quest accept ${quest.id}` },
                 });
+            } else if (prereqIds.length > 0) {
+                const unmetNames = prereqIds
+                    .filter(pid => !localPlayer.quests?.[pid]?.completed)
+                    .map(pid => QUESTS[pid]?.name || pid)
+                    .join(', ');
+                rows.push({
+                    label: `${quest.name} [locked]`,
+                    detail: `Requires: ${unmetNames}`,
+                    disabled: true,
+                });
             }
         }
     });
@@ -78,7 +88,7 @@ export function buildCanvasMenu(type, context, menuCtx) {
     const { localPlayer, world, getNPCsAt, getTimeOfDay } = menuCtx;
     const location = world[localPlayer.location];
     const npcsHere = getNPCsAt(localPlayer.location);
-    const timeOfDay = getTimeOfDay();
+    const _timeOfDay = getTimeOfDay();
 
     if (type === 'root') {
         const enemyId = location?.enemy;
@@ -171,6 +181,14 @@ export function buildCanvasMenu(type, context, menuCtx) {
 
     if (type === 'quests') {
         const entries = [];
+
+        // Daily bounty header (P4 endgame loop)
+        if (worldState?.bountyEnemy) {
+            const ENEMY_NAMES = { forest_wolf: 'Forest Wolf', goblin: 'Goblin', bandit: 'Bandit', cave_troll: 'Cave Troll', ruin_shade: 'Ruin Shade', skeleton: 'Skeleton' };
+            const bountyName = ENEMY_NAMES[worldState.bountyEnemy] || worldState.bountyEnemy;
+            entries.push({ label: `Daily Bounty: ${bountyName}`, detail: 'Kill for bonus gold — see the Guard', disabled: true });
+        }
+
         Object.entries(localPlayer.quests || {}).forEach(([qid, progress]) => {
             const quest = QUESTS[qid];
             if (!quest) return;
@@ -182,6 +200,19 @@ export function buildCanvasMenu(type, context, menuCtx) {
                 disabled: true,
             });
         });
+
+        // Locked quests: show gates for any quest the player hasn't started with unmet prerequisites
+        Object.values(QUESTS).forEach((quest) => {
+            if (localPlayer.quests?.[quest.id]) return;
+            const prereqIds = Array.isArray(quest.prerequisite) ? quest.prerequisite : (quest.prerequisite ? [quest.prerequisite] : []);
+            if (prereqIds.length === 0) return;
+            const unmet = prereqIds.filter(pid => !localPlayer.quests?.[pid]?.completed);
+            if (unmet.length > 0 && prereqIds.some(pid => localPlayer.quests?.[pid])) {
+                const unmetNames = unmet.map(pid => QUESTS[pid]?.name || pid).join(', ');
+                entries.push({ label: `${quest.name} [locked]`, detail: `Requires: ${unmetNames}`, disabled: true });
+            }
+        });
+
         if (entries.length === 0) entries.push({ label: 'No active quests', detail: 'Talk to townsfolk for work.', disabled: true });
         entries.push({ label: 'Back', detail: 'Return', action: { kind: 'back' } });
         return { type, title: 'Quest Log', message: 'Current objectives.', entries, selectedIndex: 0 };
@@ -195,10 +226,9 @@ export function buildCanvasMenu(type, context, menuCtx) {
         const questRows = getQuestRowsForNpc(localPlayer, npcId, npcsHere);
         const shopInventory = getShopInventory(npcId);
         if (npc.role === 'shop' && shopInventory.length > 0) {
-            const closedAtNight = npcId === 'merchant' && timeOfDay === 'night';
-            entries.push({ label: 'Buy', detail: closedAtNight ? 'Shop is closed at night' : `${shopInventory.length} wares`, disabled: closedAtNight, action: { kind: 'menu', menuType: 'shop', context: { npcId } } });
+            entries.push({ label: 'Buy', detail: `${shopInventory.length} wares`, action: { kind: 'menu', menuType: 'shop', context: { npcId } } });
             if (getSellableItems(localPlayer).length > 0) {
-                entries.push({ label: 'Sell', detail: 'Turn goods into gold', disabled: closedAtNight, action: { kind: 'menu', menuType: 'sell', context: { npcId } } });
+                entries.push({ label: 'Sell', detail: 'Turn goods into gold', action: { kind: 'menu', menuType: 'sell', context: { npcId } } });
             }
         }
         if (questRows.some(row => !row.disabled)) {
@@ -224,13 +254,12 @@ export function buildCanvasMenu(type, context, menuCtx) {
         const entries = getShopInventory(npcId).map((itemId) => {
             const item = ITEMS[itemId];
             const detail = item.heal ? `+${item.heal} hp` : item.bonus ? `+${item.bonus}` : item.type;
-            const closedAtNight = npcId === 'merchant' && timeOfDay === 'night';
             const price = getBuyPrice(itemId);
             const scarcityTag = worldState.scarcity.includes(itemId) ? ' ⚠️ scarce' : worldState.event?.type === 'market_surplus' && (item.type === 'material' || item.type === 'consumable') ? ' ↓ surplus' : '';
             return {
                 label: `${item.name} - ${price}g`,
                 detail: `${detail}${scarcityTag}`,
-                disabled: localPlayer.gold < price || closedAtNight,
+                disabled: localPlayer.gold < price,
                 action: { kind: 'command', command: `buy ${itemCommandName(itemId)}` },
             };
         });

@@ -2,7 +2,7 @@
 
 import { Component } from '../domain/components.js';
 import { applyPalette, getGrayscaleTemplate, roundRect } from '../graphics/graphics.js';
-import { levelBonus, getDynamicRoomDescription } from '../rules/index.js';
+import { levelBonus, getDynamicRoomDescription, getTimeOfDay } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';
 import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
@@ -187,15 +187,20 @@ export class UIRenderSystem {
         const def = (player.defense || 0) + bonus.defense;
         const gold = player.gold ?? 0;
         const hunts = player.forestFights ?? 0;
+        const tod = getTimeOfDay();
+        const weather = this.worldState?.weather || 'clear';
+        const envIcon = tod === 'night' ? (weather === 'storm' ? '⛈' : weather === 'fog' ? '🌫' : '🌙') : (weather === 'storm' ? '⛈' : weather === 'fog' ? '🌫' : '☀');
+        const envText = `${tod === 'night' ? 'Night' : 'Day'}${weather !== 'clear' ? ` · ${weather}` : ''}`;
         const panelX = this.VP.CW - statsPanelW - PAD;
         const panelY = PAD - 2;
         const panelH = STRIP - PAD * 2 + 2;
         const gap = Math.max(4, Math.floor(this.VP.S * 0.1));
         const cellW = Math.floor((statsPanelW - gap) / 2);
-        const rowH = Math.floor((panelH - gap * 2) / 3);
+        const rowH = Math.floor((panelH - gap * 3) / 4);
 
+        const actualPanelH = rowH * 4 + gap * 3;
         ctx.fillStyle = 'rgba(18, 24, 18, 0.9)';
-        roundRect(ctx, panelX, panelY, statsPanelW, panelH, UI_STYLE.radius);
+        roundRect(ctx, panelX, panelY, statsPanelW, actualPanelH, UI_STYLE.radius);
         ctx.fill();
         ctx.strokeStyle = 'rgba(199, 216, 171, 0.24)';
         ctx.lineWidth = 1;
@@ -225,6 +230,11 @@ export class UIRenderSystem {
             icon: '⚡',
             text: `${hunts} hunts`,
             color: UI_PALETTE.accent
+        });
+        this.drawStatCell(ctx, panelX, panelY + (rowH + gap) * 3, statsPanelW, rowH, {
+            icon: envIcon,
+            text: envText,
+            color: tod === 'night' ? '#aac4ff' : '#ffe8a0'
         });
 
         return STRIP;

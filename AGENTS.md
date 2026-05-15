@@ -211,6 +211,14 @@ Slices: `8.77a` Blaseball-style wild events (6 event types, `WILD_EVENTS` table,
 
 Full spec: [docs/phases/8.77-world-vitality.md](docs/phases/8.77-world-vitality.md)
 
+### Phase 8.78: Game-Readiness Pass — COMPLETE
+
+**Gate for Phase 8.8 and Phase 8.9.** Fixed core loop softlocks, missing gather sources, invisible game mechanics, and post-capstone dead end.
+
+Slices: `8.78a` resource nodes (log/ore in forest+cave+mountain) · `P0` depletion gate (one gather/node/day per player) · `8.78b` room clutter + scatter wall-exclusion · `8.78c` quest text + prerequisite labels · `8.78d` 24h shops · `P1` day/night+weather HUD row · `P2` storm fight cost warning + reset timer · `P3` locked quest gate labels in NPC menus · `P4/8.78j` daily bounty in quest log
+
+Full spec: [docs/phases/8.78-game-readiness.md](docs/phases/8.78-game-readiness.md)
+
 ### Phase 8.8: Feedback Instrumentation and Lightweight Analytics
 
 Goal: learn what players use without building a heavy telemetry system.

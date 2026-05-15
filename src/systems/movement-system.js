@@ -179,6 +179,16 @@ export class MovementSystem {
     transform.y = ny;
     transform.facing = dir;
 
+    // Step-onto hint for gatherable tiles (flora and resource)
+    const scattered = getScatteredContent(transform.mapId, worldState.day, loc);
+    const stepTarget = scattered.find(s => s.x === nx && s.y === ny && (s.type === 'flora' || s.type === 'resource'));
+    if (stepTarget) {
+        const hint = stepTarget.type === 'resource'
+            ? `${stepTarget.label === 'log' ? 'Fallen log' : 'Ore vein'} — press interact to gather.`
+            : `Wild ${stepTarget.label} — press interact to forage.`;
+        bus.emit('log', { msg: hint, color: '#8fc' });
+    }
+
     // 5. Add Tweenable for visual interpolation
     const prev = this.world.getComponent(entityId, Component.Tweenable);
     const vx = prev ? prev.startX + (prev.targetX - prev.startX) * prev.progress : oldX;
@@ -264,16 +274,35 @@ export class MovementSystem {
         return;
     }
 
-    // 2. Check for Foraging (Phase 8.1)
+    // 2. Check for Foraging / Resource Gathering
     const scattered = getScatteredContent(locId, worldState.day, loc);
-    const itemAtFeet = scattered.find(s => s.x === transform.x && s.y === transform.y && s.type === 'flora');
-    
+    const itemAtFeet = scattered.find(s => s.x === transform.x && s.y === transform.y && (s.type === 'flora' || s.type === 'resource'));
+
     if (itemAtFeet) {
-        const itemId = itemAtFeet.label === 'mushroom' ? 'red_mushroom' : 'herbs';
+        const nodeKey = `${locId}:${transform.x},${transform.y}`;
+        // Depletion gate — one gather per node per in-game day, per player (no P2P sync needed)
+        if (localPlayer.gatheredNodes.day !== worldState.day) {
+            localPlayer.gatheredNodes.nodes.clear();
+            localPlayer.gatheredNodes.day = worldState.day;
+        }
+        if (localPlayer.gatheredNodes.nodes.has(nodeKey)) {
+            bus.emit('log', { msg: `You already gathered here today.`, color: '#aaa' });
+            return;
+        }
+        localPlayer.gatheredNodes.nodes.add(nodeKey);
+
+        let itemId;
+        if (itemAtFeet.type === 'resource') {
+            const RESOURCE_LABEL_TO_ITEM = { log: 'wood', ore: 'iron' };
+            itemId = RESOURCE_LABEL_TO_ITEM[itemAtFeet.label] || itemAtFeet.label;
+        } else {
+            itemId = itemAtFeet.label === 'mushroom' ? 'red_mushroom' : 'herbs';
+        }
         const item = ITEMS[itemId];
         localPlayer.inventory.push(itemId);
         bus.emit('item:pickup', { item });
-        bus.emit('log', { msg: `You foraged ${item?.name || itemAtFeet.label}!`, color: '#0f0' });
+        const verb = itemAtFeet.type === 'resource' ? 'gathered' : 'foraged';
+        bus.emit('log', { msg: `You ${verb} ${item?.name || itemId}!`, color: '#0f0' });
         return;
     }
 

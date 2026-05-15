@@ -241,6 +241,14 @@ function buildScatterBlockedTiles(roomDef) {
     (roomDef.tileOverrides || []).forEach((tile) => {
         if (tile.type === 'wall' || tile.type === 'water') markFootprint(blockedTiles, tile.x, tile.y);
     });
+    // Block scatter from landing on wall/void tiles in string-array format rooms (e.g. cave, watchtower).
+    if (Array.isArray(roomDef.tiles)) {
+        roomDef.tiles.forEach((row, y) => {
+            for (let x = 0; x < row.length; x++) {
+                if (row[x] === 'W' || row[x] === 'V') markFootprint(blockedTiles, x, y);
+            }
+        });
+    }
 
     return blockedTiles;
 }

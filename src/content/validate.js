@@ -12,7 +12,7 @@ const RUNTIME_SPRITE_NAMES = new Set([
     'mushroom', 'scroll', 'barrel', 'stall', 'sign', 'wheel', 'torch', 'bones',
     'anchor', 'snowflake', 'crown', 'ladder', 'shell', 'door_arch', 'candle',
     'bookshelf', 'fireplace', 'chair', 'counter', 'cauldron', 'pillar', 'table',
-    'bed', 'well', 'flower_pot', 'stairs',
+    'bed', 'well', 'flower_pot', 'stairs', 'log', 'ore',
 ]);
 
 const VALID_TILES = new Set(Object.values(TILE_TAXONOMY).flat());
@@ -20,6 +20,11 @@ const VALID_SCENERY = new Set(Object.values(SCENERY_SIZE_CLASSES).flat());
 const FORAGE_LABEL_TO_ITEM = {
   herbs: 'herbs',
   mushroom: 'red_mushroom',
+};
+
+const RESOURCE_LABEL_TO_ITEM = {
+  log: 'wood',
+  ore: 'iron',
 };
 
 const hasDuplicateIds = (definitions) => new Set(definitions.map((entry) => entry.id)).size !== definitions.length;
@@ -109,7 +114,15 @@ export const validateContent = (defs) => {
         const itemId = FORAGE_LABEL_TO_ITEM[scatter.label];
         if (itemId) noteSource(itemId, `forage:${room.id}`);
         else problems.push(`Room "${room.id}" uses unknown forage label "${scatter.label}"`);
+      } else if (scatter.type === 'resource') {
+        const itemId = RESOURCE_LABEL_TO_ITEM[scatter.label];
+        if (itemId) noteSource(itemId, `gather:${room.id}`);
+        else problems.push(`Room "${room.id}" uses unknown resource label "${scatter.label}"`);
       }
+    }
+    const density = room.terrain?.density;
+    if (typeof density === 'number' && density > room.width * room.height * 0.15) {
+      problems.push(`[warn] Room "${room.id}" terrain density ${density} exceeds 15% coverage (max ${Math.floor(room.width * room.height * 0.15)} tiles)`);
     }
 
     /** @type {Set<string>} */

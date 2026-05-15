@@ -1,7 +1,7 @@
 import { localPlayer, worldState, players, shardEnemies, pendingDuel, pendingTrade, setPendingTrade } from '../state/store.js';
 import { world, NPCS, ENEMIES, ITEMS, QUESTS, RECIPES } from '../content/data.js';
 import { getNPCLocation } from '../rules/index.js';
-import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, showRoomBanner, advanceDialogue, isDialogueOpen } from '../graphics/renderer.js';
+import { renderWorld, setVisualRefreshCallback, setLogicalRefreshCallback, triggerHitFlash, showFloatingText, showDialogue, showToast, showLevelUp, showItemFanfare, advanceDialogue, isDialogueOpen } from '../graphics/renderer.js';
 import { log } from '../ui/index.js';
 import { triggerShake } from '../ui/helpers.js';
 import { ACTION } from '../engine/input.js';
@@ -190,7 +190,7 @@ export const setupGlobalEvents = () => {
     });
     bus.on('player:move', ({ to, from }) => {
         if (to !== from) {
-            const room = world[to];
+            const _room = world[to];
             if (!localPlayer.visitedRooms) localPlayer.visitedRooms = [from];
             const isFirstVisit = !localPlayer.visitedRooms.includes(to);
             if (isFirstVisit) localPlayer.visitedRooms.push(to);

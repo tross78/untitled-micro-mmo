@@ -172,14 +172,23 @@ export class CombatSystem {
     // 1. Initialize enemy if not present
     if (!sharedEnemy || sharedEnemy.hp <= 0) {
       if (this.localPlayer.forestFights <= 0) {
-        bus.emit('log', { msg: `You are too exhausted to fight today.`, color: '#aaa' });
+        const msUntilReset = 86400000 - (Date.now() % 86400000);
+        const hh = Math.floor(msUntilReset / 3600000);
+        const mm = Math.floor((msUntilReset % 3600000) / 60000);
+        bus.emit('log', { msg: `You are too exhausted to fight today. Hunts reset in ${hh}h ${mm}m (UTC midnight).`, color: '#aaa' });
         return;
       }
       // 8.6b: storm costs 2 forest fights per encounter
       const weatherEffect = getWeatherEffect(this.worldState.weather);
       const fightCost = weatherEffect?.forestFightCostMult ?? 1;
+      if (fightCost > 1) {
+        bus.emit('log', { msg: `Storm: each fight costs ${fightCost} hunts. (${this.localPlayer.forestFights} remaining)`, color: '#f80' });
+      }
       if (this.localPlayer.forestFights < fightCost) {
-        bus.emit('log', { msg: `You are too exhausted to venture out in this storm.`, color: '#aaa' });
+        const msUntilReset = 86400000 - (Date.now() % 86400000);
+        const hh = Math.floor(msUntilReset / 3600000);
+        const mm = Math.floor((msUntilReset % 3600000) / 60000);
+        bus.emit('log', { msg: `Too exhausted to venture out in this storm. Hunts reset in ${hh}h ${mm}m.`, color: '#aaa' });
         return;
       }
       this.localPlayer.forestFights -= fightCost;

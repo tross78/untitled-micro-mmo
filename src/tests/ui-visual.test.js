@@ -54,8 +54,9 @@ describe('Phase 8.55e: UI Visual Cohesion', () => {
 
     test('Top bar uses UI_PALETTE constants', () => {
         sys.drawTopBar(ctx, { location: 'tavern', hp: 10, gold: 50 });
-        // accent color used for gold/hunts is the last fillStyle set in drawTopBar
-        expect(ctx.fillStyle).toBe(UI_PALETTE.accent);
+        // Last fillStyle is the environment row (day #ffe8a0 or night #aac4ff)
+        const validEnvColors = ['#ffe8a0', '#aac4ff'];
+        expect(validEnvColors).toContain(ctx.fillStyle);
     });
 
     test('chrome heights stay compact relative to tile size', () => {

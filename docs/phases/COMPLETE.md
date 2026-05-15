@@ -4,6 +4,26 @@ Full acceptance checklists and implementation notes for phases that are closed a
 
 ---
 
+## Phase 8.78: Game-Readiness Pass — COMPLETE
+
+Closed the gap between "implemented" and "playable." Core loop can now complete without softlocks, invisible gates, or hollow quest text.
+
+* `8.78a` ✅ Resource nodes — log in forest_edge/forest_depths, ore in cave/mountain_pass; `getScatteredContent` handles `type: 'resource'`; movement-system grants wood/iron on interact
+* `P0` ✅ Depletion gate — `gatheredNodes` in localPlayer; one gather per node per in-game day per player; covers flora + resource scatter; zero P2P coordination
+* `8.78b` ✅ Room clutter — forest_depths density 20→12, clutter→[tree,shrub]; `buildScatterBlockedTiles` parses `tiles` string-array walls; smuggler_den east wall closed; validate density >15% warns
+* `8.78c` ✅ Quest text — "Collect 5 wood bundles from the forest" / "Mine 3 iron ore bundles from the cave"; validate confirms each fetch target has ≥1 non-shop source
+* `P3` ✅ Locked quest gates — NPC quest list shows `[locked]` entries with "Requires: X" for quests with unmet prerequisites; fixes mountain_trial invisible wall
+* `8.78d` ✅ 24h shops — night merchant restriction removed; day/night still affects combat and wolf availability
+* `P2` ✅ Storm cost surfaced — pre-fight warning on storm days; UTC midnight reset countdown when hunts reach 0
+* `P1` ✅ Day/night + weather HUD — 4th row in stat panel; icon + text; `getTimeOfDay()` + `worldState.weather`; `#ffe8a0` day / `#aac4ff` night
+* `8.78j/P4` ✅ Daily bounty in quest log — `worldState.bountyEnemy` shown as header; locked-but-started quests show gate labels in global log
+
+Build: 340KB. Validation: 0 issues. Tests: 811 passed (2 pre-existing flakes unrelated to 8.78).
+
+Full spec: [docs/phases/8.78-game-readiness.md](docs/phases/8.78-game-readiness.md)
+
+---
+
 ## Bugfix v0.8.5 — COMPLETE
 
 Confirmed bugs fixed before any external player touched the build.

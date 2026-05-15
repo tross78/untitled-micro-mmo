@@ -187,7 +187,8 @@ export const rooms = {
         scenery: "1,1,tree|16,1,tree|1,15,tree|16,15,tree|5,1,tree|12,1,tree|1,7,tree|16,6,tree|1,11,tree|16,11,tree",
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [2, 4] },
-            { type: 'flora', label: 'mushroom', count: [1, 2] }
+            { type: 'flora', label: 'mushroom', count: [1, 2] },
+            { type: 'resource', label: 'log', count: [2, 3] }
         ],
         enemy: 'forest_wolf',
         tileOverrides: [
@@ -205,10 +206,11 @@ export const rooms = {
         width: 25, height: 25,
         exits: {"west":"forest_edge","east":"lake_shore","north":"bandit_camp","south":"cemetery"},
         exitTiles: "0,11,forest_edge,19,9,edge,1,3|24,11,lake_shore,4,9,edge,1,3|11,0,bandit_camp,6,13,edge,3,1|11,24,cemetery,9,1,edge,3,1",
-        terrain: { floor: 'forest', density: 20, clutter: ['tree', 'shrub', 'rock'] },
+        terrain: { floor: 'forest', density: 12, clutter: ['tree', 'shrub'] },
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [3, 5] },
-            { type: 'flora', label: 'mushroom', count: [2, 4] }
+            { type: 'flora', label: 'mushroom', count: [2, 4] },
+            { type: 'resource', label: 'log', count: [3, 5] }
         ],
         enemy: 'goblin',
     }),
@@ -235,6 +237,9 @@ export const rooms = {
         exits: {"north":"forest_edge"},
         exitTiles: "5,0,forest_edge,9,19,door,3,1",
         scenery: "1,1,rock|10,1,rock|1,10,mushroom|10,10,mushroom|5,3,mushroom|6,3,mushroom|5,8,rock|6,8,rock",
+        sceneryScatter: [
+            { type: 'resource', label: 'ore', count: [2, 3] }
+        ],
         enemy: 'cave_troll',
         tiles: [
             'WWWWW...WWWWW',
@@ -337,7 +342,7 @@ export const rooms = {
             'W.......W',
             'W.......W',
             'W.......W',
-            '.........',
+            '........W',
             'W.......W',
             'W.......W',
             'W.......W',
@@ -353,6 +358,9 @@ export const rooms = {
         exits: {"south":"lake_shore","north":"watchtower","east":"frozen_lake"},
         exitTiles: "9,30,lake_shore,9,1,edge,3,1|9,0,watchtower,2,19,edge,3,1|20,14,frozen_lake,1,5,edge,1,3",
         terrain: { floor: 'stone_floor', density: 12, clutter: ['rock'] },
+        sceneryScatter: [
+            { type: 'resource', label: 'ore', count: [1, 2] }
+        ],
         enemy: 'mountain_troll',
     }),
 

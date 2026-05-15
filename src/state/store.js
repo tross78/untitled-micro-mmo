@@ -104,14 +104,15 @@ export const trackShadowPlayer = (id, data) => {
     }
 };
 
-export let localPlayer = { 
-    name: `Peer-${selfId.slice(0, 4)}`, 
+export let localPlayer = {
+    name: `Peer-${selfId.slice(0, 4)}`,
     location: SPAWN_ROOM_ID,
     direction: 'south',
     animState: 'idle',
     statusEffects: [],
     equipped: { weapon: null, armor: null },
-    ...DEFAULT_PLAYER_STATS 
+    gatheredNodes: { day: 0, nodes: new Set() },
+    ...DEFAULT_PLAYER_STATS
 };
 
 export let hasSyncedWithArbiter = false;
@@ -212,7 +213,9 @@ export const loadLocalState = async (log) => {
             if ('ph' in data) delete data.ph;
 
             Object.assign(localPlayer, data);
-            
+            // Runtime-only — never persisted; re-init to avoid saved-state bleed.
+            localPlayer.gatheredNodes = { day: 0, nodes: new Set() };
+
             if (typeof localPlayer.combatRound !== 'number' || isNaN(localPlayer.combatRound)) {
                 localPlayer.combatRound = 0;
             }
