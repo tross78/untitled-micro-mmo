@@ -1,6 +1,6 @@
 import { localPlayer, worldState } from '../state/store.js';
 import { ITEMS, NPCS, QUESTS, roomHasFeature, world } from '../content/data.js';
-import { getNPCDialogue, getTimeOfDay, xpToLevel } from '../rules/index.js';
+import { getNPCDialogue, xpToLevel } from '../rules/index.js';
 import { log } from '../ui/index.js';
 import { bus } from '../state/eventbus.js';
 import { saveLocalState } from '../state/persistence.js';
@@ -65,11 +65,6 @@ export const handleNPCCommands = async (command, args) => {
             const npcs = getNPCsAt(localPlayer.location);
             const shopNpc = npcs.find(id => NPCS[id].role === 'shop');
             if (!shopNpc) { log(`There is no shop here.`); return true; }
-            if (shopNpc === 'merchant' && getTimeOfDay() === 'night') {
-                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
-                return true;
-            }
-
             const npc = NPCS[shopNpc];
             const shopInventory = getShopInventory(shopNpc);
             if (!query) {
@@ -106,11 +101,6 @@ export const handleNPCCommands = async (command, args) => {
             const bountyNpcId = npcs.find(id => NPCS[id].role === 'quest');
 
             if (!shopNpcId && !bountyNpcId) { log(`There is no shop here.`); return true; }
-            if (shopNpcId === 'merchant' && getTimeOfDay() === 'night' && !bountyNpcId) {
-                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
-                return true;
-            }
-
             if (!query) { log(`Usage: /sell <item name>`); return true; }
 
             const invIdx = localPlayer.inventory.findIndex(id => (ITEMS[id]?.name || id).toLowerCase() === query || id === query);
@@ -132,10 +122,6 @@ export const handleNPCCommands = async (command, args) => {
             }
 
             if (!shopNpcId) { log(`There is no shop here.`); return true; }
-            if (shopNpcId === 'merchant' && getTimeOfDay() === 'night') {
-                log(`[System] The Market is closed for the night. Return at dawn.`, '#555');
-                return true;
-            }
 
             const sellPrice = getSellPrice(itemId);
             localPlayer.gold += sellPrice;
