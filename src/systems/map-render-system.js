@@ -72,8 +72,13 @@ export class MapRenderSystem {
             }
         });
 
-        // 5. Draw Scattered Content
-        const scattered = getScatteredContent(locId, worldState.day, loc);
+        // 5. Draw Scattered Content — skip nodes already gathered today
+        const gatheredNodes = localPlayer.gatheredNodes;
+        const gatheredSameDay = gatheredNodes?.day === worldState.day;
+        const scattered = getScatteredContent(locId, worldState.day, loc).filter(sc => {
+            if (!gatheredSameDay || !gatheredNodes?.nodes) return true;
+            return !gatheredNodes.nodes.has(`${locId}:${sc.x},${sc.y}`);
+        });
         scattered.forEach(sc => {
             const sx = sc.x - camX;
             const sy = sc.y - camY;

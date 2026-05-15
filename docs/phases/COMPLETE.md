@@ -8,7 +8,7 @@ Full acceptance checklists and implementation notes for phases that are closed a
 
 Closed the gap between "implemented" and "playable." Core loop can now complete without softlocks, invisible gates, or hollow quest text.
 
-* `8.78a` ✅ Resource nodes — log in forest_edge/forest_depths, ore in cave/mountain_pass; `getScatteredContent` handles `type: 'resource'`; movement-system grants wood/iron on interact
+* `8.78a` ✅ Resource nodes — log in forest_edge/forest_depths, ore in cave/mountain_pass; `getScatteredContent` handles `type: 'resource'`; movement-system grants wood/iron via `grantItem` (advances fetch quests); log/ore sprites + palettes added to `graphics.js` (previously rendered as rock fallback)
 * `P0` ✅ Depletion gate — `gatheredNodes` in localPlayer; one gather per node per in-game day per player; covers flora + resource scatter; zero P2P coordination
 * `8.78b` ✅ Room clutter — forest_depths density 20→12, clutter→[tree,shrub]; `buildScatterBlockedTiles` parses `tiles` string-array walls; smuggler_den east wall closed; validate density >15% warns
 * `8.78c` ✅ Quest text — "Collect 5 wood bundles from the forest" / "Mine 3 iron ore bundles from the cave"; validate confirms each fetch target has ≥1 non-shop source

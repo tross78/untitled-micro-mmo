@@ -8,7 +8,7 @@ import { myEntry } from '../security/identity.js';
 import { shardEnemies, localPlayer, worldState } from '../state/store.js';
 import { ITEMS, NPCS } from '../content/data.js';
 import { getScatteredContent, getNPCDialogue, findSafeArrival } from '../rules/index.js';
-import { getNPCsAt } from '../commands/helpers.js';
+import { getNPCsAt, grantItem } from '../commands/helpers.js';
 import { ACTION } from '../engine/input.js';
 import { log } from '../ui/index.js';
 
@@ -299,7 +299,7 @@ export class MovementSystem {
             itemId = itemAtFeet.label === 'mushroom' ? 'red_mushroom' : 'herbs';
         }
         const item = ITEMS[itemId];
-        localPlayer.inventory.push(itemId);
+        grantItem(itemId);
         bus.emit('item:pickup', { item });
         const verb = itemAtFeet.type === 'resource' ? 'gathered' : 'foraged';
         bus.emit('log', { msg: `You ${verb} ${item?.name || itemId}!`, color: '#0f0' });

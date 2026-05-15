@@ -546,7 +546,7 @@ export const rooms = {
         enemyX: 7, enemyY: 4,
         scenery: "6,2,crown|2,2,torch|12,2,torch|2,12,torch|12,12,torch|1,6,pillar|13,6,pillar|7,2,chair",
         tiles: [
-            'WWWWWWW.WWWWWWW',
+            'WWWWWWWWWWWWWWW',
             'W....SSSSS....W',
             'W....SSSSS....W',
             'W....SSSSS....W',

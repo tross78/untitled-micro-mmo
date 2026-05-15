@@ -370,3 +370,77 @@ describe('Bug 7 — auto-completed explore quests cannot be double-rewarded', ()
         expect(localPlayer.gold).toBe(goldBefore);
     });
 });
+
+// ─── 8.78h: forage/gather path must advance fetch quest progress ──────────────
+
+describe('8.78h — forage path advances fetch quest progress', () => {
+    beforeEach(() => {
+        Object.assign(localPlayer, {
+            hp: 20, maxHp: 20, attack: 1, defense: 0, xp: 0, level: 1,
+            gold: 0, inventory: [], currentEnemy: null, combatRound: 0,
+            actionIndex: 0, statusEffects: [], buffs: {}, forestFights: 15,
+            location: 'forest_edge',
+            quests: { gather_wood: { progress: 0, completed: false } },
+            equipped: { weapon: null, armor: null },
+            gatheredNodes: { day: 0, nodes: new Set() },
+        });
+    });
+
+    test('standing on a log node and interacting grants wood and advances gather_wood quest', async () => {
+        const { WorldStore } = await import('../domain/ecs.js');
+        const { Component } = await import('../domain/components.js');
+        const { MovementSystem } = await import('../systems/movement-system.js');
+        const { worldState } = await import('../state/store.js');
+        const { getScatteredContent } = await import('../rules/index.js');
+
+        worldState.day = 1;
+
+        // Inject a log resource node at (3,3) so handleInteract finds it
+        getScatteredContent.mockReturnValue([
+            { x: 3, y: 3, type: 'resource', label: 'log', w: 1, h: 1 },
+        ]);
+
+        const world = new WorldStore();
+        const entityId = world.createEntity();
+        world.setComponent(entityId, Component.Transform, { mapId: 'forest_edge', x: 3, y: 3, facing: 's' });
+        world.setComponent(entityId, Component.PlayerControlled, {});
+
+        const roomData = { forest_edge: { width: 21, height: 21, scenery: [], exitTiles: [], tileOverrides: [] } };
+        const system = new MovementSystem(world, roomData, {});
+
+        await system.handleInteract(entityId, world.getComponent(entityId, Component.Transform));
+
+        expect(localPlayer.inventory).toContain('wood');
+        expect(localPlayer.quests.gather_wood.progress).toBe(1);
+    });
+
+    test('gathering same node twice same day is blocked', async () => {
+        const { WorldStore } = await import('../domain/ecs.js');
+        const { Component } = await import('../domain/components.js');
+        const { MovementSystem } = await import('../systems/movement-system.js');
+        const { worldState } = await import('../state/store.js');
+        const { getScatteredContent } = await import('../rules/index.js');
+
+        worldState.day = 2;
+        localPlayer.gatheredNodes = { day: 2, nodes: new Set(['forest_edge:3,3']) };
+
+        getScatteredContent.mockReturnValue([
+            { x: 3, y: 3, type: 'resource', label: 'log', w: 1, h: 1 },
+        ]);
+
+        const world = new WorldStore();
+        const entityId = world.createEntity();
+        world.setComponent(entityId, Component.Transform, { mapId: 'forest_edge', x: 3, y: 3, facing: 's' });
+
+        const roomData = { forest_edge: { width: 21, height: 21, scenery: [], exitTiles: [], tileOverrides: [] } };
+        const system = new MovementSystem(world, roomData, {});
+
+        const seenLogs = [];
+        bus.on('log', (p) => seenLogs.push(p));
+        await system.handleInteract(entityId, world.getComponent(entityId, Component.Transform));
+        bus.off('log', (p) => seenLogs.push(p));
+
+        expect(localPlayer.inventory).not.toContain('wood');
+        expect(seenLogs.some(p => p.msg?.includes('already gathered'))).toBe(true);
+    });
+});
