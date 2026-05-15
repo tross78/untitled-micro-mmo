@@ -16,7 +16,7 @@ export class MapRenderSystem {
     constructor(world, vp) {
         this.world = world;
         this.VP = vp;
-        this.tileCache = null; // { locKey: string, camX: number, camY: number, canvas: OffscreenCanvas }
+        this.tileCache = null; // { locKey: string, canvas: OffscreenCanvas } — full room, blit by camera offset
     }
 
     invalidate() {
@@ -36,19 +36,21 @@ export class MapRenderSystem {
         if (!loc) return;
 
         const tileType = zoneTileType(locId);
-        const floorX = Math.floor(camX);
-        const floorY = Math.floor(camY);
         const locKey = `${locId}:${loc.width}:${loc.height}:${worldState.day}`;
 
-        // 1. Manage Cache
-        if (!this.tileCache || this.tileCache.locKey !== locKey || this.tileCache.camX !== floorX || this.tileCache.camY !== floorY) {
-            this.rebuildCache(loc, locKey, floorX, floorY, tileType);
+        // 1. Manage Cache — rebuild only when room or day changes, not on camera movement
+        if (!this.tileCache || this.tileCache.locKey !== locKey) {
+            this.rebuildCache(loc, locKey, tileType);
         }
 
-        // 2. Draw Cached Layer
-        const offsetX = (camX - floorX) * this.VP.S;
-        const offsetY = (camY - floorY) * this.VP.S;
-        ctx.drawImage(this.tileCache.canvas, screenOffsetX - offsetX, screenOffsetY - offsetY);
+        // 2. Blit visible slice of the full-room canvas using camera as source offset
+        const srcX = camX * this.VP.S;
+        const srcY = camY * this.VP.S;
+        const srcW = Math.min(this.VP.W * this.VP.S, this.tileCache.canvas.width - srcX);
+        const srcH = Math.min(this.VP.H * this.VP.S, this.tileCache.canvas.height - srcY);
+        if (srcW > 0 && srcH > 0) {
+            ctx.drawImage(this.tileCache.canvas, srcX, srcY, srcW, srcH, screenOffsetX, screenOffsetY, srcW, srcH);
+        }
 
         // 3. Draw Static Scenery
         (loc.scenery || []).forEach(sc => {
@@ -135,28 +137,28 @@ export class MapRenderSystem {
         // Night lighting disabled — revisit in future phase
     }
 
-    rebuildCache(loc, locKey, floorX, floorY, tileType) {
-        const tilesWide = Math.max(0, Math.min(this.VP.W + 1, loc.width - floorX));
-        const tilesHigh = Math.max(0, Math.min(this.VP.H + 1, loc.height - floorY));
+    rebuildCache(loc, locKey, tileType) {
+        // Build a Map of override positions for O(1) lookup
+        const overrideMap = new Map();
+        for (const o of (loc.tileOverrides || [])) overrideMap.set(`${o.x},${o.y}`, o.type);
+
         const off = new OffscreenCanvas(
-            Math.max(this.VP.S, tilesWide * this.VP.S),
-            Math.max(this.VP.S, tilesHigh * this.VP.S)
+            Math.max(this.VP.S, loc.width * this.VP.S),
+            Math.max(this.VP.S, loc.height * this.VP.S)
         );
         const octx = off.getContext('2d');
         if (!octx) return;
         octx.imageSmoothingEnabled = false;
 
-        for (let ty = 0; ty < tilesHigh; ty++) {
-            for (let tx = 0; tx < tilesWide; tx++) {
-                const wx = floorX + tx;
-                const wy = floorY + ty;
-
-                const override = (loc.tileOverrides || []).find(o => o.x === wx && o.y === wy);
-                const seed = hashStr(locKey) ^ (wx * 7919) ^ (wy * 6271);
-                drawTile(octx, override?.type || tileType, tx * this.VP.S, ty * this.VP.S, seed, this.VP.S);
+        const baseHash = hashStr(locKey);
+        for (let wy = 0; wy < loc.height; wy++) {
+            for (let wx = 0; wx < loc.width; wx++) {
+                const type = overrideMap.get(`${wx},${wy}`) || tileType;
+                const seed = baseHash ^ (wx * 7919) ^ (wy * 6271);
+                drawTile(octx, type, wx * this.VP.S, wy * this.VP.S, seed, this.VP.S);
             }
         }
-        this.tileCache = { locKey, camX: floorX, camY: floorY, canvas: off };
+        this.tileCache = { locKey, canvas: off };
     }
 
     drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY) {
