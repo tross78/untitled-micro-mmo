@@ -184,9 +184,11 @@ export class MovementSystem {
     const scattered = getScatteredContent(transform.mapId, worldState.day, loc);
     const stepTarget = scattered.find(s => s.x === nx && s.y === ny && (s.type === 'flora' || s.type === 'resource'));
     if (stepTarget) {
+        const RESOURCE_HINTS = { log: 'Fallen log', ore: 'Ore vein', stone: 'Stone outcrop', fiber: 'Plant fiber', coal: 'Coal seam' };
+        const FLORA_HINTS = { herbs: 'Wild herbs', mushroom: 'Red mushroom', fiber: 'Plant fiber' };
         const hint = stepTarget.type === 'resource'
-            ? `${stepTarget.label === 'log' ? 'Fallen log' : 'Ore vein'} — press interact to gather.`
-            : `Wild ${stepTarget.label} — press interact to forage.`;
+            ? `${RESOURCE_HINTS[stepTarget.label] || stepTarget.label} — press interact to gather.`
+            : `${FLORA_HINTS[stepTarget.label] || `Wild ${stepTarget.label}`} — press interact to forage.`;
         bus.emit('log', { msg: hint, color: '#8fc' });
     }
 

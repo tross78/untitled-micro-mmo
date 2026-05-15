@@ -267,7 +267,7 @@ export const rooms = {
         description: 'Still water reflects the grey sky. The forest is west, mountains north, harbour east.',
         width: 21, height: 21,
         exits: {"west":"forest_depths","north":"mountain_pass","east":"harbour"},
-        exitTiles: "0,9,forest_depths,23,11,edge,1,3|9,0,mountain_pass,9,19,edge,3,1|20,9,harbour,1,6,edge,1,3",
+        exitTiles: "0,9,forest_depths,23,11,edge,1,3|9,0,mountain_pass,9,29,edge,3,1|20,9,harbour,1,6,edge,1,3",
         scenery: "1,1,tree|17,1,tree|7,1,rock|2,9,rock|2,11,rock|5,5,rock|15,5,rock|5,15,rock|15,15,rock",
         sceneryScatter: [
             { type: 'flora', label: 'herbs', count: [1, 3] },
