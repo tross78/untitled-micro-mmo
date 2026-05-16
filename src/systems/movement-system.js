@@ -119,8 +119,9 @@ export class MovementSystem {
     const nx = transform.x + dx;
     const ny = transform.y + dy;
 
-    // 1. Active Portal Detection
+    // 1. Active Portal Detection — stairs require explicit interact, not walk-through
     const exitTile = (loc.exitTiles || []).find(t =>
+        t.type !== 'stairs' &&
         nx >= t.x && nx < t.x + (t.w || 1) &&
         ny >= t.y && ny < t.y + (t.h || 1)
     );
@@ -168,11 +169,12 @@ export class MovementSystem {
 
     // 4. Check Static Collisions
     const isWall = (loc.tileOverrides || []).some(t => t.x === nx && t.y === ny && t.type === 'wall');
+    const isWater = (loc.tileOverrides || []).some(t => t.x === nx && t.y === ny && t.type === 'water');
     const isScenery = (loc.scenery || []).some(s =>
         nx >= s.x && nx < s.x + (s.w || 1) &&
         ny >= s.y && ny < s.y + (s.h || 1)
     );
-    if (isWall || isScenery) {
+    if (isWall || isWater || isScenery) {
         transform.facing = dir;
         this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
         this.world.removeComponent(entityId, Component.MovementTarget);
@@ -202,13 +204,14 @@ export class MovementSystem {
     const prev = this.world.getComponent(entityId, Component.Tweenable);
     const vx = prev ? prev.startX + (prev.targetX - prev.startX) * prev.progress : oldX;
     const vy = prev ? prev.startY + (prev.targetY - prev.startY) * prev.progress : oldY;
+    const isPatrolling = !!this.world.getComponent(entityId, Component.Patrol);
     this.world.setComponent(entityId, Component.Tweenable, {
       startX: vx,
       startY: vy,
       targetX: nx,
       targetY: ny,
       progress: 0,
-      speed: 9.0
+      speed: isPatrolling ? 3.5 : 9.0,
     });
   }
 
@@ -521,11 +524,12 @@ export class MovementSystem {
 
     // 2. Check Static Collisions
     const isWall = (loc.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'wall');
+    const isWater = (loc.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'water');
     const isScenery = (loc.scenery || []).find(s =>
         x >= s.x && x < s.x + (s.w || 1) &&
         y >= s.y && y < s.y + (s.h || 1)
     );
-    if (isWall || isScenery) return false;
+    if (isWall || isWater || isScenery) return false;
 
     // Note: We don't check dynamic occupants (other players/NPCs) for pathfinding 
     // to keep it stable and avoid jitter, but handleMove will still block them.

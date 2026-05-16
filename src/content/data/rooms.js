@@ -10,7 +10,7 @@ export const rooms = {
         exits: {"north":"hallway"},
         exitTiles: "4,0,hallway,5,9,door,3,1",
         scenery: "1,1,barrel|7,1,barrel|1,7,crate|3,7,crate|6,7,crate|8,7,crate|8,3,crate",
-        staticEntities: [{ id: 'cellar_guard', x: 5, y: 5 }],
+        staticEntities: [{ id: 'cellar_guard', x: 5, y: 5, patrol: '2,2|7,2|7,7|2,7' }],
         tiles: [
             'WWWW...WWW',
             'W........W',
@@ -33,7 +33,7 @@ export const rooms = {
         exits: {"south":"cellar","north":"tavern","east":"mill","west":"library"},
         exitTiles: "4,10,cellar,4,1,door,3,1|4,0,tavern,5,9,door,3,1|0,4,library,6,4,edge,1,3|10,4,mill,1,4,edge,1,3",
         scenery: "2,1,torch|8,1,torch|2,9,torch|8,9,torch|4,4,pillar|6,4,pillar",
-        staticEntities: [{ id: 'guard', x: 2, y: 2 }],
+        staticEntities: [{ id: 'guard', x: 2, y: 2, patrol: '2,2|8,2|8,8|2,8' }],
         tiles: [
             'WWWW...WWWW',
             'W.........',
@@ -480,8 +480,8 @@ export const rooms = {
         description: 'A crumbling staircase spiraling down into the earth. Ruins are south, catacombs down.',
         width: 11, height: 11,
         exits: {"south":"ruins","down":"catacombs"},
-        exitTiles: "5,10,ruins,10,1,stairs|5,5,catacombs,7,7,stairs",
-        scenery: "5,5,ladder|1,1,rock|8,1,rock|1,8,torch|8,8,torch",
+        exitTiles: "5,10,ruins,10,1,stairs|5,2,catacombs,7,7,stairs",
+        scenery: "2,2,rock|7,2,rock|2,4,torch|7,4,torch|3,7,bones|6,7,bones|2,8,rock|7,8,rock",
         tileOverrides: [
             { x: 0, y: 0, type: 'wall' }, { x: 1, y: 0, type: 'wall' }, { x: 2, y: 0, type: 'wall' }, { x: 3, y: 0, type: 'wall' }, { x: 4, y: 0, type: 'wall' }, { x: 5, y: 0, type: 'wall' }, { x: 6, y: 0, type: 'wall' }, { x: 7, y: 0, type: 'wall' }, { x: 8, y: 0, type: 'wall' }, { x: 9, y: 0, type: 'wall' }, { x: 10, y: 0, type: 'wall' },
             { x: 0, y: 1, type: 'wall' }, { x: 10, y: 1, type: 'wall' },
@@ -493,7 +493,9 @@ export const rooms = {
             { x: 0, y: 7, type: 'wall' }, { x: 10, y: 7, type: 'wall' },
             { x: 0, y: 8, type: 'wall' }, { x: 10, y: 8, type: 'wall' },
             { x: 0, y: 9, type: 'wall' }, { x: 10, y: 9, type: 'wall' },
-            { x: 0, y: 10, type: 'wall' }, { x: 1, y: 10, type: 'wall' }, { x: 2, y: 10, type: 'wall' }, { x: 3, y: 10, type: 'wall' }, { x: 4, y: 10, type: 'wall' }, { x: 6, y: 10, type: 'wall' }, { x: 7, y: 10, type: 'wall' }, { x: 8, y: 10, type: 'wall' }, { x: 9, y: 10, type: 'wall' }, { x: 10, y: 10, type: 'wall' }
+            { x: 0, y: 10, type: 'wall' }, { x: 1, y: 10, type: 'wall' }, { x: 2, y: 10, type: 'wall' }, { x: 3, y: 10, type: 'wall' }, { x: 4, y: 10, type: 'wall' }, { x: 6, y: 10, type: 'wall' }, { x: 7, y: 10, type: 'wall' }, { x: 8, y: 10, type: 'wall' }, { x: 9, y: 10, type: 'wall' }, { x: 10, y: 10, type: 'wall' },
+            { x: 3, y: 5, type: 'cobble' }, { x: 4, y: 5, type: 'cobble' }, { x: 5, y: 5, type: 'cobble' }, { x: 6, y: 5, type: 'cobble' }, { x: 7, y: 5, type: 'cobble' },
+            { x: 3, y: 6, type: 'cobble' }, { x: 4, y: 6, type: 'cobble' }, { x: 5, y: 6, type: 'cobble' }, { x: 6, y: 6, type: 'cobble' }, { x: 7, y: 6, type: 'cobble' },
         ],
     }),
 
@@ -503,7 +505,7 @@ export const rooms = {
         description: 'Weathered headstones and a lingering mist. The forest lies north, the catacombs lie to the south.',
         width: 21, height: 21,
         exits: {"north":"forest_depths","south":"catacombs"},
-        exitTiles: "9,0,forest_depths,11,13,edge,3,1|9,20,catacombs,7,3,edge,3,1",
+        exitTiles: "9,0,forest_depths,11,23,edge,3,1|9,20,catacombs,7,3,edge,3,1",
         terrain: { floor: 'forest', density: 10, clutter: ['grave', 'shrub'] },
         scenery: "6,5,grave|10,6,grave|14,5,grave|7,12,grave|13,12,grave",
         sceneryScatter: [
@@ -517,15 +519,15 @@ export const rooms = {
         description: 'Endless rows of skulls and dust. A wraith haunts the tombs. Cemetery north, ruins descent up, cell south.',
         width: 15, height: 15,
         exits: {"up":"ruins_descent","south":"dungeon_cell","north":"cemetery"},
-        exitTiles: "7,6,ruins_descent,5,9,stairs|7,14,dungeon_cell,5,1,edge|7,0,cemetery,9,19,edge,3,1",
-        scenery: "3,4,bones|10,4,bones|3,10,bones|10,10,bones|1,5,candle|1,9,candle|13,5,candle|13,9,candle|7,6,stairs",
+        exitTiles: "7,6,ruins_descent,5,3,stairs|7,14,dungeon_cell,5,1,edge|7,0,cemetery,9,19,edge,3,1",
+        scenery: "3,4,altar|10,4,altar|3,10,grave|10,10,grave|1,5,candle|1,9,candle|13,5,candle|13,9,candle|3,7,bones|10,7,bones|6,5,mushroom|8,5,mushroom|6,9,bones|8,9,bones",
         enemy: 'wraith',
         tiles: [
             'WWWWWWW...WWWWW',
             'WWWWWWW...WWWWW',
             'WWWWWWW...WWWWW',
             'W.............W',
-            'W..GGGGG......W',
+            'W.............W',
             'W.............W',
             'W.............W',
             'W.............W',

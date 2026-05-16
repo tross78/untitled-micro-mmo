@@ -11,6 +11,7 @@ function tileRng(seed) {
 
 import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { COMPILED_ASSET_SHAPES, COMPILED_ASSET_META } from '../generated/assets/compiled-assets.js';
+import { NPC_IDLE_FRAMES } from './npc-idle-frames.js';
 
 /**
  * Fenhollow Graphics Bible & Tile Taxonomy (Phase 8.55a)
@@ -701,17 +702,30 @@ const SHAPES = {
     heart: [
         "00000000", "03303300", "34434430", "34444430", "34444430", "03444300", "00343000", "00030000"
     ],
+    // Tree — 16px wide sphere canopy, bark trunk, GBC Zelda style
     tree: [
-        "00034000", "00343400", "00334300", "03443330", "03334430", "33343333",
-        "33333333", "00011000", "00012000", "00012000", "00012000", "00012000"
+        "0001334310000000",
+        "0013334433100000",
+        "0133443344310000",
+        "1334334343431000",
+        "1343433434331000",
+        "1334344334331000",
+        "0133334433310000",
+        "0013333333100000",
+        "0001333331000000",
+        "0000011100000000",
+        "0000012100000000",
+        "0000012100000000",
+        "0000012100000000",
+        "0000012100000000",
     ],
     shrub: [
-        "00000000", "00000000", "00000000", "00033000", "00333300", "03333330",
-        "03333330", "33333333", "33333333", "03333330", "00000000", "00000000"
+        "00000000", "00033000", "00343300", "03433430",
+        "03334430", "33334333", "33333333", "03334330", "00000000"
     ],
     rock: [
-        "00000000", "00000000", "00000000", "00222200", "02222220", "22222222",
-        "22112222", "22222222", "22222222", "02222220", "00000000", "00000000"
+        "00000000", "00000000", "00222200", "02222220",
+        "22212222", "22112222", "22222222", "02222220", "00000000"
     ],
     crate: [
         "11111111", "13333331", "13133131", "13311331", "13311331", "13133131",
@@ -892,6 +906,20 @@ const SPRITE_ALIASES = {
     cave_shade:     'wraith',
     ruin_skeleton:  'skeleton',
     forest_troll:   'cave_troll',
+    guard_back:     'guard',
+    guard_side:     'guard',
+    // Enemy directional + attack variants — resolved to base until PNG strips are authored
+    wolf_back:           'wolf',        wolf_side:           'wolf',        wolf_attack:           'wolf',
+    forest_wolf_back:    'wolf',        forest_wolf_side:    'wolf',        forest_wolf_attack:    'wolf',
+    goblin_back:         'goblin',      goblin_side:         'goblin',      goblin_attack:         'goblin',
+    bandit_back:         'bandit',      bandit_side:         'bandit',      bandit_attack:         'bandit',
+    skeleton_back:       'skeleton',    skeleton_side:       'skeleton',    skeleton_attack:       'skeleton',
+    cave_troll_back:     'cave_troll',  cave_troll_side:     'cave_troll',  cave_troll_attack:     'cave_troll',
+    mountain_troll_back: 'cave_troll',  mountain_troll_side: 'cave_troll',  mountain_troll_attack: 'cave_troll',
+    wraith_back:         'wraith',      wraith_side:         'wraith',      wraith_attack:         'wraith',
+    ruin_shade_back:     'wraith',      ruin_shade_side:     'wraith',      ruin_shade_attack:     'wraith',
+    crab_back:           'crab',        crab_side:           'crab',        crab_attack:           'crab',
+    throne_guardian_back:'throne_guardian', throne_guardian_side:'throne_guardian', throne_guardian_attack:'throne_guardian',
 };
 
 export function usesCompiledShape(type) {
@@ -934,6 +962,9 @@ export function getGrayscaleTemplate(type, seed = 0, frameIdx = 0) {
     let shape;
     if (meta?.frames && meta.frames[frameIdx]) {
         shape = decodeRLEFrame(meta.frames[frameIdx]);
+    } else if (NPC_IDLE_FRAMES[resolvedType]?.[frameIdx]) {
+        // Fallback: authoring-friendly string-grid format — edit npc-idle-frames.js
+        shape = NPC_IDLE_FRAMES[resolvedType][frameIdx];
     } else {
         const compiledShape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
         const compiledHasContent = compiledShape && compiledShape.some(row => row.replace(/0/g, '').length > 0);
@@ -1025,8 +1056,24 @@ export const PALETTES = {
     npcSage:   { primary: '#b090d8', secondary: '#604898', outline: '#100820', accent: '#f0e8ff', shadow: '#4c3c70' },
     // Bard — bright teal
     npcSong:   { primary: '#28d8c0', secondary: '#088070', outline: '#001818', accent: '#d0fff8', shadow: '#135a54' },
-    // Enemy — vivid red, yellow sclera
+    // Enemy — fallback vivid red
     enemy: { primary: '#f03020', secondary: '#801008', outline: '#180000', accent: '#ffee00', shadow: '#5e120d' },
+    // Per-type enemy palettes — distinct colors for GBC readability
+    enemy_wolf:           { primary: '#9a7248', secondary: '#5c3e20', outline: '#1a1000', accent: '#d4b080', shadow: '#3a2610' },
+    enemy_forest_wolf:    { primary: '#9a7248', secondary: '#5c3e20', outline: '#1a1000', accent: '#d4b080', shadow: '#3a2610' },
+    enemy_bandit:         { primary: '#606070', secondary: '#303038', outline: '#080810', accent: '#c8c8d8', shadow: '#28283a' },
+    enemy_goblin:         { primary: '#5a8c20', secondary: '#2c5008', outline: '#081000', accent: '#98d040', shadow: '#1e400a' },
+    enemy_skeleton:       { primary: '#d0c8a0', secondary: '#888060', outline: '#201808', accent: '#fffff0', shadow: '#605840' },
+    enemy_ruin_skeleton:  { primary: '#d0c8a0', secondary: '#888060', outline: '#201808', accent: '#fffff0', shadow: '#605840' },
+    enemy_wraith:         { primary: '#6848a8', secondary: '#301870', outline: '#080018', accent: '#c8a8ff', shadow: '#280d58' },
+    enemy_forest_shade:   { primary: '#6848a8', secondary: '#301870', outline: '#080018', accent: '#c8a8ff', shadow: '#280d58' },
+    enemy_ruin_shade:     { primary: '#3088a8', secondary: '#104858', outline: '#001018', accent: '#80e0ff', shadow: '#0d3a4a' },
+    enemy_cave_shade:     { primary: '#3088a8', secondary: '#104858', outline: '#001018', accent: '#80e0ff', shadow: '#0d3a4a' },
+    enemy_cave_troll:     { primary: '#587840', secondary: '#2c4018', outline: '#080c00', accent: '#98b870', shadow: '#233018' },
+    enemy_forest_troll:   { primary: '#587840', secondary: '#2c4018', outline: '#080c00', accent: '#98b870', shadow: '#233018' },
+    enemy_mountain_troll: { primary: '#708098', secondary: '#384050', outline: '#101418', accent: '#b0c0d8', shadow: '#2a3040' },
+    enemy_crab:           { primary: '#c05020', secondary: '#782808', outline: '#180800', accent: '#f09060', shadow: '#5a2210' },
+    enemy_throne_guardian:{ primary: '#b8980a', secondary: '#706008', outline: '#181400', accent: '#fff080', shadow: '#4e4408' },
 };
 
 // Compact grouped palette table: [primary, secondary, outline, accent, shadow]

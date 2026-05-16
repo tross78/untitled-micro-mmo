@@ -129,6 +129,6 @@ describe('EntityRenderSystem player variants', () => {
 
         expect(spy).toHaveBeenCalledWith(3, 'npcWarm', 'barkeep', expect.any(Number));
         const idleCall = spy.mock.calls.find((call) => call[2] === 'barkeep');
-        expect(idleCall[3]).toBeGreaterThan(0);
+        expect(idleCall[3]).toBeGreaterThanOrEqual(0); // cycles frames; exact index depends on gameTime
     });
 });

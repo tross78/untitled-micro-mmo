@@ -249,6 +249,23 @@ Suggested implementation slices:
 * `8.9c` First-10-minute onboarding pass — full spec: [docs/phases/8.9c-onboarding.md](docs/phases/8.9c-onboarding.md)
 * `8.9d` Private-alpha feedback and bug-report workflow
 
+### Phase 8.79: Visual Overhaul — Art & UX (planned)
+
+Full plan: [~/.claude/plans/cosmic-sauteeing-muffin.md](~/.claude/plans/cosmic-sauteeing-muffin.md)
+
+Comprehensive visual and UX quality pass targeting SNES Zelda / Stardew Valley pixel-art fidelity:
+
+* **Player sprites + animation**: Redesigned base sprites (`player`, `player_back`, `player_side`); 4-frame walk cycle (`_walk1`–`_walk4` per direction); combat poses (`player_attack`, `player_attack_side`, `player_attack_back`, `player_hurt`)
+* **Enemy redesign**: All 10 enemy types (wolf, bandit, goblin, skeleton, wraith, ruin_shade, cave_troll, mountain_troll, crab, throne_guardian) redrawn with distinct silhouettes and the new 5th palette color
+* **5th palette color**: Add value `5` = deep shadow (`#444444`) to the grayscale→palette pipeline in `graphics.js` and `compiled-assets.js`; extend `applyPalette()` and all PALETTES entries; update PNG compile pipeline to detect RGB(68,68,68)→`5`
+* **Tile redesign + blending**: All tile types improved to 5-tone quality; `drawTile()` accepts `neighbors` arg; `blendEdge()` draws organic 3-row dithered transitions (grass→dirt fringe, wall drop-shadow, water wave fringe, ice crack extension)
+* **Scenery redesign**: Tree (SNES RPG sphere canopy + bark trunk), rock, torch, grave, barrel, mushroom, altar, ore, herbs, log, bones
+* **Room redesigns**: Every room — bandit_camp, frozen_lake, tavern, ruins, ruins_descent, cave, catacombs, cemetery, library, mill — gets logical tile layout, wall-adjacent scenery, and correct exit positions
+* **Navigation bug fixes**: (a) ruins_descent north-wall exit tile at y=0 moved to center stairs at 5,5 — no longer teleports on north walk; (b) catacombs dual north-corridor exits separated — ruins_descent goes to center stairs 7,6, cemetery stays at 7,0
+* **Storm**: Zone-gated (only wilderness/exterior); increased to 80 streaks, 2px, α 0.55; lightning flash via `gameTime % 8 < 0.05`
+* **Fog**: Replace radial gradient with 8×8px dithered patch grid driven by `Math.sin(gameTime/2000 + ...)`
+* **UI/HUD**: Dialog text margin fix + measured word-wrap; NPC portraits in dialog header; SNES-window corner treatment; heart-based HP display (10 hearts, LttP/Secret of Mana style); button raised/pressed states; status pill badges; heart fanfare and toast ornaments
+
 ### Phase 8.95: Engineering Hardening — COMPLETE
 
 > **Ordering note**: treat 8.95 as a mandatory gate on Phase 8.9 despite the lower suffix.

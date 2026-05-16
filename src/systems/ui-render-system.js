@@ -91,11 +91,16 @@ export class UIRenderSystem {
             rx -= PAD;
         }
 
-        // Contextual buttons (left side): up to 3
+        // Contextual buttons (left side): up to 3, constrained to not overlap persistent buttons
         const contextual = this._getContextualBtns(player, loc);
-        const cBtnW = Math.max(60, Math.floor(this.VP.S * 1.6));
+        const persistentW = persistent.length * (pBtnW + PAD);
+        const availableW = this.VP.CW - persistentW - PAD * 2;
+        const maxContextual = contextual.slice(0, 3);
+        const cBtnW = maxContextual.length > 0
+            ? Math.min(Math.max(60, Math.floor(this.VP.S * 1.6)), Math.floor((availableW - PAD * (maxContextual.length - 1)) / maxContextual.length))
+            : Math.max(60, Math.floor(this.VP.S * 1.6));
         let cx = PAD;
-        for (const btn of contextual.slice(0, 3)) {
+        for (const btn of maxContextual) {
             this._drawHUDBtn(ctx, cx, barY + PAD, cBtnW, btnH, btn.label, btn.danger || false, fs);
             this.hudHitRegions.push({ x: cx, y: barY + PAD, w: cBtnW, h: btnH, action: btn.action, payload: btn.payload || null });
             cx += cBtnW + PAD;
@@ -113,20 +118,59 @@ export class UIRenderSystem {
         const npcs = this.getNPCsAt(player.location);
         const hasBank = roomHasFeature(player.location, 'bank');
 
-        if (enemyAlive) {
+        // Get player tile position for range checks
+        const playerEntities = this.world.query([Component.PlayerControlled, Component.Transform]);
+        const playerTransform = playerEntities.length > 0
+            ? this.world.getComponent(playerEntities[0], Component.Transform)
+            : null;
+
+        const isAdjacentTo = (eid) => {
+            if (!playerTransform) return false;
+            const t = this.world.getComponent(eid, Component.Transform);
+            if (!t || t.mapId !== player.location) return false;
+            return Math.max(Math.abs(t.x - playerTransform.x), Math.abs(t.y - playerTransform.y)) <= 1;
+        };
+
+        // Enemy range check
+        const enemyEntities = enemyAlive
+            ? [...this.world.query([Component.Transform, Component.Sprite])].filter(eid => {
+                const sp = this.world.getComponent(eid, Component.Sprite);
+                return sp?.palette === 'enemy';
+            })
+            : [];
+        const enemyInRange = inCombat || enemyEntities.some(isAdjacentTo);
+
+        if (enemyAlive && enemyInRange) {
             btns.push({ label: inCombat ? 'Strike' : 'Attack', action: 'attack', danger: inCombat });
             if (inCombat) btns.push({ label: 'Flee', action: 'flee' });
         }
         if (hasLoot) btns.push({ label: 'Pickup', action: 'pickup' });
-        if (npcs.length > 0 && !inCombat) btns.push({ label: 'Talk', action: 'npc', payload: { npcId: npcs[0] } });
+
+        // NPC range check — only show Talk when adjacent to that NPC's entity
+        const npcEntities = this.world.query([Component.Transform, Component.Sprite]);
+        const nearbyNpc = npcs.find(npcId =>
+            [...npcEntities].some(eid => {
+                const sp = this.world.getComponent(eid, Component.Sprite);
+                if (sp?.palette === 'enemy') return false;
+                return isAdjacentTo(eid);
+            })
+        );
+        if (nearbyNpc && !inCombat) btns.push({ label: 'Talk', action: 'npc', payload: { npcId: nearbyNpc } });
+
         if (hasBank && !inCombat) btns.push({ label: 'Bank', action: 'bank' });
         return btns;
     }
 
     _drawHUDBtn(ctx, x, y, w, h, label, danger, fs) {
+        // Outer border — stroke immediately after fill so it targets the correct path
         ctx.fillStyle = danger ? 'rgba(180, 40, 40, 0.35)' : 'rgba(56, 78, 48, 0.88)';
         roundRect(ctx, x, y, w, h, UI_STYLE.radius);
         ctx.fill();
+        ctx.strokeStyle = danger ? '#ff6666' : UI_PALETTE.border;
+        ctx.lineWidth = UI_STYLE.borderW;
+        ctx.stroke();
+
+        // Inner highlights (fills only — no stroke so they don't leave stray paths)
         ctx.fillStyle = danger ? 'rgba(255, 160, 160, 0.18)' : 'rgba(255, 248, 220, 0.12)';
         roundRect(ctx, x + 2, y + 2, w - 4, Math.max(6, Math.floor(h * 0.28)), Math.max(4, UI_STYLE.radius - 2));
         ctx.fill();
@@ -138,9 +182,6 @@ export class UIRenderSystem {
             roundRect(ctx, x + 2, y + 2, Math.max(6, Math.floor(w * 0.08)), h - 4, Math.max(4, UI_STYLE.radius - 2));
             ctx.fill();
         }
-        ctx.strokeStyle = danger ? '#ff6666' : UI_PALETTE.border;
-        ctx.lineWidth = UI_STYLE.borderW;
-        ctx.stroke();
 
         ctx.font = `bold ${fs}px monospace`;
         ctx.fillStyle = danger ? '#ffaaaa' : UI_PALETTE.textHi;
@@ -303,7 +344,12 @@ export class UIRenderSystem {
         ctx.fillStyle = UI_PALETTE.textLo;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, this.VP.CW / 2, barY + barH / 2);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, barY, this.VP.CW, barH);
+        ctx.clip();
+        ctx.fillText(this.fitText(ctx, text, this.VP.CW - 16), this.VP.CW / 2, barY + barH / 2);
+        ctx.restore();
     }
 
     drawOverlays(ctx) {
@@ -343,21 +389,23 @@ export class UIRenderSystem {
         const alpha = Math.min(1, (expires - now) / 400);
         const fs = Math.floor(this.VP.S * 0.32);
         ctx.font = `${fs}px monospace`;
-        const tw = ctx.measureText(text).width + 32;
+        const maxW = this.VP.CW - 32;
+        const displayText = this.fitText(ctx, text, maxW - 32);
+        const tw = Math.min(ctx.measureText(displayText).width + 32, maxW);
         const th = fs + 16;
-        const px = (this.VP.CW - tw) / 2;
+        const px = Math.max(8, (this.VP.CW - tw) / 2);
         const py = Math.floor(this.VP.S * 1.2);
 
         ctx.globalAlpha = alpha;
         ctx.fillStyle = UI_PALETTE.bg;
         roundRect(ctx, px, py, tw, th, UI_STYLE.radius);
         ctx.fill();
-        ctx.fillStyle = 'rgba(255, 248, 220, 0.08)';
-        roundRect(ctx, px + 3, py + 3, tw - 6, Math.max(6, Math.floor(th * 0.3)), Math.max(4, UI_STYLE.radius - 2));
-        ctx.fill();
         ctx.strokeStyle = UI_PALETTE.border;
         ctx.lineWidth = UI_STYLE.borderW;
         ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 248, 220, 0.08)';
+        roundRect(ctx, px + 3, py + 3, tw - 6, Math.max(6, Math.floor(th * 0.3)), Math.max(4, UI_STYLE.radius - 2));
+        ctx.fill();
         ctx.fillStyle = UI_PALETTE.accent;
         ctx.fillRect(px + 8, py + 8, 3, 3);
         ctx.fillRect(px + tw - 11, py + 8, 3, 3);
@@ -367,7 +415,7 @@ export class UIRenderSystem {
         ctx.fillStyle = UI_PALETTE.textHi;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, this.VP.CW / 2, py + th / 2);
+        ctx.fillText(displayText, px + tw / 2, py + th / 2);
         ctx.globalAlpha = 1.0;
     }
 

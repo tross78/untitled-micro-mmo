@@ -11,7 +11,7 @@ describe('Room connection integrity', () => {
         const room = rooms.ruins_descent;
         const catacombsExit = (room.exitTiles || []).find((ex) => ex.dest === 'catacombs');
 
-        expect(catacombsExit).toMatchObject({ x: 5, y: 5, type: 'stairs' });
+        expect(catacombsExit).toMatchObject({ x: 5, y: 2, type: 'stairs' });
         expect(catacombsExit.y).not.toBe(0);
     });
 

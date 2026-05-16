@@ -2,7 +2,7 @@
 
 import { Component } from '../domain/components.js';
 import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta, usesCompiledShape } from '../graphics/graphics.js';
-import { SCENERY_RENDER_STYLE } from '../infra/graphics-constants.js';
+import { SCENERY_RENDER_STYLE, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { getScatteredContent, hashStr } from '../rules/index.js';
 
 /**
@@ -247,8 +247,9 @@ export class MapRenderSystem {
         }
 
         const usingCompiledShape = compiledMeta && usesCompiledShape(label);
-        const logicalW = usingCompiledShape ? compiledMeta.logicalWidth : w;
-        const logicalH = usingCompiledShape ? compiledMeta.logicalHeight : h;
+        const dims = SCENERY_DIMENSIONS[label];
+        const logicalW = usingCompiledShape ? compiledMeta.logicalWidth : (dims ? dims[0] : w);
+        const logicalH = usingCompiledShape ? compiledMeta.logicalHeight : (dims ? dims[1] : h);
         const template = getGrayscaleTemplate(label, 0, frameIdx) || getGrayscaleTemplate('rock');
         const palette = getSceneryPalette(label);
         const colored = applyPalette(template, palette);

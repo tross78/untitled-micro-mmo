@@ -29,7 +29,6 @@ export class WeatherRenderSystem {
         const weather = worldState.weather || 'clear';
 
         if (weather !== this.targetWeather) {
-            // New target — reset alpha so we fade in from 0
             this.targetWeather = weather;
             this.overlayAlpha = 0;
         }
@@ -38,51 +37,56 @@ export class WeatherRenderSystem {
             this.overlayAlpha = Math.min(1, this.overlayAlpha + 1 / 90);
         }
 
+        const topY = this.VP.topChrome ?? 0;
+
         if (this.targetWeather === 'storm') {
-            this.drawStorm(ctx, this.overlayAlpha, gameTime);
+            this.drawStorm(ctx, this.overlayAlpha, gameTime, topY);
         } else if (this.targetWeather === 'fog') {
-            this.drawFog(ctx, room.zone, this.overlayAlpha, gameTime);
+            this.drawFog(ctx, room.zone, this.overlayAlpha, gameTime, topY);
         }
     }
 
-    drawStorm(ctx, alpha = 1, gameTime = 0) {
-        // Dark blue tint
+    drawStorm(ctx, alpha = 1, gameTime = 0, topY = 0) {
+        const h = this.VP.CH;
         ctx.fillStyle = `rgba(20, 30, 80, ${0.15 * alpha})`;
-        ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
+        ctx.fillRect(0, topY, this.VP.CW, h);
 
         if (gameTime % 8 < 0.05) {
             ctx.fillStyle = `rgba(255, 255, 255, ${0.12 * alpha})`;
-            ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
+            ctx.fillRect(0, topY, this.VP.CW, h);
         }
 
-        // Rain streaks — scroll position driven by game time, not wall clock
         ctx.strokeStyle = `rgba(200, 220, 255, ${0.55 * alpha})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
         for (let i = 0; i < 80; i++) {
-            const offset = i * 137.5; // Golden angle-ish distribution
+            const offset = i * 137.5;
             const x = (offset + gameTime * 100) % this.VP.CW;
-            const y = (offset * 1.5 + gameTime * 500) % this.VP.CH;
-
+            const y = topY + (offset * 1.5 + gameTime * 500) % h;
             ctx.moveTo(x, y);
-            ctx.lineTo(x - 3, y + 6); // 30 degree diagonal
+            ctx.lineTo(x - 3, y + 6);
         }
         ctx.stroke();
     }
 
-    drawFog(ctx, zone, alpha = 1, gameTime = 0) {
-        const maxAlpha = zone === 'wilderness' ? 0.4 : 0.2;
-        const pulse = Math.sin(gameTime / 3) * 0.05;
-        const effectiveAlpha = (maxAlpha + pulse) * alpha;
-        const patch = 8;
-        for (let y = 0; y < this.VP.CH; y += patch) {
+    drawFog(ctx, zone, alpha = 1, gameTime = 0, topY = 0) {
+        const maxAlpha = zone === 'wilderness' ? 0.38 : 0.18;
+        const patch = 12;
+        const h = this.VP.CH;
+        for (let row = 0; row < h; row += patch) {
             for (let x = 0; x < this.VP.CW; x += patch) {
-                const wave = Math.sin(gameTime / 2 + x * 0.06 + y * 0.09);
-                const visible = wave > 0.15;
-                if (!visible) continue;
-                const localAlpha = effectiveAlpha * (0.7 + ((x + y) % 16 === 0 ? 0.2 : 0));
-                ctx.fillStyle = `rgba(220, 230, 240, ${localAlpha})`;
-                ctx.fillRect(x, y, patch, patch);
+                // Three incommensurate waves at different speeds/directions — breaks up banding
+                const w1 = Math.sin(gameTime * 0.31 + x * 0.071 + row * 0.113);
+                const w2 = Math.sin(gameTime * 0.19 - x * 0.053 + row * 0.079 + 2.1);
+                const w3 = Math.sin(gameTime * 0.47 + x * 0.097 - row * 0.061 + 4.7);
+                // Per-patch static noise via cheap integer hash
+                const hash = ((x * 1619 + row * 31337) ^ (x >> 3)) & 0xffff;
+                const staticNoise = (hash / 0xffff) * 0.4 - 0.2; // -0.2..+0.2
+                const combined = (w1 + w2 + w3) / 3 + staticNoise;
+                if (combined <= 0.05) continue;
+                const patchAlpha = maxAlpha * alpha * Math.min(1, (combined - 0.05) * 1.5);
+                ctx.fillStyle = `rgba(210, 225, 235, ${patchAlpha.toFixed(3)})`;
+                ctx.fillRect(x, topY + row, patch, patch);
             }
         }
     }

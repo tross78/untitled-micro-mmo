@@ -149,6 +149,17 @@ export class CombatSystem {
       return;
     }
 
+    // Range check — must be adjacent (Chebyshev distance ≤ 1) to an enemy entity in this room
+    const enemies = this.world.query([Component.Transform, Component.Sprite]);
+    const nearbyEnemy = [...enemies].find(eid => {
+      const sp = this.world.getComponent(eid, Component.Sprite);
+      if (sp?.palette !== 'enemy') return false;
+      const et = this.world.getComponent(eid, Component.Transform);
+      if (!et || et.mapId !== locId) return false;
+      return Math.max(Math.abs(et.x - transform.x), Math.abs(et.y - transform.y)) <= 1;
+    });
+    if (!nearbyEnemy) return;
+
     if (roomDef.nightOnly && getTimeOfDay() !== 'night') {
       bus.emit('log', { msg: `Nothing stirs here until nightfall.`, color: '#aaa' });
       return;

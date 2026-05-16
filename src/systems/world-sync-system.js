@@ -53,10 +53,13 @@ export class WorldSyncSystem {
                     seed: this.hash(id),
                 });
                 if (staticEntry) {
-                    this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: staticEntry.x, y: staticEntry.y });
+                    // Only set spawn position on first creation — patrolling NPCs own their Transform after that
+                    if (!this.world.getComponent(eid, Component.Transform)) {
+                        this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: staticEntry.x, y: staticEntry.y });
+                    }
                     if (staticEntry.patrol && npcDef?.role !== 'static') {
                         if (!this.world.getComponent(eid, Component.Patrol)) {
-                            this.world.setComponent(eid, Component.Patrol, { path: staticEntry.patrol, index: 0, dir: 1, waitTicks: 0 });
+                            this.world.setComponent(eid, Component.Patrol, { path: staticEntry.patrol, index: 0, dir: 1, waitTicks: 0, stepPauseTicks: staticEntry.patrolPause ?? 18 });
                         }
                     }
                 } else {

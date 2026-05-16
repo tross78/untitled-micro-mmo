@@ -59,8 +59,14 @@ export class EntityRenderSystem {
                 drawX = tween.startX + (tween.targetX - tween.startX) * t;
                 drawY = tween.startY + (tween.targetY - tween.startY) * t;
                 if (spriteDef.palette !== 'enemy') {
-                    walkPose = getWalkPose(gameTime * 1000);
+                    // Snap to integer pixels — fractional coords anti-alias pixel art and cause visible tearing
+                    const bounceAmp = Math.max(2, Math.floor(this.VP.S * 0.06));
+                    const bodyY = Math.round(Math.abs(Math.sin(gameTime * Math.PI * 3.5)) * bounceAmp);
+                    walkPose = { legOffset: 0, bodyY };
                 }
+            } else if (NPC_IDLE_SPRITES.has(spriteDef.type)) {
+                // Minimal bob — just 1px at any scale, keeps feet grounded
+                walkPose = { legOffset: 0, bodyY: Math.round(Math.abs(Math.sin(gameTime * 1.0))) };
             }
 
             // Apply Bump Offset (Juice Phase 8.5a)
@@ -80,14 +86,21 @@ export class EntityRenderSystem {
             // Viewport culling
             if (sx < -1 || sx >= this.VP.W || sy < -1 || sy >= this.VP.H) continue;
 
+            // Floor to integer pixels — camera follows the player tween so sx/sy are floats.
+            // Drawing pixel art at fractional screen coords anti-aliases across rows and causes the
+            // "torn feet" visual (body and legs at different sub-pixel offsets).
+            const pxX = Math.floor(screenOffsetX + sx * this.VP.S);
+            const pxY = Math.floor(screenOffsetY + sy * this.VP.S);
+            const bounceY = walkPose.bodyY; // already an integer (Math.round)
+
             // 1. Draw Drop Shadow
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.beginPath();
             ctx.ellipse(
-                screenOffsetX + sx * this.VP.S + this.VP.S / 2, 
-                screenOffsetY + sy * this.VP.S + this.VP.S - 2, 
-                this.VP.S / 3, 
-                this.VP.S / 8, 
+                pxX + this.VP.S / 2,
+                pxY + this.VP.S - 2,
+                this.VP.S / 3,
+                this.VP.S / 8,
                 0, 0, Math.PI * 2
             );
             ctx.fill();
@@ -110,6 +123,27 @@ export class EntityRenderSystem {
                 else variant = 'player';
             }
 
+            // Directional variants for guards
+            if (NPC_WALK_SPRITES.has(spriteDef.type)) {
+                if (facing === 'n') variant = 'guard_back';
+                else if (facing === 'e' || facing === 'w') variant = 'guard_side';
+                else variant = 'guard';
+            }
+
+            // Directional + attack variants for enemies
+            if (spriteDef.palette === 'enemy') {
+                const base = spriteDef.type;
+                if (attack) {
+                    variant = `${base}_attack`;
+                } else if (facing === 'n') {
+                    variant = `${base}_back`;
+                } else if (facing === 'e' || facing === 'w') {
+                    variant = `${base}_side`;
+                } else {
+                    variant = base;
+                }
+            }
+
             // Phase 8.76 P3: Animation frame cycling
             const meta = getCompiledAssetMeta(variant);
             let frameIdx = 0;
@@ -128,7 +162,6 @@ export class EntityRenderSystem {
             // 3. Draw Sprite
             const sprite = this.getSprite(spriteDef.seed, spriteDef.palette, variant, frameIdx);
             const spriteBounds = getSpriteBounds(variant, frameIdx);
-            const bounceY = walkPose.bodyY;
             const drawW = spriteDef.palette === 'enemy' && spriteBounds
                 ? Math.max(Math.floor(this.VP.S * 0.42), Math.floor(this.VP.S * (spriteBounds.sourceWidth / spriteBounds.canvasWidth)))
                 : Math.floor(this.VP.S * 0.7);
@@ -136,12 +169,11 @@ export class EntityRenderSystem {
                 ? Math.max(Math.floor(this.VP.S * 0.62), Math.floor(this.VP.S * (spriteBounds.sourceHeight / spriteBounds.canvasHeight)))
                 : this.VP.S;
             const drawLeft = Math.floor((this.VP.S - drawW) / 2);
-            const drawTop = screenOffsetY + sy * this.VP.S + bounceY + (this.VP.S - drawH);
-            
+            const drawTop = pxY + bounceY + (this.VP.S - drawH);
+
             ctx.save();
             if (facing === 'w') {
-                // Flip horizontally
-                ctx.translate(screenOffsetX + sx * this.VP.S + this.VP.S, 0);
+                ctx.translate(pxX + this.VP.S, 0);
                 ctx.scale(-1, 1);
                 if (spriteDef.palette === 'enemy' && spriteBounds) {
                     ctx.drawImage(sprite, spriteBounds.sourceX, spriteBounds.sourceY, spriteBounds.sourceWidth, spriteBounds.sourceHeight, drawLeft, drawTop, drawW, drawH);
@@ -150,9 +182,9 @@ export class EntityRenderSystem {
                 }
             } else {
                 if (spriteDef.palette === 'enemy' && spriteBounds) {
-                    ctx.drawImage(sprite, spriteBounds.sourceX, spriteBounds.sourceY, spriteBounds.sourceWidth, spriteBounds.sourceHeight, screenOffsetX + sx * this.VP.S + drawLeft, drawTop, drawW, drawH);
+                    ctx.drawImage(sprite, spriteBounds.sourceX, spriteBounds.sourceY, spriteBounds.sourceWidth, spriteBounds.sourceHeight, pxX + drawLeft, drawTop, drawW, drawH);
                 } else {
-                    ctx.drawImage(sprite, screenOffsetX + sx * this.VP.S + drawLeft, drawTop, drawW, drawH);
+                    ctx.drawImage(sprite, pxX + drawLeft, drawTop, drawW, drawH);
                 }
             }
 
@@ -160,12 +192,7 @@ export class EntityRenderSystem {
             if (fx && fx.type === 'hit_flash') {
                 ctx.globalCompositeOperation = 'source-atop';
                 ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                // Use same coordinate space as the sprite draw above — the flip
-                // transform is still active here, so west-facing must use the same
-                // inset x as the drawImage call, not screen-space screenOffsetX.
-                const flashX = facing === 'w'
-                    ? drawLeft
-                    : screenOffsetX + sx * this.VP.S + drawLeft;
+                const flashX = facing === 'w' ? drawLeft : pxX + drawLeft;
                 ctx.fillRect(flashX, drawTop, drawW, drawH);
             }
             ctx.restore();
@@ -179,25 +206,25 @@ export class EntityRenderSystem {
             ctx.font = `${Math.floor(this.VP.S * 0.28)}px monospace`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            
+
             const identity = this.world.getComponent(id, 'Identity');
             const name = identity?.name || '???';
 
             if (this.world.getComponent(id, Component.PlayerControlled)) {
                 ctx.fillStyle = '#00ff44';
-                ctx.fillText('You', screenOffsetX + sx * this.VP.S + this.VP.S / 2, screenOffsetY + sy * this.VP.S + bounceY);
-                
+                ctx.fillText('You', pxX + this.VP.S / 2, pxY + bounceY);
+
                 // Selection indicator
                 ctx.strokeStyle = '#00ff44';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(screenOffsetX + sx * this.VP.S + 1, screenOffsetY + sy * this.VP.S + bounceY + 1, this.VP.S - 2, this.VP.S - 2);
+                ctx.strokeRect(pxX + 1, pxY + bounceY + 1, this.VP.S - 2, this.VP.S - 2);
             } else {
                 ctx.fillStyle = spriteDef.palette === 'enemy' ? '#ff4444' : '#00aaff';
-                ctx.fillText(name, screenOffsetX + sx * this.VP.S + this.VP.S / 2, screenOffsetY + sy * this.VP.S + bounceY);
+                ctx.fillText(name, pxX + this.VP.S / 2, pxY + bounceY);
 
                 // Health Bar (for enemies)
                 if (health && health.current < health.max) {
-                    this.drawHealthBar(ctx, sx, sy + bounceY/this.VP.S, health.current / health.max, screenOffsetX, screenOffsetY);
+                    this.drawHealthBar(ctx, sx, sy + bounceY / this.VP.S, health.current / health.max, screenOffsetX, screenOffsetY);
                 }
             }
         }
@@ -206,13 +233,17 @@ export class EntityRenderSystem {
     getSprite(seed, palette, type = null, frameIdx = 0) {
         const key = `${seed}:${palette}:${type}:${frameIdx}`;
         if (this.spriteCache.has(key)) return this.spriteCache.get(key);
-        
+
         let palKey = palette;
         if (palette === 'peer') {
             let h = 0;
             const s = String(seed);
             for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
             palKey = `peer${h % 6}`;
+        } else if (palette === 'enemy' && type) {
+            // Use per-enemy palette when available for visual distinctiveness
+            const specific = `enemy_${type}`;
+            if (PALETTES[specific]) palKey = specific;
         }
         const pal = PALETTES[palKey] || PALETTES.peer;
 
