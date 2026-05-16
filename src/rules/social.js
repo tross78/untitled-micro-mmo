@@ -1,7 +1,6 @@
 import { NPCS, CORPORA, ITEMS } from '../content/data.js';
 import { generateSentence } from '../engine/markov.js';
 import { seededRNG, hashStr } from './utils.js';
-import { getTimeOfDay } from './world.js';
 
 const pickLine = (pool, rng) => {
     if (!Array.isArray(pool) || pool.length === 0) return '';
@@ -158,7 +157,7 @@ export function getNPCDialogue(npcId, worldSeed, day, mood, playerLocation, worl
         }
         
         if (!questOverride) {
-            const timeOfDay = getTimeOfDay();
+            const timeOfDay = worldState?.timeOfDay || null;
             const hasScarcity = worldState?.scarcity?.length > 0;
             const hasSurplus = worldState?.surplus?.length > 0;
             const season = worldState?.season;

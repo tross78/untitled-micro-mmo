@@ -9,7 +9,7 @@ export class GameLoop {
    * @param {object} options
    * @param {number} [options.fps=60] - Target updates per second.
    * @param {(dt: number) => void} options.update - Logic update function.
-   * @param {() => void} options.render - Render function.
+   * @param {(gameTime: number) => void} options.render - Render function.
    */
   constructor({ fps = 60, update, render }) {
     this.fps = fps;

@@ -24,7 +24,7 @@ export class WeatherRenderSystem {
      */
     draw(ctx, worldState, roomId, gameTime = 0) {
         const room = worldData[roomId];
-        if (!room || room.zone === 'town' || room.zone === 'interior') return;
+        if (!room || room.zone === 'town' || room.zone === 'interior' || room.zone === 'dungeon') return;
 
         const weather = worldState.weather || 'clear';
 
@@ -47,14 +47,19 @@ export class WeatherRenderSystem {
 
     drawStorm(ctx, alpha = 1, gameTime = 0) {
         // Dark blue tint
-        ctx.fillStyle = `rgba(20, 30, 80, ${0.08 * alpha})`;
+        ctx.fillStyle = `rgba(20, 30, 80, ${0.15 * alpha})`;
         ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
 
+        if (gameTime % 8 < 0.05) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.12 * alpha})`;
+            ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
+        }
+
         // Rain streaks — scroll position driven by game time, not wall clock
-        ctx.strokeStyle = `rgba(200, 220, 255, ${0.35 * alpha})`;
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(200, 220, 255, ${0.55 * alpha})`;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 80; i++) {
             const offset = i * 137.5; // Golden angle-ish distribution
             const x = (offset + gameTime * 100) % this.VP.CW;
             const y = (offset * 1.5 + gameTime * 500) % this.VP.CH;
@@ -67,17 +72,18 @@ export class WeatherRenderSystem {
 
     drawFog(ctx, zone, alpha = 1, gameTime = 0) {
         const maxAlpha = zone === 'wilderness' ? 0.4 : 0.2;
-        const pulse = Math.sin(gameTime * (1000 / 3000)) * 0.05;
+        const pulse = Math.sin(gameTime / 3) * 0.05;
         const effectiveAlpha = (maxAlpha + pulse) * alpha;
-
-        const grad = ctx.createRadialGradient(
-            this.VP.CW / 2, this.VP.CH / 2, this.VP.CH / 4,
-            this.VP.CW / 2, this.VP.CH / 2, this.VP.CH / 1.2
-        );
-        grad.addColorStop(0, 'rgba(200, 210, 220, 0)');
-        grad.addColorStop(1, `rgba(200, 210, 220, ${effectiveAlpha})`);
-
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, this.VP.CW, this.VP.CH);
+        const patch = 8;
+        for (let y = 0; y < this.VP.CH; y += patch) {
+            for (let x = 0; x < this.VP.CW; x += patch) {
+                const wave = Math.sin(gameTime / 2 + x * 0.06 + y * 0.09);
+                const visible = wave > 0.15;
+                if (!visible) continue;
+                const localAlpha = effectiveAlpha * (0.7 + ((x + y) % 16 === 0 ? 0.2 : 0));
+                ctx.fillStyle = `rgba(220, 230, 240, ${localAlpha})`;
+                ctx.fillRect(x, y, patch, patch);
+            }
+        }
     }
 }

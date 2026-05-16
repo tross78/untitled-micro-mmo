@@ -16,15 +16,20 @@ Each asset has:
 * **Logical footprint**: how many room tiles the object occupies for placement/collision
 * **Render treatment**: extra height or offset when the object should look taller than its blocking footprint
 
-The current pipeline uses **single-frame PNGs** for each asset.
+The pipeline supports both:
+
+* **single-frame PNGs**
+* **horizontal frame strips** for assets whose manifest entry declares `frameCount`
+
+The manifest is the runtime source of truth.
 
 ## Players
 
 | Asset ID | Source PNG Size | Logical Footprint | Notes |
 | :-- | :-- | :-- | :-- |
-| `player` | `8x14` | `1x1` | Front/base player sprite |
-| `player_back` | `8x14` | `1x1` | Back-facing player sprite |
-| `player_side` | `8x14` | `1x1` | Side-facing player sprite, used for both left and right |
+| `player` | `16x16` | `1x1` | Front/base player sprite |
+| `player_back` | `16x16` | `1x1` | Back-facing player sprite |
+| `player_side` | `16x16` | `1x1` | Side-facing player sprite, used for both left and right |
 
 Player facing mapping in runtime:
 
@@ -45,24 +50,27 @@ You do not need a separate `player_left.png`.
 
 | Asset ID | Source PNG Size | Logical Footprint | Notes |
 | :-- | :-- | :-- | :-- |
-| `forest_wolf` | `8x13` | `1x1` | Wolf silhouette |
+| `wolf` | `8x13` per frame | `1x1` | 2-frame strip in manifest |
+| `forest_wolf` | `8x13` per frame | `1x1` | 2-frame strip in manifest |
 | `goblin` | `8x13` | `1x1` | Humanoid enemy |
 | `bandit` | `8x13` | `1x1` | Humanoid enemy |
 | `cave_troll` | `8x14` | `1x1` | Taller heavy enemy |
 | `mountain_troll` | `8x14` | `1x1` | Taller heavy enemy |
 | `ruin_shade` | `8x13` | `1x1` | Spectral enemy |
-| `wraith` | `8x13` | `1x1` | Spectral enemy |
+| `wraith` | `8x13` per frame | `1x1` | 2-frame strip in manifest |
 | `skeleton` | `8x13` | `1x1` | Bony humanoid |
 | `crab` | `8x12` | `1x1` | Low, wide enemy read |
+| `throne_guardian` | `8x14` | `1x1` | Boss enemy |
 
 ## Scenery
 
 | Asset ID | Source PNG Size | Logical Footprint | Render Treatment | Notes |
 | :-- | :-- | :-- | :-- | :-- |
-| `tree` | `16x20` | `3x3` | `heightTiles: 3` | Large landmark tree |
-| `stall` | `8x12` | `2x2` | none | Market/stall prop |
-| `bookshelf` | `8x12` | `2x1` | `heightTiles: 2`, `yOffsetTiles: 1` | Wide, visually tall |
-| `fireplace` | `8x12` | `2x1` | `heightTiles: 2`, `yOffsetTiles: 1` | Wide, visually tall |
+| `tree` | `48x48` | `3x3` | `heightTiles: 3`, `yOffsetTiles: 0` | Large landmark tree |
+| `stall` | `48x48` | `2x2` | none | Market/stall prop |
+| `bookshelf` | `48x48` | `2x1` | `heightTiles: 2`, `yOffsetTiles: 1` | Wide, visually tall |
+| `fireplace` | `48x48` | `2x1` | `heightTiles: 2`, `yOffsetTiles: 1` | Wide, visually tall |
+| `well` | `48x48` | `1x1` | none | Town landmark prop |
 
 ## Current Authoring Rule
 
@@ -70,19 +78,21 @@ For migrated assets, author PNGs at the exact frame size listed above.
 
 Current default rule:
 
-* characters and enemies are generally `8px` wide and `12px` to `14px` tall
-* scenery is currently authored as an `8x12` visual frame, with the in-room footprint controlled separately by metadata
+* compiled players/NPCs currently use `16x16` source frames
+* compiled enemy frames are generally `8px` wide and `12px` to `14px` tall
+* compiled large scenery currently uses `48x48` source frames, with in-room footprint controlled separately by metadata
 
-That means a `tree` is **not** authored as a giant 24x32 sprite. It is a compact authored frame with a logical `3x3` footprint and taller render treatment.
+That means a `tree` is authored as a `48x48` compiled scenery frame while still using a logical `3x3` footprint plus render treatment metadata.
 
 ## Strict Import Rules
 
-The compiler currently accepts only the strict 4-role source palette:
+The compiler currently accepts the strict role palette:
 
 * outline: `#000000`
 * secondary: `#888888`
 * primary: `#cccccc`
 * accent: `#ffffff`
+* shadow: `#444444` (optional but supported end-to-end)
 
 Anything else will fail compilation.
 
@@ -98,12 +108,12 @@ If you want to start from existing pixel art instead of hand-authoring in the st
 }
 ```
 
-In `quantized` mode, each non-transparent pixel is reduced to the nearest of the four role colors before compilation into mask rows.
+In `quantized` mode, each non-transparent pixel is reduced to the nearest role color before compilation into mask rows.
 
 This is useful for adapting SNES-like source sprites into the current runtime format, but it is still a reduction step:
 
 * it does not preserve the original palette
-* it does not preserve subtle shading beyond the 4 role buckets
+* it does not preserve subtle shading beyond the role buckets
 * it still outputs procedural mask data, not raw PNG pixels
 
 ## Source Folders
@@ -118,11 +128,16 @@ Put source PNGs here:
 Current migrated filenames are:
 
 * Players: `player.png`, `player_back.png`, `player_side.png`
-* NPCs: `guard.png`, `barkeep.png`
-* Enemies: `forest_wolf.png`, `goblin.png`, `bandit.png`, `cave_troll.png`, `mountain_troll.png`, `ruin_shade.png`, `wraith.png`, `skeleton.png`, `crab.png`
-* Scenery: `tree.png`, `stall.png`, `bookshelf.png`, `fireplace.png`
+* NPCs: `guard.png`, `barkeep.png`, `merchant.png`, `herbalist.png`, `sage.png`, `bard.png`
+* Enemies: `wolf.png`, `forest_wolf.png`, `goblin.png`, `bandit.png`, `cave_troll.png`, `mountain_troll.png`, `ruin_shade.png`, `wraith.png`, `skeleton.png`, `crab.png`, `throne_guardian.png`
+* Scenery: `tree.png`, `stall.png`, `bookshelf.png`, `fireplace.png`, `well.png`
 
 For new assets, filenames are manifest-driven rather than convention-driven. The exact file only has to match the manifest `source` entry.
+
+When this document and the manifest disagree, trust:
+1. `assets/spec/manifest.json`
+2. generated output after `npm run assets:compile`
+3. this document
 
 Then update:
 

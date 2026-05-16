@@ -148,6 +148,10 @@ export class MapRenderSystem {
         // Build a Map of override positions for O(1) lookup
         const overrideMap = new Map();
         for (const o of (loc.tileOverrides || [])) overrideMap.set(`${o.x},${o.y}`, o.type);
+        const getTileAt = (x, y) => {
+            if (x < 0 || y < 0 || x >= loc.width || y >= loc.height) return null;
+            return overrideMap.get(`${x},${y}`) || tileType;
+        };
 
         const off = new OffscreenCanvas(
             Math.max(this.VP.S, loc.width * this.VP.S),
@@ -160,9 +164,14 @@ export class MapRenderSystem {
         const baseHash = hashStr(locKey);
         for (let wy = 0; wy < loc.height; wy++) {
             for (let wx = 0; wx < loc.width; wx++) {
-                const type = overrideMap.get(`${wx},${wy}`) || tileType;
+                const type = getTileAt(wx, wy);
                 const seed = baseHash ^ (wx * 7919) ^ (wy * 6271);
-                drawTile(octx, type, wx * this.VP.S, wy * this.VP.S, seed, this.VP.S);
+                drawTile(octx, type, wx * this.VP.S, wy * this.VP.S, seed, this.VP.S, {
+                    north: getTileAt(wx, wy - 1),
+                    south: getTileAt(wx, wy + 1),
+                    west: getTileAt(wx - 1, wy),
+                    east: getTileAt(wx + 1, wy),
+                });
             }
         }
         this.tileCache = { locKey, canvas: off };

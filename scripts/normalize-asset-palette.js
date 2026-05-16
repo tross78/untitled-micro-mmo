@@ -8,6 +8,7 @@ const DEFAULT_PALETTE = {
   secondary: '#888888',
   primary: '#cccccc',
   accent: '#ffffff',
+  shadow: '#444444',
 };
 
 const [, , inputArg, outputArg, ...rest] = process.argv;

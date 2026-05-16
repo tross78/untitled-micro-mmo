@@ -7,6 +7,24 @@ const ZONE_RANK = { town: 0, wilderness: 1, dungeon: 2 };
 const roomIds = Object.keys(rooms);
 
 describe('Room connection integrity', () => {
+    test('ruins descent stairs no longer trigger catacombs from the north wall', () => {
+        const room = rooms.ruins_descent;
+        const catacombsExit = (room.exitTiles || []).find((ex) => ex.dest === 'catacombs');
+
+        expect(catacombsExit).toMatchObject({ x: 5, y: 5, type: 'stairs' });
+        expect(catacombsExit.y).not.toBe(0);
+    });
+
+    test('catacombs separates the central ruins staircase from the north cemetery corridor', () => {
+        const room = rooms.catacombs;
+        const ruinsExit = (room.exitTiles || []).find((ex) => ex.dest === 'ruins_descent');
+        const cemeteryExit = (room.exitTiles || []).find((ex) => ex.dest === 'cemetery');
+
+        expect(ruinsExit).toMatchObject({ x: 7, y: 6, type: 'stairs' });
+        expect(cemeteryExit).toMatchObject({ x: 7, y: 0, type: 'edge', w: 3, h: 1 });
+        expect(ruinsExit.y).toBeGreaterThan(cemeteryExit.y);
+    });
+
     test('all exit destinations reference existing rooms', () => {
         const broken = [];
         for (const [id, room] of Object.entries(rooms)) {

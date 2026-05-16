@@ -3,6 +3,9 @@
 import { Component } from '../domain/components.js';
 import { generateCharacterSprite, getWalkPose, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES } from '../graphics/graphics.js';
 
+const NPC_WALK_SPRITES = new Set(['guard']);
+const NPC_IDLE_SPRITES = new Set(['barkeep', 'merchant', 'herbalist', 'bard', 'sage']);
+
 /**
  * EntityRenderSystem draws all spatial entities (Players, NPCs, Enemies).
  */
@@ -43,6 +46,8 @@ export class EntityRenderSystem {
             const spriteDef = this.world.getComponent(id, Component.Sprite);
             const tween = this.world.getComponent(id, Component.Tweenable);
             const health = this.world.getComponent(id, Component.Health);
+            const fx = this.world.getComponent(id, Component.VisualEffect);
+            const attack = this.world.getComponent(id, Component.AttackAnimation);
 
             let drawX = transform.x;
             let drawY = transform.y;
@@ -91,7 +96,16 @@ export class EntityRenderSystem {
             const facing = transform.facing || 's';
             let variant = spriteDef.type;
             if (spriteDef.type === 'player' || spriteDef.type === 'peer') {
-                if (facing === 'n') variant = 'player_back';
+                const isHurt = fx?.type === 'hit_flash';
+                const isAttacking = !!attack;
+
+                if (isHurt) {
+                    variant = 'player_hurt';
+                } else if (isAttacking) {
+                    if (attack.dir === 'n') variant = 'player_attack_back';
+                    else if (attack.dir === 'e' || attack.dir === 'w') variant = 'player_attack_side';
+                    else variant = 'player_attack';
+                } else if (facing === 'n') variant = 'player_back';
                 else if (facing === 'e' || facing === 'w') variant = 'player_side';
                 else variant = 'player';
             }
@@ -100,7 +114,15 @@ export class EntityRenderSystem {
             const meta = getCompiledAssetMeta(variant);
             let frameIdx = 0;
             if (meta?.frames?.length > 1 && meta.frameRate) {
+                if (spriteDef.type === 'player' || spriteDef.type === 'peer') {
+                    frameIdx = tween ? Math.floor(gameTime * meta.frameRate) % meta.frames.length : 0;
+                } else if (NPC_WALK_SPRITES.has(spriteDef.type)) {
+                    frameIdx = tween ? Math.floor(gameTime * meta.frameRate) % meta.frames.length : 0;
+                } else if (NPC_IDLE_SPRITES.has(spriteDef.type)) {
+                    frameIdx = Math.floor(gameTime * meta.frameRate) % meta.frames.length;
+                } else {
                 frameIdx = Math.floor(gameTime * meta.frameRate) % meta.frames.length;
+                }
             }
 
             // 3. Draw Sprite
@@ -135,7 +157,6 @@ export class EntityRenderSystem {
             }
 
             // 4. Combat Effects (Phase 8.1)
-            const fx = this.world.getComponent(id, Component.VisualEffect);
             if (fx && fx.type === 'hit_flash') {
                 ctx.globalCompositeOperation = 'source-atop';
                 ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -150,7 +171,6 @@ export class EntityRenderSystem {
             ctx.restore();
 
             // 5. Attack Swipe
-            const attack = this.world.getComponent(id, Component.AttackAnimation);
             if (attack) {
                 this.drawAttackSwipe(ctx, sx, sy, attack.dir, attack.progress, screenOffsetX, screenOffsetY);
             }
@@ -229,17 +249,28 @@ export class EntityRenderSystem {
         const S = this.VP.S;
         const cx = screenOffsetX + sx * S + S / 2;
         const cy = screenOffsetY + sy * S + S / 2;
-        const radius = S * 0.8;
-        
-        ctx.beginPath();
-        ctx.strokeStyle = `rgba(255,255,255,${1 - progress})`;
-        ctx.lineWidth = 3;
-        
-        const startAngles = { 's': 0, 'n': Math.PI, 'e': -Math.PI/2, 'w': Math.PI/2 };
-        const start = startAngles[dir] || 0;
-        const arc = Math.PI * 0.8;
-        
-        ctx.arc(cx, cy, radius, start - arc/2 + (progress * arc), start + arc/2);
-        ctx.stroke();
+        const centerLen = S * 0.9 * (1 - progress * 0.25);
+        const flankLen = S * 0.7 * (1 - progress * 0.25);
+        const angleMap = { s: Math.PI / 2, n: -Math.PI / 2, e: 0, w: Math.PI };
+        const baseAngle = angleMap[dir] || 0;
+        const swing = [0, Math.PI / 12, -Math.PI / 12];
+        const lengths = [centerLen, flankLen, flankLen];
+        const widths = [2, 1, 1];
+
+        swing.forEach((offset, idx) => {
+            const angle = baseAngle + offset;
+            const length = lengths[idx];
+            const startX = cx + Math.cos(angle) * (S * 0.18);
+            const startY = cy + Math.sin(angle) * (S * 0.18);
+            const endX = startX + Math.cos(angle) * length;
+            const endY = startY + Math.sin(angle) * length;
+
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(255,255,180,${1 - progress})`;
+            ctx.lineWidth = widths[idx];
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+        });
     }
 }

@@ -223,10 +223,13 @@ export const rooms = {
         width: 15, height: 15,
         exits: {"south":"forest_depths"},
         exitTiles: "6,14,forest_depths,11,1,edge,3,1",
-        scenery: "7,7,torch|4,4,torch|10,4,torch|4,10,torch|10,10,torch|2,3,crate|11,3,crate|2,10,crate|11,10,crate|5,1,tree|7,2,rock",
+        scenery: "3,4,torch|11,4,torch|3,10,torch|11,10,torch|2,3,crate|11,3,crate|3,11,barrel|10,11,crate|5,6,rock|9,6,rock|7,7,torch|5,1,tree|7,2,rock",
         enemy: 'bandit',
         tileOverrides: [
-            { x: 6, y: 14, type: 'dirt' }, { x: 7, y: 14, type: 'dirt' }, { x: 8, y: 14, type: 'dirt' }
+            { x: 6, y: 14, type: 'dirt' }, { x: 7, y: 14, type: 'dirt' }, { x: 8, y: 14, type: 'dirt' },
+            { x: 6, y: 6, type: 'dirt' }, { x: 7, y: 6, type: 'dirt' }, { x: 8, y: 6, type: 'dirt' },
+            { x: 5, y: 7, type: 'dirt' }, { x: 6, y: 7, type: 'dirt' }, { x: 7, y: 7, type: 'dirt' }, { x: 8, y: 7, type: 'dirt' }, { x: 9, y: 7, type: 'dirt' },
+            { x: 6, y: 8, type: 'dirt' }, { x: 7, y: 8, type: 'dirt' }, { x: 8, y: 8, type: 'dirt' }
         ]
     }),
 
@@ -237,7 +240,7 @@ export const rooms = {
         width: 13, height: 13,
         exits: {"north":"forest_edge"},
         exitTiles: "5,0,forest_edge,9,19,door,3,1",
-        scenery: "1,1,rock|10,1,rock|1,10,mushroom|10,10,mushroom|5,3,mushroom|6,3,mushroom|5,8,rock|6,8,rock",
+        scenery: "1,1,rock|10,1,rock|1,10,mushroom|10,10,mushroom|5,3,mushroom|6,3,mushroom|4,4,mushroom|8,4,mushroom|5,8,rock|6,8,rock|3,8,ore|8,8,ore|2,5,rock",
         sceneryScatter: [
             { type: 'resource', label: 'ore', count: [2, 3] },
             { type: 'resource', label: 'stone', count: [1, 2] },
@@ -416,11 +419,17 @@ export const rooms = {
         width: 25, height: 11,
         exits: {"west":"mountain_pass"},
         exitTiles: "0,4,mountain_pass,19,14,edge,1,3",
-        scenery: "12,1,snowflake|6,8,snowflake|18,8,snowflake|1,4,rock|23,5,rock|10,2,rock|15,2,rock",
+        scenery: "12,1,snowflake|6,8,snowflake|18,8,snowflake|9,1,snowflake|15,9,snowflake|1,4,rock|23,5,rock|10,2,rock|15,2,rock|4,2,bones|20,8,bones|3,8,rock|21,2,rock",
         tileOverrides: [
+            { x: 1, y: 4, type: 'sand' }, { x: 1, y: 5, type: 'sand' }, { x: 1, y: 6, type: 'sand' },
+            { x: 2, y: 4, type: 'sand' }, { x: 2, y: 5, type: 'sand' }, { x: 2, y: 6, type: 'sand' },
+            { x: 3, y: 4, type: 'sand' }, { x: 3, y: 5, type: 'sand' }, { x: 3, y: 6, type: 'sand' },
             { x: 5, y: 4, type: 'water' }, { x: 6, y: 4, type: 'water' }, { x: 7, y: 4, type: 'water' }, { x: 8, y: 4, type: 'water' }, { x: 9, y: 4, type: 'water' }, { x: 10, y: 4, type: 'water' }, { x: 11, y: 4, type: 'water' }, { x: 12, y: 4, type: 'water' }, { x: 13, y: 4, type: 'water' }, { x: 14, y: 4, type: 'water' }, { x: 15, y: 4, type: 'water' }, { x: 16, y: 4, type: 'water' }, { x: 17, y: 4, type: 'water' }, { x: 18, y: 4, type: 'water' },
             { x: 5, y: 5, type: 'water' }, { x: 6, y: 5, type: 'water' }, { x: 7, y: 5, type: 'water' }, { x: 8, y: 5, type: 'water' }, { x: 9, y: 5, type: 'water' }, { x: 10, y: 5, type: 'water' }, { x: 11, y: 5, type: 'water' }, { x: 12, y: 5, type: 'water' }, { x: 13, y: 5, type: 'water' }, { x: 14, y: 5, type: 'water' }, { x: 15, y: 5, type: 'water' }, { x: 16, y: 5, type: 'water' }, { x: 17, y: 5, type: 'water' }, { x: 18, y: 5, type: 'water' },
-            { x: 5, y: 6, type: 'water' }, { x: 6, y: 6, type: 'water' }, { x: 7, y: 6, type: 'water' }, { x: 8, y: 6, type: 'water' }, { x: 9, y: 6, type: 'water' }, { x: 10, y: 6, type: 'water' }, { x: 11, y: 6, type: 'water' }, { x: 12, y: 6, type: 'water' }, { x: 13, y: 6, type: 'water' }, { x: 14, y: 6, type: 'water' }, { x: 15, y: 6, type: 'water' }, { x: 16, y: 6, type: 'water' }, { x: 17, y: 6, type: 'water' }, { x: 18, y: 6, type: 'water' }
+            { x: 5, y: 6, type: 'water' }, { x: 6, y: 6, type: 'water' }, { x: 7, y: 6, type: 'water' }, { x: 8, y: 6, type: 'water' }, { x: 9, y: 6, type: 'water' }, { x: 10, y: 6, type: 'water' }, { x: 11, y: 6, type: 'water' }, { x: 12, y: 6, type: 'water' }, { x: 13, y: 6, type: 'water' }, { x: 14, y: 6, type: 'water' }, { x: 15, y: 6, type: 'water' }, { x: 16, y: 6, type: 'water' }, { x: 17, y: 6, type: 'water' }, { x: 18, y: 6, type: 'water' },
+            { x: 20, y: 4, type: 'sand' }, { x: 20, y: 5, type: 'sand' }, { x: 20, y: 6, type: 'sand' },
+            { x: 21, y: 4, type: 'sand' }, { x: 21, y: 5, type: 'sand' }, { x: 21, y: 6, type: 'sand' },
+            { x: 22, y: 4, type: 'sand' }, { x: 22, y: 5, type: 'sand' }, { x: 22, y: 6, type: 'sand' }
         ],
     }),
 
@@ -431,12 +440,15 @@ export const rooms = {
         width: 21, height: 21,
         exits: {"south":"forest_edge","north":"ruins_descent"},
         exitTiles: "9,20,forest_edge,9,1,edge,3,1|10,0,ruins_descent,5,9,stairs",
-        scenery: "8,7,altar|3,3,pillar|16,3,pillar|3,16,pillar|16,16,pillar|3,9,torch|16,9,torch|9,3,torch|9,16,torch|6,6,pillar|13,6,pillar|6,13,pillar|13,13,pillar",
+        scenery: "8,7,altar|3,3,pillar|16,3,pillar|3,16,pillar|16,16,pillar|3,9,torch|16,9,torch|9,3,torch|9,16,torch|6,6,pillar|13,6,pillar|6,13,pillar|13,13,pillar|10,6,pillar|10,13,pillar|5,10,rock|14,10,rock",
         sceneryScatter: [
             { type: 'resource', label: 'stone', count: [1, 2] }
         ],
         staticEntities: [{ id: 'sage', x: 8, y: 8 }],
         enemy: 'ruin_shade',
+        tileOverrides: [
+            { x: 10, y: 3, type: 'cobble' }, { x: 10, y: 4, type: 'cobble' }, { x: 10, y: 5, type: 'cobble' }, { x: 10, y: 6, type: 'cobble' }, { x: 10, y: 7, type: 'cobble' }, { x: 10, y: 8, type: 'cobble' }, { x: 10, y: 9, type: 'cobble' }, { x: 10, y: 10, type: 'cobble' }, { x: 10, y: 11, type: 'cobble' }, { x: 10, y: 12, type: 'cobble' }, { x: 10, y: 13, type: 'cobble' }, { x: 10, y: 14, type: 'cobble' }, { x: 10, y: 15, type: 'cobble' }, { x: 6, y: 10, type: 'cobble' }, { x: 7, y: 10, type: 'cobble' }, { x: 8, y: 10, type: 'cobble' }, { x: 9, y: 10, type: 'cobble' }, { x: 11, y: 10, type: 'cobble' }, { x: 12, y: 10, type: 'cobble' }, { x: 13, y: 10, type: 'cobble' }, { x: 14, y: 10, type: 'cobble' }
+        ],
         tiles: [
             'WWWWWWWWWW.WWWWWWWWWW',
             'W...................W',
@@ -468,8 +480,8 @@ export const rooms = {
         description: 'A crumbling staircase spiraling down into the earth. Ruins are south, catacombs down.',
         width: 11, height: 11,
         exits: {"south":"ruins","down":"catacombs"},
-        exitTiles: "5,10,ruins,10,1,stairs|5,0,catacombs,7,3,up",
-        scenery: "4,4,ladder|1,1,rock|8,1,rock|1,8,torch|8,8,torch",
+        exitTiles: "5,10,ruins,10,1,stairs|5,5,catacombs,7,7,stairs",
+        scenery: "5,5,ladder|1,1,rock|8,1,rock|1,8,torch|8,8,torch",
         tileOverrides: [
             { x: 0, y: 0, type: 'wall' }, { x: 1, y: 0, type: 'wall' }, { x: 2, y: 0, type: 'wall' }, { x: 3, y: 0, type: 'wall' }, { x: 4, y: 0, type: 'wall' }, { x: 5, y: 0, type: 'wall' }, { x: 6, y: 0, type: 'wall' }, { x: 7, y: 0, type: 'wall' }, { x: 8, y: 0, type: 'wall' }, { x: 9, y: 0, type: 'wall' }, { x: 10, y: 0, type: 'wall' },
             { x: 0, y: 1, type: 'wall' }, { x: 10, y: 1, type: 'wall' },
@@ -493,6 +505,7 @@ export const rooms = {
         exits: {"north":"forest_depths","south":"catacombs"},
         exitTiles: "9,0,forest_depths,11,13,edge,3,1|9,20,catacombs,7,3,edge,3,1",
         terrain: { floor: 'forest', density: 10, clutter: ['grave', 'shrub'] },
+        scenery: "6,5,grave|10,6,grave|14,5,grave|7,12,grave|13,12,grave",
         sceneryScatter: [
             { type: 'flora', label: 'mushroom', count: [1, 3] }
         ],
@@ -504,13 +517,13 @@ export const rooms = {
         description: 'Endless rows of skulls and dust. A wraith haunts the tombs. Cemetery north, ruins descent up, cell south.',
         width: 15, height: 15,
         exits: {"up":"ruins_descent","south":"dungeon_cell","north":"cemetery"},
-        exitTiles: "7,0,ruins_descent,5,1,up|7,14,dungeon_cell,5,1,edge|7,1,cemetery,10,19,edge",
-        scenery: "3,4,bones|10,4,bones|3,10,bones|10,10,bones|1,5,candle|1,9,candle|13,5,candle|13,9,candle|7,6,altar",
+        exitTiles: "7,6,ruins_descent,5,9,stairs|7,14,dungeon_cell,5,1,edge|7,0,cemetery,9,19,edge,3,1",
+        scenery: "3,4,bones|10,4,bones|3,10,bones|10,10,bones|1,5,candle|1,9,candle|13,5,candle|13,9,candle|7,6,stairs",
         enemy: 'wraith',
         tiles: [
-            'WWWWWWW.WWWWWWW',
-            'WWWWWWW.WWWWWWW',
-            'WWWWWWW.WWWWWWW',
+            'WWWWWWW...WWWWW',
+            'WWWWWWW...WWWWW',
+            'WWWWWWW...WWWWW',
             'W.............W',
             'W..GGGGG......W',
             'W.............W',

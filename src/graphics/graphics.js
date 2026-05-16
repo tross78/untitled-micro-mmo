@@ -16,7 +16,7 @@ import { COMPILED_ASSET_SHAPES, COMPILED_ASSET_META } from '../generated/assets/
  * Fenhollow Graphics Bible & Tile Taxonomy (Phase 8.55a)
  * 
  * PALETTE RULES:
- * All procedural assets use a 4-color unified palette [primary, secondary, outline, accent].
+ * All procedural assets use a role palette with outline/secondary/primary/accent and optional shadow.
  * 
  * SCALE RULES:
  * - Small (1x1): props, small plants, items
@@ -67,7 +67,81 @@ const zoneTileType = (locationId) => {
 };
 export { zoneTileType };
 
-export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
+function getBlendProfile(tileType, neighborType) {
+    const key = `${tileType}->${neighborType}`;
+    const profiles = {
+        'grass->dirt': { side: '#7a5a28', accent: '#a88446', mode: 'tuft' },
+        'grass->cobble': { side: '#7a5a28', accent: '#9a907e', mode: 'tuft' },
+        'forest->grass': { side: '#2c5a1c', accent: '#6ea040', mode: 'tuft' },
+        'forest->dirt': { side: '#5a3418', accent: '#7c5e30', mode: 'tuft' },
+        'wall->stone_floor': { side: '#302c28', accent: '#a09488', mode: 'shadow' },
+        'wall->dirt': { side: '#302018', accent: '#704a24', mode: 'shadow' },
+        'wall->interior': { side: '#302018', accent: '#a46c3c', mode: 'shadow' },
+        'wall->cobble': { side: '#302c28', accent: '#7a7064', mode: 'shadow' },
+        'water->sand': { side: '#2e84c0', accent: '#dcd8a2', mode: 'foam' },
+        'water->grass': { side: '#2e84c0', accent: '#8fca58', mode: 'foam' },
+        'water->dirt': { side: '#2e84c0', accent: '#b28c54', mode: 'foam' },
+        'ice->stone_floor': { side: '#8bb6d4', accent: '#e7f8ff', mode: 'crack' },
+        'ice->dirt': { side: '#8bb6d4', accent: '#d1e8f4', mode: 'crack' },
+        'ice->sand': { side: '#8bb6d4', accent: '#f2f5de', mode: 'crack' },
+    };
+    return profiles[key] || null;
+}
+
+function blendTileEdges(ctx, tileType, cx, cy, neighbors, S) {
+    if (!neighbors) return;
+    const edges = [
+        ['north', 0, 0, S, 3],
+        ['south', 0, S - 3, S, 3],
+        ['west', 0, 0, 3, S],
+        ['east', S - 3, 0, 3, S],
+    ];
+    for (const [dir, ox, oy, w, h] of edges) {
+        const profile = getBlendProfile(tileType, neighbors[dir]);
+        if (!profile) continue;
+        ctx.fillStyle = profile.side;
+        if (profile.mode === 'shadow') {
+            ctx.globalAlpha = 0.65;
+            ctx.fillRect(cx + ox, cy + oy, w, h);
+            ctx.globalAlpha = 1.0;
+            ctx.fillStyle = profile.accent;
+            if (dir === 'north' || dir === 'south') ctx.fillRect(cx + 2, cy + oy, S - 4, 1);
+            else ctx.fillRect(cx + ox, cy + 2, 1, S - 4);
+            continue;
+        }
+
+        if (dir === 'north' || dir === 'south') {
+            for (let x = 0; x < S; x += 2) {
+                const y0 = dir === 'north' ? 0 : S - 3;
+                ctx.fillRect(cx + x, cy + y0 + ((x / 2) % 2), 2, 1);
+                ctx.fillStyle = profile.accent;
+                ctx.fillRect(cx + x + (profile.mode === 'foam' ? 1 : 0), cy + y0 + 2, 1, 1);
+                ctx.fillStyle = profile.side;
+            }
+        } else {
+            for (let y = 0; y < S; y += 2) {
+                const x0 = dir === 'west' ? 0 : S - 3;
+                ctx.fillRect(cx + x0 + ((y / 2) % 2), cy + y, 1, 2);
+                ctx.fillStyle = profile.accent;
+                ctx.fillRect(cx + x0 + 2, cy + y + (profile.mode === 'foam' ? 1 : 0), 1, 1);
+                ctx.fillStyle = profile.side;
+            }
+        }
+
+        if (profile.mode === 'crack') {
+            ctx.fillStyle = profile.accent;
+            if (dir === 'north' || dir === 'south') {
+                ctx.fillRect(cx + Math.floor(S * 0.35), cy + oy + 1, 1, 2);
+                ctx.fillRect(cx + Math.floor(S * 0.6), cy + oy, 1, 3);
+            } else {
+                ctx.fillRect(cx + ox + 1, cy + Math.floor(S * 0.35), 2, 1);
+                ctx.fillRect(cx + ox, cy + Math.floor(S * 0.6), 3, 1);
+            }
+        }
+    }
+}
+
+export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = null) {
     const p = TILE_PAL[tileType] || TILE_PAL.stone_floor;
     // Use seed only to pick a variant (0-7), not per-pixel noise positions.
     // Invalid seeds can leak in from callers during partial world/bootstrap states.
@@ -416,10 +490,12 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16) {
         ctx.fillRect(cx + 2, cy + 2, 2, 1);
         ctx.fillRect(cx + 2, cy + 2, 1, 2);
     }
+
+    blendTileEdges(ctx, tileType, cx, cy, neighbors, S);
 }
 
 // --- AUTHORED SPRITE BITMASKS ---
-// 8x14 grayscale templates (0: transparent, 1: outline #000, 2: secondary #888, 3: primary #ccc, 4: accent #fff)
+// Bitmask templates (0: transparent, 1: outline, 2: secondary, 3: primary, 4: accent, 5: shadow)
 const SHAPES = {
     // Player Base — Humanoid silhouette (16px tall total with feet)
     player: [
@@ -436,6 +512,86 @@ const SHAPES = {
         "00011100", "00133310", "01333310", "01333110", "00133100", "00011000",
         "00133100", "01333310", "01333110", "01333110", "01133100", "01133100",
         "01100000", "01100000"
+    ],
+    player_walk1: [
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01331100",
+        "01300110", "00110000"
+    ],
+    player_walk2: [
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01133110",
+        "01100110", "01100110"
+    ],
+    player_walk3: [
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "00113310",
+        "01100310", "00001100"
+    ],
+    player_walk4: [
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01133110",
+        "01100110", "01100110"
+    ],
+    player_back_walk1: [
+        "00011000", "00122100", "01222210", "01222210", "00122100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01331100",
+        "01300110", "00110000"
+    ],
+    player_back_walk2: [
+        "00011000", "00122100", "01222210", "01222210", "00122100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01133110",
+        "01100110", "01100110"
+    ],
+    player_back_walk3: [
+        "00011000", "00122100", "01222210", "01222210", "00122100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "00113310",
+        "01100310", "00001100"
+    ],
+    player_back_walk4: [
+        "00011000", "00122100", "01222210", "01222210", "00122100", "00011000",
+        "00133100", "01333310", "13333331", "01333310", "01133110", "01133110",
+        "01100110", "01100110"
+    ],
+    player_side_walk1: [
+        "00011100", "00133310", "01333310", "01333110", "00133100", "00011000",
+        "00133100", "01333310", "01333110", "01333110", "01133100", "01331000",
+        "01300000", "00110000"
+    ],
+    player_side_walk2: [
+        "00011100", "00133310", "01333310", "01333110", "00133100", "00011000",
+        "00133100", "01333310", "01333110", "01333110", "01133100", "01133100",
+        "01100000", "01100000"
+    ],
+    player_side_walk3: [
+        "00011100", "00133310", "01333310", "01333110", "00133100", "00011000",
+        "00133100", "01333310", "01333110", "01333110", "01133100", "00113300",
+        "00001100", "00000110"
+    ],
+    player_side_walk4: [
+        "00011100", "00133310", "01333310", "01333110", "00133100", "00011000",
+        "00133100", "01333310", "01333110", "01333110", "01133100", "01133100",
+        "01100000", "01100000"
+    ],
+    player_attack: [
+        "00011000", "00133100", "01333310", "01333310", "00133100", "00011000",
+        "00133100", "01333331", "13333330", "01333100", "01133100", "01300110",
+        "01100010", "00110000"
+    ],
+    player_attack_side: [
+        "00011100", "00133310", "01333310", "01333110", "00133100", "00011000",
+        "00133300", "01333310", "01333310", "01333110", "01133000", "01103000",
+        "01100000", "01000000"
+    ],
+    player_attack_back: [
+        "00011000", "00122100", "01222210", "01222210", "00122100", "00011000",
+        "01133100", "11333310", "13333310", "01133310", "01133110", "01133110",
+        "01100110", "01100110"
+    ],
+    player_hurt: [
+        "00011000", "00113100", "01333210", "01332210", "00113100", "00011000",
+        "00133100", "11333100", "11332100", "01332100", "01133010", "01133010",
+        "01100100", "01100000"
     ],
     // Hair Masks (Layered on top of primary #ccc head)
     hair_bowl:   ["00111100", "01222210", "12222221", "01122110"],
@@ -680,34 +836,34 @@ const SHAPES = {
         "01333310", "00111100", "00000000", "00000000"
     ],
     log: [
-        "00000000", "00000000", "00000000", "01111110",
-        "13222231", "12111121", "13222231", "01111110",
-        "00000000", "00000000", "00000000", "00000000"
+        "00000000", "00000000", "00011100", "00155510",
+        "01543351", "15432235", "15433335", "01543351",
+        "00155510", "00011100", "00000000", "00000000"
     ],
     ore: [
-        "00000000", "00000000", "00222200", "02222220",
-        "24422242", "22442222", "22244222", "02222220",
-        "00222200", "00000000", "00000000", "00000000"
+        "00000000", "00000000", "00055000", "00544450",
+        "05433345", "54343435", "05434350", "00544450",
+        "00055000", "00000000", "00000000", "00000000"
     ],
     herbs: [
-        "00000000", "00030000", "00330300", "03303330",
-        "03333300", "00033030", "00333000", "00133100",
-        "00111000", "00010000", "00010000", "00000000"
+        "00000000", "00033000", "00344300", "03433430",
+        "00333300", "00033030", "00343000", "00133100",
+        "00013100", "00001000", "00001000", "00000000"
     ],
     fiber: [
-        "00000000", "00300030", "03003003", "30030030",
-        "03300303", "00330030", "00033000", "00133100",
-        "00111000", "00010000", "00010000", "00000000"
+        "00000000", "00300030", "03043003", "30430030",
+        "03300303", "00330030", "00043000", "00133100",
+        "00013100", "00001000", "00001000", "00000000"
     ],
     stone: [
-        "00000000", "00000000", "00222200", "02333220",
-        "23333322", "23222322", "23333322", "02222220",
-        "00222200", "00000000", "00000000", "00000000"
+        "00000000", "00000000", "00055000", "00533350",
+        "05322335", "53233323", "05333350", "00555500",
+        "00011000", "00000000", "00000000", "00000000"
     ],
     coal: [
-        "00000000", "00000000", "00222200", "02222220",
-        "22122212", "21222222", "22212122", "02222220",
-        "00222200", "00000000", "00000000", "00000000"
+        "00000000", "00000000", "00011000", "00155510",
+        "01522251", "15252525", "01522251", "00155510",
+        "00011000", "00000000", "00000000", "00000000"
     ],
 };
 
@@ -801,7 +957,8 @@ export function getGrayscaleTemplate(type, seed = 0, frameIdx = 0) {
         '1': '#000000',
         '2': '#888888',
         '3': '#cccccc',
-        '4': '#ffffff'
+        '4': '#ffffff',
+        '5': '#444444'
     };
 
     const drawMask = (mask, offX=0, offY=0) => {
@@ -845,52 +1002,52 @@ export function getGrayscaleTemplate(type, seed = 0, frameIdx = 0) {
 
 export const PALETTES = {
     // Player — bright lime green, very readable on any background
-    self:  { primary: '#20e840', secondary: '#0a8020', outline: '#001800', accent: '#ffffff' },
+    self:  { primary: '#20e840', secondary: '#0a8020', outline: '#001800', accent: '#ffffff', shadow: '#0b3a12' },
     // Other players — variants keyed peer0..peer5, picked by seed hash
-    peer:  { primary: '#30c0ff', secondary: '#0878b8', outline: '#001828', accent: '#ffffff' },
-    peer0: { primary: '#30c0ff', secondary: '#0878b8', outline: '#001828', accent: '#ffffff' }, // sky blue
-    peer1: { primary: '#ff9a30', secondary: '#b85008', outline: '#180800', accent: '#ffffff' }, // amber
-    peer2: { primary: '#c030ff', secondary: '#780898', outline: '#180028', accent: '#ffffff' }, // violet
-    peer3: { primary: '#30ff9a', secondary: '#087848', outline: '#001818', accent: '#ffffff' }, // mint
-    peer4: { primary: '#ff3060', secondary: '#980820', outline: '#180010', accent: '#ffffff' }, // rose
-    peer5: { primary: '#f0e830', secondary: '#988000', outline: '#181400', accent: '#ffffff' }, // gold
+    peer:  { primary: '#30c0ff', secondary: '#0878b8', outline: '#001828', accent: '#ffffff', shadow: '#0f4262' },
+    peer0: { primary: '#30c0ff', secondary: '#0878b8', outline: '#001828', accent: '#ffffff', shadow: '#0f4262' }, // sky blue
+    peer1: { primary: '#ff9a30', secondary: '#b85008', outline: '#180800', accent: '#ffffff', shadow: '#5a2608' }, // amber
+    peer2: { primary: '#c030ff', secondary: '#780898', outline: '#180028', accent: '#ffffff', shadow: '#46105a' }, // violet
+    peer3: { primary: '#30ff9a', secondary: '#087848', outline: '#001818', accent: '#ffffff', shadow: '#0d5a3e' }, // mint
+    peer4: { primary: '#ff3060', secondary: '#980820', outline: '#180010', accent: '#ffffff', shadow: '#621428' }, // rose
+    peer5: { primary: '#f0e830', secondary: '#988000', outline: '#181400', accent: '#ffffff', shadow: '#625818' }, // gold
     // Generic NPC fallback
-    npc:   { primary: '#ffd820', secondary: '#a07800', outline: '#201800', accent: '#ffffff' },
+    npc:   { primary: '#ffd820', secondary: '#a07800', outline: '#201800', accent: '#ffffff', shadow: '#6a5410' },
     // Guard — steel blue armour, gold trim
-    npcGuard:  { primary: '#8098c8', secondary: '#3850a0', outline: '#080820', accent: '#f8e060' },
+    npcGuard:  { primary: '#8098c8', secondary: '#3850a0', outline: '#080820', accent: '#f8e060', shadow: '#2b3d72' },
     // Barkeep — warm amber/brown
-    npcWarm:   { primary: '#e09040', secondary: '#884818', outline: '#200800', accent: '#fff8d0' },
+    npcWarm:   { primary: '#e09040', secondary: '#884818', outline: '#200800', accent: '#fff8d0', shadow: '#6a3614' },
     // Merchant — rich purple-maroon
-    npcTrade:  { primary: '#c06890', secondary: '#703050', outline: '#180010', accent: '#ffd8f0' },
+    npcTrade:  { primary: '#c06890', secondary: '#703050', outline: '#180010', accent: '#ffd8f0', shadow: '#4e2338' },
     // Herbalist — vivid leaf green
-    npcLeaf:   { primary: '#48c838', secondary: '#186818', outline: '#001800', accent: '#d8ffd0' },
+    npcLeaf:   { primary: '#48c838', secondary: '#186818', outline: '#001800', accent: '#d8ffd0', shadow: '#24561a' },
     // Sage — cool lilac
-    npcSage:   { primary: '#b090d8', secondary: '#604898', outline: '#100820', accent: '#f0e8ff' },
+    npcSage:   { primary: '#b090d8', secondary: '#604898', outline: '#100820', accent: '#f0e8ff', shadow: '#4c3c70' },
     // Bard — bright teal
-    npcSong:   { primary: '#28d8c0', secondary: '#088070', outline: '#001818', accent: '#d0fff8' },
+    npcSong:   { primary: '#28d8c0', secondary: '#088070', outline: '#001818', accent: '#d0fff8', shadow: '#135a54' },
     // Enemy — vivid red, yellow sclera
-    enemy: { primary: '#f03020', secondary: '#801008', outline: '#180000', accent: '#ffee00' },
+    enemy: { primary: '#f03020', secondary: '#801008', outline: '#180000', accent: '#ffee00', shadow: '#5e120d' },
 };
 
-// Compact grouped palette table: [primary, secondary, outline, accent]
+// Compact grouped palette table: [primary, secondary, outline, accent, shadow]
 const _SP = {
-    g: ['#286820','#103808','#000820','#48b030'],  // vivid green (shrubs)
-    tr: ['#357f2b','#8a5318','#214b1f','#79cf56'], // tree: softer outline + brighter fluffy highlights
-    w: ['#a06030','#583010','#180800','#d89050'],  // warm wood
-    r: ['#707880','#404850','#101418','#a0aab0'],  // slate grey/rock
-    s: ['#b0a888','#706848','#181408','#d8d0b0'],  // warm stone/bones
-    L: ['#a06030','#603010','#180800','#d09060'],  // warm brown wood/log
-    O: ['#808898','#484858','#101018','#c8d8b0'],  // grey-green ore with pale accent
-    H: ['#48a030','#205810','#081800','#80e050'],  // vivid herb green
-    F: ['#78b848','#386818','#081808','#b8e888'],  // pale fiber green
-    T: ['#909898','#585858','#181818','#c8d0c8'],  // light stone grey
-    C: ['#282828','#101010','#000000','#484848'],  // near-black coal
-    p: ['#d8c080','#906820','#180800','#f8e8a8'],  // parchment/scroll
-    d: ['#f0c020','#a06800','#181000','#fff088'],  // bright gold
-    f: ['#f07820','#a03008','#180800','#ffe040'],  // vivid fire/torch
-    i: ['#d0ecff','#90c0e0','#304860','#ffffff'],  // crisp ice
-    m: ['#c04828','#701808','#180000','#f09060'],  // rich mushroom red
-    h: ['#e8c878','#b08038','#201000','#fff0b0'],  // pale shell
+    g: ['#286820','#103808','#000820','#48b030','#163414'],  // vivid green (shrubs)
+    tr: ['#357f2b','#8a5318','#214b1f','#79cf56','#23401b'], // tree: softer outline + brighter fluffy highlights
+    w: ['#a06030','#583010','#180800','#d89050','#4a2810'],  // warm wood
+    r: ['#707880','#404850','#101418','#a0aab0','#38404a'],  // slate grey/rock
+    s: ['#b0a888','#706848','#181408','#d8d0b0','#5a523a'],  // warm stone/bones
+    L: ['#a06030','#603010','#180800','#d09060','#4e2a12'],  // warm brown wood/log
+    O: ['#808898','#484858','#101018','#c8d8b0','#3a4050'],  // grey-green ore with pale accent
+    H: ['#48a030','#205810','#081800','#80e050','#1b4618'],  // vivid herb green
+    F: ['#78b848','#386818','#081808','#b8e888','#31501e'],  // pale fiber green
+    T: ['#909898','#585858','#181818','#c8d0c8','#3d3d3d'],  // light stone grey
+    C: ['#282828','#101010','#000000','#484848','#1a1a1a'],  // near-black coal
+    p: ['#d8c080','#906820','#180800','#f8e8a8','#68542c'],  // parchment/scroll
+    d: ['#f0c020','#a06800','#181000','#fff088','#7a5608'],  // bright gold
+    f: ['#f07820','#a03008','#180800','#ffe040','#6a2408'],  // vivid fire/torch
+    i: ['#d0ecff','#90c0e0','#304860','#ffffff','#6f92a9'],  // crisp ice
+    m: ['#c04828','#701808','#180000','#f09060','#5b1d12'],  // rich mushroom red
+    h: ['#e8c878','#b08038','#201000','#fff0b0','#6d5626'],  // pale shell
 };
 const _SM = {
     tree:'tr', shrub:'g',
@@ -910,7 +1067,7 @@ const _SM = {
 
 export function getSceneryPalette(label) {
     const a = _SP[_SM[label]] || _SP.r;
-    return { primary: a[0], secondary: a[1], outline: a[2], accent: a[3] };
+    return { primary: a[0], secondary: a[1], outline: a[2], accent: a[3], shadow: a[4] };
 }
 
 /**
@@ -934,12 +1091,14 @@ export function applyPalette(template, palette) {
     const s = hexToRgb(palette.secondary);
     const o = hexToRgb(palette.outline);
     const a = hexToRgb(palette.accent);
+    const sh = hexToRgb(palette.shadow || palette.secondary || '#444444');
 
     for (let i = 0; i < data.length; i += 4) {
         const r = data[i], alpha = data[i+3];
         if (alpha === 0) continue;
         if (r === 255) { data[i]=a[0]; data[i+1]=a[1]; data[i+2]=a[2]; }
         else if (r === 204) { data[i]=p[0]; data[i+1]=p[1]; data[i+2]=p[2]; }
+        else if (r === 68) { data[i]=sh[0]; data[i+1]=sh[1]; data[i+2]=sh[2]; }
         else if (r === 136) { data[i]=s[0]; data[i+1]=s[1]; data[i+2]=s[2]; }
         else if (r === 0) { data[i]=o[0]; data[i+1]=o[1]; data[i+2]=o[2]; }
     }

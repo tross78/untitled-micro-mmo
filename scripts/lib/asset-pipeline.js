@@ -9,6 +9,7 @@ const ROLE_DIGITS = new Map([
   ['secondary', '2'],
   ['primary', '3'],
   ['accent', '4'],
+  ['shadow', '5'],
 ]);
 
 const sq = (n) => n * n;
@@ -223,7 +224,7 @@ export const frameToMaskRows = ({ width, height, rgba }, palette, colorMode = 's
       const match = findExactPaletteEntry(rgb, paletteEntries)
         || (colorMode === 'quantized' ? findNearestPaletteEntry(rgb, paletteEntries) : null);
       if (!match) {
-        throw new Error(`Unsupported source color rgb(${rgb.join(',')}) in strict 4-color import`);
+        throw new Error(`Unsupported source color rgb(${rgb.join(',')}) in strict role import`);
       }
       row += ROLE_DIGITS.get(match.role);
     }
@@ -269,6 +270,7 @@ export const compileAssets = async (manifest, baseDir) => {
     secondary: '#888888',
     primary: '#cccccc',
     accent: '#ffffff',
+    shadow: '#444444',
   };
   const colorMode = manifest.compilerOptions?.colorMode || 'strict';
   if (!['strict', 'quantized'].includes(colorMode)) {

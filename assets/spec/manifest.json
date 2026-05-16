@@ -4,7 +4,8 @@
       "outline": "#000000",
       "secondary": "#888888",
       "primary": "#cccccc",
-      "accent": "#ffffff"
+      "accent": "#ffffff",
+      "shadow": "#444444"
     }
   },
   "assetManifest": [
@@ -12,6 +13,8 @@
       "id": "player",
       "family": "player",
       "source": "../source/players/player.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -22,6 +25,8 @@
       "id": "player_back",
       "family": "player",
       "source": "../source/players/player_back.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -32,6 +37,48 @@
       "id": "player_side",
       "family": "player",
       "source": "../source/players/player_side.png",
+      "frameCount": 4,
+      "frameRate": 6,
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "player_attack",
+      "family": "player",
+      "source": "../source/players/player_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "player_attack_back",
+      "family": "player",
+      "source": "../source/players/player_attack_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "player_attack_side",
+      "family": "player",
+      "source": "../source/players/player_attack_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+      }
+    },
+    {
+      "id": "player_hurt",
+      "family": "player",
+      "source": "../source/players/player_hurt.png",
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -158,6 +205,8 @@
       "id": "guard",
       "family": "npc",
       "source": "../source/npcs/guard.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -168,6 +217,8 @@
       "id": "barkeep",
       "family": "npc",
       "source": "../source/npcs/barkeep.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -178,6 +229,8 @@
       "id": "merchant",
       "family": "npc",
       "source": "../source/npcs/merchant.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -188,6 +241,8 @@
       "id": "herbalist",
       "family": "npc",
       "source": "../source/npcs/herbalist.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -198,6 +253,8 @@
       "id": "sage",
       "family": "npc",
       "source": "../source/npcs/sage.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
@@ -208,6 +265,8 @@
       "id": "bard",
       "family": "npc",
       "source": "../source/npcs/bard.png",
+      "frameCount": 4,
+      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {

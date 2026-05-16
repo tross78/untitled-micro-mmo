@@ -1,12 +1,13 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { applyPalette, getGrayscaleTemplate, roundRect } from '../graphics/graphics.js';
+import { applyPalette, getGrayscaleTemplate, PALETTES, roundRect } from '../graphics/graphics.js';
 import { levelBonus, getDynamicRoomDescription, getTimeOfDay } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';
 import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
 import { ENEMIES, roomHasFeature } from '../content/data.js';
+import { NPCS } from '../content/data/npcs.js';
 
 /**
  * UIRenderSystem handles HUD, dialogue, menus, and overlays.
@@ -27,6 +28,7 @@ export class UIRenderSystem {
         this.getNPCsAt = stores.getNPCsAt || (() => []);
         this.heartSprite = null;
         this.emptyHeartSprite = null;
+        this.portraitCache = new Map();
         this.menuHitRegions = [];
         this.dialogueHitRegions = [];
         this.hudHitRegions = [];
@@ -125,6 +127,17 @@ export class UIRenderSystem {
         ctx.fillStyle = danger ? 'rgba(180, 40, 40, 0.35)' : 'rgba(56, 78, 48, 0.88)';
         roundRect(ctx, x, y, w, h, UI_STYLE.radius);
         ctx.fill();
+        ctx.fillStyle = danger ? 'rgba(255, 160, 160, 0.18)' : 'rgba(255, 248, 220, 0.12)';
+        roundRect(ctx, x + 2, y + 2, w - 4, Math.max(6, Math.floor(h * 0.28)), Math.max(4, UI_STYLE.radius - 2));
+        ctx.fill();
+        ctx.fillStyle = danger ? 'rgba(120, 20, 20, 0.35)' : 'rgba(12, 18, 10, 0.3)';
+        roundRect(ctx, x + 2, y + h - Math.max(7, Math.floor(h * 0.22)), w - 4, Math.max(5, Math.floor(h * 0.18)), Math.max(4, UI_STYLE.radius - 2));
+        ctx.fill();
+        if (danger) {
+            ctx.fillStyle = 'rgba(255, 120, 120, 0.28)';
+            roundRect(ctx, x + 2, y + 2, Math.max(6, Math.floor(w * 0.08)), h - 4, Math.max(4, UI_STYLE.radius - 2));
+            ctx.fill();
+        }
         ctx.strokeStyle = danger ? '#ff6666' : UI_PALETTE.border;
         ctx.lineWidth = UI_STYLE.borderW;
         ctx.stroke();
@@ -248,6 +261,12 @@ export class UIRenderSystem {
         ctx.fillStyle = 'rgba(56, 78, 48, 0.22)';
         roundRect(ctx, x, y, w, h, Math.max(4, Math.floor(UI_STYLE.radius * 0.6)));
         ctx.fill();
+        ctx.fillStyle = 'rgba(255, 248, 220, 0.08)';
+        roundRect(ctx, x + 2, y + 2, w - 4, Math.max(5, Math.floor(h * 0.32)), Math.max(3, Math.floor(UI_STYLE.radius * 0.45)));
+        ctx.fill();
+        ctx.fillStyle = 'rgba(10, 14, 10, 0.22)';
+        roundRect(ctx, x + 2, y + h - Math.max(6, Math.floor(h * 0.2)), w - 4, Math.max(4, Math.floor(h * 0.16)), Math.max(3, Math.floor(UI_STYLE.radius * 0.45)));
+        ctx.fill();
 
         const iconX = x + pad;
         const textX = x + pad + iconSize + 6;
@@ -306,9 +325,13 @@ export class UIRenderSystem {
 
     drawBanner(ctx, text, now, expires) {
         const alpha = Math.min(1, (expires - now) / 400);
-        ctx.fillStyle = `rgba(18, 24, 18, ${0.85 * alpha})`;
-        const bh = Math.floor(this.VP.S * 0.85);
+        ctx.fillStyle = `rgba(18, 24, 18, ${0.88 * alpha})`;
+        const bh = Math.floor(this.VP.S * 1.0);
         ctx.fillRect(0, 4, this.VP.CW, bh);
+        ctx.fillStyle = `rgba(255, 248, 220, ${0.1 * alpha})`;
+        ctx.fillRect(6, 8, this.VP.CW - 12, Math.max(4, Math.floor(bh * 0.24)));
+        ctx.fillStyle = `rgba(10, 12, 10, ${0.22 * alpha})`;
+        ctx.fillRect(0, 4 + bh - 5, this.VP.CW, 5);
         ctx.fillStyle = `rgba(246, 237, 197, ${alpha})`;
         ctx.font = `bold ${Math.floor(this.VP.S * 0.45)}px monospace`;
         ctx.textAlign = 'center';
@@ -329,9 +352,17 @@ export class UIRenderSystem {
         ctx.fillStyle = UI_PALETTE.bg;
         roundRect(ctx, px, py, tw, th, UI_STYLE.radius);
         ctx.fill();
+        ctx.fillStyle = 'rgba(255, 248, 220, 0.08)';
+        roundRect(ctx, px + 3, py + 3, tw - 6, Math.max(6, Math.floor(th * 0.3)), Math.max(4, UI_STYLE.radius - 2));
+        ctx.fill();
         ctx.strokeStyle = UI_PALETTE.border;
         ctx.lineWidth = UI_STYLE.borderW;
         ctx.stroke();
+        ctx.fillStyle = UI_PALETTE.accent;
+        ctx.fillRect(px + 8, py + 8, 3, 3);
+        ctx.fillRect(px + tw - 11, py + 8, 3, 3);
+        ctx.fillRect(px + 8, py + th - 11, 3, 3);
+        ctx.fillRect(px + tw - 11, py + th - 11, 3, 3);
 
         ctx.fillStyle = UI_PALETTE.textHi;
         ctx.textAlign = 'center';
@@ -346,6 +377,19 @@ export class UIRenderSystem {
         const bh = Math.floor(this.VP.CH * 0.4);
         const by = (this.VP.CH - bh) / 2;
         ctx.fillRect(0, by, this.VP.CW, bh);
+        ctx.strokeStyle = `rgba(255, 221, 85, ${0.22 * alpha})`;
+        ctx.lineWidth = 2;
+        const cx = this.VP.CW / 2;
+        const cy = by + bh / 2;
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 * i) / 8;
+            const inner = Math.floor(this.VP.S * 1.2);
+            const outer = Math.floor(this.VP.S * 3.4);
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+            ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+            ctx.stroke();
+        }
         
         ctx.strokeStyle = `rgba(199, 216, 171, ${alpha})`;
         ctx.lineWidth = 4;
@@ -371,16 +415,34 @@ export class UIRenderSystem {
         const BOX_X = 16;
         const BOX_Y = this.VP.CH - BOX_H - this.getHudHeight() - 8;
         const PAD = UI_STYLE.pad * 1.5;
+        const portrait = this.getDialoguePortrait(dialogue.speakerId);
+        const headerH = Math.max(26, Math.floor(this.VP.S * 0.7));
+        const portraitSize = portrait ? Math.max(28, Math.floor(this.VP.S * 1.6)) : 0;
+        const portraitPad = portrait ? portraitSize + 10 : 0;
+        const textWidth = BOX_W - PAD * 2 - portraitPad;
 
         ctx.fillStyle = UI_PALETTE.bg;
         roundRect(ctx, BOX_X, BOX_Y, BOX_W, BOX_H, UI_STYLE.radius);
         ctx.fill();
+        ctx.fillStyle = 'rgba(255, 248, 220, 0.05)';
+        for (let y = BOX_Y + 10; y < BOX_Y + BOX_H - 10; y += 6) {
+            ctx.fillRect(BOX_X + 8, y, BOX_W - 16, 1);
+        }
         ctx.strokeStyle = UI_PALETTE.border;
         ctx.lineWidth = UI_STYLE.borderW;
         ctx.stroke();
         ctx.fillStyle = 'rgba(255, 221, 85, 0.12)';
-        roundRect(ctx, BOX_X + 6, BOX_Y + 6, BOX_W - 12, Math.max(22, Math.floor(this.VP.S * 0.55)), 5);
+        roundRect(ctx, BOX_X + 6, BOX_Y + 6, BOX_W - 12, headerH, 5);
         ctx.fill();
+        ctx.fillStyle = 'rgba(255, 248, 220, 0.1)';
+        ctx.fillRect(BOX_X + 10, BOX_Y + 10, BOX_W - 20, 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+        ctx.fillRect(BOX_X + 10, BOX_Y + headerH + 7, BOX_W - 20, 1);
+        ctx.fillStyle = 'rgba(255, 248, 220, 0.12)';
+        ctx.fillRect(BOX_X + 6, BOX_Y + 6, 5, 5);
+        ctx.fillRect(BOX_X + BOX_W - 11, BOX_Y + 6, 5, 5);
+        ctx.fillRect(BOX_X + 6, BOX_Y + BOX_H - 11, 5, 5);
+        ctx.fillRect(BOX_X + BOX_W - 11, BOX_Y + BOX_H - 11, 5, 5);
 
         ctx.font = `bold ${Math.floor(this.VP.S * 0.38)}px monospace`;
         ctx.fillStyle = UI_PALETTE.accent;
@@ -388,19 +450,29 @@ export class UIRenderSystem {
         ctx.textBaseline = 'top';
         ctx.fillText(dialogue.speakerId.toUpperCase(), BOX_X + PAD, BOX_Y + PAD * 0.6);
 
+        if (portrait) {
+            ctx.drawImage(
+                portrait,
+                BOX_X + PAD,
+                BOX_Y + headerH + 10,
+                portraitSize,
+                portraitSize
+            );
+        }
+
         ctx.font = `${Math.floor(this.VP.S * 0.32)}px monospace`;
         ctx.fillStyle = UI_PALETTE.text;
         const visibleChars = Math.floor(dialogue.progress);
         const text = dialogue.text.slice(0, visibleChars);
-        const words = text.split(' ');
-        let curLine = '', lines = [];
-        for (const w of words) {
-            if ((curLine + w).length > 32) { lines.push(curLine); curLine = w + ' '; }
-            else { curLine += w + ' '; }
-        }
-        lines.push(curLine);
+        const lines = this.measureWrap(ctx, text, Math.max(80, textWidth));
         const lineH = Math.floor(this.VP.S * 0.45);
-        lines.forEach((line, i) => ctx.fillText(line, BOX_X + PAD, BOX_Y + PAD * 1.6 + i * lineH));
+        lines.forEach((line, i) => {
+            ctx.fillText(
+                line,
+                BOX_X + PAD + portraitPad,
+                BOX_Y + headerH + PAD * 0.95 + i * lineH
+            );
+        });
 
         if (visibleChars >= dialogue.text.length) {
             const alpha = 0.5 + Math.sin(Date.now() / 200) * 0.5;
@@ -410,7 +482,9 @@ export class UIRenderSystem {
             if (inputManager.lastInputMode === 'gamepad') diaHint = '(A) to advance';
             else if (inputManager.lastInputMode === 'touch') diaHint = 'Tap to advance';
             ctx.font = `${Math.floor(this.VP.S * 0.28)}px monospace`;
-            ctx.fillText(`${diaHint} ▼`, BOX_X + BOX_W - PAD, BOX_Y + BOX_H - PAD * 0.6);
+            ctx.fillText(diaHint, BOX_X + BOX_W - PAD - 14, BOX_Y + BOX_H - PAD * 0.6);
+            ctx.fillRect(BOX_X + BOX_W - PAD - 8, BOX_Y + BOX_H - PAD * 0.9, 4, 4);
+            ctx.fillRect(BOX_X + BOX_W - PAD - 6, BOX_Y + BOX_H - PAD * 0.7, 4, 4);
 
             const btnW = Math.max(72, Math.floor(this.VP.S * 1.9));
             const btnH = Math.max(24, Math.floor(this.VP.S * 0.55));
@@ -569,20 +643,8 @@ export class UIRenderSystem {
     }
 
     drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
-        const words = String(text).split(/\s+/);
-        let line = '';
-        let drawY = y;
-        words.forEach((word) => {
-            const test = line ? `${line} ${word}` : word;
-            if (ctx.measureText(test).width > maxWidth && line) {
-                ctx.fillText(line, x, drawY);
-                line = word;
-                drawY += lineHeight;
-            } else {
-                line = test;
-            }
-        });
-        if (line) ctx.fillText(line, x, drawY);
+        const lines = this.measureWrap(ctx, text, maxWidth);
+        lines.forEach((line, idx) => ctx.fillText(line, x, y + idx * lineHeight));
     }
 
     fitText(ctx, text, maxWidth) {
@@ -593,6 +655,36 @@ export class UIRenderSystem {
             out = out.slice(0, -1);
         }
         return `${out}...`;
+    }
+
+    measureWrap(ctx, text, maxWidth) {
+        const words = String(text || '').split(/\s+/).filter(Boolean);
+        if (!words.length) return [''];
+        const lines = [];
+        let line = '';
+        for (const word of words) {
+            const test = line ? `${line} ${word}` : word;
+            if (ctx.measureText(test).width > maxWidth && line) {
+                lines.push(line);
+                line = word;
+            } else {
+                line = test;
+            }
+        }
+        if (line) lines.push(line);
+        return lines;
+    }
+
+    getDialoguePortrait(speakerId) {
+        const npc = NPCS[speakerId];
+        if (!npc?.sprite) return null;
+        const cacheKey = `${npc.sprite}:${npc.palette || 'npcWarm'}`;
+        if (this.portraitCache.has(cacheKey)) return this.portraitCache.get(cacheKey);
+        const template = getGrayscaleTemplate(npc.sprite);
+        const palette = PALETTES[npc.palette] || PALETTES.npcWarm;
+        const portrait = template && palette ? applyPalette(template, palette) : null;
+        this.portraitCache.set(cacheKey, portrait);
+        return portrait;
     }
 
     resolveMenuClick(x, y) {

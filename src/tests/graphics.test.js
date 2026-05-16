@@ -139,6 +139,17 @@ describe('graphics procedural primitives', () => {
         expect(a.fillRect.mock.calls).toEqual(b.fillRect.mock.calls);
     });
 
+    test('drawTile neighbor blending remains deterministic', () => {
+        const a = makeCtx();
+        const b = makeCtx();
+        const neighbors = { north: 'dirt', south: 'grass', west: 'grass', east: 'cobble' };
+
+        drawTile(a, 'grass', 0, 0, 4321, 16, neighbors);
+        drawTile(b, 'grass', 0, 0, 4321, 16, neighbors);
+
+        expect(a.fillRect.mock.calls).toEqual(b.fillRect.mock.calls);
+    });
+
     test('drawTile covers every tile branch without throwing', () => {
         ['grass', 'stone_floor', 'wall', 'water', 'exit', 'interior', 'missing'].forEach((type, idx) => {
             expect(() => drawTile(makeCtx(), type, 0, 0, 100 + idx, 16)).not.toThrow();

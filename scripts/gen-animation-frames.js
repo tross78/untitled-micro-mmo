@@ -18,6 +18,7 @@ const CHAR_RGBA = {
     '2': [136, 136, 136, 255],  // secondary (grey)
     '3': [204, 204, 204, 255],  // primary (light grey)
     '4': [255, 255, 255, 255],  // accent (white)
+    '5': [68,  68,  68,  255],  // shadow (deep grey)
 };
 
 const framesToPng = (frames) => {
@@ -119,7 +120,7 @@ const buildTreeRows = () => {
     return addOutlineChar(canvas);
 };
 
-// Sprite data: 0=transparent, 1=outline, 2=secondary, 3=primary, 4=accent
+// Sprite data: 0=transparent, 1=outline, 2=secondary, 3=primary, 4=accent, 5=shadow
 // Colors resolve through each sprite's scenery/entity palette at render time.
 
 const ANIMATIONS = {

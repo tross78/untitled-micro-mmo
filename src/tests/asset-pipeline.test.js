@@ -18,14 +18,14 @@ describe('asset pipeline', () => {
         expect(Array.from(decoded.rgba.slice(0, 8))).toEqual([0, 0, 0, 255, 255, 255, 255, 255]);
     });
 
-    test('compiles strict 4-color PNGs into mask rows', async () => {
+    test('compiles strict role-color PNGs into mask rows', async () => {
         const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fenhollow-assets-'));
         const pngPath = path.join(dir, 'player.png');
         const manifestPath = path.join(dir, 'manifest.json');
         const outputPath = path.join(dir, 'compiled-assets.js');
         const pixels = rgba(
             [0, 0, 0, 255], [136, 136, 136, 255],
-            [204, 204, 204, 255], [255, 255, 255, 255]
+            [204, 204, 204, 255], [68, 68, 68, 255]
         );
         await fs.writeFile(pngPath, encodePng({ width: 2, height: 2, rgba: pixels }));
         await fs.writeFile(manifestPath, JSON.stringify({
@@ -35,6 +35,7 @@ describe('asset pipeline', () => {
                     secondary: '#888888',
                     primary: '#cccccc',
                     accent: '#ffffff',
+                    shadow: '#444444',
                 },
             },
             assetManifest: [{
@@ -48,12 +49,12 @@ describe('asset pipeline', () => {
         }), 'utf8');
 
         const compiled = await compileAssetManifestFile({ manifestPath, outputPath });
-        expect(compiled.assets.player_test).toEqual(['12', '34']);
+        expect(compiled.assets.player_test).toEqual(['12', '35']);
 
         const generated = await fs.readFile(outputPath, 'utf8');
         expect(generated).toContain('"player_test": [');
         expect(generated).toContain('"12"');
-        expect(generated).toContain('"34"');
+        expect(generated).toContain('"35"');
         expect(generated).toContain('"family":"player"');
     });
 
@@ -69,6 +70,7 @@ describe('asset pipeline', () => {
                     secondary: '#888888',
                     primary: '#cccccc',
                     accent: '#ffffff',
+                    shadow: '#444444',
                 },
             },
             assetManifest: [{
@@ -80,14 +82,14 @@ describe('asset pipeline', () => {
         }, dir)).rejects.toThrow('Unsupported source color');
     });
 
-    test('quantized color mode reduces arbitrary pixel colors into the 4-role mask palette', async () => {
+    test('quantized color mode reduces arbitrary pixel colors into the role mask palette', async () => {
         const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fenhollow-assets-quantized-'));
         const pngPath = path.join(dir, 'tile.png');
         const pixels = rgba(
             [5, 5, 5, 255],
             [150, 150, 150, 255],
             [210, 210, 210, 255],
-            [250, 250, 250, 255]
+            [80, 80, 80, 255]
         );
         await fs.writeFile(pngPath, encodePng({ width: 2, height: 2, rgba: pixels }));
 
@@ -99,6 +101,7 @@ describe('asset pipeline', () => {
                     secondary: '#888888',
                     primary: '#cccccc',
                     accent: '#ffffff',
+                    shadow: '#444444',
                 },
             },
             assetManifest: [{
@@ -109,7 +112,7 @@ describe('asset pipeline', () => {
             }],
         }, dir);
 
-        expect(compiled.assets.tile_test).toEqual(['12', '34']);
+        expect(compiled.assets.tile_test).toEqual(['12', '35']);
     });
 
     test('palette normalization rewrites arbitrary colors into strict palette values', () => {
@@ -122,6 +125,7 @@ describe('asset pipeline', () => {
             secondary: '#888888',
             primary: '#cccccc',
             accent: '#ffffff',
+            shadow: '#444444',
         });
 
         expect(Array.from(remapped.rgba)).toEqual([
