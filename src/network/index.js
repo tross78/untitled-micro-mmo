@@ -498,10 +498,10 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getShuffle((peerIds, peerId) => {
             hpv.mergeShuffle(peerIds, selfId);
             const reply = hpv.shuffle();
-            if (reply.length > 0) sendShuffle(reply, [peerId]);
+            if (reply.length > 0 && knownPeers.has(peerId)) sendShuffle(reply, [peerId]);
         });
         const shuffleTimer = setInterval(() => {
-            const eager = hpv.eagerPeers();
+            const eager = connectedOnly(hpv.eagerPeers());
             if (eager.length === 0) return;
             const target = eager[Date.now() % eager.length | 0];
             const sample = hpv.shuffle();
@@ -576,11 +576,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             players.delete('ghost:' + unpacked.ph);
         };
 
+        const connectedOnly = (ids) => ids.filter(id => knownPeers.has(id));
         const plumSend = (packed) => {
             const msgId = HyParView.msgId(hashStr, packed);
             hpv.markSeen(msgId);
-            const eager = hpv.eagerPeers();
-            const lazy = hpv.lazyPeers();
+            const eager = connectedOnly(hpv.eagerPeers());
+            const lazy = connectedOnly(hpv.lazyPeers());
             if (eager.length) sendPresenceSingle(packed, eager); else sendPresenceSingle(packed);
             if (lazy.length) sendAnnounce({ msgId }, lazy);
         };
