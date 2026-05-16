@@ -284,6 +284,7 @@ export const setupGlobalEvents = () => {
             case 'pickup': bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' }); break;
             case 'npc': if (payload?.npcId) openMenu('npc', payload); break;
             case 'bank': handleCommand('bank').then(triggerLogicalRefresh); break;
+            case 'duel': if (payload?.peerId) handleCommand(`duel ${payload.peerId}`).then(triggerLogicalRefresh); break;
         }
     });
 

@@ -124,7 +124,7 @@ class AppRuntime {
     this.mapRender = new MapRenderSystem(this.world, this.VP);
     this.entityRender = new EntityRenderSystem(this.world, this.VP);
     this.weatherRender = new WeatherRenderSystem(this.VP);
-    this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState, shardEnemies, getNPCsAt });
+    this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState, shardEnemies, getNPCsAt, get players() { return getPlayers(); } });
     this.audioSystem = new AudioSystem(this.world);
 
     this._canvas = document.getElementById('game-canvas');
