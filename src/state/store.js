@@ -74,7 +74,7 @@ export const trackPlayer = (id, data) => {
     const isNew = !players.has(id);
     players.set(id, { ...data, ghost: !!data.ghost });
     
-    if (isNew) {
+    if (isNew && !data.ghost) {
         _presenceDelta.joined.add(id);
         _presenceDelta.left.delete(id);
     }

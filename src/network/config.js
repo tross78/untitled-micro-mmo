@@ -86,6 +86,8 @@ export const ROLLUP_INTERVAL = 10000;
 export const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
 export const NETWORK_STALL_MS = 60000;
 export const NETWORK_HEAL_COOLDOWN_MS = 30000;
+export const NETWORK_EVENT_HEAL_DELAY_MS = 1500;
+export const NETWORK_HANDSHAKE_TIMEOUT_MS = 5000;
 
 export const buildTorrentConfig = (rtcConfig) => {
     const base = rtcConfig || { iceServers: STUN_SERVERS };

@@ -32,6 +32,7 @@ import { NETWORK_ACTIONS } from './contracts.js';
 // Modular Networking Components
 import { 
     ROLLUP_INTERVAL, PROPOSER_GRACE_MS, NETWORK_STALL_MS,
+    NETWORK_HEAL_COOLDOWN_MS, NETWORK_EVENT_HEAL_DELAY_MS, NETWORK_HANDSHAKE_TIMEOUT_MS,
     buildTorrentConfig, isUsingTurnFallback 
 } from './config.js';
 import { 
@@ -45,6 +46,8 @@ import {
     getCurrentInstance, setCurrentInstance, preJoinShard, getPreJoined, clearShardState
 } from './shard.js';
 import { buildShardActions } from './actions.js';
+import { filterConnectedPeerIds } from './peer-filter.js';
+import { countUsableShardPeers, shouldRunEventHeal } from './heal.js';
 
 export { seedFromSnapshot, updateSimulation, initOfflineDayTick, preJoinShard, buildTorrentConfig, isProposer };
 
@@ -57,14 +60,27 @@ const netLog = (msg, color = '#555') => {
 export let gameActions = {};
 export let rooms = { torrent: null };
 export let globalRooms = { torrent: null };
-export let knownPeers = new Set();
+export const globalKnownPeers = new Set();
+export const shardKnownPeers = new Set();
+export const knownPeers = shardKnownPeers;
 export let lastRollupReceivedAt = 0;
 export let lastValidStatePacket = null;
 export let currentRtcConfig = { iceServers: STUN_SERVERS };
 export let joinTime = Date.now();
 let lastPeerSeenAt = Date.now();
+let lastShardPresenceAt = Date.now();
 let lastNetworkHealAt = 0;
 let networkHealInFlight = false;
+let scheduledHealTimer = null;
+let healNetworking = async (_opts = {}) => {};
+const scheduleHeal = (delay = NETWORK_EVENT_HEAL_DELAY_MS, options = {}) => {
+    const { force = false } = options;
+    if (scheduledHealTimer) clearTimeout(scheduledHealTimer);
+    scheduledHealTimer = setTimeout(() => {
+        scheduledHealTimer = null;
+        healNetworking({ force }).catch(() => {});
+    }, delay);
+};
 
 const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 
@@ -75,7 +91,8 @@ const INTRODUCER_CACHE_KEY = `${GAME_NAME}_introducers_v1`;
 const INTRODUCER_TTL_MS = 8 * 3600_000; // 8 hours
 
 const saveIntroducers = (shard) => {
-    const top = Array.from(knownPeers)
+    const directPeers = rooms.torrent?.getPeers?.() || {};
+    const top = Object.keys(directPeers)
         .filter(id => players.has(id) && !players.get(id).ghost)
         .slice(0, 5);
     if (top.length === 0) return;
@@ -177,6 +194,7 @@ export const initNetworking = async (rtcConfig) => {
 
     const connectGlobal = async (config) => {
         if (globalRooms.torrent) globalRooms.torrent.leave();
+        globalKnownPeers.clear();
         globalRooms.torrent = joinTorrent(buildTorrentConfig(config), 'global');
 
         const [sendRollup] = globalRooms.torrent.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
@@ -248,10 +266,13 @@ export const initNetworking = async (rtcConfig) => {
         getIncomingRequest((_, peerId) => { if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]); });
 
         globalRooms.torrent.onPeerJoin(peerId => {
-            knownPeers.add(peerId);
+            globalKnownPeers.add(peerId);
             lastPeerSeenAt = Date.now();
             requestState(true, [peerId]);
             if (lastValidStatePacket) setTimeout(() => sendWorldState(lastValidStatePacket, [peerId]), 500);
+        });
+        globalRooms.torrent.onPeerLeave(peerId => {
+            globalKnownPeers.delete(peerId);
         });
 
         gameActions.requestState = requestState;
@@ -310,12 +331,13 @@ export const initNetworking = async (rtcConfig) => {
 
     let isSilenced = false;
     setInterval(async () => {
-        const globalPeerCount = Object.keys(globalRooms.torrent?.getPeers() || {}).length;
-        const shardPeerCount = Object.keys(rooms.torrent?.getPeers() || {}).length;
-        if (!isSilenced && globalPeerCount >= 5) {
+        const globalPeerCount = globalKnownPeers.size;
+        const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
+        if (!isSilenced && globalPeerCount >= 5 && usableShardPeers > 0) {
             globalRooms.torrent.leave();
+            globalKnownPeers.clear();
             isSilenced = true;
-        } else if (isSilenced && shardPeerCount < 3) {
+        } else if (isSilenced && usableShardPeers === 0) {
             await connectGlobal(currentRtcConfig);
             isSilenced = false;
         }
@@ -333,20 +355,21 @@ export const initNetworking = async (rtcConfig) => {
     let _healAttempts = 0;
     const _healBackoffMs = () => Math.min(1000 * (2 ** _healAttempts), 30000);
 
-    const healNetworking = async () => {
-        if (networkHealInFlight) return;
-        const shardPeers = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
-        const globalPeers = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
-        const now = Date.now();
-        const silentFor = now - Math.max(joinTime, lastPeerSeenAt);
+        healNetworking = async ({ force = false } = {}) => {
+            if (networkHealInFlight) return;
+            const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
+            const globalPeers = globalKnownPeers.size;
+            const now = Date.now();
+            const silentFor = now - Math.max(joinTime, lastShardPresenceAt);
 
-        if (shardPeers > 0) { _healAttempts = 0; return; }
-        if (silentFor < NETWORK_STALL_MS) return;
-        if (now - lastNetworkHealAt < _healBackoffMs()) return;
+            if (usableShardPeers > 0) { _healAttempts = 0; return; }
+            if (!force && silentFor < NETWORK_STALL_MS) return;
+            if (!force && now - lastNetworkHealAt < _healBackoffMs()) return;
+            if (force && !shouldRunEventHeal(usableShardPeers, now - lastNetworkHealAt, NETWORK_HEAL_COOLDOWN_MS)) return;
 
-        networkHealInFlight = true;
-        lastNetworkHealAt = now;
-        _healAttempts++;
+            networkHealInFlight = true;
+            lastNetworkHealAt = now;
+            _healAttempts++;
         try {
             if (globalPeers > 0) {
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
@@ -398,11 +421,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         if (_shardTeardown) { _shardTeardown(); _shardTeardown = null; }
         rooms.torrent.leave();
     }
+    shardKnownPeers.clear();
     clearShardState(location);
     clearSecurityState();
     pendingCommits.clear();
     feedHeads.clear();
     joinTime = Date.now();
+    lastShardPresenceAt = joinTime;
     setCurrentInstance(instanceId);
 
     const shard = getShardName(location, instanceId);
@@ -498,7 +523,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getShuffle((peerIds, peerId) => {
             hpv.mergeShuffle(peerIds, selfId);
             const reply = hpv.shuffle();
-            if (reply.length > 0 && knownPeers.has(peerId)) sendShuffle(reply, [peerId]);
+            if (reply.length > 0 && shardKnownPeers.has(peerId)) sendShuffle(reply, [peerId]);
         });
         const shuffleTimer = setInterval(() => {
             const eager = connectedOnly(hpv.eagerPeers());
@@ -573,10 +598,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now(), rawPresence: buf });
             trackShadowPlayer(peerId, unpacked);
+            lastShardPresenceAt = Date.now();
             players.delete('ghost:' + unpacked.ph);
         };
 
-        const connectedOnly = (ids) => ids.filter(id => knownPeers.has(id));
+        const connectedOnly = (ids) => filterConnectedPeerIds(r, ids);
         const plumSend = (packed) => {
             const msgId = HyParView.msgId(hashStr, packed);
             hpv.markSeen(msgId);
@@ -761,12 +787,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         r.onPeerJoin(async peerId => {
-            knownPeers.add(peerId); lastPeerSeenAt = Date.now();
+            shardKnownPeers.add(peerId); lastPeerSeenAt = Date.now();
             if (!peerJoinTimes.has(peerId)) peerJoinTimes.set(peerId, Date.now());
             hpv.onJoin(peerId);
             try { sendSketch(buildSketch().serialize(), [peerId]); } catch (_e) { /* ignore */ }
             const handshake = async () => {
-                if (!knownPeers.has(peerId) || !playerKeys) return;
+                if (!shardKnownPeers.has(peerId) || !playerKeys) return;
                 try {
                     sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
                     const e = await myEntry(); if (e) sendPresenceSingle(await packSignedPresence({ ...e, hlc: sendHLC() }), [peerId]);
@@ -774,14 +800,22 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (!players.get(peerId)?.publicKey) setTimeout(handshake, 3000);
             };
             setTimeout(handshake, 100);
+            setTimeout(() => {
+                if (!shardKnownPeers.has(peerId)) return;
+                if (players.get(peerId)?.publicKey) return;
+                scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
+            }, NETWORK_HANDSHAKE_TIMEOUT_MS);
         });
 
         r.onPeerLeave(peerId => {
-            bus.emit('peer:leave', { peerId }); knownPeers.delete(peerId); hpv.onLeave(peerId);
+            bus.emit('peer:leave', { peerId }); shardKnownPeers.delete(peerId); hpv.onLeave(peerId);
             peerJoinTimes.delete(peerId);
             evictPlayer(peerId); evictShadowPlayer(peerId); evictSecurityPeer(peerId);
             feedHeads.delete(peerId); pendingCommits.delete(peerId); _pendingPresence.delete(peerId);
             const c = activeChannels.get(peerId); if (c) { clearTimeout(c.timeoutId); activeChannels.delete(peerId); }
+            if (countUsableShardPeers(shardKnownPeers, players) === 0) {
+                scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
+            }
         });
 
         return {
@@ -792,7 +826,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             sendCommit, sendReveal, plumSend, sendPresenceDelta, sendIdentity,
             processPresenceSingle,
             seedIntroducers: (peerIds) => hpv.mergeShuffle(peerIds, selfId),
-            teardown: () => { clearInterval(shuffleTimer); clearInterval(routerTimer); clearInterval(ghostTimer); },
+            teardown: () => {
+                clearInterval(shuffleTimer);
+                clearInterval(routerTimer);
+                clearInterval(ghostTimer);
+                if (scheduledHealTimer) { clearTimeout(scheduledHealTimer); scheduledHealTimer = null; }
+            },
         };
     };
 
