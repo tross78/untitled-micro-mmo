@@ -67,7 +67,6 @@ export let lastRollupReceivedAt = 0;
 export let lastValidStatePacket = null;
 export let currentRtcConfig = { iceServers: STUN_SERVERS };
 export let joinTime = Date.now();
-let lastPeerSeenAt = Date.now();
 let lastShardPresenceAt = Date.now();
 let lastNetworkHealAt = 0;
 let networkHealInFlight = false;
@@ -267,7 +266,6 @@ export const initNetworking = async (rtcConfig) => {
 
         globalRooms.torrent.onPeerJoin(peerId => {
             globalKnownPeers.add(peerId);
-            lastPeerSeenAt = Date.now();
             requestState(true, [peerId]);
             if (lastValidStatePacket) setTimeout(() => sendWorldState(lastValidStatePacket, [peerId]), 500);
         });
@@ -574,7 +572,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (!buf || peerId === selfId) return;
             if (!checkThrottle(peerId)) return;
             _peerLastPresenceAt.set(peerId, Date.now());
-            lastPeerSeenAt = Date.now();
             const entry = players.get(peerId);
             if (!entry?.publicKey) { _pendingPresence.set(peerId, buf); return; }
             if (bans.has(entry.publicKey)) { evictPlayer(peerId); _pendingPresence.delete(peerId); return; }
@@ -787,7 +784,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         r.onPeerJoin(async peerId => {
-            shardKnownPeers.add(peerId); lastPeerSeenAt = Date.now();
+            shardKnownPeers.add(peerId);
             if (!peerJoinTimes.has(peerId)) peerJoinTimes.set(peerId, Date.now());
             hpv.onJoin(peerId);
             try { sendSketch(buildSketch().serialize(), [peerId]); } catch (_e) { /* ignore */ }
