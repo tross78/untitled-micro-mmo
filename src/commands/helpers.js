@@ -12,11 +12,21 @@ export const getTag = (ph) => ph ? ph.slice(0, 4) : '????';
 
 export const getPlayerEntry = (id) => players.get(id);
 
+const PEER_ADJECTIVES = ['Amber','Bold','Calm','Dark','Eager','Fair','Glad','Hale','Iron','Just','Keen','Lone','Mild','Noble','Odd','Pale','Quick','Rare','Sage','True','Umber','Vast','Wild','Young'];
+const PEER_ANIMALS = ['Bear','Crow','Deer','Eagle','Fox','Hawk','Ibis','Jay','Kite','Lynx','Mink','Newt','Owl','Pike','Quail','Rook','Swan','Toad','Tern','Vole','Wren'];
+
+export const peerDisplayName = (id) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193) >>> 0;
+    const adj = PEER_ADJECTIVES[h % PEER_ADJECTIVES.length];
+    const ani = PEER_ANIMALS[(h >>> 8) % PEER_ANIMALS.length];
+    return `${adj} ${ani}`;
+};
+
 export const getPlayerName = (id) => {
     const entry = players.get(id);
-    if (!entry) return `Peer-${escapeHtml(id.slice(0, 4))}`;
-    const name = escapeHtml(entry.name || `Peer-${id.slice(0, 4)}`);
-    const tag = entry.ph ? getTag(entry.ph) : null;
+    const name = escapeHtml(entry?.name || peerDisplayName(id));
+    const tag = entry?.ph ? getTag(entry.ph) : null;
     return tag ? `${name}#${tag}` : name;
 };
 

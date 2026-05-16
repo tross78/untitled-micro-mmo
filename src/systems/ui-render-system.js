@@ -26,6 +26,7 @@ export class UIRenderSystem {
         this.worldState = stores.worldState || {};
         this.shardEnemies = stores.shardEnemies || null;
         this.getNPCsAt = stores.getNPCsAt || (() => []);
+        this.players = stores.players || null;
         this.heartSprite = null;
         this.emptyHeartSprite = null;
         this.portraitCache = new Map();
@@ -148,7 +149,7 @@ export class UIRenderSystem {
 
         // NPC range check — only show Talk when adjacent to that NPC's entity
         const npcEntities = this.world.query([Component.Transform, Component.Sprite]);
-        const nearbyNpc = npcs.find(npcId =>
+        const nearbyNpc = npcs.find(_npcId =>
             [...npcEntities].some(eid => {
                 const sp = this.world.getComponent(eid, Component.Sprite);
                 if (sp?.palette === 'enemy') return false;
@@ -158,6 +159,24 @@ export class UIRenderSystem {
         if (nearbyNpc && !inCombat) btns.push({ label: 'Talk', action: 'npc', payload: { npcId: nearbyNpc } });
 
         if (hasBank && !inCombat) btns.push({ label: 'Bank', action: 'bank' });
+
+        // Duel — show when a peer entity is adjacent and not in combat
+        if (!inCombat && this.players) {
+            const peerEntities = [...this.world.query([Component.Transform, Component.Sprite])].filter(eid => {
+                const sp = this.world.getComponent(eid, Component.Sprite);
+                return sp?.palette === 'peer';
+            });
+            const nearbyPeer = peerEntities.find(isAdjacentTo);
+            if (nearbyPeer) {
+                const sp = this.world.getComponent(nearbyPeer, Component.Sprite);
+                // Seed is hash(peerId) — find the peer whose id hashes to this seed
+                const hashId = (str) => { let h = 0; for (let i = 0; i < str.length; i++) h = (Math.imul(h ^ str.charCodeAt(i), 0x9e3779b9) >>> 0); return h; };
+                const peerEntry = sp?.seed != null ? [...this.players.entries()].find(([id]) => hashId(id) === sp.seed) : null;
+                const peerId = peerEntry?.[0];
+                if (peerId) btns.push({ label: 'Duel', action: 'duel', payload: { peerId } });
+            }
+        }
+
         return btns;
     }
 

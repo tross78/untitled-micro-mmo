@@ -5,7 +5,7 @@ import { levelBonus, getShardName } from '../rules/index.js';
 import { log, printStatus } from '../ui/index.js';
 import { globalRooms, rooms } from '../network/index.js';
 import { getCurrentInstance } from '../network/shard.js';
-import { escapeHtml, getTag } from './helpers.js';
+import { escapeHtml, getTag, peerDisplayName } from './helpers.js';
 import { clearElement, getOutputEl } from '../adapters/dom/shell.js';
 
 export const handleMiscCommands = async (command, _args) => {
@@ -55,7 +55,7 @@ export const handleMiscCommands = async (command, _args) => {
             list.sort((a, b) => b.level - a.level || b.xp - a.xp);
             log(`\n--- TOP ADVENTURERS ---`, '#ffa500');
             list.slice(0, 10).forEach((p, i) => {
-                const name = escapeHtml(p.name || `Peer-${getTag(p.ph)}`);
+                const name = escapeHtml(p.name || peerDisplayName(p.ph || ''));
                 log(`${i + 1}. ${name}#${getTag(p.ph)} - Level ${p.level} (${p.xp} XP)`, '#ffa500');
             });
             log(`-----------------------\n`, '#ffa500');

@@ -5,6 +5,10 @@ import { deriveWorldState, findSafeArrival, xpToLevel } from '../rules/index.js'
 import { world } from '../content/data.js';
 import { scopedStorageKey } from '../infra/runtime.js';
 
+const _PEER_ADJ = ['Amber','Bold','Calm','Dark','Eager','Fair','Glad','Hale','Iron','Just','Keen','Lone','Mild','Noble','Odd','Pale','Quick','Rare','Sage','True','Umber','Vast','Wild','Young'];
+const _PEER_ANI = ['Bear','Crow','Deer','Eagle','Fox','Hawk','Ibis','Jay','Kite','Lynx','Mink','Newt','Owl','Pike','Quail','Rook','Swan','Toad','Tern','Vole','Wren'];
+const _peerName = (id) => { let h = 0x811c9dc5; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193) >>> 0; return `${_PEER_ADJ[h % _PEER_ADJ.length]} ${_PEER_ANI[(h >>> 8) % _PEER_ANI.length]}`; };
+
 export const WORLD_STATE_KEY = scopedStorageKey(`${GAME_NAME}_worldstate_v1`);
 export const STORAGE_KEY = scopedStorageKey(`${GAME_NAME}_state_v5`);
 export const TAB_CHANNEL = typeof BroadcastChannel !== 'undefined'
@@ -105,7 +109,7 @@ export const trackShadowPlayer = (id, data) => {
 };
 
 export let localPlayer = {
-    name: `Peer-${selfId.slice(0, 4)}`,
+    name: _peerName(selfId),
     location: SPAWN_ROOM_ID,
     direction: 'south',
     animState: 'idle',

@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { generateCharacterSprite, getWalkPose, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES } from '../graphics/graphics.js';
+import { generateCharacterSprite, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES } from '../graphics/graphics.js';
 
 const NPC_WALK_SPRITES = new Set(['guard']);
 const NPC_IDLE_SPRITES = new Set(['barkeep', 'merchant', 'herbalist', 'bard', 'sage']);
