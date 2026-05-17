@@ -33,7 +33,7 @@ const isValidPeer = (peer) => {
  */
 const discoverViaPeerCache = async (shard) => {
     try {
-        const url = `https://raw.githubusercontent.com/${GH_GIST_USERNAME}/gists/${GH_GIST_ID}/raw/fenhollow-peers.json`;
+        const url = `https://raw.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/fenhollow-peers.json`;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
 
