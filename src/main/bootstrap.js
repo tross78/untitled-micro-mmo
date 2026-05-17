@@ -6,7 +6,7 @@ import { initAds, showBanner } from '../engine/ads.js';
 import { inputManager } from '../engine/input.js';
 import { setupGlobalEvents, triggerLogicalRefresh } from './events.js';
 import { initCrossTabSync } from './sync.js';
-import { verifyMessage } from '../security/crypto.js';
+import { verifyMessage, stableStringify } from '../security/crypto.js';
 import { updateSimulation, initNetworking, gameActions, initOfflineDayTick } from '../network/index.js';
 import { patchIceGatheringTimeout } from '../network/config.js';
 import { setArbiterLastSeenAt } from '../state/store.js';
@@ -28,7 +28,7 @@ const HEARTBEAT_MS = 30000;
 export const processBeacon = async (packet, source) => {
     if (!packet || hasSyncedWithArbiter) return;
     const { state, signature, snapshot } = packet;
-    const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+    const stateStr = typeof state === 'string' ? state : stableStringify(state);
     const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
     if (valid) {
         if (packet.endpoint) setResolvedArbiterUrl(packet.endpoint);

@@ -217,7 +217,7 @@ async function startArbiter() {
             rollups: Object.fromEntries(lastRollups),
             bans: getBansVersion(bans),
         };
-        const stateStr = JSON.stringify(state);
+        const stateStr = stableStringify(state);
         const signature = await signMessage(stateStr, arbiterPrivateKey);
         const packet = buildPersistedArbiterPacket(state, signature, bans);
         lastValidStatePacket = packet;

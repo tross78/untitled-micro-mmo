@@ -343,7 +343,7 @@ export const initNetworking = async (rtcConfig) => {
 
         getState(async (data, _peerId) => {
             const { state, signature } = data;
-            const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+            const stateStr = typeof state === 'string' ? state : stableStringify(state);
             try {
                 if (await verifyMessage(stateStr, signature, arbiterPublicKey)) {
                     setArbiterLastSeenAt();
@@ -920,7 +920,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getRelay(async (data) => {
             const { state, signature } = data;
-            if (await verifyMessage(typeof state === 'string' ? state : JSON.stringify(state), signature, arbiterPublicKey)) updateSimulation(typeof state === 'string' ? JSON.parse(state) : state);
+            if (await verifyMessage(typeof state === 'string' ? state : stableStringify(state), signature, arbiterPublicKey)) updateSimulation(typeof state === 'string' ? JSON.parse(state) : state);
         });
 
         getActionLog(async (buf, peerId) => {
