@@ -323,6 +323,14 @@ async function startArbiter() {
     });
 
     const PORT = process.env.PORT || 3000;
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`[Arbiter] Port ${PORT} already in use. Wait 30s then try again, or use PORT=<other> to override.`);
+            setTimeout(() => server.listen(PORT), 30000);
+        } else {
+            throw err;
+        }
+    });
     server.listen(PORT, () => {
         console.log(`[Arbiter] HTTP Discovery server on port ${PORT}`);
     });
