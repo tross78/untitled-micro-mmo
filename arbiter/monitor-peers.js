@@ -13,7 +13,7 @@ export const startPeerMonitor = (presenceDirectory, config = {}) => {
         ghGistToken = process.env.GH_GIST_TOKEN,
         ghGistId = process.env.GH_GIST_ID,
         ghGistUsername = process.env.GH_GIST_USERNAME,
-        intervalMs = 8000,  // Update Gist every 8s
+        intervalMs = 30000,  // Update Gist every 30s
     } = config;
 
     if (!ghGistToken || !ghGistId || !ghGistUsername) {
