@@ -68,7 +68,7 @@ describe('Bug 1 — combat loot advances fetch quest progress via grantItem', ()
         Object.assign(localPlayer, {
             hp: 50, maxHp: 50, attack: 10, defense: 3, xp: 0, level: 1,
             gold: 0, inventory: [], currentEnemy: null, combatRound: 0,
-            actionIndex: 0, statusEffects: [], buffs: {}, forestFights: 15,
+            actionIndex: 0, statusEffects: [], forestFights: 15,
             quests: { herb_gathering: { progress: 0, completed: false } },
             equipped: { weapon: null, armor: null }, location: 'forest_edge',
         });
@@ -107,7 +107,7 @@ describe('Bug 2 — applyNewDay persists daily reset', () => {
         saveLocalState.mockClear();
 
         const { worldState } = await import('../state/store.js');
-        Object.assign(localPlayer, { forestFights: 0, currentEnemy: null, combatRound: 0, statusEffects: [], buffs: {} });
+        Object.assign(localPlayer, { forestFights: 0, currentEnemy: null, combatRound: 0, statusEffects: [], });
         worldState.seed = 1;
         worldState.day = 1;
 
@@ -132,7 +132,7 @@ describe('Bug 2 — applyNewDay persists daily reset', () => {
         const arbiterSpy = jest.spyOn(runtime, 'getArbiterUrl').mockReturnValue('https://arbiter.example');
         const { worldState } = await import('../state/store.js');
 
-        Object.assign(localPlayer, { forestFights: 0, currentEnemy: null, combatRound: 0, statusEffects: [], buffs: {} });
+        Object.assign(localPlayer, { forestFights: 0, currentEnemy: null, combatRound: 0, statusEffects: [], });
         worldState.seed = 'seed-a';
         worldState.day = 7;
         localStorage.setItem('fenhollow_last_fight_reset_utc', '2000-01-01');
@@ -220,7 +220,6 @@ describe('Phase 8.6 — player-facing event behavior', () => {
             quests: {},
             equipped: { weapon: null, armor: null },
             statusEffects: [],
-            buffs: {},
         });
     });
 
@@ -280,7 +279,7 @@ describe('Bug 5 — fetch quest completion validates live inventory count', () =
             inventory: ['herbs', 'herbs', 'herbs'],
             quests: { herb_gathering: { progress: 3, completed: false } },
             equipped: { weapon: null, armor: null },
-            statusEffects: [], buffs: {},
+            statusEffects: [],
         });
     });
 
@@ -320,7 +319,7 @@ describe('Bug 6 — saveLocalState called after kill victory', () => {
         Object.assign(localPlayer, {
             xp: 0, level: 1, gold: 0, inventory: [], quests: {},
             currentEnemy: null, combatRound: 0, actionIndex: 0,
-            statusEffects: [], buffs: {}, forestFights: 15,
+            statusEffects: [], forestFights: 15,
             equipped: { weapon: null, armor: null },
         });
 
@@ -355,7 +354,7 @@ describe('Bug 7 — auto-completed explore quests cannot be double-rewarded', ()
                 cave_troll_bounty: { progress: 1, completed: true },
             },
             equipped: { weapon: null, armor: null },
-            statusEffects: [], buffs: {},
+            statusEffects: [],
         });
     });
 
@@ -378,7 +377,7 @@ describe('8.78h — forage path advances fetch quest progress', () => {
         Object.assign(localPlayer, {
             hp: 20, maxHp: 20, attack: 1, defense: 0, xp: 0, level: 1,
             gold: 0, inventory: [], currentEnemy: null, combatRound: 0,
-            actionIndex: 0, statusEffects: [], buffs: {}, forestFights: 15,
+            actionIndex: 0, statusEffects: [], forestFights: 15,
             location: 'forest_edge',
             quests: { gather_wood: { progress: 0, completed: false } },
             equipped: { weapon: null, armor: null },
@@ -395,15 +394,15 @@ describe('8.78h — forage path advances fetch quest progress', () => {
 
         worldState.day = 1;
 
-        // Inject a log resource node at (3,3) so handleInteract finds it
-        getScatteredContent.mockReturnValue([
-            { x: 3, y: 3, type: 'resource', label: 'log', w: 1, h: 1 },
-        ]);
-
         const world = new WorldStore();
         const entityId = world.createEntity();
         world.setComponent(entityId, Component.Transform, { mapId: 'forest_edge', x: 3, y: 3, facing: 's' });
         world.setComponent(entityId, Component.PlayerControlled, {});
+
+        // Inject a log resource node at (3,3) in the ECS world
+        const resId = world.createEntity();
+        world.setComponent(resId, Component.Transform, { mapId: 'forest_edge', x: 3, y: 3 });
+        world.setComponent(resId, Component.Gatherable, { kind: 'resource', label: 'log', locId: 'forest_edge' });
 
         const roomData = { forest_edge: { width: 21, height: 21, scenery: [], exitTiles: [], tileOverrides: [] } };
         const system = new MovementSystem(world, roomData, {});
@@ -419,18 +418,18 @@ describe('8.78h — forage path advances fetch quest progress', () => {
         const { Component } = await import('../domain/components.js');
         const { MovementSystem } = await import('../systems/movement-system.js');
         const { worldState } = await import('../state/store.js');
-        const { getScatteredContent } = await import('../rules/index.js');
 
         worldState.day = 2;
         localPlayer.gatheredNodes = { day: 2, nodes: new Set(['forest_edge:3,3']) };
 
-        getScatteredContent.mockReturnValue([
-            { x: 3, y: 3, type: 'resource', label: 'log', w: 1, h: 1 },
-        ]);
-
         const world = new WorldStore();
         const entityId = world.createEntity();
         world.setComponent(entityId, Component.Transform, { mapId: 'forest_edge', x: 3, y: 3, facing: 's' });
+
+        // Inject a log resource node at (3,3) in the ECS world
+        const resId = world.createEntity();
+        world.setComponent(resId, Component.Transform, { mapId: 'forest_edge', x: 3, y: 3 });
+        world.setComponent(resId, Component.Gatherable, { kind: 'resource', label: 'log', locId: 'forest_edge' });
 
         const roomData = { forest_edge: { width: 21, height: 21, scenery: [], exitTiles: [], tileOverrides: [] } };
         const system = new MovementSystem(world, roomData, {});

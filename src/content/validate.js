@@ -129,6 +129,45 @@ export const validateContent = (defs) => {
       problems.push(`[warn] Room "${room.id}" terrain density ${density} exceeds 15% coverage (max ${Math.floor(room.width * room.height * 0.15)} tiles)`);
     }
 
+    // Phase 8.76 Integrity: Exit Bidirectionality & Stair Pair Assertions
+    const oppositeDir = { north: 'south', south: 'north', east: 'west', west: 'east', up: 'down', down: 'up' };
+    Object.entries(room.exits || {}).forEach(([dir, destId]) => {
+      const destRoom = rooms.find(r => r.id === destId);
+      if (destRoom) {
+        const hasReverse = destRoom.exits?.[oppositeDir[dir]] === room.id;
+        if (!hasReverse) {
+          problems.push(`Room "${room.id}" has ${dir} exit to "${destId}", but "${destId}" has no reverse ${oppositeDir[dir]} exit back to "${room.id}"`);
+        }
+      }
+      
+      // Every direction in exits{} must have at least one matching exitTile.dest entry
+      const hasMatchingTile = (room.exitTiles || []).some(et => et.dest === destId);
+      if (!hasMatchingTile) {
+          problems.push(`Room "${room.id}" has ${dir} exit to "${destId}" in exits{} but no matching exitTile.dest`);
+      }
+    });
+
+    (room.exitTiles || []).forEach(et => {
+        // Every exitTile.dest must be listed in exits{}
+        const isListed = Object.values(room.exits || {}).includes(et.dest);
+        if (!isListed) {
+            problems.push(`Room "${room.id}" has exitTile to "${et.dest}" that is not listed in exits{}`);
+        }
+
+        // Stair reverse-pair assertions
+        if (et.type === 'stairs' || et.type === 'up' || et.type === 'down') {
+            const destRoom = rooms.find(r => r.id === et.dest);
+            if (destRoom) {
+                const hasReverseStair = (destRoom.exitTiles || []).some(det => 
+                    det.dest === room.id && (det.type === 'stairs' || det.type === 'up' || det.type === 'down')
+                );
+                if (!hasReverseStair) {
+                    problems.push(`Room "${room.id}" has stair to "${et.dest}", but "${et.dest}" has no reverse stair back to "${room.id}"`);
+                }
+            }
+        }
+    });
+
     /** @type {Set<string>} */
     const occupiedExitSources = new Set();
     for (const dest of Object.values(room.exits || {})) {

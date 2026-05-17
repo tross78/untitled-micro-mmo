@@ -49,7 +49,6 @@ describe('CombatSystem edge cases', () => {
             defense: 1,
             attack: 2,
             statusEffects: [],
-            buffs: {},
             forestFights: 3,
         });
         worldState.seed = 'combat-seed';

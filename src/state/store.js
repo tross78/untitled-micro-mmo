@@ -223,9 +223,6 @@ export const loadLocalState = async (log) => {
             if (typeof localPlayer.combatRound !== 'number' || isNaN(localPlayer.combatRound)) {
                 localPlayer.combatRound = 0;
             }
-            if (!localPlayer.buffs || typeof localPlayer.buffs !== 'object') {
-                localPlayer.buffs = { rested: false, activeElixir: null };
-            }
             if (!localPlayer.direction) localPlayer.direction = 'south';
             if (!localPlayer.animState) localPlayer.animState = 'idle';
             if (!localPlayer.statusEffects) localPlayer.statusEffects = [];

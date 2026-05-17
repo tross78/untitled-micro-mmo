@@ -27,7 +27,9 @@
       "Bash(npx jest *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(cat *)",
+      "Bash(grep \"^[a-z_]*$\")"
     ]
   }
 }

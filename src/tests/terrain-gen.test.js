@@ -38,6 +38,12 @@ describe('Phase 8.5c: Constrained Terrain Generation', () => {
             width: 15,
             height: 15,
             exits: { north: 'other', south: 'other', east: 'other', west: 'other' },
+            exitTiles: [
+                { x: 7, y: 0, dest: 'other', destX: 5, destY: 9 },
+                { x: 7, y: 14, dest: 'other', destX: 5, destY: 0 },
+                { x: 14, y: 7, dest: 'other', destX: 0, destY: 5 },
+                { x: 0, y: 7, dest: 'other', destX: 9, destY: 5 }
+            ],
             terrain: { floor: 'grass', density: 30, clutter: ['tree'] }
         });
 
@@ -45,7 +51,14 @@ describe('Phase 8.5c: Constrained Terrain Generation', () => {
         const defs = {
             itemDefinitions: [],
             enemyDefinitions: [],
-            roomDefinitions: [room, { id: 'other', width: 10, height: 10 }],
+            roomDefinitions: [
+                room, 
+                { 
+                    id: 'other', width: 10, height: 10,
+                    exits: { south: 'forest_test', north: 'forest_test', west: 'forest_test', east: 'forest_test' },
+                    exitTiles: [{ x: 5, y: 5, dest: 'forest_test' }]
+                }
+            ],
             npcDefinitions: [],
             questDefinitions: [],
             recipeDefinitions: []

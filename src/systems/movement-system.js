@@ -7,6 +7,7 @@ import { getCurrentInstance } from '../network/shard.js';
 import { myEntry } from '../security/identity.js';
 import { shardEnemies, localPlayer, worldState } from '../state/store.js';
 import { ITEMS, NPCS } from '../content/data.js';
+import { RESOURCE_LABEL_TO_ITEM } from '../content/data/constants.js';
 import { getScatteredContent, getNPCDialogue, findSafeArrival } from '../rules/index.js';
 import { getNPCsAt, grantItem } from '../commands/helpers.js';
 import { seededRNG, hashStr } from '../rules/utils.js';
@@ -189,15 +190,27 @@ export class MovementSystem {
     transform.facing = dir;
 
     // Step-onto hint for gatherable tiles (flora and resource)
-    const scattered = getScatteredContent(transform.mapId, worldState.day, loc);
-    const stepTarget = scattered.find(s => s.x === nx && s.y === ny && (s.type === 'flora' || s.type === 'resource'));
-    if (stepTarget) {
+    const gatherables = this.world.query([Component.Gatherable, Component.Transform]);
+    const stepTargetEid = gatherables.find(id => {
+        const t = this.world.getComponent(id, Component.Transform);
+        return t && t.x === nx && t.y === ny && t.mapId === transform.mapId;
+    });
+
+    if (stepTargetEid) {
+        const stepTarget = this.world.getComponent(stepTargetEid, Component.Gatherable);
         const RESOURCE_HINTS = { log: 'Fallen log', ore: 'Ore vein', stone: 'Stone outcrop', fiber: 'Plant fiber', coal: 'Coal seam' };
         const FLORA_HINTS = { herbs: 'Wild herbs', mushroom: 'Red mushroom', fiber: 'Plant fiber' };
-        const hint = stepTarget.type === 'resource'
+        const hint = stepTarget.kind === 'resource'
             ? `${RESOURCE_HINTS[stepTarget.label] || stepTarget.label} — press interact to gather.`
             : `${FLORA_HINTS[stepTarget.label] || `Wild ${stepTarget.label}`} — press interact to forage.`;
         bus.emit('log', { msg: hint, color: '#8fc' });
+    }
+
+    // Resolve PendingInteract (Phase 8.7x)
+    const pending = this.world.getComponent(entityId, Component.PendingInteract);
+    if (pending && pending.x === nx && pending.y === ny && (pending.mapId === transform.mapId || pending.locId === transform.mapId)) {
+        this.world.removeComponent(entityId, Component.PendingInteract);
+        bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' });
     }
 
     // 5. Add Tweenable for visual interpolation
@@ -291,10 +304,14 @@ export class MovementSystem {
     }
 
     // 2. Check for Foraging / Resource Gathering
-    const scattered = getScatteredContent(locId, worldState.day, loc);
-    const itemAtFeet = scattered.find(s => s.x === transform.x && s.y === transform.y && (s.type === 'flora' || s.type === 'resource'));
+    const gatherables = this.world.query([Component.Gatherable, Component.Transform]);
+    const itemAtFeetEid = gatherables.find(id => {
+        const t = this.world.getComponent(id, Component.Transform);
+        return t && t.x === transform.x && t.y === transform.y && t.mapId === locId;
+    });
 
-    if (itemAtFeet) {
+    if (itemAtFeetEid) {
+        const itemAtFeet = this.world.getComponent(itemAtFeetEid, Component.Gatherable);
         const nodeKey = `${locId}:${transform.x},${transform.y}`;
         // Depletion gate — one gather per node per in-game day, per player (no P2P sync needed)
         if (localPlayer.gatheredNodes.day !== worldState.day) {
@@ -307,18 +324,15 @@ export class MovementSystem {
         }
         localPlayer.gatheredNodes.nodes.add(nodeKey);
 
-        let itemId;
-        if (itemAtFeet.type === 'resource') {
-            const RESOURCE_LABEL_TO_ITEM = { log: 'wood', ore: 'iron', stone: 'stone', fiber: 'fiber', coal: 'coal' };
-            itemId = RESOURCE_LABEL_TO_ITEM[itemAtFeet.label] || itemAtFeet.label;
-        } else {
-            itemId = itemAtFeet.label === 'mushroom' ? 'red_mushroom' : 'herbs';
-        }
+        const itemId = RESOURCE_LABEL_TO_ITEM[itemAtFeet.label] || itemAtFeet.label;
         const item = ITEMS[itemId];
         grantItem(itemId);
         bus.emit('item:pickup', { item });
-        const verb = itemAtFeet.type === 'resource' ? 'gathered' : 'foraged';
+        const verb = itemAtFeet.kind === 'resource' ? 'gathered' : 'foraged';
         bus.emit('log', { msg: `You ${verb} ${item?.name || itemId}!`, color: '#0f0' });
+        
+        // Remove the entity immediately after gathering
+        this.world.deleteEntity(itemAtFeetEid);
         return;
     }
 

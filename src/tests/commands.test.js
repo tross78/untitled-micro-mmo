@@ -221,6 +221,7 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             expect(localPlayer.location).toBe('tavern');
             expect(localPlayer.quests.find_tavern.progress).toBe(1);
             expect(emitSpy).toHaveBeenCalledWith('quest:progress', {
+                questId: 'find_tavern',
                 name: 'Find the Tavern',
                 current: 1,
                 total: 1
@@ -290,6 +291,7 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             expect(localPlayer.inventory).not.toContain('ale');
             expect(localPlayer.quests.courier_run.progress).toBe(1);
             expect(emitSpy).toHaveBeenCalledWith('quest:progress', {
+                questId: 'courier_run',
                 name: 'Courier Run',
                 current: 1,
                 total: 1

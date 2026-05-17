@@ -55,7 +55,7 @@ function makeCtx(locOverride = 'tavern', playerOverrides = {}, extra = {}) {
             name: 'Tester', location: locOverride,
             x: 5, y: 5, level: 1, xp: 0, hp: 50, maxHp: 50, gold: 100,
             forestFights: 15, inventory: [], quests: {}, equipped: {},
-            statusEffects: [], buffs: {}, currentEnemy: null,
+            statusEffects: [], currentEnemy: null,
             ...playerOverrides,
         },
         world,

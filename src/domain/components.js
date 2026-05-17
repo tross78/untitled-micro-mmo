@@ -88,4 +88,19 @@ export const Component = {
    *  Shape: { x, y, expiresAt: number (ms timestamp) }
    *  Owner: renderer.js (writes on pointer tap), map-render-system.js (reads, draws, removes expired) */
   TapPulse: 'TapPulse',
+
+  /** Resource node that can be harvested.
+   *  Shape: { kind: 'flora' | 'resource' | 'water', label: string, locId: string }
+   *  Owner: world-sync-system.js (writes), movement-system.js (consumes) */
+  Gatherable: 'Gatherable',
+
+  /** Marks an entity as scoped to a specific room.
+   *  Shape: { locId: string }
+   *  Owner: world-sync-system.js (writes) */
+  RoomScoped: 'RoomScoped',
+
+  /** Interaction intent queued to fire upon arrival at a tile.
+   *  Shape: { x, y, mapId }
+   *  Owner: events.js (writes), movement-system.js (consumes) */
+  PendingInteract: 'PendingInteract',
 };

@@ -120,6 +120,7 @@ export class CombatSystem {
       progress.lastRestDay = this.worldState.day;
       progress.progress = Math.min(quest.objective?.count || 1, (progress.progress || 0) + 1);
       bus.emit('quest:progress', {
+        questId: qid,
         name: quest.name,
         current: progress.progress,
         total: quest.objective?.count || 1
@@ -403,7 +404,7 @@ export class CombatSystem {
       const pq = this.localPlayer.quests[qid];
       if (q && pq && !pq.completed && q.type === 'kill' && q.objective.target === enemyType) {
         pq.progress = Math.min(q.objective.count, pq.progress + 1);
-        bus.emit('quest:progress', { name: q.name, current: pq.progress, total: q.objective.count });
+        bus.emit('quest:progress', { questId: qid, name: q.name, current: pq.progress, total: q.objective.count });
       }
     });
 

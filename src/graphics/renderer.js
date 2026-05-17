@@ -15,6 +15,7 @@ let _devMode = false;
 const getSpriteKind = (sprite) => {
     if (!sprite) return null;
     if (sprite.palette === 'enemy') return 'enemy';
+    if (sprite.palette === 'resource') return 'resource';
     if (typeof sprite.palette === 'string' && sprite.palette.startsWith('npc')) return 'npc';
     if (sprite.palette === 'self' || sprite.palette === 'peer') return 'player';
     if (sprite.type === 'peer' || sprite.type === 'player') return 'player';
@@ -181,7 +182,7 @@ export function renderWorld(state, onTileClick) {
             const dx = Math.abs(t.x - tx);
             const dy = Math.abs(t.y - ty);
             const kind = getSpriteKind(s);
-            const isInteractable = ['npc', 'enemy', 'item'].includes(kind);
+            const isInteractable = ['npc', 'enemy', 'item', 'resource'].includes(kind);
             const hit = isInteractable ? (dx <= 1 && dy <= 1) : (t.x === tx && t.y === ty);
 
             if (hit && !appRuntime.world.getComponent(id, Component.PlayerControlled)) {

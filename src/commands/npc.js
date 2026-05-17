@@ -54,7 +54,7 @@ export const handleNPCCommands = async (command, args) => {
 
                 localPlayer.inventory.splice(invIdx, 1);
                 pq.progress = Math.min(goal, (pq.progress || 0) + 1);
-                bus.emit('quest:progress', { name: q.name, current: pq.progress, total: goal });
+                bus.emit('quest:progress', { questId: qid, name: q.name, current: pq.progress, total: goal });
                 log(`[Quest] You deliver ${ITEMS[deliverItemId]?.name || deliverItemId} to ${npc.name}.`, '#ff0');
             });
             return true;

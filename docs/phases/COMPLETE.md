@@ -4,6 +4,19 @@ Full acceptance checklists and implementation notes for phases that are closed a
 
 ---
 
+## Phase 8.76: First Impression Polish Sprint — COMPLETE
+
+Addressed long-standing interaction friction and visual artifacts to prepare for Phase 8.8 instrumentation.
+
+* `P1` ✅ Smart Tap — resources (logs, ore, herbs) promoted from procedural visuals to ECS entities with `Gatherable` component. Tapping a distant resource walks the player to it and interacts automatically via `PendingInteract` component.
+* `P1b` ✅ Contextual Actions — mobile-friendly `Gather 🌿` and `Fish 🎣` buttons appear automatically when standing on a resource or facing water.
+* `P5` ✅ Integrity Pass — `quest:progress` events now carry `questId` for better tracking; `validateContent` asserts bidirectional exits and stair pairs; `UIRenderSystem` entity leak fixed; `buffs` field retired in favor of `statusEffects`.
+* `P2` ✅ Weather Perf — fog rendering optimized via precomputed alpha palette, eliminating per-patch string allocations.
+
+Build: 425KB. Validation: 0 issues (after fix). Tests: 861 passed.
+
+---
+
 ## Phase 8.78: Game-Readiness Pass — COMPLETE
 
 Closed the gap between "implemented" and "playable." Core loop can now complete without softlocks, invisible gates, or hollow quest text.

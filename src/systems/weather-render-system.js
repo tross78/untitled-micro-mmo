@@ -14,6 +14,12 @@ export class WeatherRenderSystem {
         this.overlayAlpha = 0;
         this.currentWeather = null; // weather currently being shown at full alpha
         this.targetWeather = null;  // weather we are transitioning toward
+
+        // Phase 8.76: Precomputed fog alpha palette to avoid thousands of string allocations per frame
+        this._fogPalette = [];
+        for (let i = 0; i <= 100; i++) {
+            this._fogPalette.push(`rgba(210, 225, 235, ${(i / 100).toFixed(3)})`);
+        }
     }
 
     /**
@@ -85,7 +91,8 @@ export class WeatherRenderSystem {
                 const combined = (w1 + w2 + w3) / 3 + staticNoise;
                 if (combined <= 0.05) continue;
                 const patchAlpha = maxAlpha * alpha * Math.min(1, (combined - 0.05) * 1.5);
-                ctx.fillStyle = `rgba(210, 225, 235, ${patchAlpha.toFixed(3)})`;
+                const paletteIdx = Math.min(100, Math.max(0, Math.round(patchAlpha * 100)));
+                ctx.fillStyle = this._fogPalette[paletteIdx];
                 ctx.fillRect(x, topY + row, patch, patch);
             }
         }

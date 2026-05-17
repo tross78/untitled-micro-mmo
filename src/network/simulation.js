@@ -68,7 +68,6 @@ const applyNewDay = () => {
     localPlayer.forestFights = 15;
     localPlayer.combatRound = 0;
     if (localPlayer.statusEffects) localPlayer.statusEffects = localPlayer.statusEffects.filter(e => e.id !== 'well_rested');
-    if (localPlayer.buffs) { localPlayer.buffs.rested = false; localPlayer.buffs.activeElixir = null; }
     log(`\n[EVENT] THE SUN RISES ON DAY ${worldState.day}.`, '#0ff');
     _emitDayEvent(worldState);
     printStatus();
@@ -163,10 +162,6 @@ export const updateSimulation = (state) => {
             localPlayer.combatRound = 0;
             if (localPlayer.statusEffects) {
                 localPlayer.statusEffects = localPlayer.statusEffects.filter(effect => effect.id !== 'well_rested');
-            }
-            if (localPlayer.buffs) {
-                localPlayer.buffs.rested = false;
-                localPlayer.buffs.activeElixir = null;
             }
             printStatus();
             bus.emit('world:timeOfDay', { day: worldState.day, timeOfDay: 'day' });

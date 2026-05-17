@@ -144,7 +144,37 @@ export class WorldSyncSystem {
             }
         }
 
-        // 4. Cleanup
+        // 4. Sync Scattered Resources (Phase 8.7x)
+        const { getScatteredContent } = require('../rules/index.js');
+        const scatterNodes = getScatteredContent(currentLoc, worldState.day, roomData);
+        const gatheredNodes = localPlayer.gatheredNodes;
+        const gatheredSameDay = gatheredNodes?.day === worldState.day;
+
+        scatterNodes.forEach(sc => {
+            const nodeKey = `${currentLoc}:${sc.x},${sc.y}`;
+            if (gatheredSameDay && gatheredNodes?.nodes?.has(nodeKey)) return;
+
+            const resId = `resource:${nodeKey}`;
+            activeIds.add(resId);
+
+            let eid = this.entityMap.get(resId);
+            if (!eid) {
+                eid = this.world.createEntity();
+                this.entityMap.set(resId, eid);
+            }
+
+            this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: sc.x, y: sc.y });
+            this.world.setComponent(eid, Component.Sprite, {
+                type: sc.label,
+                palette: 'resource',
+                seed: this.hash(nodeKey),
+            });
+            this.world.setComponent(eid, Component.Gatherable, { kind: sc.type, label: sc.label, locId: currentLoc });
+            this.world.setComponent(eid, Component.RoomScoped, { locId: currentLoc });
+            this.world.setComponent(eid, 'Identity', { name: sc.label, id: resId });
+        });
+
+        // 5. Cleanup
         for (const [id, eid] of this.entityMap.entries()) {
             if (!activeIds.has(id)) {
                 this.world.deleteEntity(eid);

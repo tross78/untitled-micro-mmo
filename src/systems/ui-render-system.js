@@ -375,17 +375,19 @@ export class UIRenderSystem {
         const now = Date.now();
         const overlays = this.world.query([Component.UIOverlay]);
 
-        overlays.forEach(id => {
+        for (const id of overlays) {
             const overlay = this.world.getComponent(id, Component.UIOverlay);
-            if (now > overlay.expires) {
+            if (!overlay) continue;
+            if (Date.now() > overlay.expires) {
                 this.world.removeComponent(id, Component.UIOverlay);
-                return;
+                this.world.deleteEntity(id);
+                continue;
             }
 
             if (overlay.type === 'toast') this.drawToast(ctx, overlay.text, now, overlay.expires);
             else if (overlay.type === 'fanfare') this.drawFanfare(ctx, overlay.text, now, overlay.expires);
             else if (overlay.type === 'banner') this.drawBanner(ctx, overlay.text, now, overlay.expires);
-        });
+        }
     }
 
     drawBanner(ctx, text, now, expires) {

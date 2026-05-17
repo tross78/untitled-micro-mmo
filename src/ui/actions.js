@@ -7,6 +7,8 @@ import { requestTextInput } from '../adapters/dom/prompt.js';
 import { getNPCsAt } from '../commands/helpers.js';
 import { getBuyPrice, getSellPrice, getShopInventory } from '../commands/helpers.js';
 import { getTimeOfDay } from '../rules/index.js';
+import { Component } from '../domain/components.js';
+import { appRuntime } from '../app/runtime.js';
 
 let uiState = 'root';
 let _lastAction = null;
@@ -95,6 +97,29 @@ export const renderActionButtons = (ctx, onAction) => {
 
             if (sharedEnemy && sharedEnemy.hp <= 0 && sharedEnemy.loot && sharedEnemy.loot.length > 0) {
                 addButton('Pickup 📦', ACTION.INTERACT);
+            }
+
+            // Phase 8.7x: Gather / Fish contextual buttons
+            const gatherables = appRuntime.world.query([Component.Gatherable, Component.Transform]);
+            const hasGatherableAtFeet = gatherables.some(id => {
+                const t = appRuntime.world.getComponent(id, Component.Transform);
+                return t && t.x === localPlayer.x && t.y === localPlayer.y && t.mapId === localPlayer.location;
+            });
+            if (hasGatherableAtFeet) {
+                addButton('Gather 🌿', ACTION.INTERACT);
+            }
+
+            const playerEntityTransform = appRuntime.playerEntityId ? appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Transform) : null;
+            if (playerEntityTransform) {
+                const facing = playerEntityTransform.facing || 's';
+                const fdx = facing === 'e' ? 1 : facing === 'w' ? -1 : 0;
+                const fdy = facing === 's' ? 1 : facing === 'n' ? -1 : 0;
+                const fx = playerEntityTransform.x + fdx;
+                const fy = playerEntityTransform.y + fdy;
+                const isFacingWater = (loc.tileOverrides || []).some(t => t.x === fx && t.y === fy && t.type === 'water');
+                if (isFacingWater) {
+                    addButton('Fish 🎣', ACTION.INTERACT);
+                }
             }
 
             if (localNpcs.length > 0) {

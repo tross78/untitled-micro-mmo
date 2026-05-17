@@ -13,6 +13,8 @@ export const moodMarkov = {
 
 export const SCARCITY_ITEMS = ['wheat', 'wood', 'iron', 'bread', 'herbs', 'red_mushroom'];
 
+export const RESOURCE_LABEL_TO_ITEM = { log: 'wood', ore: 'iron', stone: 'stone', fiber: 'fiber', coal: 'coal', mushroom: 'red_mushroom', herbs: 'herbs' };
+
 export const MOOD_INITIAL = 'weary';
 
 export const DIALOGUE_POOLS = {
@@ -335,7 +337,6 @@ export const DEFAULT_PLAYER_STATS = {
     combatRound: 0,
     currentEnemy: null,
     actionIndex: 0,
-    buffs: { rested: false, activeElixir: null },
     x: 5, y: 5, // Spatial Coordinates
     ph: null,
     visitedRooms: [],

@@ -45,6 +45,7 @@ export class SyncSystem {
             if (nextProgress !== progress.progress) {
               progress.progress = nextProgress;
               bus.emit('quest:progress', {
+                questId: qid,
                 name: quest.name,
                 current: progress.progress,
                 total: quest.objective?.count || 1

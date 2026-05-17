@@ -79,22 +79,7 @@ export class MapRenderSystem {
             }
         });
 
-        // 5. Draw Scattered Content — memoized per (locId, day), filtered per frame for gathered nodes
-        const scatterKey = `${locId}:${worldState.day}`;
-        if (!this._scatterCache || this._scatterCache.key !== scatterKey) {
-            this._scatterCache = { key: scatterKey, content: getScatteredContent(locId, worldState.day, loc) };
-        }
-        const gatheredNodes = localPlayer.gatheredNodes;
-        const gatheredSameDay = gatheredNodes?.day === worldState.day;
-        this._scatterCache.content.forEach(sc => {
-            if (gatheredSameDay && gatheredNodes?.nodes?.has(`${locId}:${sc.x},${sc.y}`)) return;
-            const sx = sc.x - camX;
-            const sy = sc.y - camY;
-            if (sx < -1 || sx >= this.VP.W || sy < -1 || sy >= this.VP.H) return;
-            this.drawScenery(ctx, sx, sy, sc.label, screenOffsetX, screenOffsetY, 1, 1, sc.x, sc.y, gameTime);
-        });
-
-        // 6. Draw Movement Target (Affordance Phase 8.5a)
+        // 5. Draw Movement Target (Affordance Phase 8.5a)
         const playersWithTarget = this.world.query([Component.PlayerControlled, Component.Transform, Component.MovementTarget]);
         playersWithTarget.forEach(id => {
             const target = this.world.getComponent(id, Component.MovementTarget);

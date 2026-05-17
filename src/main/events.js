@@ -136,6 +136,19 @@ export const triggerVisualRefresh = () => {
             if (entity?.type === 'npc') { openMenu('npc', { npcId: entity.id }); return; }
             if (entity?.type === 'enemy') { handleCommand('attack').then(triggerLogicalRefresh); return; }
             
+            if (entity?.type === 'resource') {
+                const transform = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Transform);
+                if (transform && transform.x === tx && transform.y === ty) {
+                    bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' });
+                } else if (appRuntime.playerEntityId) {
+                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.MovementTarget, { x: tx, y: ty });
+                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.PendingInteract, { x: tx, y: ty, mapId: transform.mapId });
+                    showToast(`→ ${entity.id || 'resource'}`);
+                }
+                triggerLogicalRefresh();
+                return;
+            }
+
             // Ground tiles: set movement target (Phase 8.5a)
             if (appRuntime.playerEntityId) {
                 appRuntime.world.setComponent(appRuntime.playerEntityId, Component.MovementTarget, { x: tx, y: ty });

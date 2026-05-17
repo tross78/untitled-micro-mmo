@@ -77,7 +77,7 @@ These event shapes are contracts. All emitters and listeners must match exactly.
 | player | `player:step` | `{ from, to, x, y }` — same-room tile motion |
 | item | `item:pickup` | `{ item }` |
 | npc | `npc:speak` | `{ npcName, text }` |
-| quest | `quest:progress` | `{ name, current, total }` |
+| quest | `quest:progress` | `{ questId, name, current, total }` |
 | quest | `quest:complete` | `{ name, rewards }` |
 | input | `input:action` | `{ action, type: 'down'\|'up' }` |
 | world | `world:event` | `{ event, scarcity, surplus, weather }` |
@@ -197,11 +197,11 @@ Slices: `8.75a` contextual corpus tagging · `8.75b` template string interpolati
 
 Acceptance bar: barkeep produces scarcity-event-aware line; Sage produces post-ruins line; lines contain world-state-injected values; `npm test` passes.
 
-### Phase 8.76: First Impression Polish Sprint
+### Phase 8.76: First Impression Polish Sprint — COMPLETE
 
-**Mandatory gate on Phase 8.8.** Fixes: render cache visibility bug, jerky movement tween, HUD/exit overlap, mobile touch input, weather visuals, animated sprites, NPC/enemy patrol AI, room graphics audit.
+**Mandatory gate on Phase 8.8.** Fixes: render cache visibility bug, jerky movement tween, HUD/exit overlap, mobile touch input (resource nodes), weather visuals, animated sprites, NPC/enemy patrol AI, room graphics audit.
 
-Slices: `P0` cache · `P0b` smooth movement · `P0c` HUD · `P1` input · `P2` weather · `P3` sprites · `P4` patrol AI · `P5` room audit
+Slices: `P0` cache · `P0b` smooth movement · `P0c` HUD · `P1` input (Smart Tap + ECS Resources) · `P2` weather · `P3` sprites · `P4` patrol AI · `P5` room audit (integrity pass)
 
 Full spec (root causes, code locations, cohesion table): [docs/phases/8.76-polish-sprint.md](docs/phases/8.76-polish-sprint.md)
 
