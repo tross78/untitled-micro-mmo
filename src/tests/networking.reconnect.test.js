@@ -55,8 +55,6 @@ jest.mock('../security/identity.js', () => ({
 
 jest.mock('../network/arbiter-signal.js', () => ({
     registerWithHints: jest.fn(async () => []),
-    sendSignal: jest.fn(async () => {}),
-    pollSignals: jest.fn(async () => {}),
 }));
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -87,11 +85,14 @@ describe('reconnect and liveness regressions', () => {
         // Simulate peer joining and completing handshake + presence (sets _peerLastPresenceAt).
         shardRoom.emitPeerJoin('peer-silent');
         await jest.advanceTimersByTimeAsync(150);
-        shardRoom.emitAction('identity_handshake', { publicKey: 'peer-pub-key' }, 'peer-silent');
-        trackPlayer('peer-silent', { publicKey: 'peer-pub-key', ph: 'dead0001', ghost: false, ts: Date.now() });
+        const { hashStr } = await import('../rules/index.js');
+        const silentKey = 'peer-pub-key';
+        const silentPh = (hashStr(silentKey) >>> 0).toString(16).padStart(8, '0');
+        shardRoom.emitAction('identity_handshake', { publicKey: silentKey }, 'peer-silent');
+        trackPlayer('peer-silent', { publicKey: silentKey, ph: silentPh, ghost: false, ts: Date.now() });
         // Trigger presence to set _peerLastPresenceAt — use the packer to build a valid buf.
         const { packPresence } = await import('../network/packer.js');
-        const presenceBuf = packPresence({ name: 'Silent', location: 'cellar', ph: 'dead0001', level: 1, xp: 0, x: 0, y: 0, gold: 0, inventory: [], quests: {}, ts: Date.now(), signature: btoa('s'.repeat(64)), hlc: 1 });
+        const presenceBuf = packPresence({ name: 'Silent', location: 'cellar', ph: silentPh, level: 1, xp: 0, x: 0, y: 0, gold: 0, inventory: [], quests: {}, ts: Date.now(), signature: btoa('s'.repeat(64)), hlc: 1 });
         await shardRoom.emitAction('presence_single', presenceBuf, 'peer-silent');
 
         const initialJoinCallCount = joinRoom.mock.calls.length;
@@ -170,6 +171,65 @@ describe('reconnect and liveness regressions', () => {
         // Heal should have been triggered as a result of handshake timeout (scheduleHeal).
         // Observable via joinRoom being called again for the shard room.
         expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+    });
+
+    test('identity-only peer does not count as usable and still triggers handshake heal', async () => {
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer, players } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+        const { countUsableShardPeers } = await import('../network/heal.js');
+        const { shardKnownPeers } = await import('../network/index.js');
+
+        localPlayer.ph = 'abcd1234';
+        await initNetworking();
+
+        const shardRoom = joinRoom.mock.results.find((r) => r.value.name !== 'global').value;
+        const initialJoinCallCount = joinRoom.mock.calls.length;
+
+        shardRoom.emitPeerJoin('peer-identity-only');
+        shardRoom.emitAction('identity_handshake', { publicKey: 'identity-only-key' }, 'peer-identity-only');
+        expect(players.get('peer-identity-only')?.publicKey).toBe('identity-only-key');
+        expect(countUsableShardPeers(shardKnownPeers, players)).toBe(0);
+
+        await jest.advanceTimersByTimeAsync(7_000);
+
+        expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+    });
+
+    test('invalid presence does not refresh liveness or mark peer usable', async () => {
+        const { initNetworking, getPeerLastPresenceSnapshot, shardKnownPeers } = await import('../network/index.js');
+        const { localPlayer, players } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+        const { packPresence } = await import('../network/packer.js');
+        const { countUsableShardPeers } = await import('../network/heal.js');
+
+        localPlayer.ph = 'abcd1234';
+        await initNetworking();
+
+        const shardRoom = joinRoom.mock.results.find((r) => r.value.name !== 'global').value;
+        shardRoom.emitPeerJoin('peer-invalid');
+        shardRoom.emitAction('identity_handshake', { publicKey: 'invalid-key' }, 'peer-invalid');
+
+        const invalidPresence = packPresence({
+            name: 'Invalid',
+            location: 'cellar',
+            ph: 'dead0001',
+            level: 1,
+            xp: 0,
+            x: 0,
+            y: 0,
+            gold: 0,
+            inventory: [],
+            quests: {},
+            ts: Date.now(),
+            signature: btoa('s'.repeat(64)),
+            hlc: 1,
+        });
+        await shardRoom.emitAction('presence_single', invalidPresence, 'peer-invalid');
+
+        expect(getPeerLastPresenceSnapshot().has('peer-invalid')).toBe(false);
+        expect(players.get('peer-invalid')?.presenceVerifiedAt).toBeUndefined();
+        expect(countUsableShardPeers(shardKnownPeers, players)).toBe(0);
     });
 
     test('only peers with verified presence are saved as warm introducers', async () => {

@@ -236,20 +236,6 @@ async function startArbiter() {
         presenceDirectory.prune();
     }, 3600000);
 
-    // Signal mailbox: { peerId -> [{fromPeerId, payload, ts}] }
-    const signalMailbox = new Map();
-    const SIGNAL_TTL_MS = 15_000;
-    const SIGNAL_MAX_PER_PEER = 32;
-    const pruneSignals = () => {
-        const now = Date.now();
-        for (const [peerId, msgs] of signalMailbox) {
-            const fresh = msgs.filter(m => now - m.ts < SIGNAL_TTL_MS);
-            if (fresh.length === 0) signalMailbox.delete(peerId);
-            else signalMailbox.set(peerId, fresh);
-        }
-    };
-    setInterval(pruneSignals, 10_000);
-
     // HTTP Server for fallback discovery and presence cache
     const server = createServer(async (req, res) => {
         const cors = {
@@ -289,32 +275,12 @@ async function startArbiter() {
                     const peers = presenceDirectory.list(parsed.shard)
                         .filter(p => p.ph !== parsed.ph)
                         .slice(0, 8)
-                        .map(p => ({ id: p.id || p.ph, ph: p.ph }));
+                        .filter(p => p.id)
+                        .map(p => ({ id: p.id, ph: p.ph }));
                     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true, peers }));
                 } catch (_e) { res.writeHead(400); res.end(); }
             });
-        } else if (url.pathname === '/signal' && req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => { body += chunk; });
-            req.on('end', () => {
-                try {
-                    const { toPeerId, fromPeerId, payload } = JSON.parse(body);
-                    if (!toPeerId || !fromPeerId) { res.writeHead(400); res.end(); return; }
-                    if (!signalMailbox.has(toPeerId)) signalMailbox.set(toPeerId, []);
-                    const box = signalMailbox.get(toPeerId);
-                    box.push({ fromPeerId, payload, ts: Date.now() });
-                    if (box.length > SIGNAL_MAX_PER_PEER) box.splice(0, box.length - SIGNAL_MAX_PER_PEER);
-                    res.writeHead(200, cors);
-                    res.end('{}');
-                } catch (_e) { res.writeHead(400); res.end(); }
-            });
-        } else if (url.pathname.startsWith('/signal/') && req.method === 'GET') {
-            const peerId = decodeURIComponent(url.pathname.slice('/signal/'.length));
-            const signals = signalMailbox.get(peerId) || [];
-            signalMailbox.delete(peerId);
-            res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(signals));
         } else {
             res.writeHead(404);
             res.end();

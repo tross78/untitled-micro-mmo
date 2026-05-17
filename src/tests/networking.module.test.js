@@ -179,8 +179,8 @@ describe('networking exported module behavior', () => {
     });
 
     test('isProposer uses real players map and rotating slot', () => {
-        players.set('aaa', { level: 1 });
-        players.set('ccc', { level: 1 });
+        players.set('aaa', { level: 1, presenceVerifiedAt: 1 });
+        players.set('ccc', { level: 1, presenceVerifiedAt: 1 });
         jest.spyOn(Date, 'now').mockReturnValue(10000); // sorted [aaa, bbb, ccc], slot 1
 
         expect(isProposer()).toBe(true);

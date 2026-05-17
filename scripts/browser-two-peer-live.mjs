@@ -226,6 +226,9 @@ try {
         return seesA && seesB ? { snapA, snapB } : null;
     }, 45000, 500);
     const discoveryElapsedMs = Date.now() - discoveryStartedAt;
+    if (discoveryElapsedMs > SAME_ROOM_BUDGET_MS) {
+        throw new Error(`real transport discovery exceeded ${SAME_ROOM_BUDGET_MS}ms budget: ${discoveryElapsedMs}ms`);
+    }
 
     await issueCommand(pageA, 'rename Alpha');
     await issueCommand(pageB, 'rename Beta');

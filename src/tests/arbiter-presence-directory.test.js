@@ -7,6 +7,7 @@ describe('arbiter presence directory', () => {
 
         const stored = directory.register({
             ph: 'ABCDEF12',
+            id: 'peer-a',
             name: '  Alice  ',
             location: 'cellar',
             shard: 'cellar-1',
@@ -18,6 +19,7 @@ describe('arbiter presence directory', () => {
 
         expect(stored).toEqual({
             ph: 'abcdef12',
+            id: 'peer-a',
             name: 'Alice',
             location: 'cellar',
             shard: 'cellar-1',
@@ -29,6 +31,7 @@ describe('arbiter presence directory', () => {
         expect(directory.list('cellar-1', now)).toEqual([
             {
                 ph: 'abcdef12',
+                id: 'peer-a',
                 name: 'Alice',
                 location: 'cellar',
                 level: 3,
@@ -58,6 +61,7 @@ describe('arbiter presence directory', () => {
 
         directory.register({
             ph: 'aaaa1111',
+            id: 'peer-fresh',
             name: 'Fresh',
             location: 'cellar',
             shard: 'cellar-1',
@@ -78,6 +82,7 @@ describe('arbiter presence directory', () => {
         expect(directory.list('cellar-1', now)).toEqual([
             {
                 ph: 'aaaa1111',
+                id: 'peer-fresh',
                 name: 'Fresh',
                 location: 'cellar',
                 level: 2,

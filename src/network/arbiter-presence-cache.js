@@ -5,6 +5,7 @@ export const MAX_PEER_SNAPSHOT = 50;
 export const MAX_NAME_LENGTH = 32;
 export const MAX_SHARD_LENGTH = 80;
 export const MAX_LOCATION_LENGTH = 64;
+export const MAX_PEER_ID_LENGTH = 128;
 
 const isFiniteInteger = (value) => Number.isInteger(value) && Number.isFinite(value);
 
@@ -22,6 +23,7 @@ export const sanitizePresenceEntry = (entry, now = Date.now()) => {
     const location = clampString(entry.location, MAX_LOCATION_LENGTH);
     const shard = clampString(entry.shard, MAX_SHARD_LENGTH);
     const name = clampString(entry.name, MAX_NAME_LENGTH);
+    const id = clampString(entry.id, MAX_PEER_ID_LENGTH);
     const level = Number(entry.level);
     const ts = Number(entry.ts);
     const x = Number(entry.x ?? 5);
@@ -38,6 +40,7 @@ export const sanitizePresenceEntry = (entry, now = Date.now()) => {
 
     return {
         ph,
+        id,
         name,
         location,
         shard,
@@ -84,5 +87,14 @@ export const listPeersForShard = (presenceCache, shard, now = Date.now()) => {
         .filter(entry => entry?.shard === shard && Number(entry.ts) >= cutoff)
         .sort((a, b) => b.ts - a.ts)
         .slice(0, MAX_PEER_SNAPSHOT)
-        .map(({ name, location, level, ph, ts, x, y }) => ({ name, location, level, ph, ts, x, y }));
+        .map(({ name, location, level, ph, id, ts, x, y }) => ({
+            name,
+            location,
+            level,
+            ph,
+            ...(id ? { id } : {}),
+            ts,
+            ...(x !== undefined ? { x } : {}),
+            ...(y !== undefined ? { y } : {}),
+        }));
 };

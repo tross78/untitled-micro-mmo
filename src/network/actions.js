@@ -40,6 +40,7 @@ export const buildShardActions = (r) => ({
         const packed = packPresenceBatch(data);
         target ? r.sendPresenceBatch(packed, target) : r.sendPresenceBatch(packed);
     },
+    sendIdentity: (data, target) => target ? r.sendIdentity(data, target) : r.sendIdentity(data),
     relayState: (data) => r.sendRelay(data),
     sendRollupLocal: (data) => r.sendRollupLocal(data),
     sendDuelChallenge: (data) => r.sendDuelChallenge(data),

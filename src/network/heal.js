@@ -2,7 +2,7 @@
 
 /**
  * Count shard peers that are both directly connected on the shard room and
- * have completed enough handshake state to be useful for gameplay recovery.
+ * have sent a fully verified signed presence packet.
  *
  * @param {Set<string>} shardKnownPeers
  * @param {Map<string, any>} players
@@ -12,7 +12,7 @@ export const countUsableShardPeers = (shardKnownPeers, players) => {
     let count = 0;
     for (const id of shardKnownPeers) {
         const peer = players.get(id);
-        if (peer?.publicKey && !peer.ghost) count++;
+        if (peer?.publicKey && peer?.presenceVerifiedAt && !peer.ghost) count++;
     }
     return count;
 };

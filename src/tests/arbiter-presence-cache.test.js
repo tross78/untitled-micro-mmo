@@ -11,6 +11,7 @@ describe('arbiter presence cache helpers', () => {
         const now = 1000;
         const entry = sanitizePresenceEntry({
             ph: 'ABCDEF12',
+            id: 'peer-a',
             name: '  Alice  ',
             location: 'cellar',
             shard: 'cellar-1',
@@ -20,6 +21,7 @@ describe('arbiter presence cache helpers', () => {
 
         expect(entry).toEqual({
             ph: 'abcdef12',
+            id: 'peer-a',
             name: 'Alice',
             location: 'cellar',
             shard: 'cellar-1',
