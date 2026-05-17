@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { RTCPeerConnection } from 'werift';
 import {
     createPresenceDirectory,
 } from '../src/network/arbiter-presence-directory.js';
@@ -30,13 +31,13 @@ console.error = (...args) => {
 // Polyfills
 if (typeof global.crypto === 'undefined') global.crypto = webcrypto;
 if (typeof global.WebSocket === 'undefined') global.WebSocket = WebSocket;
+if (typeof global.RTCPeerConnection === 'undefined') global.RTCPeerConnection = RTCPeerConnection;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, 'world_state.json');
 
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
-    await import('werift');
     const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
     const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS, GH_GIST_USERNAME: DEFAULT_GH_GIST_USERNAME } = await import('../src/infra/constants.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
