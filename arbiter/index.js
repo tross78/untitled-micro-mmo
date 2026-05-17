@@ -36,6 +36,26 @@ if (typeof global.RTCPeerConnection === 'undefined') global.RTCPeerConnection = 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, 'world_state.json');
 
+// Catch unhandled errors from WebSocket/network layer
+process.on('uncaughtException', (err) => {
+    if (err.code === 'ECONNREFUSED' || err.message?.includes('WebSocket')) {
+        console.warn('[Arbiter] Network error (non-fatal):', err.message);
+    } else {
+        console.error('[FATAL] Uncaught exception:', err);
+        process.exit(1);
+    }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    const msg = reason?.message || String(reason);
+    if (msg.includes('ECONNREFUSED') || msg.includes('WebSocket') || msg.includes('connect')) {
+        console.warn('[Arbiter] Network rejection (non-fatal):', msg);
+    } else {
+        console.error('[FATAL] Unhandled rejection:', reason);
+        process.exit(1);
+    }
+});
+
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
@@ -63,7 +83,18 @@ async function startArbiter() {
         return { privateKey: b64Seed }; 
     })();
 
-    const room = joinTorrent({ appId: APP_ID, trackers: TORRENT_TRACKERS, iceServers: ICE_SERVERS }, 'hearthwick-arbiter-v1');
+    let room;
+    try {
+        room = joinTorrent({ appId: APP_ID, trackers: TORRENT_TRACKERS, iceServers: ICE_SERVERS }, 'hearthwick-arbiter-v1');
+    } catch (err) {
+        console.error('[Arbiter] Torrent join failed:', err.message);
+        process.exit(1);
+    }
+
+    room.on('error', (err) => {
+        console.warn('[Arbiter] Room error (non-fatal):', err.message);
+    });
+
     const [sendState] = room.makeAction(NETWORK_ACTIONS.WORLD_STATE);
     const [,, getRollup] = room.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
     const [,, getFraud] = room.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
