@@ -81,11 +81,16 @@ export const startPeerMonitor = (presenceDirectory, config = {}) => {
     };
 
     /**
-     * Main loop: collect peers and publish to Gist.
+     * Main loop: collect peers and publish to Gist if changed.
      */
+    let lastPublishedPeers = '';
     const tick = async () => {
         const peers = collectActivePeers();
-        await publishToGist(peers);
+        const peersStr = JSON.stringify(peers);
+        if (peersStr !== lastPublishedPeers) {
+            lastPublishedPeers = peersStr;
+            await publishToGist(peers);
+        }
     };
 
     // Start monitoring
