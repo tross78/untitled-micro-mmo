@@ -59,7 +59,7 @@ export const startPeerMonitor = (presenceDirectory, config = {}) => {
                 },
                 body: JSON.stringify({
                     files: {
-                        'mmo_arbiter_discovery_v4.json': { content }
+                        'fenhollow-peers.json': { content }
                     }
                 })
             });
