@@ -39,7 +39,7 @@ import {
     buildTorrentConfig, isUsingTurnFallback
 } from './config.js';
 import { registerWithHints } from './arbiter-signal.js';
-import { discoverPeers, registerInPeerCache } from './peer-discovery.js';
+import { discoverPeers } from './peer-discovery.js';
 import {
     checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState, evictSecurityPeer
 } from './security.js';
@@ -620,8 +620,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             r.seedIntroducers(hintedPeers.map(p => p.id || p.ph).filter(Boolean));
             markNetworkEvent('shard:arbiter_hints', { count: hintedPeers.length, source: 'register' });
         }
-        // Register in peer discovery cache for other clients to discover us
-        await registerInPeerCache(selfId, shard, registration.publicKey);
     };
     setTimeout(registerWithArbiter, 1000);
 
