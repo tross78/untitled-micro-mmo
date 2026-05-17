@@ -92,6 +92,13 @@ export const NETWORK_STARTUP_TURN_FALLBACK_MS = 3000;
 export const NETWORK_PRESENCE_HEARTBEAT_MS = 5000;
 export const NETWORK_PEER_STALE_MS = 20000;
 export const NETWORK_PEER_SWEEP_MS = 5000;
+// Ghost TTL: peers silent for this long get hard-evicted. Must be > STALE_MS.
+export const GHOST_TTL_MS = 60_000;
+// Relay escalation: after this many ms with zero usable peers, include TURN candidates.
+export const EARLY_RELAY_ESCALATION_MS = 2000;
+// Introducer TTLs: warm peers (recently verified presence) stay longer.
+export const INTRODUCER_TTL_COLD_MS = 2 * 3600_000;  // 2h
+export const INTRODUCER_TTL_WARM_MS = 8 * 3600_000;  // 8h
 
 export const buildTorrentConfig = (rtcConfig) => {
     const base = rtcConfig || { iceServers: STUN_SERVERS };

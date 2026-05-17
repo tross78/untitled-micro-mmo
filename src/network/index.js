@@ -35,8 +35,10 @@ import {
     NETWORK_HEAL_COOLDOWN_MS, NETWORK_EVENT_HEAL_DELAY_MS, NETWORK_HANDSHAKE_TIMEOUT_MS,
     NETWORK_STARTUP_TURN_FALLBACK_MS,
     NETWORK_PRESENCE_HEARTBEAT_MS, NETWORK_PEER_STALE_MS, NETWORK_PEER_SWEEP_MS,
-    buildTorrentConfig, isUsingTurnFallback 
+    GHOST_TTL_MS, INTRODUCER_TTL_COLD_MS, INTRODUCER_TTL_WARM_MS,
+    buildTorrentConfig, isUsingTurnFallback
 } from './config.js';
+import { registerWithHints, pollSignals } from './arbiter-signal.js';
 import { 
     checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState, evictSecurityPeer 
 } from './security.js';
@@ -87,21 +89,28 @@ const scheduleHeal = (delay = NETWORK_EVENT_HEAL_DELAY_MS, options = {}) => {
 
 const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
 
-// --- Introducer cache (item 5) -------------------------------------------
+// --- Introducer cache -------------------------------------------------------
 // Persists up to 5 peer IDs per shard so rejoining players can seed HyParView
 // with known-good introducers before tracker discovery completes.
-const INTRODUCER_CACHE_KEY = `${GAME_NAME}_introducers_v1`;
-const INTRODUCER_TTL_MS = 8 * 3600_000; // 8 hours
+// Only peers that have sent verified presence this session are saved (warm peers).
+// Warm peers get 8h TTL; cold peers (cached from older sessions) get 2h TTL.
+const INTRODUCER_CACHE_KEY = `${GAME_NAME}_introducers_v2`;
+
+// Peers that have sent verified presence at least once this session.
+const _introSuccessPeers = new Set();
+// Peers that timed out on handshake this session — deprioritised on next load.
+const _introFailedPeers = new Set();
 
 const saveIntroducers = (shard) => {
     const directPeers = rooms.torrent?.getPeers?.() || {};
     const top = Object.keys(directPeers)
-        .filter(id => players.has(id) && !players.get(id).ghost)
+        .filter(id => players.has(id) && !players.get(id).ghost && _introSuccessPeers.has(id))
         .slice(0, 5);
     if (top.length === 0) return;
+    const warm = top.every(id => _introSuccessPeers.has(id));
     try {
         const cache = JSON.parse(localStorage.getItem(INTRODUCER_CACHE_KEY) || '{}');
-        cache[shard] = { peers: top, ts: Date.now() };
+        cache[shard] = { peers: top, ts: Date.now(), warm };
         localStorage.setItem(INTRODUCER_CACHE_KEY, JSON.stringify(cache));
     } catch (_) { /* ignore */ }
 };
@@ -110,8 +119,11 @@ const loadIntroducers = (shard) => {
     try {
         const cache = JSON.parse(localStorage.getItem(INTRODUCER_CACHE_KEY) || '{}');
         const entry = cache[shard];
-        if (!entry || Date.now() - entry.ts > INTRODUCER_TTL_MS) return [];
-        return entry.peers || [];
+        if (!entry) return [];
+        const ttl = entry.warm ? INTRODUCER_TTL_WARM_MS : INTRODUCER_TTL_COLD_MS;
+        if (Date.now() - entry.ts > ttl) return [];
+        // Filter out peers that failed handshake in this session.
+        return (entry.peers || []).filter(id => !_introFailedPeers.has(id));
     } catch (_) { return []; }
 };
 
@@ -171,8 +183,7 @@ const checkThrottle = (peerId) => {
     return rec.count <= THROTTLE_MAX_MSGS;
 };
 
-// --- 8.95c: Ghost-peer TTL --------------------------------------------------
-const GHOST_TTL_MS = 10 * 60 * 1000; // 10 minutes
+// --- Ghost-peer TTL (see config.js for GHOST_TTL_MS) -----------------------
 const _peerLastPresenceAt = new Map(); // peerId -> timestamp
 let routerSet = new Set();
 
@@ -195,6 +206,17 @@ const isProposer = () => {
 export const initNetworking = async (rtcConfig) => {
     currentRtcConfig = rtcConfig || { iceServers: STUN_SERVERS };
     markNetworkEvent('network:init');
+
+    // Respond to same-origin tab shard probes with our current known non-ghost peers.
+    if (TAB_CHANNEL.addEventListener) {
+        TAB_CHANNEL.addEventListener('message', (e) => {
+            if (e.data?.type !== 'shard:probe') return;
+            const currentShard = getShardName(localPlayer.location, getCurrentInstance());
+            if (e.data.shard !== currentShard || e.data.selfId === selfId) return;
+            const peers = Array.from(players.keys()).filter(id => !players.get(id)?.ghost);
+            if (peers.length > 0) TAB_CHANNEL.postMessage({ type: 'shard:peers', shard: currentShard, peers });
+        });
+    }
 
     const connectGlobal = async (config) => {
         markNetworkEvent('global:connect_start');
@@ -424,7 +446,7 @@ export const initNetworking = async (rtcConfig) => {
     let _healAttempts = 0;
     const _healBackoffMs = () => Math.min(1000 * (2 ** _healAttempts), 30000);
 
-        healNetworking = async ({ force = false } = {}) => {
+        healNetworking = async ({ force = false, urgent = false } = {}) => {
             if (networkHealInFlight) return;
             const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
             const globalPeers = globalKnownPeers.size;
@@ -432,14 +454,17 @@ export const initNetworking = async (rtcConfig) => {
             const silentFor = now - Math.max(joinTime, lastShardPresenceAt);
 
             if (usableShardPeers > 0) { _healAttempts = 0; return; }
-            if (!force && silentFor < NETWORK_STALL_MS) return;
-            if (!force && now - lastNetworkHealAt < _healBackoffMs()) return;
-            if (force && !shouldRunEventHeal(usableShardPeers, now - lastNetworkHealAt, NETWORK_HEAL_COOLDOWN_MS)) return;
+            if (!force && !urgent && silentFor < NETWORK_STALL_MS) return;
+            if (!force && !urgent && now - lastNetworkHealAt < _healBackoffMs()) return;
+            // force: event-driven heal with cooldown guard
+            if (force && !urgent && !shouldRunEventHeal(usableShardPeers, now - lastNetworkHealAt, NETWORK_HEAL_COOLDOWN_MS)) return;
+            // urgent: last peer just dropped — bypass cooldown, but still rate-limit to once/3s
+            if (urgent && now - lastNetworkHealAt < 3000) return;
 
             networkHealInFlight = true;
             lastNetworkHealAt = now;
             _healAttempts++;
-            markNetworkEvent('heal:start', { force, usableShardPeers, globalPeers, attempt: _healAttempts });
+            markNetworkEvent('heal:start', { force, urgent, usableShardPeers, globalPeers, attempt: _healAttempts });
         try {
             if (globalPeers > 0) {
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
@@ -448,6 +473,18 @@ export const initNetworking = async (rtcConfig) => {
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
                 await connectGlobal(currentRtcConfig);
                 await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
+            }
+            // Re-announce presence immediately after reconnect rather than waiting for the
+            // next heartbeat tick, so the remote peer can update _peerLastPresenceAt and not
+            // evict us as stale during the reconnect window.
+            if (playerKeys && gameActions.sendIdentity && gameActions.plumSend) {
+                const entry = await myEntry();
+                if (entry) {
+                    const pubKey = await exportKey(playerKeys.publicKey);
+                    gameActions.sendIdentity({ publicKey: pubKey });
+                    gameActions.plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
+                    markNetworkEvent('heal:presence_reannounced');
+                }
             }
         } finally { networkHealInFlight = false; }
     };
@@ -540,9 +577,17 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const registration = await buildRegistrationEntry(shard);
         if (!registration) return;
         if (gameActions.sendRegisterPresence && globalRooms.torrent) gameActions.sendRegisterPresence(registration);
-        if (arbiterUrl) {
-            fetch(`${arbiterUrl}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(registration), signal: AbortSignal.timeout(3000) }).catch(() => {});
+        // registerWithHints returns peer hints synchronously in the HTTP response,
+        // bypassing a full tracker announce cycle for the warm path.
+        const hintedPeers = await registerWithHints(shard, registration);
+        if (hintedPeers.length > 0 && r.seedIntroducers) {
+            r.seedIntroducers(hintedPeers.map(p => p.id || p.ph).filter(Boolean));
+            markNetworkEvent('shard:arbiter_hints', { count: hintedPeers.length, source: 'register' });
         }
+        // Drain any signals queued for us (ICE offers from peers that joined while we were offline).
+        pollSignals(selfId, (signal) => {
+            netLog(`[Signal] relayed from ${signal.fromPeerId?.slice(0, 8)}`, '#555');
+        }).catch(() => {});
     };
     setTimeout(registerWithArbiter, 1000);
 
@@ -649,16 +694,22 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         };
         const routerTimer = setInterval(refreshRouters, 60_000);
 
-        // 8.95c: Evict peers that haven't sent a presence update in GHOST_TTL_MS
+        // Ghost sweep: hard-evict peers silent for GHOST_TTL_MS (must be > STALE_MS).
+        // Peers that reach this threshold were not caught by the stale sweep, which
+        // implies _peerLastPresenceAt was never set (no presence received at all).
         const ghostTimer = setInterval(() => {
             const now = Date.now();
+            let evictedAny = false;
             for (const [peerId, lastSeen] of _peerLastPresenceAt) {
-                if (now - lastSeen > GHOST_TTL_MS) {
-                    evictShardPeer(peerId);
-                    netLog(`Ghost-peer evicted: ${peerId}`, '#a00');
-                }
+                if (now - lastSeen <= GHOST_TTL_MS) continue;
+                evictShardPeer(peerId, { dropFromShard: true, emitLeave: true });
+                netLog(`Ghost-peer evicted: ${peerId}`, '#a00');
+                evictedAny = true;
             }
-        }, 60_000);
+            if (evictedAny && countUsableShardPeers(shardKnownPeers, players) === 0) {
+                healNetworking({ urgent: true }).catch(() => {});
+            }
+        }, GHOST_TTL_MS);
         const stalePeerTimer = setInterval(() => {
             const now = Date.now();
             let evictedAny = false;
@@ -669,7 +720,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 evictedAny = true;
             }
             if (evictedAny && countUsableShardPeers(shardKnownPeers, players) === 0) {
-                scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
+                // urgent bypasses the 30s cooldown — we just lost our last peer.
+                healNetworking({ urgent: true }).catch(() => {});
             }
         }, NETWORK_PEER_SWEEP_MS);
 
@@ -710,6 +762,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now(), rawPresence: buf });
             trackShadowPlayer(peerId, unpacked);
             lastShardPresenceAt = Date.now();
+            _introSuccessPeers.add(peerId);
             markPeerNetworkEvent(peerId, 'peer:presence_verified', { location: unpacked.location, x: unpacked.x, y: unpacked.y });
             players.delete('ghost:' + unpacked.ph);
         };
@@ -926,6 +979,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (!shardKnownPeers.has(peerId)) return;
                 if (players.get(peerId)?.publicKey) return;
                 markPeerNetworkEvent(peerId, 'peer:handshake_timeout');
+                _introFailedPeers.add(peerId);
                 scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
             }, NETWORK_HANDSHAKE_TIMEOUT_MS);
         });
@@ -962,12 +1016,28 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     const r = setupShard(rooms.torrent);
     _shardTeardown = r.teardown;
 
-    // Seed HyParView passive view with cached introducers (item 5) so they get
-    // priority when tracker discovery re-connects us to them.
-    const cachedIntroducers = loadIntroducers(getShardName(localPlayer.location, instanceId));
+    // Seed HyParView passive view with cached introducers so they get priority
+    // when tracker discovery re-connects us to them.
+    const cachedIntroducers = loadIntroducers(shard);
     if (cachedIntroducers.length > 0) {
         r.seedIntroducers(cachedIntroducers);
         netLog(`[Introducers] ${cachedIntroducers.length} cached peers loaded for shard`, '#555');
+    }
+
+    // BroadcastChannel probe: ask other same-origin tabs if they're in this shard.
+    // Zero-latency for same-device discovery; falls through silently if no tab responds.
+    if (TAB_CHANNEL.addEventListener && TAB_CHANNEL.postMessage) {
+        TAB_CHANNEL.postMessage({ type: 'shard:probe', shard, selfId });
+        const _bcProbeHandler = (/** @type {MessageEvent} */ e) => {
+            if (e.data?.type !== 'shard:peers' || e.data?.shard !== shard) return;
+            const peers = e.data.peers;
+            if (Array.isArray(peers) && peers.length > 0 && r.seedIntroducers) {
+                r.seedIntroducers(peers);
+                markNetworkEvent('shard:broadcast_channel_peers', { count: peers.length });
+            }
+        };
+        TAB_CHANNEL.addEventListener('message', _bcProbeHandler);
+        setTimeout(() => TAB_CHANNEL.removeEventListener('message', _bcProbeHandler), 2000);
     }
 
     setTimeout(async () => {

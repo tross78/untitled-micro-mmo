@@ -121,8 +121,8 @@ describe('networking bugfix regressions', () => {
         const { localPlayer } = await import('../state/store.js');
 
         localPlayer.ph = 'abcd1234';
-        localStorage.setItem('fenhollow_introducers_v1', JSON.stringify({
-            'cellar-1': { peers: ['peer-x', 'peer-y'], ts: Date.now() },
+        localStorage.setItem('fenhollow_introducers_v2', JSON.stringify({
+            'cellar-1': { peers: ['peer-x', 'peer-y'], ts: Date.now(), warm: true },
         }));
 
         await initNetworking();

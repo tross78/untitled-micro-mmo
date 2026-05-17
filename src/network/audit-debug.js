@@ -39,7 +39,7 @@ export const markPeerNetworkEvent = (peerId, event, detail = null) => {
     pushEvent(peer.history, { event, at, detail });
 };
 
-export const getNetworkAuditSnapshot = (players, localLocation) => {
+export const getNetworkAuditSnapshot = (players, localLocation, shardKnownPeers, peerLastPresenceAt) => {
     if (!isNetworkAuditEnabled()) return null;
     const peers = {};
     for (const [peerId, peer] of state.peers.entries()) {
@@ -48,14 +48,29 @@ export const getNetworkAuditSnapshot = (players, localLocation) => {
             history: peer.history.slice(),
         };
     }
+    const now = Date.now();
     const sameRoomLivePeers = Array.from(players.entries())
         .filter(([, entry]) => entry.location === localLocation && !entry.ghost && !!entry.publicKey)
         .map(([peerId]) => peerId);
+    // Distinguish transport-connected, usable, and stale peers for failure classification.
+    const transportPeers = shardKnownPeers ? Array.from(shardKnownPeers) : [];
+    const usableShardPeers = transportPeers.filter(id => {
+        const p = players.get(id);
+        return p?.publicKey && !p.ghost;
+    });
+    const stalePeers = peerLastPresenceAt
+        ? Array.from(peerLastPresenceAt.entries())
+            .filter(([, ts]) => now - ts > 20000)
+            .map(([id]) => id)
+        : [];
     return {
         startedAt: state.startedAt,
-        now: Date.now(),
+        now,
         events: state.events.slice(),
         peers,
         sameRoomLivePeers,
+        transportPeers,
+        usableShardPeers,
+        stalePeers,
     };
 };

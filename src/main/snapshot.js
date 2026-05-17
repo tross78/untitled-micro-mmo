@@ -39,7 +39,7 @@ export const buildTestSnapshot = () => ({
         shardPeers: rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0,
         usableShardPeers: countUsableShardPeers(shardKnownPeers, players),
         synced: hasSyncedWithArbiter,
-        audit: getNetworkAuditSnapshot(players, localPlayer.location),
+        audit: getNetworkAuditSnapshot(players, localPlayer.location, shardKnownPeers),
     },
     dialogueOpen: isDialogueOpen(),
     outputText: getOutputEl()?.textContent || '',
