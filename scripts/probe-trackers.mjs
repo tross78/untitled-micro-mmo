@@ -128,29 +128,33 @@ try {
 
     const trackers = [
         ...TORRENT_TRACKERS,
-        'wss://tracker.webtorrent.dev',
+        'wss://tracker.btorrent.xyz',
         'wss://tracker.files.fm:7073/announce',
+        'wss://tracker.sloppyta.co:80/announce',
+        'wss://tracker.novage.com.ua:80/announce',
     ];
 
     const result = await page.evaluate(`
         (async () => {
             const trackers = ${JSON.stringify(trackers)};
             const probe = (url) => new Promise((resolve) => {
+                const startTime = Date.now();
                 let settled = false;
                 const done = (status, detail = '') => {
                     if (settled) return;
                     settled = true;
                     try { ws.close(); } catch {}
-                    resolve({ url, status, detail });
+                    const elapsed = Date.now() - startTime;
+                    resolve({ url, status, detail, elapsedMs: elapsed });
                 };
                 let ws;
                 try {
                     ws = new WebSocket(url);
                 } catch (err) {
-                    resolve({ url, status: 'construct_error', detail: String(err && err.message || err) });
+                    resolve({ url, status: 'construct_error', detail: String(err && err.message || err), elapsedMs: 0 });
                     return;
                 }
-                const timer = setTimeout(() => done('timeout'), 5000);
+                const timer = setTimeout(() => done('timeout'), 20000);
                 ws.onopen = () => { clearTimeout(timer); done('open'); };
                 ws.onerror = () => { clearTimeout(timer); done('error'); };
                 ws.onclose = (ev) => { clearTimeout(timer); done('close', String(ev.code)); };

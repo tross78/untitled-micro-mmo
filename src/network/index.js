@@ -39,8 +39,9 @@ import {
     buildTorrentConfig, isUsingTurnFallback
 } from './config.js';
 import { registerWithHints } from './arbiter-signal.js';
-import { 
-    checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState, evictSecurityPeer 
+import { discoverPeers } from './peer-discovery.js';
+import {
+    checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState, evictSecurityPeer
 } from './security.js';
 import { 
     buildSketch, packSignedPresence, unpackPresencePacket, seedFromSnapshot 
@@ -578,6 +579,22 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     } else {
         rooms.torrent = joinTorrent(buildTorrentConfig(config), shard);
     }
+
+    // Peer discovery: try to find known peers before waiting for tracker (Phase 8.8x)
+    (async () => {
+        try {
+            const discoveredPeers = await discoverPeers(shard);
+            if (discoveredPeers.length > 0 && rooms.torrent?.seedIntroducers) {
+                const peerIds = discoveredPeers.map(p => p.id || p.publicKey).filter(Boolean);
+                rooms.torrent.seedIntroducers(peerIds);
+                markNetworkEvent('shard:peer_discovery', { count: discoveredPeers.length, method: discoveredPeers[0]?.source || 'unknown' });
+                netLog(`[Peer Discovery] Seeded ${peerIds.length} peers from cache`, '#0c0');
+            }
+        } catch (err) {
+            console.warn(`[Peer Discovery] Error during peer discovery: ${err.message}`);
+        }
+    })();
+
     markNetworkEvent('shard:room_ready', { shard });
     const buildRegistrationEntry = async (targetShard) => {
         if (!playerKeys) return null;
