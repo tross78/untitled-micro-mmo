@@ -13,6 +13,7 @@ import {
     restoreBansFromPacket,
 } from '../src/network/arbiter-state.js';
 import { NETWORK_ACTIONS } from '../src/network/contracts.js';
+import { startPeerMonitor } from './monitor-peers.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -45,6 +46,7 @@ async function startArbiter() {
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY?.trim();
     const GH_GIST_TOKEN = process.env.GH_GIST_TOKEN;
     const GH_GIST_ID = process.env.GH_GIST_ID;
+    const GH_GIST_USERNAME = process.env.GH_GIST_USERNAME;
     const ARBITER_PUBLIC_URL = process.env.PUBLIC_URL?.trim() || '';
 
     if (!MASTER_SECRET_KEY) {
@@ -69,6 +71,11 @@ async function startArbiter() {
     const lastRollupTime = new Map(); // publicKey -> ts
     const bans = new Set();
     const presenceDirectory = createPresenceDirectory();
+    startPeerMonitor(presenceDirectory, {
+        ghGistToken: GH_GIST_TOKEN,
+        ghGistId: GH_GIST_ID,
+        ghGistUsername: GH_GIST_USERNAME,
+    });
     let trackedPublishBeacon = async () => {};
 
     const ROLLUP_INTERVAL = 10000;
