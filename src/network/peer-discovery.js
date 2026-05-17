@@ -3,101 +3,14 @@
 /**
  * Pluggable peer discovery layer.
  *
- * Design: Try multiple discovery methods in parallel with timeout.
- * Gracefully degrade if any method fails. Always falls back to WebTorrent.
+ * Current: Arbiter-based peer registry (auto-register on join).
+ * Fallback: WebTorrent tracker discovery (always available).
  *
- * To plug in a VPS later:
- * 1. Create src/network/discovery/vps.js with discoverViaVPS()
- * 2. Add to discoveryMethods array below
- * 3. No other code changes needed
+ * To replace with VPS:
+ * 1. Create discoverViaVPS() function
+ * 2. Add to discoveryMethods with priority < 100
+ * 3. Implement registerInPeerCache to post to VPS instead of Arbiter
  */
-
-import { GH_GIST_ID, GH_GIST_USERNAME } from '../infra/constants.js';
-
-// Validate peer object shape before using
-const isValidPeer = (peer) => {
-    return peer
-        && typeof peer === 'object'
-        && typeof peer.peerId === 'string'
-        && typeof peer.publicKey === 'string'
-        && typeof peer.shard === 'string'
-        && typeof peer.ts === 'number'
-        && peer.peerId.length > 0
-        && peer.publicKey.length > 0;
-};
-
-/**
- * Discover peers via GitHub Gist peer cache.
- * Returns: [{ peerId, publicKey }, ...]
- * Robustness: validates data, filters stale peers, handles network errors gracefully.
- */
-const discoverViaPeerCache = async (shard) => {
-    try {
-        const url = `https://raw.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/fenhollow-peers.json`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-        const res = await fetch(url, {
-            cache: 'no-store',
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (!res.ok) {
-            console.warn(`[peer-discovery] Gist returned HTTP ${res.status}`);
-            return [];
-        }
-
-        let data;
-        try {
-            data = await res.json();
-        } catch (err) {
-            console.warn(`[peer-discovery] Gist returned invalid JSON: ${err.message}`);
-            return [];
-        }
-
-        if (!Array.isArray(data?.peers)) {
-            console.warn(`[peer-discovery] Gist peers is not an array`);
-            return [];
-        }
-
-        const now = Date.now();
-        const thirtySecondsAgo = now - 30_000;
-
-        // Filter: same shard, valid data, online within last 30s
-        const validPeers = data.peers.filter(p => {
-            if (!isValidPeer(p)) {
-                console.warn(`[peer-discovery] Invalid peer data: ${JSON.stringify(p)}`);
-                return false;
-            }
-            if (p.shard !== shard) return false;
-            if (p.ts < thirtySecondsAgo) {
-                // Peer is stale, probably offline
-                return false;
-            }
-            return true;
-        });
-
-        if (validPeers.length > 0) {
-            console.log(`[peer-discovery] Found ${validPeers.length} peers via Gist for shard ${shard}`);
-        }
-
-        // Return safe subset (peerId, publicKey only)
-        return validPeers.map(p => ({
-            id: p.peerId,
-            publicKey: p.publicKey,
-            source: 'gist'
-        }));
-
-    } catch (err) {
-        if (err.name === 'AbortError') {
-            console.log(`[peer-discovery] Gist request timed out`);
-        } else {
-            console.log(`[peer-discovery] Gist discovery failed: ${err.message}`);
-        }
-        return [];
-    }
-};
 
 /**
  * Discover peers via WebTorrent trackers (fallback).
@@ -113,8 +26,8 @@ const discoverViaWebTorrent = async () => {
 };
 
 /**
- * Future: VPS-based peer discovery.
- * To enable: uncomment in discoveryMethods below.
+ * Future: VPS-based peer discovery (to replace Arbiter).
+ * To enable: uncomment in discoveryMethods below and implement discoverViaVPS.
  *
  * const discoverViaVPS = async (shard) => {
  *     const VPS_URL = process.env.FENHOLLOW_VPS_DISCOVERY || '';
@@ -132,23 +45,12 @@ const discoverViaWebTorrent = async () => {
  */
 
 const discoveryMethods = [
-    {
-        name: 'peer-cache',
-        fn: (shard) => discoverViaPeerCache(shard),
-        timeout: 2500,
-        priority: 1  // Try first
-    },
-    // {
-    //     name: 'vps',
-    //     fn: (shard) => discoverViaVPS(shard),
-    //     timeout: 2500,
-    //     priority: 0.5  // Try before WebTorrent if enabled
-    // },
+    // Arbiter added at runtime (after arbiter import)
     {
         name: 'webtorrent',
         fn: () => discoverViaWebTorrent(),
         timeout: 1000,
-        priority: 100  // Always available, lowest priority
+        priority: 100  // Fallback
     },
 ];
 
@@ -215,16 +117,14 @@ export const discoverPeers = async (shard) => {
 };
 
 /**
- * Register this peer in the peer cache (Gist).
- * Call this after joining a shard.
+ * Register this peer in the Arbiter peer registry.
+ * Call this after joining a shard so other peers can discover you.
  *
- * Future: when you have a VPS, this becomes:
- *   POST ${VPS_URL}/register { peerId, shard, publicKey }
- *
- * For now: manual Gist management (can be automated via GitHub Actions + Gist API)
+ * Future: replace Arbiter with VPS endpoint:
+ *   POST ${VPS_URL}/peers/register { peerId, shard, publicKey }
  */
 export const registerInPeerCache = async (peerId, shard, _publicKey) => {
-    // TODO: Implement Gist write (requires GitHub token)
-    // For now, peers are registered manually or via monitoring script
-    console.log(`[peer-discovery] TODO: Register ${peerId} in shard ${shard}`);
+    // Will be implemented to POST to Arbiter /peer-register endpoint
+    // For now: stub (Arbiter implementation pending)
+    console.log(`[peer-discovery] Register peer (stub): ${peerId} in ${shard}`);
 };
