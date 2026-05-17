@@ -1,8 +1,10 @@
 import { selfId } from '../network/transport.js';
 import { localPlayer, worldState, players, hasSyncedWithArbiter } from '../state/store.js';
-import { globalRooms, rooms } from '../network/index.js';
+import { globalRooms, rooms, shardKnownPeers } from '../network/index.js';
 import { isDialogueOpen } from '../graphics/renderer.js';
 import { getOutputEl } from '../adapters/dom/shell.js';
+import { countUsableShardPeers } from '../network/heal.js';
+import { getNetworkAuditSnapshot } from '../network/audit-debug.js';
 
 export const buildTestSnapshot = () => ({
     selfId,
@@ -35,7 +37,9 @@ export const buildTestSnapshot = () => ({
     network: {
         globalPeers: globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0,
         shardPeers: rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0,
+        usableShardPeers: countUsableShardPeers(shardKnownPeers, players),
         synced: hasSyncedWithArbiter,
+        audit: getNetworkAuditSnapshot(players, localPlayer.location),
     },
     dialogueOpen: isDialogueOpen(),
     outputText: getOutputEl()?.textContent || '',

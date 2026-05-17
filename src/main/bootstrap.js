@@ -21,6 +21,7 @@ import { validateContent } from '../content/validate.js';
 import * as contentDefs from '../content/index.js';
 import { appRuntime } from '../app/runtime.js';
 import { selfId } from '../network/transport.js';
+import { markNetworkEvent, resetNetworkAudit } from '../network/audit-debug.js';
 
 const HEARTBEAT_MS = 30000;
 
@@ -52,6 +53,8 @@ export const processBeacon = async (packet, source) => {
 
 export const start = async () => {
     try {
+        resetNetworkAudit();
+        markNetworkEvent('bootstrap:start');
         patchIceGatheringTimeout();
         ensureShell();
         const validation = validateContent(contentDefs);
@@ -60,8 +63,11 @@ export const start = async () => {
         }
 
         await loadLocalState(log);
+        markNetworkEvent('bootstrap:local_state_loaded');
         await initIdentity(log);
+        markNetworkEvent('bootstrap:identity_ready');
         await resolveBootstrapArbiterUrl();
+        markNetworkEvent('bootstrap:arbiter_resolved');
         appRuntime.configurePorts({
             ui: {
                 showToast,
@@ -131,7 +137,9 @@ export const start = async () => {
         }
 
         initOfflineDayTick();
+        markNetworkEvent('bootstrap:networking_start');
         await initNetworking();
+        markNetworkEvent('bootstrap:networking_ready');
         startTicker(worldState, setTicker);
         
         if (E2E_MODE) {

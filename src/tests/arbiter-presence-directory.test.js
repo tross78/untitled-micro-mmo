@@ -9,7 +9,7 @@ describe('arbiter presence directory', () => {
             ph: 'ABCDEF12',
             name: '  Alice  ',
             location: 'cellar',
-            shard: 'fenhollow-cellar-v1-1',
+            shard: 'cellar-1',
             level: 3.9,
             ts: now - 1000,
             x: 7,
@@ -20,13 +20,13 @@ describe('arbiter presence directory', () => {
             ph: 'abcdef12',
             name: 'Alice',
             location: 'cellar',
-            shard: 'fenhollow-cellar-v1-1',
+            shard: 'cellar-1',
             level: 3,
             ts: now - 1000,
             x: 7,
             y: 9,
         });
-        expect(directory.list('fenhollow-cellar-v1-1', now)).toEqual([
+        expect(directory.list('cellar-1', now)).toEqual([
             {
                 ph: 'abcdef12',
                 name: 'Alice',
@@ -46,7 +46,7 @@ describe('arbiter presence directory', () => {
             ph: 'bad',
             name: 'Alice',
             location: 'cellar',
-            shard: 'fenhollow-cellar-v1-1',
+            shard: 'cellar-1',
             level: 2,
         })).toBeNull();
         expect(directory.size()).toBe(0);
@@ -60,7 +60,7 @@ describe('arbiter presence directory', () => {
             ph: 'aaaa1111',
             name: 'Fresh',
             location: 'cellar',
-            shard: 'fenhollow-cellar-v1-1',
+            shard: 'cellar-1',
             level: 2,
             ts: now - 1000,
         }, now);
@@ -68,14 +68,14 @@ describe('arbiter presence directory', () => {
             ph: 'bbbb2222',
             name: 'Stale',
             location: 'cellar',
-            shard: 'fenhollow-cellar-v1-1',
+            shard: 'cellar-1',
             level: 2,
             ts: 1,
         }, 1);
 
         directory.prune(now);
 
-        expect(directory.list('fenhollow-cellar-v1-1', now)).toEqual([
+        expect(directory.list('cellar-1', now)).toEqual([
             {
                 ph: 'aaaa1111',
                 name: 'Fresh',

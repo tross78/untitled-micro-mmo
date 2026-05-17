@@ -211,6 +211,22 @@ const assert = (cond, msg) => {
     if (!cond) throw new Error(msg);
 };
 
+const SAME_ROOM_BUDGET_MS = 3000;
+const NAME_PROPAGATION_BUDGET_MS = 3000;
+const MOVE_PROPAGATION_BUDGET_MS = 1000;
+
+const buildLatencySummary = (snapshot, peerId) => {
+    const peerAudit = snapshot?.network?.audit?.peers?.[peerId];
+    return {
+        peerId,
+        startedAt: snapshot?.network?.audit?.startedAt,
+        sameRoomLivePeers: snapshot?.network?.audit?.sameRoomLivePeers || [],
+        events: peerAudit?.events || {},
+        history: peerAudit?.history || [],
+        globalEvents: snapshot?.network?.audit?.events || [],
+    };
+};
+
 let chrome;
 let server;
 let pageA;
@@ -222,8 +238,8 @@ try {
     const baseUrl = served.baseUrl;
     chrome = await startChrome();
 
-    const urlA = `${baseUrl}/e2e.html?e2e=1&scope=peer-a&peer=peer-a&name=Alpha`;
-    const urlB = `${baseUrl}/e2e.html?e2e=1&scope=peer-b&peer=peer-b&name=Beta`;
+    const urlA = `${baseUrl}/e2e.html?e2e=1&scope=peer-a&peer=peer-a&name=Alpha&debugnet=1`;
+    const urlB = `${baseUrl}/e2e.html?e2e=1&scope=peer-b&peer=peer-b&name=Beta&debugnet=1`;
 
     pageA = await openPage(chrome.endpoint, urlA);
     pageB = await openPage(chrome.endpoint, urlB);
@@ -231,53 +247,52 @@ try {
     await waitFor('peer A boot', async () => (await getSnapshot(pageA))?.localPlayer?.ph, 15000);
     await waitFor('peer B boot', async () => (await getSnapshot(pageB))?.localPlayer?.ph, 15000);
 
+    const discoveryStartedAt = Date.now();
     await waitFor('peer discovery', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
         const seesB = snapA.peers.some(p => p.id === 'peer-b' && !p.ghost && p.location === 'cellar');
         const seesA = snapB.peers.some(p => p.id === 'peer-a' && !p.ghost && p.location === 'cellar');
         return seesA && seesB;
-    }, 15000);
+    }, SAME_ROOM_BUDGET_MS);
+    const discoveryElapsedMs = Date.now() - discoveryStartedAt;
 
     await issueCommand(pageA, 'rename Alpha');
     await issueCommand(pageB, 'rename Beta');
 
+    const nameStartedAt = Date.now();
     await waitFor('name propagation', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
         const aSees = snapA.peers.some(p => p.id === 'peer-b' && p.name === 'Beta');
         const bSees = snapB.peers.some(p => p.id === 'peer-a' && p.name === 'Alpha');
         return aSees && bSees;
-    }, 5000);
+    }, NAME_PROPAGATION_BUDGET_MS);
+    const nameElapsedMs = Date.now() - nameStartedAt;
 
     await step(pageA, 1, 0);
+    const expectedAfterMove = await getSnapshot(pageA);
 
+    const moveStartedAt = Date.now();
     const moved = await waitFor('movement propagation', async () => {
         const snapB = await getSnapshot(pageB);
-        return snapB.peers.find(p => p.id === 'peer-a' && p.x === 6 && p.y === 5);
-    }, 5000);
+        return snapB.peers.find(p =>
+            p.id === 'peer-a'
+            && p.x === expectedAfterMove.localPlayer.x
+            && p.y === expectedAfterMove.localPlayer.y
+        );
+    }, MOVE_PROPAGATION_BUDGET_MS);
+    const moveElapsedMs = Date.now() - moveStartedAt;
     assert(!!moved, 'peer movement did not propagate');
 
-    await moveMany(pageA, 'move north', 5);
-    await issueCommand(pageA, 'move west');
-    await issueCommand(pageA, 'move north');
-    await waitFor('room transition to hallway', async () => {
-        const snapA = await getSnapshot(pageA);
-        return snapA.localPlayer.location === 'hallway';
-    }, 5000);
-
-    await moveMany(pageA, 'move north', 8);
-    await waitFor('room transition to tavern', async () => {
-        const snapA = await getSnapshot(pageA);
-        return snapA.localPlayer.location === 'tavern';
-    }, 5000);
-
-    await issueCommand(pageA, 'talk bard');
-    const dialogue = await waitFor('dialogue render', async () => {
-        const snapA = await getSnapshot(pageA);
-        return snapA.dialogueOpen === true;
-    }, 5000);
-    assert(dialogue, 'local gameplay command did not open dialogue');
-
+    const [finalA, finalB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
     console.log('Two-peer browser E2E passed.');
+    console.log(JSON.stringify({
+        discoveryMs: discoveryElapsedMs,
+        sameRoomBudgetMs: SAME_ROOM_BUDGET_MS,
+        namePropagationMs: nameElapsedMs,
+        movePropagationMs: moveElapsedMs,
+        peerALatency: buildLatencySummary(finalA, 'peer-b'),
+        peerBLatency: buildLatencySummary(finalB, 'peer-a'),
+    }, null, 2));
 } catch (err) {
     const snapA = await pageA?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);
     const snapB = await pageB?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);

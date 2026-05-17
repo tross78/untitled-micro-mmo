@@ -30,9 +30,11 @@ import { getArbiterUrl } from '../infra/runtime.js';
 import { NETWORK_ACTIONS } from './contracts.js';
 
 // Modular Networking Components
-import { 
+import {
     ROLLUP_INTERVAL, PROPOSER_GRACE_MS, NETWORK_STALL_MS,
     NETWORK_HEAL_COOLDOWN_MS, NETWORK_EVENT_HEAL_DELAY_MS, NETWORK_HANDSHAKE_TIMEOUT_MS,
+    NETWORK_STARTUP_TURN_FALLBACK_MS,
+    NETWORK_PRESENCE_HEARTBEAT_MS, NETWORK_PEER_STALE_MS, NETWORK_PEER_SWEEP_MS,
     buildTorrentConfig, isUsingTurnFallback 
 } from './config.js';
 import { 
@@ -48,6 +50,7 @@ import {
 import { buildShardActions } from './actions.js';
 import { filterConnectedPeerIds } from './peer-filter.js';
 import { countUsableShardPeers, shouldRunEventHeal } from './heal.js';
+import { markNetworkEvent, markPeerNetworkEvent } from './audit-debug.js';
 
 export { seedFromSnapshot, updateSimulation, initOfflineDayTick, preJoinShard, buildTorrentConfig, isProposer };
 
@@ -63,6 +66,7 @@ export let globalRooms = { torrent: null };
 export const globalKnownPeers = new Set();
 export const shardKnownPeers = new Set();
 export const knownPeers = shardKnownPeers;
+const globalPeerHints = new Map();
 export let lastRollupReceivedAt = 0;
 export let lastValidStatePacket = null;
 export let currentRtcConfig = { iceServers: STUN_SERVERS };
@@ -190,10 +194,13 @@ const isProposer = () => {
 
 export const initNetworking = async (rtcConfig) => {
     currentRtcConfig = rtcConfig || { iceServers: STUN_SERVERS };
+    markNetworkEvent('network:init');
 
     const connectGlobal = async (config) => {
+        markNetworkEvent('global:connect_start');
         if (globalRooms.torrent) globalRooms.torrent.leave();
         globalKnownPeers.clear();
+        globalPeerHints.clear();
         globalRooms.torrent = joinTorrent(buildTorrentConfig(config), 'global');
 
         const [sendRollup] = globalRooms.torrent.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
@@ -201,12 +208,41 @@ export const initNetworking = async (rtcConfig) => {
         const [requestState, getIncomingRequest] = globalRooms.torrent.makeAction('request_state');
         const [sendWorldState, getState] = globalRooms.torrent.makeAction(NETWORK_ACTIONS.WORLD_STATE);
         const [sendStateRequest, getStateRequest] = globalRooms.torrent.makeAction('state_request');
-        const [sendRegisterPresence] = globalRooms.torrent.makeAction('register_presence');
+        const [sendRegisterPresence, getRegisterPresence] = globalRooms.torrent.makeAction('register_presence');
         gameActions.sendRegisterPresence = (data) => sendRegisterPresence(data);
         const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
         const [sendSeekingShard, getSeekingShard] = globalRooms.torrent.makeAction('seeking_shard');
         gameActions.sendSeekingShard = (shard) => sendSeekingShard(shard);
         const [sendPresenceBootstrap, getPresenceBootstrap] = globalRooms.torrent.makeAction('presence_bootstrap');
+        const currentShardName = () => getShardName(localPlayer.location, getCurrentInstance());
+        const buildRegistration = async (shard) => {
+            if (!playerKeys) return null;
+            const entry = await myEntry();
+            if (!entry) return null;
+            return {
+                ...entry,
+                publicKey: await exportKey(playerKeys.publicKey),
+                shard,
+            };
+        };
+        const maybeSendSameShardBootstrap = async (peerId, shard = currentShardName()) => {
+            if (!peerId || peerId === selfId || shard !== currentShardName()) return;
+            const registration = await buildRegistration(shard);
+            if (!registration || bans.has(registration.publicKey)) return;
+            const { publicKey, shard: _shard, ...presenceEntry } = registration;
+            sendPresenceBootstrap({
+                presence: await packSignedPresence({ ...presenceEntry, hlc: sendHLC() }),
+                publicKey,
+            }, [peerId]);
+        };
+        const announceCurrentShardToPeer = async (peerId) => {
+            if (!peerId || peerId === selfId) return;
+            const shard = currentShardName();
+            sendSeekingShard(shard, [peerId]);
+            const registration = await buildRegistration(shard);
+            if (registration) sendRegisterPresence(registration, [peerId]);
+            if (globalPeerHints.get(peerId)?.shard === shard) await maybeSendSameShardBootstrap(peerId, shard);
+        };
 
         getSeekingShard(async (payload, peerId) => {
             const shard = typeof payload === 'string' ? payload : payload?.shard;
@@ -216,25 +252,46 @@ export const initNetworking = async (rtcConfig) => {
                 bus.emit('shard:migrate', { shard });
                 return;
             }
-            const currentShard = getShardName(localPlayer.location, getCurrentInstance());
+            const currentShard = currentShardName();
             if (shard === currentShard) {
-                const entry = await myEntry();
-                if (entry) {
-                    const packed = await packSignedPresence({ ...entry, hlc: sendHLC() });
+                const registration = await buildRegistration(currentShard);
+                if (registration) {
+                    const { publicKey, shard: _shard, ...presenceEntry } = registration;
+                    const packed = await packSignedPresence({ ...presenceEntry, hlc: sendHLC() });
                     sendPresenceBootstrap({
                         presence: packed,
-                        publicKey: await exportKey(playerKeys.publicKey)
+                        publicKey
                     }, [peerId]);
                 }
+            }
+        });
+
+        getRegisterPresence(async (payload, peerId) => {
+            if (!payload || peerId === selfId) return;
+            globalPeerHints.set(peerId, {
+                shard: payload.shard,
+                publicKey: payload.publicKey,
+                ph: payload.ph,
+                ts: Date.now(),
+            });
+            if (payload.publicKey && !bans.has(payload.publicKey)) {
+                const entry = players.get(peerId) || {};
+                const ph = payload.ph || (hashStr(payload.publicKey) >>> 0).toString(16).padStart(8, '0');
+                trackPlayer(peerId, { ...entry, publicKey: payload.publicKey, ph, ts: Date.now() });
+            }
+            if (payload.shard === currentShardName()) {
+                await maybeSendSameShardBootstrap(peerId, payload.shard);
             }
         });
 
         getPresenceBootstrap(async (packet, peerId) => {
             if (peerId === selfId) return;
             if (!packet?.presence || !packet?.publicKey || bans.has(packet.publicKey)) return;
+            markPeerNetworkEvent(peerId, 'global:presence_bootstrap');
             const entry = players.get(peerId) || {};
             const ph = (hashStr(packet.publicKey) >>> 0).toString(16).padStart(8, '0');
             trackPlayer(peerId, { ...entry, publicKey: packet.publicKey, ph, ts: Date.now() });
+            markPeerNetworkEvent(peerId, 'peer:identity_known');
             if (gameActions.processPresence) {
                 const buf = (packet.presence instanceof Uint8Array) ? packet.presence : packPresence(packet.presence);
                 await gameActions.processPresence(buf, peerId);
@@ -264,13 +321,17 @@ export const initNetworking = async (rtcConfig) => {
 
         getIncomingRequest((_, peerId) => { if (lastValidStatePacket) sendWorldState(lastValidStatePacket, [peerId]); });
 
-        globalRooms.torrent.onPeerJoin(peerId => {
+        globalRooms.torrent.onPeerJoin(async peerId => {
             globalKnownPeers.add(peerId);
+            markPeerNetworkEvent(peerId, 'global:peer_join');
             requestState(true, [peerId]);
             if (lastValidStatePacket) setTimeout(() => sendWorldState(lastValidStatePacket, [peerId]), 500);
+            await announceCurrentShardToPeer(peerId);
         });
         globalRooms.torrent.onPeerLeave(peerId => {
             globalKnownPeers.delete(peerId);
+            globalPeerHints.delete(peerId);
+            markPeerNetworkEvent(peerId, 'global:peer_leave');
         });
 
         gameActions.requestState = requestState;
@@ -332,10 +393,12 @@ export const initNetworking = async (rtcConfig) => {
         const globalPeerCount = globalKnownPeers.size;
         const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
         if (!isSilenced && globalPeerCount >= 5 && usableShardPeers > 0) {
+            markNetworkEvent('global:silenced', { globalPeerCount, usableShardPeers });
             globalRooms.torrent.leave();
             globalKnownPeers.clear();
             isSilenced = true;
         } else if (isSilenced && usableShardPeers === 0) {
+            markNetworkEvent('global:resume_discovery');
             await connectGlobal(currentRtcConfig);
             isSilenced = false;
         }
@@ -348,6 +411,14 @@ export const initNetworking = async (rtcConfig) => {
     }, 10000);
 
     await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
+    setTimeout(async () => {
+        const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
+        if (usableShardPeers > 0 || globalKnownPeers.size > 0 || isUsingTurnFallback(currentRtcConfig)) return;
+        currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+        markNetworkEvent('heal:start', { force: true, reason: 'startup_turn_fallback', globalPeers: 0, usableShardPeers: 0 });
+        await connectGlobal(currentRtcConfig);
+        await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
+    }, NETWORK_STARTUP_TURN_FALLBACK_MS);
 
     // 8.95d: exponential backoff for reconnect attempts (1s → 2s → 4s → 30s cap)
     let _healAttempts = 0;
@@ -368,6 +439,7 @@ export const initNetworking = async (rtcConfig) => {
             networkHealInFlight = true;
             lastNetworkHealAt = now;
             _healAttempts++;
+            markNetworkEvent('heal:start', { force, usableShardPeers, globalPeers, attempt: _healAttempts });
         try {
             if (globalPeers > 0) {
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
@@ -429,6 +501,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     setCurrentInstance(instanceId);
 
     const shard = getShardName(location, instanceId);
+    markNetworkEvent('shard:join_start', { shard, location, instanceId });
     console.log(`[P2P] Joining Shard Room: ${shard}`);
     const config = rtcConfig || currentRtcConfig;
 
@@ -445,18 +518,30 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     const preJoined = getPreJoined(shard);
     if (preJoined) {
         rooms.torrent = preJoined.room;
+        markNetworkEvent('shard:prejoin_promoted', { shard });
         netLog(`[Pre-join] Promoted pre-joined room for ${shard}`);
     } else {
         rooms.torrent = joinTorrent(buildTorrentConfig(config), shard);
     }
+    markNetworkEvent('shard:room_ready', { shard });
+    const buildRegistrationEntry = async (targetShard) => {
+        if (!playerKeys) return null;
+        const entry = await myEntry();
+        if (!entry) return null;
+        return {
+            ...entry,
+            publicKey: await exportKey(playerKeys.publicKey),
+            shard: targetShard,
+        };
+    };
 
     const registerWithArbiter = async (attempt = 0) => {
         if (!playerKeys) { if (attempt < 10) setTimeout(() => registerWithArbiter(attempt + 1), 500); return; }
-        const entry = await myEntry();
-        if (!entry) return;
-        if (gameActions.sendRegisterPresence && globalRooms.torrent) gameActions.sendRegisterPresence({ ...entry, shard });
+        const registration = await buildRegistrationEntry(shard);
+        if (!registration) return;
+        if (gameActions.sendRegisterPresence && globalRooms.torrent) gameActions.sendRegisterPresence(registration);
         if (arbiterUrl) {
-            fetch(`${arbiterUrl}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...entry, shard }), signal: AbortSignal.timeout(3000) }).catch(() => {});
+            fetch(`${arbiterUrl}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(registration), signal: AbortSignal.timeout(3000) }).catch(() => {});
         }
     };
     setTimeout(registerWithArbiter, 1000);
@@ -507,13 +592,31 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         const hpv = new HyParView();
         const _pendingPresence = new Map();
+        const evictShardPeer = (peerId, { dropFromShard = false, emitLeave = false } = {}) => {
+            if (!peerId) return;
+            if (dropFromShard) shardKnownPeers.delete(peerId);
+            if (emitLeave) bus.emit('peer:leave', { peerId });
+            peerJoinTimes.delete(peerId);
+            evictPlayer(peerId);
+            evictShadowPlayer(peerId);
+            evictSecurityPeer(peerId);
+            feedHeads.delete(peerId);
+            pendingCommits.delete(peerId);
+            _pendingPresence.delete(peerId);
+            _peerLastPresenceAt.delete(peerId);
+            _peerMsgCounts.delete(peerId);
+            const c = activeChannels.get(peerId);
+            if (c) { clearTimeout(c.timeoutId); activeChannels.delete(peerId); }
+        };
 
         // HyParView SHUFFLE (item 2) — periodic passive-view exchange keeps the
         // overlay self-healing under churn without manual re-discovery.
         getIdentity(({ publicKey }, peerId) => {
             if (!publicKey || peerId === selfId) return;
+            shardKnownPeers.add(peerId);
             const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
             trackPlayer(peerId, { publicKey, ph, ts: Date.now() });
+            markPeerNetworkEvent(peerId, 'peer:identity_known');
             const pending = _pendingPresence.get(peerId);
             if (pending) { _pendingPresence.delete(peerId); processPresenceSingle(pending, peerId); }
         });
@@ -551,14 +654,24 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const now = Date.now();
             for (const [peerId, lastSeen] of _peerLastPresenceAt) {
                 if (now - lastSeen > GHOST_TTL_MS) {
-                    _peerLastPresenceAt.delete(peerId);
-                    _peerMsgCounts.delete(peerId);
-                    evictPlayer(peerId);
-                    evictShadowPlayer(peerId);
+                    evictShardPeer(peerId);
                     netLog(`Ghost-peer evicted: ${peerId}`, '#a00');
                 }
             }
         }, 60_000);
+        const stalePeerTimer = setInterval(() => {
+            const now = Date.now();
+            let evictedAny = false;
+            for (const [peerId, lastSeen] of _peerLastPresenceAt) {
+                if (now - lastSeen <= NETWORK_PEER_STALE_MS) continue;
+                markPeerNetworkEvent(peerId, 'peer:stale_timeout', { sinceMs: now - lastSeen });
+                evictShardPeer(peerId, { dropFromShard: true, emitLeave: true });
+                evictedAny = true;
+            }
+            if (evictedAny && countUsableShardPeers(shardKnownPeers, players) === 0) {
+                scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
+            }
+        }, NETWORK_PEER_SWEEP_MS);
 
         getPresenceDelta(async ({ joined, left }, peerId) => {
             (left || []).forEach(id => { if (id !== selfId) evictPlayer(id); });
@@ -571,6 +684,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const processPresenceSingle = async (buf, peerId) => {
             if (!buf || peerId === selfId) return;
             if (!checkThrottle(peerId)) return;
+            shardKnownPeers.add(peerId);
             _peerLastPresenceAt.set(peerId, Date.now());
             const entry = players.get(peerId);
             if (!entry?.publicKey) { _pendingPresence.set(peerId, buf); return; }
@@ -596,6 +710,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             trackPlayer(peerId, { ...entry, ...unpacked, ts: Date.now(), rawPresence: buf });
             trackShadowPlayer(peerId, unpacked);
             lastShardPresenceAt = Date.now();
+            markPeerNetworkEvent(peerId, 'peer:presence_verified', { location: unpacked.location, x: unpacked.x, y: unpacked.y });
             players.delete('ghost:' + unpacked.ph);
         };
 
@@ -614,11 +729,18 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const entry = await myEntry();
             if (entry) {
                 const pubKey = await exportKey(playerKeys.publicKey);
+                markNetworkEvent('shard:broadcast_initial_presence');
                 sendIdentity({ publicKey: pubKey });
                 plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
             }
         };
         broadcastWhenReady();
+        const heartbeatTimer = setInterval(async () => {
+            if (!playerKeys || shardKnownPeers.size === 0) return;
+            const entry = await myEntry();
+            if (!entry) return;
+            plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
+        }, NETWORK_PRESENCE_HEARTBEAT_MS);
 
         getAnnounce(async ({ msgId }, peerId) => {
             if (hpv.hasSeen(msgId)) return;
@@ -785,14 +907,17 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         r.onPeerJoin(async peerId => {
             shardKnownPeers.add(peerId);
+            markPeerNetworkEvent(peerId, 'shard:peer_join');
             if (!peerJoinTimes.has(peerId)) peerJoinTimes.set(peerId, Date.now());
             hpv.onJoin(peerId);
             try { sendSketch(buildSketch().serialize(), [peerId]); } catch (_e) { /* ignore */ }
             const handshake = async () => {
                 if (!shardKnownPeers.has(peerId) || !playerKeys) return;
                 try {
+                    markPeerNetworkEvent(peerId, 'peer:identity_sent');
                     sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
                     const e = await myEntry(); if (e) sendPresenceSingle(await packSignedPresence({ ...e, hlc: sendHLC() }), [peerId]);
+                    markPeerNetworkEvent(peerId, 'peer:presence_sent');
                 } catch (_e2) { /* ignore */ }
                 if (!players.get(peerId)?.publicKey) setTimeout(handshake, 3000);
             };
@@ -800,16 +925,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             setTimeout(() => {
                 if (!shardKnownPeers.has(peerId)) return;
                 if (players.get(peerId)?.publicKey) return;
+                markPeerNetworkEvent(peerId, 'peer:handshake_timeout');
                 scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
             }, NETWORK_HANDSHAKE_TIMEOUT_MS);
         });
 
         r.onPeerLeave(peerId => {
-            bus.emit('peer:leave', { peerId }); shardKnownPeers.delete(peerId); hpv.onLeave(peerId);
-            peerJoinTimes.delete(peerId);
-            evictPlayer(peerId); evictShadowPlayer(peerId); evictSecurityPeer(peerId);
-            feedHeads.delete(peerId); pendingCommits.delete(peerId); _pendingPresence.delete(peerId);
-            const c = activeChannels.get(peerId); if (c) { clearTimeout(c.timeoutId); activeChannels.delete(peerId); }
+            markPeerNetworkEvent(peerId, 'shard:peer_leave');
+            shardKnownPeers.delete(peerId);
+            hpv.onLeave(peerId);
+            evictShardPeer(peerId, { emitLeave: true });
             if (countUsableShardPeers(shardKnownPeers, players) === 0) {
                 scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
             }
@@ -827,6 +952,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 clearInterval(shuffleTimer);
                 clearInterval(routerTimer);
                 clearInterval(ghostTimer);
+                clearInterval(stalePeerTimer);
+                clearInterval(heartbeatTimer);
                 if (scheduledHealTimer) { clearTimeout(scheduledHealTimer); scheduledHealTimer = null; }
             },
         };

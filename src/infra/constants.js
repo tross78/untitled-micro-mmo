@@ -27,7 +27,8 @@ export const APP_ID = GAME_NAME + '-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/
 // Keep this list conservative and expand it only after `node scripts/probe-trackers.mjs`
 // confirms the endpoint can open from a real browser context.
 export const TORRENT_TRACKERS = [
-    'wss://tracker.openwebtorrent.com'
+    'wss://tracker.openwebtorrent.com',
+    'wss://tracker.webtorrent.dev',
 ];
 
 // Optimized STUN list for faster NAT traversal and to avoid Firefox "5+ servers" warning.

@@ -41,4 +41,5 @@ import('./main.js').then(async () => {
             return buildTestSnapshot();
         }
     };
+    window.__HEARTHWICK_TEST__ = window.__FENHOLLOW_TEST__;
 });

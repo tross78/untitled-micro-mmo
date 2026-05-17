@@ -1,6 +1,6 @@
-import { GAME_NAME, world } from '../content/data.js';
+import { world } from '../content/data.js';
 
-export const getShardName = (loc, inst) => `${GAME_NAME}-${loc}-v1-${inst}`;
+export const getShardName = (loc, inst) => `${loc}-${inst}`;
 
 export function validateMove(currentLocation, direction) {
     return world[currentLocation]?.exits[direction] || null;

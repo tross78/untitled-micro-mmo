@@ -33,10 +33,7 @@ const serveDist = async () => {
 
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const addr = server.address();
-    return {
-        server,
-        baseUrl: `http://127.0.0.1:${addr.port}`,
-    };
+    return { server, baseUrl: `http://127.0.0.1:${addr.port}` };
 };
 
 const waitFor = async (label, fn, timeoutMs = 30000, intervalMs = 250) => {
@@ -55,7 +52,7 @@ const waitFor = async (label, fn, timeoutMs = 30000, intervalMs = 250) => {
 };
 
 const startChrome = async () => {
-    const userDataDir = await mkdtemp(join(tmpdir(), 'hearthwick-live-e2e-'));
+    const userDataDir = await mkdtemp(join(tmpdir(), 'hearthwick-live-reconnect-'));
     const child = spawn(chromePath, [
         '--headless',
         '--disable-gpu',
@@ -64,9 +61,7 @@ const startChrome = async () => {
         '--remote-debugging-port=0',
         `--user-data-dir=${userDataDir}`,
         'about:blank',
-    ], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
     let buffer = '';
     const onData = (chunk) => { buffer += chunk.toString(); };
@@ -88,8 +83,9 @@ const startChrome = async () => {
 };
 
 class CdpClient {
-    constructor(wsUrl) {
+    constructor(wsUrl, closeUrl) {
         this.wsUrl = wsUrl;
+        this.closeUrl = closeUrl;
         this.ws = null;
         this.nextId = 1;
         this.pending = new Map();
@@ -146,6 +142,9 @@ class CdpClient {
     }
 
     async close() {
+        if (this.closeUrl) {
+            try { await fetch(this.closeUrl); } catch {}
+        }
         try { this.ws?.close(); } catch {}
     }
 }
@@ -154,7 +153,7 @@ const openPage = async (endpoint, url) => {
     const res = await fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' });
     if (!res.ok) throw new Error(`Failed to create page: ${await res.text()}`);
     const target = await res.json();
-    const client = new CdpClient(target.webSocketDebuggerUrl);
+    const client = new CdpClient(target.webSocketDebuggerUrl, `${endpoint}/json/close/${target.id}`);
     await client.connect();
     await client.send('Page.enable');
     await client.send('Log.enable');
@@ -173,8 +172,11 @@ const openPage = async (endpoint, url) => {
 const getSnapshot = (client) => client.evaluate('window.__HEARTHWICK_TEST__.getSnapshot()');
 const issueCommand = (client, cmd) => client.evaluate(`window.__HEARTHWICK_TEST__.issueCommand(${JSON.stringify(cmd)})`);
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
-const SAME_ROOM_BUDGET_MS = 3000;
-const NAME_PROPAGATION_BUDGET_MS = 3000;
+
+const DISCOVERY_TIMEOUT_MS = 45000;
+const LEAVE_TIMEOUT_MS = 45000;
+const REDISCOVERY_TIMEOUT_MS = 45000;
+
 const buildLatencySummary = (snapshot, peerId) => {
     const peerAudit = snapshot?.network?.audit?.peers?.[peerId];
     return {
@@ -186,6 +188,7 @@ const buildLatencySummary = (snapshot, peerId) => {
         globalEvents: snapshot?.network?.audit?.events || [],
     };
 };
+
 const waitForProcessExit = async (child, timeoutMs = 5000) => {
     if (!child || child.exitCode != null) return;
     await Promise.race([
@@ -205,8 +208,8 @@ try {
     const baseUrl = served.baseUrl;
     chrome = await startChrome();
 
-    const urlA = `${baseUrl}/e2e.html?e2e=1&transport=real&scope=live-peer-a&name=Alpha&debugnet=1`;
-    const urlB = `${baseUrl}/e2e.html?e2e=1&transport=real&scope=live-peer-b&name=Beta&debugnet=1`;
+    const urlA = `${baseUrl}/e2e.html?e2e=1&transport=real&scope=reconnect-peer-a&name=Alpha&debugnet=1`;
+    const urlB = `${baseUrl}/e2e.html?e2e=1&transport=real&scope=reconnect-peer-b&name=Beta&debugnet=1`;
 
     pageA = await openPage(chrome.endpoint, urlA);
     pageB = await openPage(chrome.endpoint, urlB);
@@ -219,52 +222,78 @@ try {
     assert(initialA.selfId !== initialB.selfId, 'real transport peers reused the same peer id');
 
     const discoveryStartedAt = Date.now();
-    const discovery = await waitFor('real transport discovery', async () => {
+    const initialDiscovery = await waitFor('initial real transport discovery', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
-        const seesB = snapA.network.globalPeers > 0 || snapA.network.shardPeers > 0 || snapA.peers.some(p => !p.ghost);
-        const seesA = snapB.network.globalPeers > 0 || snapB.network.shardPeers > 0 || snapB.peers.some(p => !p.ghost);
-        return seesA && seesB ? { snapA, snapB } : null;
-    }, 45000, 500);
-    const discoveryElapsedMs = Date.now() - discoveryStartedAt;
+        const aSeesB = snapA.peers.some(p => p.id === initialB.selfId && !p.ghost);
+        const bSeesA = snapB.peers.some(p => p.id === initialA.selfId && !p.ghost);
+        return aSeesB && bSeesA ? { snapA, snapB } : null;
+    }, DISCOVERY_TIMEOUT_MS, 500);
+    const initialDiscoveryMs = Date.now() - discoveryStartedAt;
 
     await issueCommand(pageA, 'rename Alpha');
     await issueCommand(pageB, 'rename Beta');
 
-    const nameStartedAt = Date.now();
-    await waitFor('real transport name propagation', async () => {
+    await waitFor('initial name propagation', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
-        const aSees = snapA.peers.some(p => p.name === 'Beta');
-        const bSees = snapB.peers.some(p => p.name === 'Alpha');
-        return aSees && bSees;
+        const aSeesB = snapA.peers.some(p => p.id === initialB.selfId && p.name === 'Beta');
+        const bSeesA = snapB.peers.some(p => p.id === initialA.selfId && p.name === 'Alpha');
+        return aSeesB && bSeesA;
     }, 30000, 500);
-    const nameElapsedMs = Date.now() - nameStartedAt;
 
-    console.log('Two-peer live transport E2E passed.');
+    await pageB.close();
+    pageB = null;
+
+    const leaveStartedAt = Date.now();
+    const leaveSnapshot = await waitFor('peer B disappearance', async () => {
+        const snapA = await getSnapshot(pageA);
+        const stillSeesB = snapA.peers.some(p => p.id === initialB.selfId && !p.ghost);
+        return stillSeesB ? null : snapA;
+    }, LEAVE_TIMEOUT_MS, 500);
+    const leaveMs = Date.now() - leaveStartedAt;
+
+    const reconnectPage = await openPage(chrome.endpoint, urlB);
+    pageB = reconnectPage;
+    await waitFor('peer B reboot', async () => (await getSnapshot(pageB))?.localPlayer?.ph);
+    const restartedB = await getSnapshot(pageB);
+    assert(restartedB.selfId !== initialA.selfId, 'restarted peer B reused peer A id');
+
+    const rediscoveryStartedAt = Date.now();
+    const rediscovery = await waitFor('peer B rediscovery', async () => {
+        const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
+        const aSeesNewB = snapA.peers.some(p => p.id === restartedB.selfId && !p.ghost);
+        const bSeesA = snapB.peers.some(p => p.id === initialA.selfId && !p.ghost);
+        return aSeesNewB && bSeesA ? { snapA, snapB } : null;
+    }, REDISCOVERY_TIMEOUT_MS, 500);
+    const rediscoveryMs = Date.now() - rediscoveryStartedAt;
+
+    console.log('Two-peer live reconnect E2E passed.');
     console.log(JSON.stringify({
-        discoveryMs: discoveryElapsedMs,
-        sameRoomBudgetMs: SAME_ROOM_BUDGET_MS,
-        withinSameRoomBudget: discoveryElapsedMs <= SAME_ROOM_BUDGET_MS,
-        namePropagationMs: nameElapsedMs,
-        withinNameBudget: nameElapsedMs <= NAME_PROPAGATION_BUDGET_MS,
-        peerA: discovery.snapA.network,
-        peerB: discovery.snapB.network,
-        ids: [initialA.selfId, initialB.selfId],
-        peerALatency: buildLatencySummary(discovery.snapA, initialB.selfId),
-        peerBLatency: buildLatencySummary(discovery.snapB, initialA.selfId),
+        initialDiscoveryMs,
+        leaveMs,
+        rediscoveryMs,
+        peerAInitial: buildLatencySummary(initialDiscovery.snapA, initialB.selfId),
+        peerALeaveState: leaveSnapshot.network,
+        peerARediscovery: buildLatencySummary(rediscovery.snapA, restartedB.selfId),
+        peerBRediscovery: buildLatencySummary(rediscovery.snapB, initialA.selfId),
+        ids: {
+            peerA: initialA.selfId,
+            peerBInitial: initialB.selfId,
+            peerBRestarted: restartedB.selfId,
+        },
     }, null, 2));
 } catch (err) {
     const snapA = await pageA?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);
     const snapB = await pageB?.evaluate('window.__HEARTHWICK_TEST__ ? window.__HEARTHWICK_TEST__.getSnapshot() : null').catch(() => null);
-    console.error('LIVE TRANSPORT FAILURE');
+    console.error('LIVE RECONNECT FAILURE');
     console.error(JSON.stringify({
         error: err.message,
         peerA: {
             snapshot: snapA,
-            console: pageA?.consoleLogs?.slice(-80) || [],
+            console: pageA?.consoleLogs?.slice(-120) || [],
         },
         peerB: {
             snapshot: snapB,
-            console: pageB?.consoleLogs?.slice(-80) || [],
+            console: pageB?.consoleLogs?.slice(-120) || [],
         },
     }, null, 2));
     throw err;

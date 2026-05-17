@@ -88,6 +88,10 @@ export const NETWORK_STALL_MS = 60000;
 export const NETWORK_HEAL_COOLDOWN_MS = 30000;
 export const NETWORK_EVENT_HEAL_DELAY_MS = 1500;
 export const NETWORK_HANDSHAKE_TIMEOUT_MS = 5000;
+export const NETWORK_STARTUP_TURN_FALLBACK_MS = 3000;
+export const NETWORK_PRESENCE_HEARTBEAT_MS = 5000;
+export const NETWORK_PEER_STALE_MS = 20000;
+export const NETWORK_PEER_SWEEP_MS = 5000;
 
 export const buildTorrentConfig = (rtcConfig) => {
     const base = rtcConfig || { iceServers: STUN_SERVERS };

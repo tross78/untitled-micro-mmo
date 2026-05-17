@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { TORRENT_TRACKERS } from '../src/constants.js';
+import { TORRENT_TRACKERS } from '../src/infra/constants.js';
 
 const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
@@ -129,6 +129,7 @@ try {
     const trackers = [
         ...TORRENT_TRACKERS,
         'wss://tracker.webtorrent.dev',
+        'wss://tracker.files.fm:7073/announce',
     ];
 
     const result = await page.evaluate(`

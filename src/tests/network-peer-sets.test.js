@@ -100,4 +100,30 @@ describe('network peer set scoping', () => {
         expect(globalKnownPeers.has('global-peer')).toBe(false);
         expect(shardKnownPeers.has('shard-peer')).toBe(false);
     });
+
+    test('late global peers get an immediate shard hint and registration payload', async () => {
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+
+        const globalRoom = joinRoom.mock.results.find((r) => r.value.name === 'global').value;
+        const sendSeekingShard = globalRoom._sends.get('seeking_shard');
+        const sendRegisterPresence = globalRoom._sends.get('register_presence');
+
+        await globalRoom.emitPeerJoin('late-peer');
+
+        expect(sendSeekingShard).toHaveBeenCalledWith('cellar-1', ['late-peer']);
+        expect(sendRegisterPresence).toHaveBeenCalledWith(
+            expect.objectContaining({
+                shard: 'cellar-1',
+                publicKey: 'self-public-key',
+                ph: 'abcd1234',
+            }),
+            ['late-peer']
+        );
+    });
 });

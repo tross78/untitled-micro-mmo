@@ -122,7 +122,7 @@ describe('networking bugfix regressions', () => {
 
         localPlayer.ph = 'abcd1234';
         localStorage.setItem('fenhollow_introducers_v1', JSON.stringify({
-            'fenhollow-cellar-v1-1': { peers: ['peer-x', 'peer-y'], ts: Date.now() },
+            'cellar-1': { peers: ['peer-x', 'peer-y'], ts: Date.now() },
         }));
 
         await initNetworking();
