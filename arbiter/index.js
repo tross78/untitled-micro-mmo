@@ -38,7 +38,7 @@ async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     await import('werift');
     const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
-    const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } = await import('../src/infra/constants.js');
+    const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS, GH_GIST_USERNAME: DEFAULT_GH_GIST_USERNAME } = await import('../src/infra/constants.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
     const dotenv = await import('dotenv');
 
@@ -46,7 +46,7 @@ async function startArbiter() {
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY?.trim();
     const GH_GIST_TOKEN = process.env.GH_GIST_TOKEN;
     const GH_GIST_ID = process.env.GH_GIST_ID;
-    const GH_GIST_USERNAME = process.env.GH_GIST_USERNAME;
+    const GH_GIST_USERNAME = process.env.GH_GIST_USERNAME || DEFAULT_GH_GIST_USERNAME;
     const ARBITER_PUBLIC_URL = process.env.PUBLIC_URL?.trim() || '';
 
     if (!MASTER_SECRET_KEY) {

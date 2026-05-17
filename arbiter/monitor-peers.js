@@ -66,11 +66,13 @@ export const startPeerMonitor = (presenceDirectory, config = {}) => {
 
             if (!res.ok) {
                 const errorText = await res.text();
-                console.warn(`[Peer Monitor] Gist update failed: HTTP ${res.status} - ${errorText.slice(0, 100)}`);
+                console.warn(`[Peer Monitor] Gist update failed: HTTP ${res.status} - ${errorText.slice(0, 150)}`);
                 return false;
             }
 
-            console.log(`[Peer Monitor] Published ${peers.length} peers to Gist`);
+            if (peers.length > 0) {
+                console.log(`[Peer Monitor] Published ${peers.length} peers to Gist`);
+            }
             return true;
         } catch (err) {
             console.warn(`[Peer Monitor] Gist publish error: ${err.message}`);

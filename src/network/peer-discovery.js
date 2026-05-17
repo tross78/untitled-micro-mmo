@@ -21,7 +21,7 @@ import { GH_GIST_ID, GH_GIST_USERNAME } from '../infra/constants.js';
  */
 const discoverViaGist = async (shard) => {
     try {
-        const url = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/fenhollow-peers.json`;
+        const url = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/fenhollow-peers.json?v=${Date.now()}`;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
 
@@ -45,7 +45,7 @@ const discoverViaGist = async (shard) => {
         }
 
         if (!Array.isArray(data?.peers)) {
-            console.log(`[peer-discovery] Gist peers is not an array`);
+            console.log(`[peer-discovery] Gist peers is not an array (got: ${JSON.stringify(data).slice(0, 100)})`);
             return [];
         }
 
