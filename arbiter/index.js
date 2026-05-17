@@ -46,7 +46,7 @@ process.on('uncaughtException', (err) => {
     }
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, _promise) => {
     const msg = reason?.message || String(reason);
     if (msg.includes('ECONNREFUSED') || msg.includes('WebSocket') || msg.includes('connect')) {
         console.warn('[Arbiter] Network rejection (non-fatal):', msg);
