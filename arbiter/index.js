@@ -91,10 +91,6 @@ async function startArbiter() {
         process.exit(1);
     }
 
-    room.on('error', (err) => {
-        console.warn('[Arbiter] Room error (non-fatal):', err.message);
-    });
-
     const [sendState] = room.makeAction(NETWORK_ACTIONS.WORLD_STATE);
     const [,, getRollup] = room.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
     const [,, getFraud] = room.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
