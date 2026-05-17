@@ -529,6 +529,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         rooms.torrent.leave();
     }
     shardKnownPeers.clear();
+    _peerLastPresenceAt.clear();
     clearShardState(location);
     clearSecurityState();
     pendingCommits.clear();
@@ -720,7 +721,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 evictedAny = true;
             }
             if (evictedAny && countUsableShardPeers(shardKnownPeers, players) === 0) {
-                // urgent bypasses the 30s cooldown — we just lost our last peer.
                 healNetworking({ urgent: true }).catch(() => {});
             }
         }, NETWORK_PEER_SWEEP_MS);
