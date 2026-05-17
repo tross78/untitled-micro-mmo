@@ -12,6 +12,59 @@
  * 3. Implement registerInPeerCache to post to VPS instead of Arbiter
  */
 
+import { getArbiterUrl } from '../infra/runtime.js';
+
+/**
+ * Discover peers via Arbiter peer registry.
+ * Returns: [{ id, ph }, ...]
+ */
+const discoverViaArbiter = async (shard) => {
+    const arbiterUrl = getArbiterUrl();
+    if (!arbiterUrl) {
+        console.log(`[peer-discovery] No Arbiter URL configured`);
+        return [];
+    }
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+        const res = await fetch(`${arbiterUrl}/peers?shard=${encodeURIComponent(shard)}`, {
+            cache: 'no-store',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+            console.log(`[peer-discovery] Arbiter returned HTTP ${res.status}`);
+            return [];
+        }
+
+        const data = await res.json();
+        if (!Array.isArray(data)) {
+            console.warn(`[peer-discovery] Arbiter /peers returned non-array`);
+            return [];
+        }
+
+        const peers = data
+            .filter(p => p?.id && p?.ph)
+            .map(p => ({ id: p.id, ph: p.ph, source: 'arbiter' }));
+
+        if (peers.length > 0) {
+            console.log(`[peer-discovery] Found ${peers.length} peers via Arbiter for shard ${shard}`);
+        }
+
+        return peers;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            console.log(`[peer-discovery] Arbiter request timed out`);
+        } else {
+            console.log(`[peer-discovery] Arbiter discovery failed: ${err.message}`);
+        }
+        return [];
+    }
+};
+
 /**
  * Discover peers via WebTorrent trackers (fallback).
  * This is already handled by Trystero's joinRoom(), but we expose it here
@@ -45,7 +98,12 @@ const discoverViaWebTorrent = async () => {
  */
 
 const discoveryMethods = [
-    // Arbiter added at runtime (after arbiter import)
+    {
+        name: 'arbiter',
+        fn: (shard) => discoverViaArbiter(shard),
+        timeout: 2000,
+        priority: 1  // Try first
+    },
     {
         name: 'webtorrent',
         fn: () => discoverViaWebTorrent(),
@@ -120,11 +178,47 @@ export const discoverPeers = async (shard) => {
  * Register this peer in the Arbiter peer registry.
  * Call this after joining a shard so other peers can discover you.
  *
- * Future: replace Arbiter with VPS endpoint:
- *   POST ${VPS_URL}/peers/register { peerId, shard, publicKey }
+ * Future: replace Arbiter with VPS endpoint by changing the URL.
  */
 export const registerInPeerCache = async (peerId, shard, _publicKey) => {
-    // Will be implemented to POST to Arbiter /peer-register endpoint
-    // For now: stub (Arbiter implementation pending)
-    console.log(`[peer-discovery] Register peer (stub): ${peerId} in ${shard}`);
+    const arbiterUrl = getArbiterUrl();
+    if (!arbiterUrl) {
+        console.log(`[peer-discovery] No Arbiter URL, skipping peer registration`);
+        return;
+    }
+
+    try {
+        // Generate ph (8-char hex hash) from peerId for presence tracking
+        const hash = peerId
+            .split('')
+            .reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0);
+        const ph = (Math.abs(hash) >>> 0).toString(16).padStart(8, '0').slice(0, 8);
+
+        const payload = {
+            id: peerId,
+            ph,
+            shard,
+            name: 'Player',
+            location: shard,  // Presence cache requires this
+            level: 1,
+            ts: Date.now(),
+            x: 5,
+            y: 5
+        };
+
+        const res = await fetch(`${arbiterUrl}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            console.log(`[peer-discovery] Arbiter registration failed: HTTP ${res.status}`);
+            return;
+        }
+
+        console.log(`[peer-discovery] ✓ Registered with Arbiter for shard ${shard}`);
+    } catch (err) {
+        console.log(`[peer-discovery] Arbiter registration error: ${err.message}`);
+    }
 };
