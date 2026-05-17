@@ -3,7 +3,7 @@
 import { Component } from '../domain/components.js';
 import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta, usesCompiledShape } from '../graphics/graphics.js';
 import { SCENERY_RENDER_STYLE, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
-import { getScatteredContent, hashStr } from '../rules/index.js';
+import { hashStr } from '../rules/index.js';
 
 /**
  * MapRenderSystem handles procedural tile generation and background caching.

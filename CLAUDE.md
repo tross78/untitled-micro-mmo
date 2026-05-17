@@ -31,7 +31,7 @@ This file is intentionally short. Use it for current implementation constraints.
 * **Directional movement UI:** only cardinal directions plus `up` / `down` may be surfaced as direct movement actions unless the command parser is explicitly extended to support more.
 * **Item referential integrity:** every item id mentioned in loot, shops, recipes, scarcity, quests, or interactions must exist in `ITEMS`.
 * **Room integrity:** descriptions, exits, exit tiles, scenery footprint, enemy selection, and static NPC placement must agree. If one changes, verify the others in the same pass.
-* **Buff integrity:** gameplay math should use `statusEffects` for active temporary effects. Legacy `buffs` fields exist only for compatibility paths that have not yet been removed.
+* **Temporary effects:** gameplay math uses `statusEffects` for all active temporary effects.
 * **Surfaced world-state must matter:** if `scarcity`, `surplus`, or `threat` are shown to the player, they must have a mechanical effect in the same build.
 
 ## Verification

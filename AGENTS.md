@@ -219,6 +219,17 @@ Slices: `8.78a` resource nodes (log/ore in forest+cave+mountain) · `P0` depleti
 
 Full spec: [docs/phases/8.78-game-readiness.md](docs/phases/8.78-game-readiness.md)
 
+### Phase 8.76 P5 — Integrity Audit — COMPLETE (2026-05-17)
+
+Comprehensive codebase audit verifying all 26 rooms, quest chains, combat math, networking, and rendering integrity. Root-cause diagnosis: scattered resources (logs, ore, herbs, mushrooms, fishing) were procedural-only and not ECS entities, blocking mobile tap-to-gather. Commits:
+
+* **Commit 1**: Promoted scattered resources to ECS entities with `Component.Gatherable` + `Component.RoomScoped`; stop procedural draw and query entities instead.
+* **Commit 2**: Smart tap in `events.js` for adjacent resources sets `PendingInteract`; movement-system resolver fires `INTERACT` on arrival. Gather 🌿 and Fish 🎣 contextual buttons added.
+* **Commit 3**: Strengthened `validate.js` with bidirectional-exit and reverse-stair assertions; fixed `UIOverlay` entity leak (now deletes expired overlays); retired fully-migrated `buffs` field (features live on `statusEffects`); extended `quest:progress` payload with `questId`.
+* **Commit 4**: Updated CLAUDE.md "Buff integrity" rule to reflect `statusEffects`-only approach; logged findings in this entry.
+
+Findings deferred: `handleRest` state-split (localPlayer.hp vs ECS health.current) revisit if sync changes; `simulation.js:60` seed=0 fallback flagged for next networking pass.
+
 ### Phase 8.8: Feedback Instrumentation and Lightweight Analytics
 
 Goal: learn what players use without building a heavy telemetry system.

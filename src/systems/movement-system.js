@@ -8,7 +8,7 @@ import { myEntry } from '../security/identity.js';
 import { shardEnemies, localPlayer, worldState } from '../state/store.js';
 import { ITEMS, NPCS } from '../content/data.js';
 import { RESOURCE_LABEL_TO_ITEM } from '../content/data/constants.js';
-import { getScatteredContent, getNPCDialogue, findSafeArrival } from '../rules/index.js';
+import { getNPCDialogue, findSafeArrival } from '../rules/index.js';
 import { getNPCsAt, grantItem } from '../commands/helpers.js';
 import { seededRNG, hashStr } from '../rules/utils.js';
 import { ACTION } from '../engine/input.js';

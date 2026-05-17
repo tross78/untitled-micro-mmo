@@ -390,7 +390,6 @@ describe('8.78h — forage path advances fetch quest progress', () => {
         const { Component } = await import('../domain/components.js');
         const { MovementSystem } = await import('../systems/movement-system.js');
         const { worldState } = await import('../state/store.js');
-        const { getScatteredContent } = await import('../rules/index.js');
 
         worldState.day = 1;
 
