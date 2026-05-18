@@ -1,7 +1,7 @@
 import { localPlayer, hasSyncedWithArbiter, worldState, TAB_CHANNEL, loadLocalState, pruneStale } from '../state/store.js';
 import { log, startTicker } from '../ui/index.js';
 import { initIdentity, arbiterPublicKey, myEntry } from '../security/identity.js';
-import { resolveBootstrapArbiterUrl, getRuntimeParam, isE2EMode, getArbiterUrl, setResolvedArbiterUrl } from '../infra/runtime.js';
+import { getRuntimeParam, isE2EMode, getArbiterUrl } from '../infra/runtime.js';
 import { initAds, showBanner } from '../engine/ads.js';
 import { inputManager } from '../engine/input.js';
 import { setupGlobalEvents, triggerLogicalRefresh } from './events.js';
@@ -26,12 +26,12 @@ import { markNetworkEvent, resetNetworkAudit } from '../network/audit-debug.js';
 const HEARTBEAT_MS = 30000;
 
 export const processBeacon = async (packet, source) => {
-    if (!packet || hasSyncedWithArbiter) return;
+    if (!packet) return false;
     const { state, signature, snapshot } = packet;
     const stateStr = typeof state === 'string' ? state : stableStringify(state);
     const valid = await verifyMessage(stateStr, signature, arbiterPublicKey).catch(() => false);
     if (valid) {
-        if (packet.endpoint) setResolvedArbiterUrl(packet.endpoint);
+        if (hasSyncedWithArbiter) return true;
         setArbiterLastSeenAt();
         log(`[System] Fast-Path connected via ${source}!`, '#0f0');
         TAB_CHANNEL.postMessage({ type: 'state', packet });
@@ -46,8 +46,36 @@ export const processBeacon = async (packet, source) => {
             seedFromSnapshot(filtered);
         }
         triggerLogicalRefresh();
+        return true;
     } else {
         console.warn(`[System] Beacon from ${source} failed verification.`);
+    }
+    return false;
+};
+
+const fetchJsonWithTimeout = async (url, timeoutMs = 5000) => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+};
+
+export const bootstrapFromGist = async () => {
+    if (!GH_GIST_ID || !GH_GIST_USERNAME) return false;
+
+    const directUrl = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/mmo_arbiter_discovery_v4.json?t=${Date.now()}`;
+    try {
+        const packet = await fetchJsonWithTimeout(directUrl);
+        return processBeacon(packet, 'GitHub Gist (Direct)');
+    } catch {
+        try {
+            const gist = await fetchJsonWithTimeout(`https://api.github.com/gists/${GH_GIST_ID}`);
+            const file = gist?.files?.['mmo_arbiter_discovery_v4.json'];
+            if (!file?.raw_url) return false;
+            const packet = await fetchJsonWithTimeout(file.raw_url + '?t=' + Date.now());
+            return processBeacon(packet, 'GitHub Gist (API)');
+        } catch {
+            return false;
+        }
     }
 };
 
@@ -66,7 +94,6 @@ export const start = async () => {
         markNetworkEvent('bootstrap:local_state_loaded');
         await initIdentity(log);
         markNetworkEvent('bootstrap:identity_ready');
-        await resolveBootstrapArbiterUrl();
         markNetworkEvent('bootstrap:arbiter_resolved');
         appRuntime.configurePorts({
             ui: {
@@ -105,23 +132,11 @@ export const start = async () => {
             }
         }, 5000);
 
-        // Gist Discovery
+        // Gist beacon is world-state only — peer discovery/signaling is Nostr+torrent.
+        // Fire-and-forget so a slow GitHub round-trip can't delay shard joining.
+        // The beacon arrives in parallel and triggers a state sync whenever it lands.
         if (!E2E_MODE && GH_GIST_ID && GH_GIST_USERNAME && !hasSyncedWithArbiter) {
-            const directUrl = `https://gist.githubusercontent.com/${GH_GIST_USERNAME}/${GH_GIST_ID}/raw/mmo_arbiter_discovery_v4.json?t=${Date.now()}`;
-            fetch(directUrl, { signal: AbortSignal.timeout(5000) })
-                .then(r => r.ok ? r.json() : Promise.reject('Direct fail'))
-                .then(packet => processBeacon(packet, 'GitHub Gist (Direct)'))
-                .catch(() => {
-                    fetch(`https://api.github.com/gists/${GH_GIST_ID}`)
-                        .then(r => r.ok ? r.json() : null)
-                        .then(gist => {
-                            const file = gist?.files?.['mmo_arbiter_discovery_v4.json'];
-                            if (file?.raw_url) return fetch(file.raw_url + '?t=' + Date.now()).then(r => r.json());
-                            return null;
-                        })
-                        .then(packet => processBeacon(packet, 'GitHub Gist (API)'))
-                        .catch(() => {});
-                });
+            bootstrapFromGist().catch(() => {});
         }
 
         // HTTP bootstrap
@@ -131,7 +146,7 @@ export const start = async () => {
                 .then(r => r.ok ? r.json() : null)
                 .then(async packet => {
                     if (!packet || hasSyncedWithArbiter) return;
-                    processBeacon(packet, 'HTTP');
+                    await processBeacon(packet, 'HTTP');
                 })
                 .catch(() => {});
         }

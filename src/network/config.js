@@ -1,4 +1,5 @@
 import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
+import { getRuntimeParam } from '../infra/runtime.js';
 
 const ICE_GATHER_TIMEOUT_MS = 1500;
 
@@ -99,16 +100,58 @@ export const EARLY_RELAY_ESCALATION_MS = 2000;
 // Introducer TTLs: warm peers (recently verified presence) stay longer.
 export const INTRODUCER_TTL_COLD_MS = 2 * 3600_000;  // 2h
 export const INTRODUCER_TTL_WARM_MS = 8 * 3600_000;  // 8h
+export const DEFAULT_SIGNAL_STRATEGIES = ['nostr', 'torrent'];
+const SIGNAL_STRATEGIES = new Set(DEFAULT_SIGNAL_STRATEGIES);
+
+export const getSignalStrategies = () => {
+    const raw = getRuntimeParam('signal')
+        || (typeof localStorage !== 'undefined' ? localStorage.getItem('fenhollow_signal_strategies') : '')
+        || 'fast';
+    if (raw === 'fast' || raw === 'auto') return DEFAULT_SIGNAL_STRATEGIES;
+    if (raw === 'torrent') return ['torrent'];
+    const parsed = raw.split(',')
+        .map(value => value.trim().toLowerCase())
+        .filter(value => SIGNAL_STRATEGIES.has(value));
+    return parsed.length > 0 ? parsed : DEFAULT_SIGNAL_STRATEGIES;
+};
+
+const buildRtcConfig = (rtcConfig) => {
+    const base = rtcConfig || { iceServers: STUN_SERVERS };
+    return { ...base, iceCandidatePoolSize: 3 };
+};
 
 export const buildTorrentConfig = (rtcConfig) => {
-    const base = rtcConfig || { iceServers: STUN_SERVERS };
     return {
         appId: APP_ID,
         relayUrls: TORRENT_TRACKERS,
+        trickleIce: true,
         // iceCandidatePoolSize pre-gathers ICE candidates immediately on
         // RTCPeerConnection creation, hiding gathering latency behind the
         // tracker signaling round-trip (item 6 — pre-warmed connections).
-        rtcConfig: { ...base, iceCandidatePoolSize: 3 },
+        rtcConfig: buildRtcConfig(rtcConfig),
+    };
+};
+
+export const buildFastRoomConfig = (rtcConfig, strategies = getSignalStrategies()) => {
+    const rtc = buildRtcConfig(rtcConfig);
+    const configs = {
+        nostr: {
+            name: 'nostr',
+            config: { appId: APP_ID, rtcConfig: rtc, trickleIce: true },
+        },
+        torrent: {
+            name: 'torrent',
+            config: buildTorrentConfig(rtcConfig),
+        },
+    };
+    const strategyRace = strategies
+        .map(strategy => configs[strategy])
+        .filter(Boolean);
+
+    return {
+        appId: APP_ID,
+        strategyRace,
+        fallbackConfig: buildTorrentConfig(rtcConfig),
     };
 };
 

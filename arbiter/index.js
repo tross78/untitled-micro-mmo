@@ -14,7 +14,6 @@ import {
     restoreBansFromPacket,
 } from '../src/network/arbiter-state.js';
 import { NETWORK_ACTIONS } from '../src/network/contracts.js';
-import { startPeerMonitor } from './monitor-peers.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -35,6 +34,7 @@ if (typeof global.RTCPeerConnection === 'undefined') global.RTCPeerConnection = 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, 'world_state.json');
+const REGISTER_BODY_LIMIT = 16 * 1024;
 
 // Catch unhandled errors from WebSocket/network layer
 process.on('uncaughtException', (err) => {
@@ -59,7 +59,8 @@ process.on('unhandledRejection', (reason, _promise) => {
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
-    const { APP_ID, TORRENT_TRACKERS, ICE_SERVERS, GH_GIST_USERNAME: DEFAULT_GH_GIST_USERNAME } = await import('../src/infra/constants.js');
+    const { APP_ID, TORRENT_TRACKERS, STUN_SERVERS } = await import('../src/infra/constants.js');
+    const { buildTorrentConfig } = await import('../src/network/config.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
     const dotenv = await import('dotenv');
 
@@ -67,8 +68,6 @@ async function startArbiter() {
     const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY?.trim();
     const GH_GIST_TOKEN = process.env.GH_GIST_TOKEN;
     const GH_GIST_ID = process.env.GH_GIST_ID;
-    const GH_GIST_USERNAME = process.env.GH_GIST_USERNAME || DEFAULT_GH_GIST_USERNAME;
-    const ARBITER_PUBLIC_URL = process.env.PUBLIC_URL?.trim() || '';
 
     if (!MASTER_SECRET_KEY) {
         console.error('ERROR: MASTER_SECRET_KEY not found in .env');
@@ -83,18 +82,24 @@ async function startArbiter() {
         return { privateKey: b64Seed }; 
     })();
 
-    let room, globalRoom;
+    // Arbiter joins the `global` room — the same room the browser uses for
+    // arbiter-mediated actions (world-state beacons, rollups, fraud reports,
+    // presence registration). A separate `hearthwick-arbiter-v1` room used to
+    // exist but the browser never joined it, so rollups/fraud silently dropped.
+    let globalRoom;
     try {
-        room = joinTorrent({ appId: APP_ID, trackers: TORRENT_TRACKERS, iceServers: ICE_SERVERS }, 'hearthwick-arbiter-v1');
-        globalRoom = joinTorrent({ appId: APP_ID, trackers: TORRENT_TRACKERS, iceServers: ICE_SERVERS }, 'global');
+        globalRoom = joinTorrent(buildTorrentConfig({ iceServers: STUN_SERVERS }), 'global');
     } catch (err) {
         console.error('[Arbiter] Torrent join failed:', err.message);
         process.exit(1);
     }
 
-    const [sendState] = room.makeAction(NETWORK_ACTIONS.WORLD_STATE);
-    const [,, getRollup] = room.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
-    const [,, getFraud] = room.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
+    // Trystero tuple is [send, receive, progress] — destructure receive (index 1),
+    // not progress (index 2). The previous `[,, getRollup]` form bound the progress
+    // callback, so rollups/fraud were never received even if the room had matched.
+    const [sendState] = globalRoom.makeAction(NETWORK_ACTIONS.WORLD_STATE);
+    const [, getRollup] = globalRoom.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
+    const [, getFraud] = globalRoom.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
     const [, getRegisterPresence] = globalRoom.makeAction('register_presence');
 
     const lastRollups = new Map(); // shard -> { root, ts, proposer }
@@ -109,11 +114,6 @@ async function startArbiter() {
             console.log(`[Arbiter] Peer discovered via network: ${registered.id} (${registered.name}) on ${registered.shard}`);
         }
     });
-    startPeerMonitor(presenceDirectory, {
-        ghGistToken: GH_GIST_TOKEN,
-        ghGistId: GH_GIST_ID,
-        ghGistUsername: GH_GIST_USERNAME,
-    });
     let trackedPublishBeacon = async () => {};
 
     const ROLLUP_INTERVAL = 10000;
@@ -127,7 +127,7 @@ async function startArbiter() {
 
     console.log(`[Arbiter] Online. ID: ${selfId}`);
 
-    room.onPeerJoin(peerId => {
+    globalRoom.onPeerJoin(peerId => {
         console.log(`[Arbiter] Peer joined: ${peerId}`);
         // Send current state to new peer
         if (lastValidStatePacket) sendState(lastValidStatePacket, [peerId]);
@@ -237,7 +237,6 @@ async function startArbiter() {
 
         if (GH_GIST_TOKEN && GH_GIST_ID) {
             const gistPayload = { ...packet, ts: Date.now() };
-            if (ARBITER_PUBLIC_URL) gistPayload.endpoint = ARBITER_PUBLIC_URL;
             const files = {
                 'mmo_arbiter_discovery_v4.json': {
                     content: JSON.stringify(gistPayload)
@@ -301,7 +300,13 @@ async function startArbiter() {
             const lastBeaconAge = lastBeaconAt ? Math.floor((Date.now() - lastBeaconAt) / 1000) : null;
             const healthy = lastBeaconAge !== null && lastBeaconAge < 1800;
             res.writeHead(healthy ? 200 : 503, { ...cors, 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: healthy, uptime, lastBeaconAgeSecs: lastBeaconAge }));
+            res.end(JSON.stringify({
+                ok: healthy,
+                uptime,
+                lastBeaconAgeSecs: lastBeaconAge,
+                peers: presenceDirectory.size(),
+                gistConfigured: Boolean(GH_GIST_TOKEN && GH_GIST_ID),
+            }));
         } else if (url.pathname === '/state') {
             res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
             res.end(JSON.stringify(lastValidStatePacket));
@@ -311,14 +316,28 @@ async function startArbiter() {
             res.end(JSON.stringify(presenceDirectory.list(shard)));
         } else if (url.pathname === '/register' && req.method === 'POST') {
             let body = '';
-            req.on('data', chunk => { body += chunk; });
+            let oversized = false;
+            req.on('data', chunk => {
+                if (oversized) return;
+                body += chunk;
+                if (body.length > REGISTER_BODY_LIMIT) {
+                    oversized = true;
+                    req.socket.destroy();
+                }
+            });
             req.on('end', () => {
+                if (oversized) return;
                 try {
                     const parsed = JSON.parse(body);
-                    presenceDirectory.register(parsed);
+                    const registered = presenceDirectory.register(parsed);
+                    if (!registered) {
+                        res.writeHead(400, { ...cors, 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ ok: false }));
+                        return;
+                    }
                     // Return current shard peers so the client can seed HyParView immediately.
-                    const peers = presenceDirectory.list(parsed.shard)
-                        .filter(p => p.ph !== parsed.ph)
+                    const peers = presenceDirectory.list(registered.shard)
+                        .filter(p => p.ph !== registered.ph)
                         .slice(0, 8)
                         .filter(p => p.id)
                         .map(p => ({ id: p.id, ph: p.ph }));

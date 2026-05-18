@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import {
     getArbiterUrl,
-    resolveBootstrapArbiterUrl,
+    normalizeArbiterUrl,
     setResolvedArbiterUrl,
 } from '../infra/runtime.js';
 import { appRuntime } from '../app/runtime.js';
@@ -18,33 +18,24 @@ describe('runtime bootstrap resolution', () => {
     });
 
     test('getArbiterUrl prefers stored resolved arbiter url', () => {
-        setResolvedArbiterUrl('https://arbiter.tysonross.com');
+        setResolvedArbiterUrl('https://arbiter.tysonross.com/');
         expect(getArbiterUrl('')).toBe('https://arbiter.tysonross.com');
     });
 
-    test('resolveBootstrapArbiterUrl loads arbiter url from domain config', async () => {
-        global.fetch.mockResolvedValue({
-            ok: true,
-            json: async () => ({ arbiterUrl: 'https://arbiter.tysonross.com' }),
-        });
+    test('normalizeArbiterUrl accepts domain shorthand and strips trailing slashes', () => {
+        expect(normalizeArbiterUrl('arbiter.tysonross.com/')).toBe('https://arbiter.tysonross.com');
+        expect(normalizeArbiterUrl('localhost:3000/')).toBe('http://localhost:3000');
+        expect(normalizeArbiterUrl('https://arbiter.tysonross.com/api/')).toBe('https://arbiter.tysonross.com/api');
+        expect(normalizeArbiterUrl('javascript:alert(1)')).toBe('');
+    });
 
-        const url = await resolveBootstrapArbiterUrl('tysonross.com');
-
-        expect(global.fetch).toHaveBeenCalled();
-        expect(url).toBe('https://arbiter.tysonross.com');
+    test('getArbiterUrl accepts explicitly configured future arbiter endpoints', () => {
+        localStorage.setItem('fenhollow_arbiter_url', 'arbiter.tysonross.com/');
         expect(getArbiterUrl('')).toBe('https://arbiter.tysonross.com');
     });
 
-    test('resolveBootstrapArbiterUrl ignores invalid config', async () => {
-        global.fetch.mockResolvedValue({
-            ok: true,
-            json: async () => ({ nope: true }),
-        });
-
-        const url = await resolveBootstrapArbiterUrl('tysonross.com');
-
-        expect(url).toBe('');
-        expect(getArbiterUrl('fallback')).toBe('fallback');
+    test('getArbiterUrl ignores invalid fallback values', () => {
+        expect(getArbiterUrl('fallback')).toBe('');
     });
 });
 

@@ -36,10 +36,9 @@ import {
     NETWORK_STARTUP_TURN_FALLBACK_MS,
     NETWORK_PRESENCE_HEARTBEAT_MS, NETWORK_PEER_STALE_MS, NETWORK_PEER_SWEEP_MS,
     GHOST_TTL_MS, INTRODUCER_TTL_COLD_MS, INTRODUCER_TTL_WARM_MS,
-    buildTorrentConfig, isUsingTurnFallback
+    buildFastRoomConfig, buildTorrentConfig, isUsingTurnFallback
 } from './config.js';
 import { registerWithHints } from './arbiter-signal.js';
-import { discoverPeers } from './peer-discovery.js';
 import {
     checkXpRate, checkAndUpdateHlc, buildLeafData, clearSecurityState, evictSecurityPeer
 } from './security.js';
@@ -55,7 +54,7 @@ import { filterConnectedPeerIds } from './peer-filter.js';
 import { countUsableShardPeers, shouldRunEventHeal } from './heal.js';
 import { markNetworkEvent, markPeerNetworkEvent } from './audit-debug.js';
 
-export { seedFromSnapshot, updateSimulation, initOfflineDayTick, preJoinShard, buildTorrentConfig, isProposer };
+export { seedFromSnapshot, updateSimulation, initOfflineDayTick, preJoinShard, buildFastRoomConfig, buildTorrentConfig, isProposer };
 
 const netLog = (msg, color = '#555') => {
     if (localStorage.getItem(`${GAME_NAME}_debug`) === 'true') {
@@ -577,23 +576,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         markNetworkEvent('shard:prejoin_promoted', { shard });
         netLog(`[Pre-join] Promoted pre-joined room for ${shard}`);
     } else {
-        rooms.torrent = joinTorrent(buildTorrentConfig(config), shard);
+        rooms.torrent = joinTorrent(buildFastRoomConfig(config), shard);
     }
-
-    // Peer discovery: try to find known peers before waiting for tracker (Phase 8.8x)
-    (async () => {
-        try {
-            const discoveredPeers = await discoverPeers(shard);
-            if (discoveredPeers.length > 0 && rooms.torrent?.seedIntroducers) {
-                const peerIds = discoveredPeers.map(p => p.id || p.publicKey).filter(Boolean);
-                rooms.torrent.seedIntroducers(peerIds);
-                markNetworkEvent('shard:peer_discovery', { count: discoveredPeers.length, method: discoveredPeers[0]?.source || 'unknown' });
-                netLog(`[Peer Discovery] Seeded ${peerIds.length} peers from cache`, '#0c0');
-            }
-        } catch (err) {
-            console.warn(`[Peer Discovery] Error during peer discovery: ${err.message}`);
-        }
-    })();
 
     markNetworkEvent('shard:room_ready', { shard });
     const buildRegistrationEntry = async (targetShard) => {
@@ -608,6 +592,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         };
     };
 
+    let shardApi = null;
     const registerWithArbiter = async (attempt = 0) => {
         if (!playerKeys) { if (attempt < 10) setTimeout(() => registerWithArbiter(attempt + 1), 500); return; }
         const registration = await buildRegistrationEntry(shard);
@@ -616,14 +601,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         // registerWithHints returns peer hints synchronously in the HTTP response,
         // bypassing a full tracker announce cycle for the warm path.
         const hintedPeers = await registerWithHints(shard, registration);
-        if (hintedPeers.length > 0 && r.seedIntroducers) {
-            r.seedIntroducers(hintedPeers.map(p => p.id || p.ph).filter(Boolean));
+        if (hintedPeers.length > 0 && shardApi?.seedIntroducers) {
+            shardApi.seedIntroducers(hintedPeers.map(p => p.id || p.ph).filter(Boolean));
             markNetworkEvent('shard:arbiter_hints', { count: hintedPeers.length, source: 'register' });
         }
     };
-    setTimeout(registerWithArbiter, 1000);
-    // Keep presence alive in arbiter for cross-shard discovery (Gist peer list)
-    setInterval(registerWithArbiter, 30000);
 
     const SHARD_REBALANCE_CAP = 80;
 
@@ -1054,7 +1036,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     };
 
     const r = setupShard(rooms.torrent);
-    _shardTeardown = r.teardown;
+    shardApi = r;
+    const registerStartTimer = setTimeout(registerWithArbiter, 1000);
+    // Refresh the arbiter's /peers directory so warm hints stay current for
+    // late joiners. Hints only — actual signaling is Nostr+torrent.
+    const registerHeartbeatTimer = setInterval(registerWithArbiter, 30000);
+    _shardTeardown = () => {
+        clearTimeout(registerStartTimer);
+        clearInterval(registerHeartbeatTimer);
+        r.teardown();
+    };
 
     // Seed HyParView passive view with cached introducers so they get priority
     // when tracker discovery re-connects us to them.

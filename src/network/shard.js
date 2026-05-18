@@ -1,7 +1,7 @@
 import { getShardName } from '../rules/index.js';
 import { localPlayer, shardEnemies, players, activeChannels } from '../state/store.js';
 import { joinRoom as joinTorrent } from './transport.js';
-import { buildTorrentConfig } from './config.js';
+import { buildFastRoomConfig } from './config.js';
 
 const preJoinCache = new Map();
 let currentInstance = 1;
@@ -15,7 +15,7 @@ export const preJoinShard = (location, instanceId, rtcConfig) => {
     if (shard === currentShard || preJoinCache.has(shard)) return;
     
     const room = joinTorrent(
-        buildTorrentConfig(rtcConfig),
+        buildFastRoomConfig(rtcConfig),
         shard
     );
     const timeout = setTimeout(() => {
