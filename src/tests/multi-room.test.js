@@ -27,24 +27,31 @@ const makeRoom = () => {
 
 describe('composite signaling room', () => {
     test('emits one peer join until a peer leaves every strategy room', () => {
-        const nostr = makeRoom();
-        const torrent = makeRoom();
-        const room = createCompositeRoom([
-            { name: 'nostr', room: nostr },
-            { name: 'torrent', room: torrent },
-        ]);
-        const joins = [];
-        const leaves = [];
-        room.onPeerJoin(peerId => joins.push(peerId));
-        room.onPeerLeave(peerId => leaves.push(peerId));
+        jest.useFakeTimers();
+        try {
+            const nostr = makeRoom();
+            const torrent = makeRoom();
+            const room = createCompositeRoom([
+                { name: 'nostr', room: nostr },
+                { name: 'torrent', room: torrent },
+            ]);
+            const joins = [];
+            const leaves = [];
+            room.onPeerJoin(peerId => joins.push(peerId));
+            room.onPeerLeave(peerId => leaves.push(peerId));
 
-        nostr.emitJoin('peer-a');
-        torrent.emitJoin('peer-a');
-        nostr.emitLeave('peer-a');
-        torrent.emitLeave('peer-a');
+            nostr.emitJoin('peer-a');
+            torrent.emitJoin('peer-a');
+            nostr.emitLeave('peer-a');
+            torrent.emitLeave('peer-a');
+            // Wait past the peer-leave grace window for the final drop to propagate.
+            jest.advanceTimersByTime(3500);
 
-        expect(joins).toEqual(['peer-a']);
-        expect(leaves).toEqual(['peer-a']);
+            expect(joins).toEqual(['peer-a']);
+            expect(leaves).toEqual(['peer-a']);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 
     test('deduplicates matching action payloads received through multiple strategies', () => {
@@ -81,6 +88,55 @@ describe('composite signaling room', () => {
         torrent.emitAction('move', b, 'peer-a');
 
         expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    test('peer-leave is held for a grace period and cancelled if peer re-joins', () => {
+        jest.useFakeTimers();
+        try {
+            const nostr = makeRoom();
+            const torrent = makeRoom();
+            const room = createCompositeRoom([
+                { name: 'nostr', room: nostr },
+                { name: 'torrent', room: torrent },
+            ]);
+            const leaves = [];
+            room.onPeerLeave(peerId => leaves.push(peerId));
+
+            // Peer is only seen via nostr; nostr drops them.
+            nostr.emitJoin('flap-peer');
+            nostr.emitLeave('flap-peer');
+            // 2s later, before grace expires, they re-appear on torrent.
+            jest.advanceTimersByTime(2000);
+            torrent.emitJoin('flap-peer');
+            // Advance past where the grace would have fired.
+            jest.advanceTimersByTime(5000);
+
+            expect(leaves).toEqual([]);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('peer-leave fires after grace if peer never returns', () => {
+        jest.useFakeTimers();
+        try {
+            const nostr = makeRoom();
+            const torrent = makeRoom();
+            const room = createCompositeRoom([
+                { name: 'nostr', room: nostr },
+                { name: 'torrent', room: torrent },
+            ]);
+            const leaves = [];
+            room.onPeerLeave(peerId => leaves.push(peerId));
+
+            nostr.emitJoin('gone-peer');
+            nostr.emitLeave('gone-peer');
+            jest.advanceTimersByTime(3500);
+
+            expect(leaves).toEqual(['gone-peer']);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 
     test('leave emits peer-leave for still-present peers', () => {

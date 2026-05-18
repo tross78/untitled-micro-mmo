@@ -1,5 +1,10 @@
 const RECENT_PAYLOAD_TTL_MS = 1500;
 const MAX_RECENT_PAYLOADS = 512;
+// Hold off propagating peerLeave for this long after the final strategy slot
+// drops the peer. WebRTC connections routinely flap and re-establish within a
+// second or two; firing leave immediately causes the game layer to evict and
+// re-handshake unnecessarily.
+const PEER_LEAVE_GRACE_MS = 3000;
 
 // Two-seed FNV-1a 32-bit pass over the whole buffer. Combined width is ~64 bits,
 // which is collision-safe for the <512-entry sliding window we keep. The previous
@@ -58,6 +63,7 @@ export const createCompositeRoom = (entries, observer = null) => {
             firstPeerAt: 0,
         }));
     const peerSlots = new Map();
+    const pendingLeaves = new Map(); // peerId -> timeoutId
     const recentPayloads = new Map();
     let peerJoinHandler = (_peerId) => {};
     let peerLeaveHandler = (_peerId) => {};
@@ -68,6 +74,15 @@ export const createCompositeRoom = (entries, observer = null) => {
         try { observer(event, detail); } catch { /* observer must not break signaling */ }
     };
 
+    const cancelPendingLeave = (peerId) => {
+        const timer = pendingLeaves.get(peerId);
+        if (timer) {
+            clearTimeout(timer);
+            pendingLeaves.delete(peerId);
+            emit('strategy_peer_leave_cancelled', { peerId });
+        }
+    };
+
     const addPeerSlot = (peerId, slot) => {
         if (!peerId) return;
         slot.peers.add(peerId);
@@ -75,6 +90,8 @@ export const createCompositeRoom = (entries, observer = null) => {
         const wasEmpty = existing.size === 0;
         existing.add(slot);
         peerSlots.set(peerId, existing);
+        // A pending leave from a flap is now resolved — the peer came back.
+        cancelPendingLeave(peerId);
         const sinceCreate = Date.now() - createdAt;
         if (!slot.firstPeerAt) {
             slot.firstPeerAt = sinceCreate;
@@ -94,9 +111,21 @@ export const createCompositeRoom = (entries, observer = null) => {
         const existing = peerSlots.get(peerId);
         if (!existing) return;
         existing.delete(slot);
+        emit('strategy_slot_drop', { strategy: slot.name, peerId, remaining: existing.size });
         if (existing.size > 0) return;
-        peerSlots.delete(peerId);
-        peerLeaveHandler(peerId);
+        // Last strategy lost the peer. Don't fire leave yet — give them a chance
+        // to re-appear on any strategy within the grace window. addPeerSlot will
+        // cancel the pending timer if they come back.
+        if (pendingLeaves.has(peerId)) return;
+        const timer = setTimeout(() => {
+            pendingLeaves.delete(peerId);
+            // Only fire if still actually gone (timer wasn't cancelled by a re-join).
+            if ((peerSlots.get(peerId)?.size ?? 0) === 0) {
+                peerSlots.delete(peerId);
+                peerLeaveHandler(peerId);
+            }
+        }, PEER_LEAVE_GRACE_MS);
+        pendingLeaves.set(peerId, timer);
     };
 
     for (const slot of rooms) {
@@ -173,6 +202,8 @@ export const createCompositeRoom = (entries, observer = null) => {
             // Tell consumers about every still-present peer before tearing down,
             // so HyParView and presence tracking can release per-peer state.
             const lingering = Array.from(peerSlots.keys());
+            for (const timer of pendingLeaves.values()) clearTimeout(timer);
+            pendingLeaves.clear();
             rooms.forEach(slot => slot.room.leave?.());
             peerSlots.clear();
             rooms.forEach(slot => slot.peers.clear());

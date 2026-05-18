@@ -675,6 +675,17 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (c) { clearTimeout(c.timeoutId); activeChannels.delete(peerId); }
         };
 
+        // Mark a peer's data as stale without removing them. Their sprite stays
+        // rendered at their last-known position so the world doesn't appear to
+        // teleport-empty during transient shard WebRTC drops. The ghost sweep
+        // still hard-evicts at GHOST_TTL_MS if presence never resumes.
+        const markPeerStale = (peerId) => {
+            if (!peerId) return;
+            const entry = players.get(peerId);
+            if (!entry || entry.stale) return;
+            trackPlayer(peerId, { ...entry, stale: true, staleSince: Date.now() });
+        };
+
         // HyParView SHUFFLE (item 2) — periodic passive-view exchange keeps the
         // overlay self-healing under churn without manual re-discovery.
         getIdentity(({ publicKey }, peerId) => {
@@ -733,14 +744,18 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         }, GHOST_TTL_MS);
         const stalePeerTimer = setInterval(() => {
             const now = Date.now();
-            let evictedAny = false;
+            let staledAny = false;
             for (const [peerId, lastSeen] of _peerLastPresenceAt) {
                 if (now - lastSeen <= NETWORK_PEER_STALE_MS) continue;
+                const entry = players.get(peerId);
+                if (!entry || entry.stale) continue;
                 markPeerNetworkEvent(peerId, 'peer:stale_timeout', { sinceMs: now - lastSeen });
-                evictShardPeer(peerId, { dropFromShard: true, emitLeave: true });
-                evictedAny = true;
+                markPeerStale(peerId);
+                staledAny = true;
             }
-            if (evictedAny && countUsableShardPeers(shardKnownPeers, players) === 0) {
+            // Heal the shard if we have no fresh peers left — same trigger as before,
+            // but counted via the entry's stale flag rather than full eviction.
+            if (staledAny && countUsableShardPeers(shardKnownPeers, players) === 0) {
                 healNetworking({ urgent: true }).catch(() => {});
             }
         }, NETWORK_PEER_SWEEP_MS);
@@ -786,7 +801,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
             const verifiedAt = Date.now();
             _peerLastPresenceAt.set(peerId, verifiedAt);
-            trackPlayer(peerId, { ...entry, ...unpacked, ts: verifiedAt, rawPresence: buf, presenceVerifiedAt: verifiedAt });
+            // Strip stale flag — fresh presence means they're back.
+            const { stale: _stale, staleSince: _staleSince, ...prior } = entry;
+            trackPlayer(peerId, { ...prior, ...unpacked, ts: verifiedAt, rawPresence: buf, presenceVerifiedAt: verifiedAt });
             trackShadowPlayer(peerId, unpacked);
             lastShardPresenceAt = verifiedAt;
             _introSuccessPeers.add(peerId);

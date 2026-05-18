@@ -172,6 +172,9 @@ export class EntityRenderSystem {
             const drawTop = pxY + bounceY + (this.VP.S - drawH);
 
             ctx.save();
+            // Stale peers (presence dropped past the stale threshold but still tracked)
+            // render dim so the player can tell they're out of comms, not gone.
+            if (spriteDef.stale) ctx.globalAlpha = 0.4;
             if (facing === 'w') {
                 ctx.translate(pxX + this.VP.S, 0);
                 ctx.scale(-1, 1);
@@ -219,7 +222,8 @@ export class EntityRenderSystem {
                 ctx.lineWidth = 2;
                 ctx.strokeRect(pxX + 1, pxY + bounceY + 1, this.VP.S - 2, this.VP.S - 2);
             } else {
-                ctx.fillStyle = spriteDef.palette === 'enemy' ? '#ff4444' : '#00aaff';
+                if (spriteDef.stale) ctx.fillStyle = '#888';
+                else ctx.fillStyle = spriteDef.palette === 'enemy' ? '#ff4444' : '#00aaff';
                 ctx.fillText(name, pxX + this.VP.S / 2, pxY + bounceY);
 
                 // Health Bar (for enemies)

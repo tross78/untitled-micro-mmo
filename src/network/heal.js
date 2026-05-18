@@ -12,7 +12,7 @@ export const countUsableShardPeers = (shardKnownPeers, players) => {
     let count = 0;
     for (const id of shardKnownPeers) {
         const peer = players.get(id);
-        if (peer?.publicKey && peer?.presenceVerifiedAt && !peer.ghost) count++;
+        if (peer?.publicKey && peer?.presenceVerifiedAt && !peer.ghost && !peer.stale) count++;
     }
     return count;
 };
