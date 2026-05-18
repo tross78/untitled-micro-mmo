@@ -319,6 +319,11 @@ export const initNetworking = async (rtcConfig) => {
                 trackPlayer(peerId, { ...entry, publicKey: payload.publicKey, ph, ts: Date.now() });
             }
             if (payload.shard === currentShardName()) {
+                // Seed the shard's HyParView introducer list so the trystero shard room
+                // connects to this peer immediately instead of waiting for tracker discovery.
+                if (gameActions.seedShardIntroducers && peerId) {
+                    gameActions.seedShardIntroducers([peerId]);
+                }
                 await maybeSendSameShardBootstrap(peerId, payload.shard);
             }
         });
@@ -979,6 +984,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const s = shardEnemies.get(data.roomId);
             if (s) { s.hp = Math.max(0, s.hp - data.damage); s.lastUpdate = Date.now(); bus.emit('monster:damaged', { roomId: data.roomId, damage: data.damage }); }
         });
+
+        // Expose shard-scoped presence decoder to the global presence_bootstrap path.
+        // Without this, same-shard peers learned via the global room only get publicKey+ph
+        // and never their location/x/y, so they're invisible in the world view until the
+        // shard room's own presence_single arrives (which may be slow with small rooms).
+        gameActions.processPresence = processPresenceSingle;
+        gameActions.seedShardIntroducers = (peerIds) => hpv.mergeShuffle(peerIds, selfId);
 
         r.onPeerJoin(async peerId => {
             shardKnownPeers.add(peerId);
