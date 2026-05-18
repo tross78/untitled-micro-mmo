@@ -21,7 +21,7 @@ export const buildShardActions = (r) => ({
     sendMove: async (data) => {
         if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return;
         const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: Date.now() };
-        r.sendMove(packMove({ ...moveData, signature: await signMessage(JSON.stringify(moveData), playerKeys.privateKey) }));
+        r.plumBroadcast('move', packMove({ ...moveData, signature: await signMessage(JSON.stringify(moveData), playerKeys.privateKey) }));
     },
     sendMoveTo: async (data, targetPeerIds) => {
         if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return;
@@ -31,7 +31,7 @@ export const buildShardActions = (r) => ({
         r.sendMove(packed, targetPeerIds);
     },
     sendMonsterDmg: (data) => r.sendMonsterDmg(data),
-    sendActionLog: (data) => r.sendActionLog(packActionLog(data)),
+    sendActionLog: (data) => r.plumBroadcast('action_log', packActionLog(data)),
     sendPresenceSingle: (data, target) => {
         if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return;
         packSignedPresence({ ...data, hlc: sendHLC() }).then(p => { if (target) r.sendPresenceSingle(p, target); else r.plumSend(p); });

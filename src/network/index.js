@@ -655,8 +655,19 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendCommit, getCommit] = r.makeAction('commit_action');
         const [sendReveal, getReveal] = r.makeAction('reveal_action');
         const [sendShuffle, getShuffle] = r.makeAction('hpv_shuffle');
+        const [sendLazyPull, getLazyPull] = r.makeAction('lazy_pull');
+        const [sendLazyPush, getLazyPush] = r.makeAction('lazy_push');
 
         const hpv = new HyParView();
+
+        // Bounded message cache for Plumtree lazy-pull responses (60s TTL, 512 cap).
+        const MSG_CACHE_CAP = 512;
+        const _msgCache = new Map();
+        const _cacheMsg = (msgId, type, buf) => {
+            if (_msgCache.size >= MSG_CACHE_CAP) _msgCache.delete(_msgCache.keys().next().value);
+            _msgCache.set(msgId, { type, buf, ts: Date.now() });
+        };
+
         const _pendingPresence = new Map();
         const evictShardPeer = (peerId, { dropFromShard = false, emitLeave = false } = {}) => {
             if (!peerId) return;
@@ -812,14 +823,26 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         };
 
         const connectedOnly = (ids) => filterConnectedPeerIds(r, ids);
-        const plumSend = (packed) => {
-            const msgId = HyParView.msgId(hashStr, packed);
-            hpv.markSeen(msgId);
-            const eager = connectedOnly(hpv.eagerPeers());
-            const lazy = connectedOnly(hpv.lazyPeers());
-            if (eager.length) sendPresenceSingle(packed, eager); else sendPresenceSingle(packed);
-            if (lazy.length) sendAnnounce({ msgId }, lazy);
+
+        // Plumtree generic broadcast: eager peers get the full payload immediately;
+        // lazy peers receive only a { msgId, type } announcement and pull on cache miss.
+        const TYPE_SENDERS = {
+            presence:   (buf, t) => t ? sendPresenceSingle(buf, t) : sendPresenceSingle(buf),
+            move:       (buf, t) => t ? sendMove(buf, t)           : sendMove(buf),
+            action_log: (buf, t) => t ? sendActionLog(buf, t)      : sendActionLog(buf),
         };
+        const plumBroadcast = (type, buf) => {
+            const sendFn = TYPE_SENDERS[type];
+            if (!sendFn) return;
+            const msgId = HyParView.msgId(hashStr, buf);
+            if (!hpv.markSeen(msgId)) return;
+            _cacheMsg(msgId, type, buf);
+            const eager = connectedOnly(hpv.eagerPeers());
+            const lazy  = connectedOnly(hpv.lazyPeers());
+            if (eager.length > 0) sendFn(buf, eager); else sendFn(buf);
+            if (lazy.length  > 0) sendAnnounce({ msgId, type }, lazy);
+        };
+        const plumSend = (packed) => plumBroadcast('presence', packed);
 
         const broadcastWhenReady = async (attempt = 0) => {
             if (!playerKeys) { if (attempt < 50) setTimeout(() => broadcastWhenReady(attempt + 1), 200); return; }
@@ -839,10 +862,20 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             plumSend(await packSignedPresence({ ...entry, hlc: sendHLC() }));
         }, NETWORK_PRESENCE_HEARTBEAT_MS);
 
-        getAnnounce(async ({ msgId }, peerId) => {
+        getAnnounce(async ({ msgId, type }, peerId) => {
             if (hpv.hasSeen(msgId)) return;
             hpv.promote(peerId);
-            sendRequest([peerId], [peerId]);
+            if (!type || type === 'presence') {
+                sendRequest([peerId], [peerId]);
+            } else {
+                sendLazyPull(msgId, [peerId]);
+            }
+        });
+
+        getLazyPull((msgId, peerId) => {
+            const cached = _msgCache.get(msgId);
+            if (!cached) return;
+            sendLazyPush({ msgId, type: cached.type, data: Array.from(cached.buf) }, [peerId]);
         });
 
         getSketch(async (remoteArr, peerId) => {
@@ -930,20 +963,14 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         getActionLog(async (buf, peerId) => {
-            const data = unpackActionLog(buf);
-            const entry = players.get(peerId);
-            if (!entry?.publicKey) return;
-            // During an arbiter outage, queue durable peer rewards rather than
-            // apply them immediately — shadow state may be reconciled later.
-            if (isHardStateFrozen()) {
-                hardStateQueue.push({ peerId, publicKey: entry.publicKey, data, ts: Date.now() });
-                return;
-            }
-            try {
-                const pubKey = await importKey(entry.publicKey, 'public');
-                if (!await verifyMessage(JSON.stringify({ type: data.type, index: data.index, target: data.target, data: data.data }), data.signature, pubKey)) return;
-                applyActionLogToShadow(peerId, data);
-            } catch (e) { console.error('[Security] ActionLog fail:', e); }
+            const msgId = HyParView.msgId(hashStr, buf);
+            if (!hpv.markSeen(msgId)) return;
+            const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
+            const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
+            if (eager.length > 0) sendActionLog(buf, eager);
+            if (lazy.length  > 0) sendAnnounce({ msgId, type: 'action_log' }, lazy);
+            _cacheMsg(msgId, 'action_log', buf);
+            await dispatchActionLog(buf, peerId);
         });
 
         getTradeOffer((data, peerId) => bus.emit('trade:offer-received', { partnerId: peerId, partnerName: data.fromName, offer: data.offer }));
@@ -967,8 +994,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (await verifyMessage(JSON.stringify(commit), signature, opponentPubKey)) { chan.theirHistory.push(commit); bus.emit('duel:commit-received', { targetId: peerId }); }
         });
 
-        getMove(async (buf, peerId) => {
-            if (!checkThrottle(peerId)) return;
+        // Extracted move processor — called by getMove and getLazyPush.
+        const dispatchMove = async (buf, peerId) => {
             const data = unpackMove(buf);
             const entry = players.get(peerId);
             if (!entry?.publicKey) return;
@@ -976,8 +1003,6 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 const movePayload = { from: data.from, to: data.to, x: data.x, y: data.y, ts: data.ts };
                 const pubKey = await importKey(entry.publicKey, 'public');
                 if (!await verifyMessage(JSON.stringify(movePayload), data.signature, pubKey)) return;
-
-                // Detect illegal room transition and report to arbiter
                 if (data.from !== data.to) {
                     const validExits = Object.values(worldGraph[data.from]?.exits || {});
                     if (!validExits.includes(data.to)) {
@@ -989,15 +1014,65 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                         return;
                     }
                 }
-
                 if (data.from === data.to && entry.x !== undefined && (Math.abs(data.x - entry.x) + Math.abs(data.y - entry.y)) > 1) return;
                 trackPlayer(peerId, { ...entry, location: data.to, x: data.x, y: data.y, ts: Date.now() });
                 bus.emit('peer:move', { peerId, data });
             } catch (_e) { /* ignore */ }
+        };
+
+        // Extracted action-log processor — called by getActionLog and getLazyPush.
+        const dispatchActionLog = async (buf, peerId) => {
+            const data = unpackActionLog(buf);
+            const entry = players.get(peerId);
+            if (!entry?.publicKey) return;
+            if (isHardStateFrozen()) {
+                hardStateQueue.push({ peerId, publicKey: entry.publicKey, data, ts: Date.now() });
+                return;
+            }
+            try {
+                const pubKey = await importKey(entry.publicKey, 'public');
+                if (!await verifyMessage(JSON.stringify({ type: data.type, index: data.index, target: data.target, data: data.data }), data.signature, pubKey)) return;
+                applyActionLogToShadow(peerId, data);
+            } catch (e) { console.error('[Security] ActionLog fail:', e); }
+        };
+
+        // Deliver a lazy-pushed payload: verify not seen, forward onward, process locally.
+        getLazyPush(async ({ msgId, type, data }, peerId) => {
+            if (hpv.hasSeen(msgId)) return;
+            hpv.markSeen(msgId);
+            const buf = new Uint8Array(data);
+            const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
+            const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
+            _cacheMsg(msgId, type, buf);
+            if (type === 'move') {
+                if (eager.length > 0) sendMove(buf, eager);
+                if (lazy.length  > 0) sendAnnounce({ msgId, type }, lazy);
+                await dispatchMove(buf, peerId);
+            } else if (type === 'action_log') {
+                if (eager.length > 0) sendActionLog(buf, eager);
+                if (lazy.length  > 0) sendAnnounce({ msgId, type }, lazy);
+                await dispatchActionLog(buf, peerId);
+            }
+        });
+
+        getMove(async (buf, peerId) => {
+            if (!checkThrottle(peerId)) return;
+            const msgId = HyParView.msgId(hashStr, buf);
+            if (!hpv.markSeen(msgId)) return;
+            const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
+            const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
+            if (eager.length > 0) sendMove(buf, eager);
+            if (lazy.length  > 0) sendAnnounce({ msgId, type: 'move' }, lazy);
+            _cacheMsg(msgId, 'move', buf);
+            await dispatchMove(buf, peerId);
         });
 
         getMonsterDmg((data, peerId) => {
             if (!checkThrottle(peerId)) return;
+            const msgId = HyParView.msgId(hashStr, data);
+            if (!hpv.markSeen(msgId)) return;
+            const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
+            if (eager.length > 0) sendMonsterDmg(data, eager);
             const s = shardEnemies.get(data.roomId);
             if (s) { s.hp = Math.max(0, s.hp - data.damage); s.lastUpdate = Date.now(); bus.emit('monster:damaged', { roomId: data.roomId, damage: data.damage }); }
         });
@@ -1045,12 +1120,17 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             }
         });
 
+        const msgCacheTimer = setInterval(() => {
+            const cutoff = Date.now() - 60000;
+            for (const [k, v] of _msgCache) { if (v.ts < cutoff) _msgCache.delete(k); }
+        }, 30000);
+
         return {
             sendMove, sendMonsterDmg, sendPresenceSingle, sendPresenceBatch,
             sendRelay, sendRollupLocal, sendSketch, sendRequest,
             sendDuelChallenge, sendDuelAccept, sendDuelCommit,
             sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
-            sendCommit, sendReveal, plumSend, sendPresenceDelta, sendIdentity,
+            sendCommit, sendReveal, plumSend, plumBroadcast, sendPresenceDelta, sendIdentity,
             processPresenceSingle,
             seedIntroducers: (peerIds) => hpv.mergeShuffle(peerIds, selfId),
             teardown: () => {
@@ -1059,6 +1139,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 clearInterval(ghostTimer);
                 clearInterval(stalePeerTimer);
                 clearInterval(heartbeatTimer);
+                clearInterval(msgCacheTimer);
                 if (scheduledHealTimer) { clearTimeout(scheduledHealTimer); scheduledHealTimer = null; }
             },
         };
