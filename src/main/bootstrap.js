@@ -70,8 +70,13 @@ export const bootstrapFromGist = async () => {
         try {
             const gist = await fetchJsonWithTimeout(`https://api.github.com/gists/${GH_GIST_ID}`);
             const file = gist?.files?.['mmo_arbiter_discovery_v4.json'];
-            if (!file?.raw_url) return false;
-            const packet = await fetchJsonWithTimeout(file.raw_url + '?t=' + Date.now());
+            if (!file) return false;
+            // Prefer inline content (avoids a second fetch to a commit-hash URL that may
+            // be stale when GitHub's API response is cached but the gist was just updated).
+            // Fall back to raw_url only if the file is too large to be inlined.
+            const packet = file.truncated
+                ? await fetchJsonWithTimeout(file.raw_url)
+                : JSON.parse(file.content);
             return processBeacon(packet, 'GitHub Gist (API)');
         } catch {
             return false;

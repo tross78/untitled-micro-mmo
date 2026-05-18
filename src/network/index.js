@@ -663,9 +663,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         // Bounded message cache for Plumtree lazy-pull responses (60s TTL, 512 cap).
         const MSG_CACHE_CAP = 512;
         const _msgCache = new Map();
-        const _cacheMsg = (msgId, type, buf) => {
+        const _cacheMsg = (msgId, type, buf, originPeerId = null) => {
             if (_msgCache.size >= MSG_CACHE_CAP) _msgCache.delete(_msgCache.keys().next().value);
-            _msgCache.set(msgId, { type, buf, ts: Date.now() });
+            _msgCache.set(msgId, { type, buf, ts: Date.now(), originPeerId });
         };
 
         const _pendingPresence = new Map();
@@ -836,7 +836,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (!sendFn) return;
             const msgId = HyParView.msgId(hashStr, buf);
             if (!hpv.markSeen(msgId)) return;
-            _cacheMsg(msgId, type, buf);
+            _cacheMsg(msgId, type, buf, selfId);
             const eager = connectedOnly(hpv.eagerPeers());
             const lazy  = connectedOnly(hpv.lazyPeers());
             if (eager.length > 0) sendFn(buf, eager); else sendFn(buf);
@@ -875,7 +875,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getLazyPull((msgId, peerId) => {
             const cached = _msgCache.get(msgId);
             if (!cached) return;
-            sendLazyPush({ msgId, type: cached.type, data: Array.from(cached.buf) }, [peerId]);
+            sendLazyPush({ msgId, type: cached.type, data: Array.from(cached.buf), originPeerId: cached.originPeerId }, [peerId]);
         });
 
         getSketch(async (remoteArr, peerId) => {
@@ -969,7 +969,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
             if (eager.length > 0) sendActionLog(buf, eager);
             if (lazy.length  > 0) sendAnnounce({ msgId, type: 'action_log' }, lazy);
-            _cacheMsg(msgId, 'action_log', buf);
+            _cacheMsg(msgId, 'action_log', buf, peerId);
             await dispatchActionLog(buf, peerId);
         });
 
@@ -1037,21 +1037,22 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         };
 
         // Deliver a lazy-pushed payload: verify not seen, forward onward, process locally.
-        getLazyPush(async ({ msgId, type, data }, peerId) => {
+        getLazyPush(async ({ msgId, type, data, originPeerId }, peerId) => {
             if (hpv.hasSeen(msgId)) return;
             hpv.markSeen(msgId);
             const buf = new Uint8Array(data);
+            const origin = originPeerId || peerId;
             const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
             const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
-            _cacheMsg(msgId, type, buf);
+            _cacheMsg(msgId, type, buf, origin);
             if (type === 'move') {
                 if (eager.length > 0) sendMove(buf, eager);
                 if (lazy.length  > 0) sendAnnounce({ msgId, type }, lazy);
-                await dispatchMove(buf, peerId);
+                await dispatchMove(buf, origin);
             } else if (type === 'action_log') {
                 if (eager.length > 0) sendActionLog(buf, eager);
                 if (lazy.length  > 0) sendAnnounce({ msgId, type }, lazy);
-                await dispatchActionLog(buf, peerId);
+                await dispatchActionLog(buf, origin);
             }
         });
 
@@ -1063,7 +1064,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
             if (eager.length > 0) sendMove(buf, eager);
             if (lazy.length  > 0) sendAnnounce({ msgId, type: 'move' }, lazy);
-            _cacheMsg(msgId, 'move', buf);
+            _cacheMsg(msgId, 'move', buf, peerId);
             await dispatchMove(buf, peerId);
         });
 
