@@ -45,9 +45,10 @@ export const handleSocialCommands = async (command, args) => {
         case 'accept': {
             if (!pendingDuel || Date.now() > pendingDuel.expiresAt) { log(`No pending challenge.`); return true; }
             log(`[DUEL] Accepting challenge from ${pendingDuel.challengerName}...`, '#0f0');
-            gameActions.sendDuelAccept({ target: pendingDuel.challengerId, fromName: localPlayer.name });
+            const { challengerId, challengerName, day } = pendingDuel;
+            gameActions.sendDuelAccept({ target: challengerId, fromName: localPlayer.name });
             setPendingDuel(null);
-            return { type: 'duel_accept', targetId: pendingDuel.challengerId, targetName: pendingDuel.challengerName, day: pendingDuel.day };
+            return { type: 'duel_accept', targetId: challengerId, targetName: challengerName, day };
         }
 
         case 'decline': {

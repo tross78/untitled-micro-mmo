@@ -8,6 +8,7 @@ import { inputManager } from '../engine/input.js';
 import { UI_PALETTE, UI_STYLE } from '../infra/graphics-constants.js';
 import { ENEMIES, roomHasFeature } from '../content/data.js';
 import { NPCS } from '../content/data/npcs.js';
+import { pendingDuel } from '../state/store.js';
 
 /**
  * UIRenderSystem handles HUD, dialogue, menus, and overlays.
@@ -146,6 +147,22 @@ export class UIRenderSystem {
             if (inCombat) btns.push({ label: 'Flee', action: 'flee' });
         }
         if (hasLoot) btns.push({ label: 'Pickup', action: 'pickup' });
+
+        // Resource/forage node at player's feet
+        if (!inCombat && playerTransform) {
+            const gatherables = this.world.query([Component.Gatherable, Component.Transform]);
+            const hasGatherableAtFeet = gatherables.some(id => {
+                const t = this.world.getComponent(id, Component.Transform);
+                return t && t.x === playerTransform.x && t.y === playerTransform.y && t.mapId === player.location;
+            });
+            if (hasGatherableAtFeet) btns.push({ label: 'Gather', action: 'pickup' });
+        }
+
+        // Pending duel challenge — show Accept/Decline regardless of position
+        if (pendingDuel && Date.now() <= pendingDuel.expiresAt) {
+            btns.push({ label: 'Accept Duel', action: 'duel_accept' });
+            btns.push({ label: 'Decline Duel', action: 'duel_decline' });
+        }
 
         // NPC range check — only show Talk when adjacent to that NPC's entity
         const npcEntities = this.world.query([Component.Transform, Component.Sprite]);
