@@ -83,9 +83,10 @@ async function startArbiter() {
         return { privateKey: b64Seed }; 
     })();
 
-    let room;
+    let room, globalRoom;
     try {
         room = joinTorrent({ appId: APP_ID, trackers: TORRENT_TRACKERS, iceServers: ICE_SERVERS }, 'hearthwick-arbiter-v1');
+        globalRoom = joinTorrent({ appId: APP_ID, trackers: TORRENT_TRACKERS, iceServers: ICE_SERVERS }, 'global');
     } catch (err) {
         console.error('[Arbiter] Torrent join failed:', err.message);
         process.exit(1);
@@ -94,11 +95,20 @@ async function startArbiter() {
     const [sendState] = room.makeAction(NETWORK_ACTIONS.WORLD_STATE);
     const [,, getRollup] = room.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
     const [,, getFraud] = room.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
+    const [, getRegisterPresence] = globalRoom.makeAction('register_presence');
 
     const lastRollups = new Map(); // shard -> { root, ts, proposer }
     const lastRollupTime = new Map(); // publicKey -> ts
     const bans = new Set();
     const presenceDirectory = createPresenceDirectory();
+
+    getRegisterPresence((payload) => {
+        if (!payload || typeof payload !== 'object') return;
+        const registered = presenceDirectory.register(payload);
+        if (registered && registered.id) {
+            console.log(`[Arbiter] Peer discovered via network: ${registered.id} (${registered.name}) on ${registered.shard}`);
+        }
+    });
     startPeerMonitor(presenceDirectory, {
         ghGistToken: GH_GIST_TOKEN,
         ghGistId: GH_GIST_ID,
