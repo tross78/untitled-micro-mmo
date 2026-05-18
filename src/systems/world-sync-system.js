@@ -168,7 +168,7 @@ export class WorldSyncSystem {
             this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: sc.x, y: sc.y });
             this.world.setComponent(eid, Component.Sprite, {
                 type: sc.label,
-                palette: 'resource',
+                palette: `resource:${sc.label}`,
                 seed: this.hash(nodeKey),
             });
             this.world.setComponent(eid, Component.Gatherable, { kind: sc.type, label: sc.label, locId: currentLoc });

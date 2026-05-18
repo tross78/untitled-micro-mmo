@@ -88,6 +88,21 @@ describe('Scattered Resources ECS Sync', () => {
         expect(world.query([Component.Gatherable]).length).toBe(2);
     });
 
+    test('resource nodes keep type-specific sprite palettes', () => {
+        stores.localPlayer.location = 'forest_edge';
+        worldData.forest_edge.sceneryScatter = [
+            { type: 'resource', label: 'log', count: [1, 1] },
+            { type: 'resource', label: 'ore', count: [1, 1] },
+        ];
+        system.update();
+
+        const gatherables = world.query([Component.Gatherable, Component.Sprite]);
+        const sprites = gatherables.map(id => world.getComponent(id, Component.Sprite));
+        const palettes = new Set(sprites.map(sprite => sprite.palette));
+
+        expect(palettes).toEqual(new Set(['resource:log', 'resource:ore']));
+    });
+
     test('PendingInteract resolves to ACTION.INTERACT on arrival', async () => {
         const { MovementSystem } = await import('../systems/movement-system.js');
         const entityId = world.createEntity();

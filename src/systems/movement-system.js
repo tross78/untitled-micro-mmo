@@ -13,15 +13,7 @@ import { getNPCsAt, grantItem } from '../commands/helpers.js';
 import { seededRNG, hashStr } from '../rules/utils.js';
 import { ACTION } from '../engine/input.js';
 import { log } from '../ui/index.js';
-
-const getSpriteKind = (sprite) => {
-  if (!sprite) return null;
-  if (sprite.palette === 'enemy') return 'enemy';
-  if (typeof sprite.palette === 'string' && sprite.palette.startsWith('npc')) return 'npc';
-  if (sprite.palette === 'self' || sprite.palette === 'peer') return 'player';
-  if (sprite.type === 'peer' || sprite.type === 'player') return 'player';
-  return sprite.type;
-};
+import { getSpriteKind } from '../graphics/sprite-kind.js';
 
 /**
  * MovementSystem handles spatial logic, collision detection, and room transitions.

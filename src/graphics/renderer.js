@@ -6,21 +6,12 @@ import { Component } from '../domain/components.js';
 import { isDialogueOpen } from './renderer-ui-compat.js';
 import { bus } from '../state/eventbus.js';
 import { ACTION } from '../engine/input.js';
+import { getSpriteKind } from './sprite-kind.js';
 
 let _canvas = null;
 let _ctx = null;
 let _radarEl = null;
 let _devMode = false;
-
-const getSpriteKind = (sprite) => {
-    if (!sprite) return null;
-    if (sprite.palette === 'enemy') return 'enemy';
-    if (sprite.palette === 'resource') return 'resource';
-    if (typeof sprite.palette === 'string' && sprite.palette.startsWith('npc')) return 'npc';
-    if (sprite.palette === 'self' || sprite.palette === 'peer') return 'player';
-    if (sprite.type === 'peer' || sprite.type === 'player') return 'player';
-    return sprite.type;
-};
 
 export function initCanvas() {
     if (_canvas) return;

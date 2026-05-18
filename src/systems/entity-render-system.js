@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { generateCharacterSprite, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES } from '../graphics/graphics.js';
+import { generateCharacterSprite, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES, getSceneryPalette } from '../graphics/graphics.js';
 
 const NPC_WALK_SPRITES = new Set(['guard']);
 const NPC_IDLE_SPRITES = new Set(['barkeep', 'merchant', 'herbalist', 'bard', 'sage']);
@@ -244,12 +244,16 @@ export class EntityRenderSystem {
             const s = String(seed);
             for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
             palKey = `peer${h % 6}`;
+        } else if (typeof palette === 'string' && palette.startsWith('resource:') && type) {
+            palKey = null;
         } else if (palette === 'enemy' && type) {
             // Use per-enemy palette when available for visual distinctiveness
             const specific = `enemy_${type}`;
             if (PALETTES[specific]) palKey = specific;
         }
-        const pal = PALETTES[palKey] || PALETTES.peer;
+        const pal = palKey
+            ? (PALETTES[palKey] || PALETTES.peer)
+            : getSceneryPalette(type) || PALETTES.peer;
 
         // Use type override if provided (for directional posing)
         let template = null;
