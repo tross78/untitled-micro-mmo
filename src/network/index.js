@@ -1150,7 +1150,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     shardApi = r;
     const registerStartTimer = setTimeout(registerWithArbiter, 1000);
     // Refresh the arbiter's /peers directory so warm hints stay current for
-    // late joiners. Hints only — actual signaling is Nostr+torrent.
+    // late joiners. Hints only — actual signaling stays on Trystero torrent.
     const registerHeartbeatTimer = setInterval(registerWithArbiter, 30000);
     _shardTeardown = () => {
         clearTimeout(registerStartTimer);

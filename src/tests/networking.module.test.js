@@ -285,18 +285,17 @@ describe('networking exported module behavior', () => {
         expect(config.trackerUrls).toBeUndefined();
     });
 
-    test('buildFastRoomConfig races nostr and torrent signaling by default', () => {
+    test('buildFastRoomConfig uses torrent signaling with trickle ICE by default', () => {
         const config = buildFastRoomConfig({ iceServers: STUN_SERVERS });
 
-        expect(config.appId).toBe(APP_ID);
-        expect(config.strategyRace.map(entry => entry.name)).toEqual(['nostr', 'torrent']);
-        expect(config.strategyRace[0].config).toMatchObject({
+        expect(config).toEqual({
             appId: APP_ID,
+            relayUrls: TORRENT_TRACKERS,
             trickleIce: true,
             rtcConfig: { iceServers: STUN_SERVERS, iceCandidatePoolSize: 3 },
         });
-        expect(config.strategyRace[1].config.relayUrls).toEqual(TORRENT_TRACKERS);
-        expect(config.fallbackConfig.relayUrls).toEqual(TORRENT_TRACKERS);
+        expect(config.strategyRace).toBeUndefined();
+        expect(config.trackerUrls).toBeUndefined();
     });
 
     test('initNetworking joins rooms with relayUrls instead of ignored trackerUrls', async () => {
@@ -304,21 +303,16 @@ describe('networking exported module behavior', () => {
 
         const calls = joinRoom.mock.calls;
         expect(calls.length).toBeGreaterThanOrEqual(2);
-        const fastConfigs = [];
         const torrentConfigs = [];
         for (const [config] of calls) {
             expect(config.appId).toBe(APP_ID);
-            if (config.strategyRace) {
-                fastConfigs.push(config);
-            } else {
-                torrentConfigs.push(config);
-            }
+            torrentConfigs.push(config);
         }
-        expect(fastConfigs.every(config =>
-            config.strategyRace.map(entry => entry.name).join(',') === 'nostr,torrent'
-        )).toBe(true);
         expect(torrentConfigs.every(config =>
-            config.relayUrls === TORRENT_TRACKERS && config.trackerUrls === undefined
+            config.relayUrls === TORRENT_TRACKERS
+                && config.trickleIce === true
+                && config.trackerUrls === undefined
+                && config.strategyRace === undefined
         )).toBe(true);
     });
 });

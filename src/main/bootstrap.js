@@ -137,7 +137,7 @@ export const start = async () => {
             }
         }, 5000);
 
-        // Gist beacon is world-state only — peer discovery/signaling is Nostr+torrent.
+        // Gist beacon is world-state only — peer discovery/signaling stays on Trystero torrent.
         // Fire-and-forget so a slow GitHub round-trip can't delay shard joining.
         // The beacon arrives in parallel and triggers a state sync whenever it lands.
         if (!E2E_MODE && GH_GIST_ID && GH_GIST_USERNAME && !hasSyncedWithArbiter) {

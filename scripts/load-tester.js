@@ -1,6 +1,7 @@
 import { joinRoom } from '@trystero-p2p/torrent';
-import { RTCPeerConnection } from 'werift';
-import { APP_ID, TORRENT_TRACKERS, ICE_SERVERS } from '../src/constants.js';
+import { RTCPeerConnection } from '../arbiter/node_modules/werift/lib/index.mjs';
+import { ICE_SERVERS } from '../src/infra/constants.js';
+import { buildTorrentConfig } from '../src/network/config.js';
 
 /**
  * Headless Load Tester for Hearthwick.
@@ -13,10 +14,8 @@ console.log(`[LoadTester] Spawning ${NUM_PEERS} headless peers in shard: ${SHARD
 
 for (let i = 0; i < NUM_PEERS; i++) {
     const config = {
-        appId: APP_ID,
-        trackerUrls: TORRENT_TRACKERS,
+        ...buildTorrentConfig({ iceServers: ICE_SERVERS }),
         rtcPolyfill: RTCPeerConnection,
-        rtcConfig: { iceServers: ICE_SERVERS },
     };
 
     const room = joinRoom(config, SHARD_NAME);

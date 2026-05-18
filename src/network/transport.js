@@ -1,10 +1,9 @@
 import * as torrent from '@trystero-p2p/torrent';
-import * as nostr from '@trystero-p2p/nostr';
 import { createCompositeRoom } from './multi-room.js';
 import { markNetworkEvent } from './audit-debug.js';
 
 const getTransport = () => globalThis.__FENHOLLOW_TRANSPORT__ || torrent;
-const nativeStrategies = { torrent, nostr };
+const nativeStrategies = { torrent };
 
 export const selfId = getTransport().selfId;
 
