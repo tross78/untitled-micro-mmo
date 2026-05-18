@@ -49,7 +49,7 @@ describe('arbiter presence cache helpers', () => {
         ]);
 
         expect(listPeersForShard(cache, 's1', 110000)).toEqual([
-            { ph: 'aaaa1111', name: 'Alice', location: 'cellar', level: 2, ts: 100000 },
+            { ph: 'aaaa1111', name: 'Alice', location: 'cellar', shard: 's1', level: 2, ts: 100000 },
         ]);
     });
 

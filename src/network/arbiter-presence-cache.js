@@ -80,18 +80,22 @@ export const prunePresenceCache = (presenceCache, now = Date.now(), ttl = PRESEN
 };
 
 export const listPeersForShard = (presenceCache, shard, now = Date.now()) => {
-    if (!(presenceCache instanceof Map) || !shard) return [];
+    if (!(presenceCache instanceof Map)) return [];
 
     const cutoff = now - PEER_SNAPSHOT_TTL;
     return Array.from(presenceCache.values())
-        .filter(entry => entry?.shard === shard && Number(entry.ts) >= cutoff)
+        .filter(entry => {
+            if (Number(entry.ts) < cutoff) return false;
+            return shard ? entry?.shard === shard : true;
+        })
         .sort((a, b) => b.ts - a.ts)
         .slice(0, MAX_PEER_SNAPSHOT)
-        .map(({ name, location, level, ph, id, ts, x, y }) => ({
+        .map(({ name, location, level, ph, shard: entryShard, id, ts, x, y }) => ({
             name,
             location,
             level,
             ph,
+            shard: entryShard,
             ...(id ? { id } : {}),
             ts,
             ...(x !== undefined ? { x } : {}),
