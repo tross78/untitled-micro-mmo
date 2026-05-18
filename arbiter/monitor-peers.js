@@ -28,12 +28,12 @@ export const startPeerMonitor = (presenceDirectory, config = {}) => {
         if (!presenceDirectory) return [];
 
         // Get peers from all known shards (any shard with at least one peer)
-        const allPeers = presenceDirectory.list() || [];
+        const peers = presenceDirectory.list() || [];
         const now = Date.now();
         const thirtySecondsAgo = now - 30_000;
 
         // Filter to only recent peers
-        const filtered = allPeers.filter(p => {
+        return peers.filter(p => {
             return p?.id && p?.ph && p?.shard && p?.ts > thirtySecondsAgo;
         }).map(p => ({
             id: p.id,
@@ -41,12 +41,6 @@ export const startPeerMonitor = (presenceDirectory, config = {}) => {
             shard: p.shard,
             ts: p.ts,
         }));
-
-        if (allPeers.length > 0 || filtered.length > 0) {
-            console.log(`[Peer Monitor] Found ${allPeers.length} total peers, ${filtered.length} recent`);
-        }
-
-        return filtered;
     };
 
     /**
@@ -96,8 +90,6 @@ export const startPeerMonitor = (presenceDirectory, config = {}) => {
         if (peersStr !== lastPublishedPeers) {
             lastPublishedPeers = peersStr;
             await publishToGist(peers);
-        } else if (peers.length === 0) {
-            console.log(`[Peer Monitor] No change (still ${peers.length} peers)`);
         }
     };
 

@@ -315,10 +315,7 @@ async function startArbiter() {
             req.on('end', () => {
                 try {
                     const parsed = JSON.parse(body);
-                    const registered = presenceDirectory.register(parsed);
-                    if (registered) {
-                        console.log(`[Arbiter] Peer registered: ${registered.id} (${registered.name}) on ${registered.shard}`);
-                    }
+                    presenceDirectory.register(parsed);
                     // Return current shard peers so the client can seed HyParView immediately.
                     const peers = presenceDirectory.list(parsed.shard)
                         .filter(p => p.ph !== parsed.ph)
@@ -327,11 +324,7 @@ async function startArbiter() {
                         .map(p => ({ id: p.id, ph: p.ph }));
                     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true, peers }));
-                } catch (_e) {
-                    console.warn('[Arbiter] /register parse error:', _e.message);
-                    res.writeHead(400);
-                    res.end();
-                }
+                } catch (_e) { res.writeHead(400); res.end(); }
             });
         } else {
             res.writeHead(404);
