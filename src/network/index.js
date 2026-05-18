@@ -622,6 +622,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         }
     };
     setTimeout(registerWithArbiter, 1000);
+    // Keep presence alive in arbiter for cross-shard discovery (Gist peer list)
+    setInterval(registerWithArbiter, 30000);
 
     const SHARD_REBALANCE_CAP = 80;
 
