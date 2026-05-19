@@ -23,12 +23,14 @@ export const APP_ID = GAME_NAME + '-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/
 
 // Torrent signaling relays. ICE/STUN handles the peer connection after
 // signaling; these trackers are only for rendezvous and candidate exchange.
-// Keep the set aligned with Trystero's torrent defaults for redundancy.
+// Verified 2026-05-19:
+//   tracker.openwebtorrent.com — healthy (~765ms)
+//   tracker.webtorrent.dev     — healthy (~2.75s, slower but reliable)
+//   tracker.btorrent.xyz       — SSL cert mismatch (domain sold/hijacked, removed)
+//   tracker.files.fm:7073      — returns HTTP 403 (removed; was crashing arbiter)
 export const TORRENT_TRACKERS = [
-    'wss://tracker.webtorrent.dev',
     'wss://tracker.openwebtorrent.com',
-    'wss://tracker.btorrent.xyz',
-    'wss://tracker.files.fm:7073/announce',
+    'wss://tracker.webtorrent.dev',
 ];
 
 // Optimized STUN list for faster NAT traversal and to avoid Firefox "5+ servers" warning.

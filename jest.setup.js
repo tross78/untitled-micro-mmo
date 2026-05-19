@@ -1,3 +1,4 @@
+import 'jest-canvas-mock';
 import { TextEncoder, TextDecoder } from 'util';
 import { webcrypto } from 'crypto';
 

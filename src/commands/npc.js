@@ -35,10 +35,13 @@ export const handleNPCCommands = async (command, args) => {
             returnableQuests.forEach(q => {
                 const pq = localPlayer.quests[q.id];
                 const count = q.objective.count || 1;
-                if (pq.progress >= count) {
+                const current = q.type === 'fetch' && q.objective?.target
+                    ? localPlayer.inventory.filter(i => i === q.objective.target).length
+                    : (pq.progress || 0);
+                if (current >= count) {
                     log(`[Quest] ${npc.name}: "I see you have finished your task: ${q.name}. Well done!"`, '#0f0');
                 } else {
-                    log(`[Quest] ${npc.name}: "How is that task (${q.name}) coming along?"`, '#0ff');
+                    log(`[Quest] ${npc.name}: "How is that task (${q.name}) coming along? (${current}/${count})"`, '#0ff');
                 }
             });
 
@@ -168,7 +171,10 @@ export const handleNPCCommands = async (command, args) => {
                             log(`  ${q.name} ✅`, '#0f0');
                         } else {
                             const count = q.objective?.count || 1;
-                            log(`  ${q.name}: ${pq.progress}/${count}`, '#ff0');
+                            const current = q.type === 'fetch' && q.objective?.target
+                                ? localPlayer.inventory.filter(i => i === q.objective.target).length
+                                : (pq.progress || 0);
+                            log(`  ${q.name}: ${current}/${count}`, '#ff0');
                         }
                     });
                 });

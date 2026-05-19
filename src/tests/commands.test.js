@@ -345,6 +345,49 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             expect(localPlayer.inventory).toContain('wheat');
         });
 
+        test('fetch quest can be completed when inventory has enough items (gather_wood)', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['wood', 'wood', 'wood', 'wood', 'wood'];
+            localPlayer.quests.gather_wood = { progress: 0, completed: false };
+            localPlayer.xp = 0; localPlayer.gold = 0;
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('quest complete gather_wood');
+
+            expect(localPlayer.quests.gather_wood.completed).toBe(true);
+            expect(localPlayer.xp).toBeGreaterThan(0);
+        });
+
+        test('fetch quest blocked when not enough items in inventory', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['wood', 'wood'];
+            localPlayer.quests.gather_wood = { progress: 0, completed: false };
+            localPlayer.xp = 0;
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('quest complete gather_wood');
+
+            expect(localPlayer.quests.gather_wood.completed).toBe(false);
+            expect(localPlayer.xp).toBe(0);
+        });
+
+        test('iron_supply unlocks after gather_wood is completed', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['wood', 'wood', 'wood', 'wood', 'wood'];
+            localPlayer.quests.gather_wood = { progress: 0, completed: false };
+            localPlayer.xp = 0; localPlayer.gold = 0;
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('quest complete gather_wood');
+            expect(localPlayer.quests.gather_wood.completed).toBe(true);
+
+            // iron_supply prereq is now satisfied — accept should work
+            localPlayer.inventory = ['iron', 'iron', 'iron'];
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('quest accept iron_supply');
+            expect(localPlayer.quests.iron_supply).toBeDefined();
+        });
+
         test('quest completion is blocked if the receiver is absent', async () => {
             localPlayer.location = 'market';
             localPlayer.inventory = ['ale'];
@@ -356,6 +399,189 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             expect(localPlayer.quests.courier_run.completed).toBe(false);
             expect(localPlayer.inventory).toContain('ale');
             expect(localPlayer.xp).toBe(0);
+        });
+    });
+
+    describe('Buy & Sell Commands', () => {
+        beforeEach(async () => {
+            // Ensure merchant, guard are considered present at their rooms
+            const rules = await import('../rules/index.js');
+            rules.getNPCLocation.mockImplementation((id) => {
+                if (id === 'merchant') return 'market';
+                if (id === 'guard') return 'hallway';
+                if (id === 'barkeep') return 'tavern';
+                if (id === 'sage') return 'ruins';
+                return null;
+            });
+        });
+
+        test('buy purchases item from merchant shop (wood bundle)', async () => {
+            localPlayer.location = 'market';
+            localPlayer.gold = 100;
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('buy wood bundle');
+            expect(localPlayer.inventory).toContain('wood');
+            expect(localPlayer.gold).toBeLessThan(100);
+        });
+
+        test('buy purchases potion from barkeep at tavern', async () => {
+            localPlayer.location = 'tavern';
+            localPlayer.gold = 100;
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('buy health potion');
+            expect(localPlayer.inventory).toContain('potion');
+            expect(localPlayer.gold).toBeLessThan(100);
+        });
+
+        test('buy fails when not enough gold', async () => {
+            localPlayer.location = 'market';
+            localPlayer.gold = 1;
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('buy iron sword');
+            expect(localPlayer.inventory).not.toContain('iron_sword');
+        });
+
+        test('buy fails when item not sold by shop', async () => {
+            localPlayer.location = 'market';
+            appRuntime.hydratePlayer(localPlayer);
+            const { log } = await import('../ui/index.js');
+            await handleCommand('buy nonexistent_item');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining("don't sell"));
+        });
+
+        test('buy with no args lists shop inventory', async () => {
+            localPlayer.location = 'market';
+            appRuntime.hydratePlayer(localPlayer);
+            const { log } = await import('../ui/index.js');
+            await handleCommand('buy');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining("Shop"), expect.any(String));
+        });
+
+        test('buy fails when no shop at location', async () => {
+            localPlayer.location = 'cellar';
+            appRuntime.hydratePlayer(localPlayer);
+            const { log } = await import('../ui/index.js');
+            await handleCommand('buy potion');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('no shop'));
+        });
+
+        test('sell sells iron ore to merchant for gold', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['iron'];
+            localPlayer.gold = 0;
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('sell iron ore');
+            expect(localPlayer.inventory).not.toContain('iron');
+            expect(localPlayer.gold).toBeGreaterThan(0);
+        });
+
+        test('sell fails when item not in inventory', async () => {
+            localPlayer.location = 'market';
+            appRuntime.hydratePlayer(localPlayer);
+            const { log } = await import('../ui/index.js');
+            await handleCommand('sell iron sword');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining("don't have"));
+        });
+
+        test('sell fails with no args', async () => {
+            localPlayer.location = 'market';
+            appRuntime.hydratePlayer(localPlayer);
+            const { log } = await import('../ui/index.js');
+            await handleCommand('sell');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('Usage'));
+        });
+
+        test('sell at guard post pays bounty price for bandit_mask', async () => {
+            localPlayer.location = 'hallway';
+            localPlayer.inventory = ['bandit_mask'];
+            localPlayer.gold = 0;
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('sell bandit mask');
+            expect(localPlayer.inventory).not.toContain('bandit_mask');
+            expect(localPlayer.gold).toBeGreaterThan(0);
+        });
+
+        test('sell wood bundle at market works', async () => {
+            localPlayer.location = 'market';
+            localPlayer.inventory = ['wood'];
+            localPlayer.gold = 0;
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('sell wood bundle');
+            expect(localPlayer.inventory).not.toContain('wood');
+            expect(localPlayer.gold).toBeGreaterThan(0);
+        });
+    });
+
+    describe('Quest Log Display', () => {
+        test('quest list shows all chains', async () => {
+            const { log } = await import('../ui/index.js');
+            localPlayer.quests.wolf_hunt = { progress: 2, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('quest list');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('QUEST LOG'), expect.any(String));
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('MILITIA'), expect.any(String));
+        });
+
+        test('quest list marks completed quests', async () => {
+            const { log } = await import('../ui/index.js');
+            localPlayer.quests.wolf_hunt = { progress: 3, completed: true };
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('quest list');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('✅'), expect.any(String));
+        });
+
+        test('quest list shows locked quests as ???', async () => {
+            const { log } = await import('../ui/index.js');
+            // wolf_hunt requires find_tavern completed, and player hasn't done find_tavern
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('quest list');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('???'), expect.any(String));
+        });
+    });
+
+    describe('Bank Commands', () => {
+        beforeEach(() => {
+            localPlayer.location = 'cellar';
+            localPlayer.gold = 100;
+            localPlayer.bankedGold = 200;
+            appRuntime.hydratePlayer(localPlayer);
+        });
+
+        test('bank deposit transfers gold to bank', async () => {
+            await handleCommand('bank deposit 50');
+            expect(localPlayer.gold).toBe(50);
+            expect(localPlayer.bankedGold).toBe(250);
+        });
+
+        test('bank deposit clamps to available gold', async () => {
+            await handleCommand('bank deposit 200');
+            expect(localPlayer.gold).toBe(100); // no change
+        });
+
+        test('bank withdraw transfers gold from bank', async () => {
+            await handleCommand('bank withdraw 100');
+            expect(localPlayer.bankedGold).toBe(100);
+            expect(localPlayer.gold).toBe(200);
+        });
+
+        test('bank withdraw rejects when insufficient banked gold', async () => {
+            await handleCommand('bank withdraw 500');
+            expect(localPlayer.bankedGold).toBe(200);
+        });
+
+        test('bank shows balance when no subcommand', async () => {
+            const { log } = await import('../ui/index.js');
+            await handleCommand('bank');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('Wallet'));
+        });
+
+        test('bank outside bank room shows error', async () => {
+            const { log } = await import('../ui/index.js');
+            localPlayer.location = 'market';
+            appRuntime.hydratePlayer(localPlayer);
+            await handleCommand('bank deposit 10');
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('bank'));
+            expect(localPlayer.gold).toBe(100);
         });
     });
 

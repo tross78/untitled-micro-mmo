@@ -54,7 +54,10 @@ const getQuestRowsForNpc = (localPlayer, npcId, npcsHere) => {
 
         if (quest.receiver === npcId && !progress.completed) {
             const goal = quest.objective?.count || 1;
-            if ((progress.progress || 0) >= goal) {
+            const current = quest.type === 'fetch' && quest.objective?.target
+                ? countItem(localPlayer.inventory || [], quest.objective.target)
+                : (progress.progress || 0);
+            if (current >= goal) {
                 rows.push({
                     label: `Complete ${quest.name}`,
                     detail: `Reward: ${quest.reward.gold || 0}g / ${quest.reward.xp || 0}xp`,
@@ -63,14 +66,18 @@ const getQuestRowsForNpc = (localPlayer, npcId, npcsHere) => {
             } else {
                 rows.push({
                     label: quest.name,
-                    detail: `${progress.progress || 0}/${goal}`,
+                    detail: `${current}/${goal}`,
                     disabled: true,
                 });
             }
         } else if (quest.giver === npcId && !progress.completed) {
+            const goal2 = quest.objective?.count || 1;
+            const current2 = quest.type === 'fetch' && quest.objective?.target
+                ? countItem(localPlayer.inventory || [], quest.objective.target)
+                : (progress.progress || 0);
             rows.push({
                 label: quest.name,
-                detail: `${progress.progress || 0}/${quest.objective?.count || 1}`,
+                detail: `${current2}/${goal2}`,
                 disabled: true,
             });
         }

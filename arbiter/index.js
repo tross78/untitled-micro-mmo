@@ -36,10 +36,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, 'world_state.json');
 const REGISTER_BODY_LIMIT = 16 * 1024;
 
-// Catch unhandled errors from WebSocket/network layer
+// Non-fatal network/tracker error patterns — these come from tracker WebSocket
+// connections that reject, time out, or return unexpected HTTP status codes (e.g. 403).
+const NONFATAL_PATTERNS = [
+    'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH',
+    'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT',
+    'WebSocket', 'socket hang up', 'Unexpected server response',
+    'SSL', 'certificate', 'handshake',
+];
+const isNonfatalNetworkError = (msg) => NONFATAL_PATTERNS.some(p => msg.includes(p));
+
 process.on('uncaughtException', (err) => {
-    if (err.code === 'ECONNREFUSED' || err.message?.includes('WebSocket')) {
-        console.warn('[Arbiter] Network error (non-fatal):', err.message);
+    const msg = err.message || String(err);
+    if (isNonfatalNetworkError(msg)) {
+        console.warn('[Arbiter] Network error (non-fatal):', msg.slice(0, 160));
     } else {
         console.error('[FATAL] Uncaught exception:', err);
         process.exit(1);
@@ -48,8 +58,8 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (reason, _promise) => {
     const msg = reason?.message || String(reason);
-    if (msg.includes('ECONNREFUSED') || msg.includes('WebSocket') || msg.includes('connect')) {
-        console.warn('[Arbiter] Network rejection (non-fatal):', msg);
+    if (isNonfatalNetworkError(msg)) {
+        console.warn('[Arbiter] Network rejection (non-fatal):', msg.slice(0, 160));
     } else {
         console.error('[FATAL] Unhandled rejection:', reason);
         process.exit(1);

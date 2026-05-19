@@ -161,6 +161,41 @@ describe('graphics procedural primitives', () => {
         expect(() => drawTile(makeCtx(), 'forest', 0, 0, Number.NaN, 16)).not.toThrow();
     });
 
+    test('drawTile covers all grass/forest sub-types via seeds 0-7', () => {
+        for (let seed = 0; seed < 8; seed++) {
+            expect(() => drawTile(makeCtx(), 'grass', 0, 0, seed, 16)).not.toThrow();
+            expect(() => drawTile(makeCtx(), 'forest', 0, 0, seed, 16)).not.toThrow();
+        }
+    });
+
+    test('drawTile covers stone_floor crack/moss variants via seeds 4-7', () => {
+        for (let seed = 4; seed < 8; seed++) {
+            expect(() => drawTile(makeCtx(), 'stone_floor', 0, 0, seed, 16)).not.toThrow();
+        }
+    });
+
+    test('drawTile covers dirt pebble/rut/cracked variants', () => {
+        for (let seed = 0; seed < 8; seed++) {
+            expect(() => drawTile(makeCtx(), 'dirt', 0, 0, seed, 16)).not.toThrow();
+        }
+    });
+
+    test('drawTile covers less common tile types', () => {
+        const extra = ['cobble', 'mud', 'sand', 'dungeon', 'lava', 'void', 'water', 'exit', 'interior'];
+        extra.forEach(type => {
+            for (let seed = 0; seed < 4; seed++) {
+                expect(() => drawTile(makeCtx(), type, 0, 0, seed, 16)).not.toThrow();
+            }
+        });
+    });
+
+    test('drawTile covers wall and exit tile types with all variants', () => {
+        for (let seed = 0; seed < 8; seed++) {
+            expect(() => drawTile(makeCtx(), 'wall', 0, 0, seed, 16)).not.toThrow();
+            expect(() => drawTile(makeCtx(), 'exit', 0, 0, seed, 16)).not.toThrow();
+        }
+    });
+
     test('generateCharacterSprite uses OffscreenCanvas and returns 16x16 canvas for entity types', () => {
         ['self', 'peer', 'npc', 'enemy', 'other'].forEach(type => {
             const canvas = generateCharacterSprite(123, type);
