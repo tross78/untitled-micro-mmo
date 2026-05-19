@@ -29,6 +29,8 @@ describe('movement collisions against occupants and scenery', () => {
         const player = world.createEntity();
         const npc = world.createEntity();
         world.setComponent(player, Component.Transform, { mapId: 'room', x: 4, y: 5, facing: 'e' });
+        world.setComponent(player, Component.MovementTarget, { x: 5, y: 5 });
+        world.setComponent(player, Component.PendingInteract, { x: 5, y: 5, mapId: 'room' });
         world.setComponent(npc, Component.Transform, { mapId: 'room', x: 5, y: 5, facing: 's' });
         world.setComponent(npc, Component.Sprite, { type: 'npc', palette: 'npc-guard' });
         world.setComponent(npc, 'Identity', { id: 'guard' });
@@ -41,6 +43,8 @@ describe('movement collisions against occupants and scenery', () => {
         }));
         expect(world.getComponent(player, Component.Transform)).toMatchObject({ x: 4, y: 5, mapId: 'room' });
         expect(world.getComponent(player, Component.Tweenable)).toBeUndefined();
+        expect(world.getComponent(player, Component.MovementTarget)).toBeUndefined();
+        expect(world.getComponent(player, Component.PendingInteract)).toBeUndefined();
     });
 
     test('moving into an enemy triggers attack instead of movement', async () => {

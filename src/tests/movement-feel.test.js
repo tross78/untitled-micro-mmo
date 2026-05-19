@@ -87,6 +87,22 @@ describe('Phase 8.5a: Movement Feel and Touch Affordances', () => {
         movementSystem.update();
         expect(world.getComponent(player, Component.MovementTarget)).toBeUndefined();
     });
+
+    test('open dialogue cancels tap-to-move autopilot', () => {
+        const player = world.createEntity();
+        world.setComponent(player, Component.PlayerControlled, {});
+        world.setComponent(player, Component.Transform, { mapId: 'room1', x: 0, y: 0, facing: 's' });
+        world.setComponent(player, Component.MovementTarget, { x: 2, y: 0 });
+        world.setComponent(player, Component.PendingInteract, { x: 2, y: 0, mapId: 'room1' });
+        world.setComponent(player, Component.Dialogue, { speakerId: 'Guard', text: 'Stop.', progress: 0 });
+
+        movementSystem.update();
+
+        expect(world.getComponent(player, Component.Transform)).toMatchObject({ x: 0, y: 0 });
+        expect(world.getComponent(player, Component.MovementTarget)).toBeUndefined();
+        expect(world.getComponent(player, Component.PendingInteract)).toBeUndefined();
+        expect(world.getComponent(player, Component.Tweenable)).toBeUndefined();
+    });
     
     test('MovementTarget is cancelled by blocked move', () => {
         const player = world.createEntity();

@@ -34,6 +34,14 @@ export class MovementSystem {
   }
 
   update() {
+    const uiLockedPlayers = this.world.query([Component.PlayerControlled, Component.Transform]);
+    for (const entityId of uiLockedPlayers) {
+      if (this.world.getComponent(entityId, Component.Menu) || this.world.getComponent(entityId, Component.Dialogue)) {
+        this.world.removeComponent(entityId, Component.MovementTarget);
+        this.world.removeComponent(entityId, Component.PendingInteract);
+      }
+    }
+
     // 1. Process explicit Intent
     const entitiesWithIntent = this.world.query([Component.Transform, Component.Intent]);
 
@@ -154,6 +162,8 @@ export class MovementSystem {
     // be stepped onto and harvested from the player's feet.
     if (occupant && occupant.type !== 'resource') {
         transform.facing = dir;
+        this.world.removeComponent(entityId, Component.MovementTarget);
+        this.world.removeComponent(entityId, Component.PendingInteract);
         if (occupant.type === 'npc') {
             this.openNpcInteraction(occupant.id);
         } else if (occupant.type === 'enemy') {
