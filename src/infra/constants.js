@@ -21,14 +21,14 @@ export const GH_GIST_USERNAME = 'tross78';
 // Strip non-alphanumeric chars — base64 contains + and / which can break Trystero's room hashing.
 export const APP_ID = GAME_NAME + '-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-// Browser-validated trackers.
-// The broader pool previously used here is currently degraded in Chrome:
-// DNS failures, certificate errors, and 403s prevented real peer discovery.
-// Keep this list conservative and expand it only after `node scripts/probe-trackers.mjs`
-// confirms the endpoint can open from a real browser context.
+// Torrent signaling relays. ICE/STUN handles the peer connection after
+// signaling; these trackers are only for rendezvous and candidate exchange.
+// Keep the set aligned with Trystero's torrent defaults for redundancy.
 export const TORRENT_TRACKERS = [
-    'wss://tracker.openwebtorrent.com',
     'wss://tracker.webtorrent.dev',
+    'wss://tracker.openwebtorrent.com',
+    'wss://tracker.btorrent.xyz',
+    'wss://tracker.files.fm:7073/announce',
 ];
 
 // Optimized STUN list for faster NAT traversal and to avoid Firefox "5+ servers" warning.

@@ -128,8 +128,6 @@ try {
 
     const trackers = [
         ...TORRENT_TRACKERS,
-        'wss://tracker.btorrent.xyz',
-        'wss://tracker.files.fm:7073/announce',
         'wss://tracker.sloppyta.co:80/announce',
         'wss://tracker.novage.com.ua:80/announce',
     ];
