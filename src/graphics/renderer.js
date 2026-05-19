@@ -177,7 +177,7 @@ export function renderWorld(state, onTileClick) {
             const hit = isInteractable ? (dx <= 1 && dy <= 1) : (t.x === tx && t.y === ty);
 
             if (hit && !appRuntime.world.getComponent(id, Component.PlayerControlled)) {
-                clickedEntity = { id: identity?.id || id, type: kind };
+                clickedEntity = { id: identity?.id || id, type: kind, x: t.x, y: t.y };
                 break;
             }
         }

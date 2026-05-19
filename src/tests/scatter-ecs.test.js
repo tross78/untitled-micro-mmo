@@ -109,12 +109,19 @@ describe('Scattered Resources ECS Sync', () => {
         const transform = { mapId: 'forest_edge', x: 2, y: 3, facing: 'e' };
         world.setComponent(entityId, Component.Transform, transform);
         world.setComponent(entityId, Component.PendingInteract, { x: 3, y: 3, mapId: 'forest_edge' });
+
+        const resId = world.createEntity();
+        world.setComponent(resId, Component.Transform, { mapId: 'forest_edge', x: 3, y: 3 });
+        world.setComponent(resId, Component.Sprite, { type: 'log', palette: 'resource:log' });
+        world.setComponent(resId, Component.Gatherable, { kind: 'resource', label: 'log', locId: 'forest_edge' });
         
         const system = new MovementSystem(world, worldData, {});
         const busEmitSpy = jest.spyOn(bus, 'emit');
         
         await system.handleMove(entityId, transform, 'e');
         
+        expect(transform.x).toBe(3);
+        expect(transform.y).toBe(3);
         expect(busEmitSpy).toHaveBeenCalledWith('input:action', expect.objectContaining({ action: 'interact' }));
         expect(world.getComponent(entityId, Component.PendingInteract)).toBeUndefined();
     });

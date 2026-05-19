@@ -3,6 +3,7 @@ import { bus } from '../state/eventbus.js';
 import { ACTION } from '../engine/input.js';
 import { appRuntime } from '../app/runtime.js';
 import { Component } from '../domain/components.js';
+import { localPlayer } from '../state/store.js';
 
 // We need to mock things that events.js depends on
 jest.mock('../state/persistence.js', () => ({
@@ -45,13 +46,15 @@ jest.mock('../graphics/graphics.js', () => ({
     getGrayscaleTemplate: jest.fn()
 }));
 
-import { setupGlobalEvents } from '../main/events.js';
+import { setupGlobalEvents, triggerVisualRefresh, resetVisualRefreshTimer } from '../main/events.js';
 import { handleCommand } from '../commands/index.js';
-import { showRoomBanner, showToast } from '../graphics/renderer.js';
+import { renderWorld, showRoomBanner, showToast } from '../graphics/renderer.js';
 
 describe('Input Interaction (Cross-platform)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        resetVisualRefreshTimer();
+        global.requestAnimationFrame = (cb) => { cb(); return 1; };
         setupGlobalEvents();
         // Setup a mock player with a menu
         appRuntime.playerEntityId = 1;
@@ -167,5 +170,20 @@ describe('Input Interaction (Cross-platform)', () => {
         bus.emit('log', { msg: 'Spring, weary. Day 7.', color: '#556', toast: false });
 
         expect(showToast).not.toHaveBeenCalledWith('Spring, weary. Day 7.');
+    });
+
+    test('resource fat-finger click walks to actual resource tile', () => {
+        localPlayer.location = 'forest_edge';
+        appRuntime.world.getComponent = jest.fn((_id, comp) => {
+            if (comp === Component.Transform) return { mapId: 'forest_edge', x: 1, y: 1 };
+            return null;
+        });
+
+        triggerVisualRefresh();
+        const clickHandler = renderWorld.mock.calls.at(-1)[1];
+        clickHandler(4, 5, { type: 'resource', id: 'resource:forest_edge:5,5', x: 5, y: 5 });
+
+        expect(appRuntime.world.setComponent).toHaveBeenCalledWith(1, Component.MovementTarget, { x: 5, y: 5 });
+        expect(appRuntime.world.setComponent).toHaveBeenCalledWith(1, Component.PendingInteract, { x: 5, y: 5, mapId: 'forest_edge' });
     });
 });

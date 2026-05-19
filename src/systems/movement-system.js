@@ -150,7 +150,9 @@ export class MovementSystem {
 
     // 3. Check entity occupants first (NPCs/enemies take priority over scenery)
     const occupant = this.getOccupantAt(transform.mapId, nx, ny, entityId);
-    if (occupant) {
+    // Gatherable resource sprites are drawn as entities, but they are meant to
+    // be stepped onto and harvested from the player's feet.
+    if (occupant && occupant.type !== 'resource') {
         transform.facing = dir;
         if (occupant.type === 'npc') {
             this.openNpcInteraction(occupant.id);

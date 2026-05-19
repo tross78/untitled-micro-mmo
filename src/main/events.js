@@ -138,11 +138,13 @@ export const triggerVisualRefresh = () => {
             
             if (entity?.type === 'resource') {
                 const transform = appRuntime.world.getComponent(appRuntime.playerEntityId, Component.Transform);
-                if (transform && transform.x === tx && transform.y === ty) {
+                const targetX = Number.isFinite(entity.x) ? entity.x : tx;
+                const targetY = Number.isFinite(entity.y) ? entity.y : ty;
+                if (transform && transform.x === targetX && transform.y === targetY) {
                     bus.emit('input:action', { action: ACTION.INTERACT, type: 'down' });
-                } else if (appRuntime.playerEntityId) {
-                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.MovementTarget, { x: tx, y: ty });
-                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.PendingInteract, { x: tx, y: ty, mapId: transform.mapId });
+                } else if (appRuntime.playerEntityId && transform) {
+                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.MovementTarget, { x: targetX, y: targetY });
+                    appRuntime.world.setComponent(appRuntime.playerEntityId, Component.PendingInteract, { x: targetX, y: targetY, mapId: transform.mapId });
                     showToast(`→ ${entity.id || 'resource'}`);
                 }
                 triggerLogicalRefresh();
