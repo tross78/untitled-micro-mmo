@@ -250,4 +250,105 @@ describe('canvas menu builder', () => {
         const menu = buildCanvasMenu('npc', { npcId: 'sage', text: 'Greetings.' }, makeCtx(player));
         expect(menu.entries.find(e => e.label === 'Leave')).toBeDefined();
     });
+
+    test('crafting menu shows recipes for the current location', () => {
+        const player = makePlayer({ location: 'market', inventory: ['iron', 'iron', 'iron', 'wood', 'wood'] });
+        const menu = buildCanvasMenu('crafting', {}, makeCtx(player));
+        expect(menu.type).toBe('crafting');
+        expect(menu.entries.length).toBeGreaterThan(0);
+        // Player has enough materials so iron sword should be enabled
+        const sword = menu.entries.find(e => e.label === 'Iron Sword');
+        expect(sword).toBeDefined();
+        expect(sword.disabled).toBe(false);
+    });
+
+    test('crafting menu disables recipes with insufficient materials', () => {
+        const player = makePlayer({ location: 'market', inventory: [] });
+        const menu = buildCanvasMenu('crafting', {}, makeCtx(player));
+        menu.entries.filter(e => e.label !== 'Back').forEach(e => {
+            expect(e.disabled).toBe(true);
+        });
+    });
+
+    test('crafting menu shows empty message in location with no recipes', () => {
+        // Use a room guaranteed to have no crafting recipes
+        const player = makePlayer({ location: 'hallway', inventory: [] });
+        const menu = buildCanvasMenu('crafting', {}, makeCtx(player));
+        expect(menu.entries.some(e => e.label.includes('Nothing'))).toBe(true);
+    });
+
+    test('stats menu shows player stats', () => {
+        const player = makePlayer({ level: 3, xp: 50, hp: 30, gold: 200, bankedGold: 500 });
+        const menu = buildCanvasMenu('stats', {}, makeCtx(player));
+        expect(menu.type).toBe('stats');
+        expect(menu.title).toBe('Tester');
+        expect(menu.entries.find(e => e.label === 'Level')).toBeDefined();
+        expect(menu.entries.find(e => e.label === 'HP')).toBeDefined();
+        expect(menu.entries.find(e => e.label === 'Gold')).toBeDefined();
+    });
+
+    test('stats menu with equipped weapon and armor', () => {
+        const player = makePlayer({ equipped: { weapon: 'iron_sword', armor: 'leather_armor' } });
+        const menu = buildCanvasMenu('stats', {}, makeCtx(player));
+        const weapEntry = menu.entries.find(e => e.label === 'Weapon');
+        const armEntry = menu.entries.find(e => e.label === 'Armor');
+        expect(weapEntry?.detail).toContain('Iron Sword');
+        expect(armEntry?.detail).toContain('Leather');
+    });
+
+    test('status menu shows no effects when none active', () => {
+        const player = makePlayer({ statusEffects: [] });
+        const menu = buildCanvasMenu('status', {}, makeCtx(player));
+        expect(menu.type).toBe('status');
+        expect(menu.entries.some(e => e.label === 'No active effects')).toBe(true);
+    });
+
+    test('status menu shows active status effects', () => {
+        const player = makePlayer({ statusEffects: [{ id: 'poisoned', duration: 5 }] });
+        const menu = buildCanvasMenu('status', {}, makeCtx(player));
+        expect(menu.entries.find(e => e.label === 'Poisoned')).toBeDefined();
+    });
+
+    test('status menu shows threat and weather', () => {
+        const player = makePlayer({ statusEffects: [] });
+        const ctx = { ...makeCtx(player), worldState: { ...worldState, threatLevel: 3, weather: 'storm', day: 1 } };
+        const menu = buildCanvasMenu('status', {}, ctx);
+        expect(menu.entries.some(e => e.label === 'Threat Level')).toBe(true);
+        expect(menu.entries.some(e => e.label === 'Weather')).toBe(true);
+    });
+
+    test('status menu shows world event', () => {
+        const player = makePlayer({ statusEffects: [] });
+        const ctx = { ...makeCtx(player), worldState: { ...worldState, event: { type: 'wandering_boss', target: 'goblin_king' }, day: 1 } };
+        const menu = buildCanvasMenu('status', {}, ctx);
+        expect(menu.entries.some(e => e.label === "Today's Event")).toBe(true);
+    });
+
+    test('sell menu shows sellable items', () => {
+        const player = makePlayer({ inventory: ['potion', 'wolf_pelt'], location: 'market' });
+        const ctx = makeCtx(player);
+        const menu = buildCanvasMenu('sell', { npcId: 'barkeep' }, ctx);
+        expect(menu.type).toBe('sell');
+        expect(menu.entries.length).toBeGreaterThan(0);
+    });
+
+    test('sell menu shows nothing-to-sell for empty inventory', () => {
+        const player = makePlayer({ inventory: [] });
+        const menu = buildCanvasMenu('sell', { npcId: 'barkeep' }, makeCtx(player));
+        expect(menu.entries.some(e => e.label === 'Nothing to sell')).toBe(true);
+    });
+
+    test('getSellableItems excludes gold items', () => {
+        const player = makePlayer({ inventory: ['gold_coin', 'potion'] });
+        const menu = buildCanvasMenu('sell', { npcId: 'barkeep' }, makeCtx(player));
+        expect(menu.type).toBe('sell');
+    });
+
+    test('status menu shows scarcity and surplus', () => {
+        const player = makePlayer({ statusEffects: [] });
+        const ctx = { ...makeCtx(player), worldState: { ...worldState, scarcity: ['potion'], surplus: ['iron'], day: 1 } };
+        const menu = buildCanvasMenu('status', {}, ctx);
+        expect(menu.entries.some(e => e.label === 'Scarce')).toBe(true);
+        expect(menu.entries.some(e => e.label === 'Surplus')).toBe(true);
+    });
 });

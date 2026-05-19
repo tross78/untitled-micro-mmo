@@ -407,7 +407,8 @@ describe('CombatSystem edge cases', () => {
             localPlayer.forestFights = 5;
             await combatSystem.handleAttack(ruinsEntityId);
             const enemy = shardEnemies.get('ruins');
-            if (enemy) expect(enemy.type).toBe('mountain_troll');
+            expect(enemy).toBeDefined();
+            expect(enemy?.type).toBe('mountain_troll');
         });
 
         test('dungeon rooms do not cost forestFights', async () => {
@@ -532,7 +533,6 @@ describe('CombatSystem edge cases', () => {
         shardEnemies.set('forest_edge', enemy);
         localPlayer.currentEnemy = enemy;
 
-        const beforeGold = localPlayer.gold;
         await system.handleVictory('forest_edge', 'forest_wolf', { name: 'Forest Wolf', xp: 14 }, () => 0);
 
         // Second call immediately after — claim window still active

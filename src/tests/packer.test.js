@@ -268,4 +268,57 @@ describe('Binary Packer', () => {
         const recovered = btoa(String.fromCharCode(...packed.subarray(6, 70)));
         expect(recovered).toBe(sig64);
     });
+
+    test('packTradeCommit / unpackTradeCommit round-trip', () => {
+        const { packTradeCommit, unpackTradeCommit } = require('../network/packer.js');
+        const trade = { gold: 50, items: ['potion', 'bread'], ts: Date.now(), signature: btoa('t'.repeat(64)) };
+        const packed = packTradeCommit(trade);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        const unpacked = unpackTradeCommit(packed);
+        expect(unpacked.gold).toBe(50);
+        expect(unpacked.items).toContain('potion');
+    });
+
+    test('packTradeCommit handles empty items array', () => {
+        const { packTradeCommit, unpackTradeCommit } = require('../network/packer.js');
+        const trade = { gold: 0, items: [], ts: Date.now(), signature: btoa('x'.repeat(64)) };
+        const packed = packTradeCommit(trade);
+        const unpacked = unpackTradeCommit(packed);
+        expect(unpacked.items).toHaveLength(0);
+        expect(unpacked.gold).toBe(0);
+    });
+
+    test('unpackMove tolerates ArrayBuffer input', () => {
+        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, ts: Date.now(), signature: btoa('a'.repeat(64)) };
+        const packed = packMove(move);
+        const asArrayBuffer = packed.buffer.slice(packed.byteOffset, packed.byteOffset + packed.byteLength);
+        const unpacked = unpackMove(asArrayBuffer);
+        expect(unpacked.from).toBe('cellar');
+    });
+
+    test('unpackMove tolerates Array input', () => {
+        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, ts: Date.now(), signature: btoa('a'.repeat(64)) };
+        const packed = packMove(move);
+        const asArray = Array.from(packed);
+        const unpacked = unpackMove(asArray);
+        expect(unpacked.from).toBe('cellar');
+    });
+
+    test('unpackMove tolerates Buffer-like object with type:Buffer', () => {
+        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, ts: Date.now(), signature: btoa('a'.repeat(64)) };
+        const packed = packMove(move);
+        const bufferLike = { type: 'Buffer', data: Array.from(packed) };
+        const unpacked = unpackMove(bufferLike);
+        expect(unpacked.from).toBe('cellar');
+    });
+
+    test('packActionLog / unpackActionLog round-trip', () => {
+        const { packActionLog, unpackActionLog } = require('../network/packer.js');
+        const log = { type: 'attack', index: 1, target: 'goblin', data: 10, signature: btoa('a'.repeat(64)) };
+        const packed = packActionLog(log);
+        expect(packed).toBeInstanceOf(Uint8Array);
+        const unpacked = unpackActionLog(packed);
+        expect(unpacked.type).toBe('attack');
+        expect(unpacked.index).toBe(1);
+    });
 });

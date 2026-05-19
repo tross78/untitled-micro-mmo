@@ -164,10 +164,10 @@ describe('MapRenderSystem', () => {
 
     test('draw works for multiple rooms', () => {
         const rooms = ['cellar', 'hallway', 'tavern', 'market'];
-        rooms.forEach(room => {
-            if (gameWorld[room]) {
-                expect(() => system.draw(ctx, makeState(room), 0, 0)).not.toThrow();
-            }
+        const existingRooms = rooms.filter(room => gameWorld[room]);
+        expect(existingRooms).toHaveLength(rooms.length);
+        existingRooms.forEach(room => {
+            expect(() => system.draw(ctx, makeState(room), 0, 0)).not.toThrow();
         });
     });
 });

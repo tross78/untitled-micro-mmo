@@ -2,7 +2,7 @@ import { GameLoop } from '../app/loop.js';
 
 describe('GameLoop', () => {
     beforeEach(() => {
-        global.requestAnimationFrame = jest.fn((cb) => { return 1; });
+        global.requestAnimationFrame = jest.fn((_cb) => { return 1; });
         global.cancelAnimationFrame = jest.fn();
         Object.defineProperty(global, 'performance', {
             value: { now: jest.fn(() => 1000) },

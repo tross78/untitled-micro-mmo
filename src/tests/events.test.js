@@ -140,7 +140,6 @@ describe('main/events — setupGlobalEvents bus handlers', () => {
     });
 
     test('player:move to new location records visit and logs season', async () => {
-        const { log } = await import('../ui/index.js');
         localPlayer.visitedRooms = ['cellar'];
         localPlayer.location = 'cellar';
         bus.emit('player:move', { from: 'cellar', to: 'hallway' });
@@ -164,7 +163,7 @@ describe('main/events — setupGlobalEvents bus handlers', () => {
     });
 
     test('ui:back closes the menu', async () => {
-        const { showDialogue, isDialogueOpen } = await import('../graphics/renderer.js');
+        const { isDialogueOpen } = await import('../graphics/renderer.js');
         isDialogueOpen.mockReturnValue(false);
         bus.emit('ui:menu', { type: 'inventory', context: {} });
         bus.emit('ui:back', {});
@@ -231,7 +230,6 @@ describe('main/events — setupGlobalEvents bus handlers', () => {
     });
 
     test('trade:offer-received creates pending trade', async () => {
-        const { setPendingTrade } = await import('../state/store.js');
         bus.emit('trade:offer-received', {
             partnerId: 'peer1',
             partnerName: 'Peer One',

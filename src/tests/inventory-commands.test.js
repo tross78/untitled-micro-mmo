@@ -280,4 +280,49 @@ describe('Inventory Commands', () => {
             expect(log).toHaveBeenCalledWith(expect.stringContaining('Unknown recipe'));
         });
     });
+
+    describe('inventory unknown item log line', () => {
+        test('inventory shows unknown item id when not in ITEMS', async () => {
+            const { log } = await import('../ui/index.js');
+            localPlayer.inventory = ['__not_real_item__'];
+            await handleCommand('inventory');
+            expect(log).toHaveBeenCalledWith(
+                expect.stringContaining('__not_real_item__'), expect.any(String)
+            );
+        });
+    });
+
+    describe('trade command', () => {
+        beforeEach(async () => {
+            const { setPendingTrade, players } = await import('../state/store.js');
+            players.clear();
+            if (setPendingTrade) setPendingTrade(null);
+        });
+
+        test('trade with no args does not crash', async () => {
+            await expect(handleCommand('trade')).resolves.not.toThrow();
+        });
+
+        test('trade cancel clears pending trade', async () => {
+            const { log } = await import('../ui/index.js');
+            const store = await import('../state/store.js');
+            store.setPendingTrade?.({ partnerId: 'peer1', partnerName: 'Peer', myOffer: { gold: 0, items: [] }, signatures: {} });
+            await handleCommand('trade cancel');
+            expect(log).toHaveBeenCalled();
+        });
+
+        test('trade with unknown player logs not found', async () => {
+            const { log } = await import('../ui/index.js');
+            await handleCommand('trade nonexistentplayer');
+            expect(log).toHaveBeenCalledWith('Player not found.');
+        });
+
+        test('trade offer without pending trade does not crash', async () => {
+            await expect(handleCommand('trade offer gold 10')).resolves.not.toThrow();
+        });
+
+        test('trade commit without pending trade does not crash', async () => {
+            await expect(handleCommand('trade commit')).resolves.not.toThrow();
+        });
+    });
 });

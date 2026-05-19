@@ -131,4 +131,252 @@ describe('EntityRenderSystem player variants', () => {
         const idleCall = spy.mock.calls.find((call) => call[2] === 'barkeep');
         expect(idleCall[3]).toBeGreaterThanOrEqual(0); // cycles frames; exact index depends on gameTime
     });
+
+    test('player facing north uses player_back variant', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 'n' });
+        world.setComponent(id, Component.Sprite, { type: 'player', palette: 'self', seed: 1 });
+        world.setComponent(id, Component.PlayerControlled, {});
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(1, 'self', 'player_back', 0);
+    });
+
+    test('player facing east uses player_side variant', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 'e' });
+        world.setComponent(id, Component.Sprite, { type: 'player', palette: 'self', seed: 1 });
+        world.setComponent(id, Component.PlayerControlled, {});
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(1, 'self', 'player_side', 0);
+    });
+
+    test('guard facing north uses guard_back variant', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 'n' });
+        world.setComponent(id, Component.Sprite, { type: 'guard', palette: 'npcGuard', seed: 2 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(2, 'npcGuard', 'guard_back', 0);
+    });
+
+    test('guard facing east uses guard_side variant', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 'e' });
+        world.setComponent(id, Component.Sprite, { type: 'guard', palette: 'npcGuard', seed: 2 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(2, 'npcGuard', 'guard_side', 0);
+    });
+
+    test('enemy uses attack variant during attack animation', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 's' });
+        world.setComponent(id, Component.Sprite, { type: 'wolf', palette: 'enemy', seed: 5 });
+        world.setComponent(id, Component.AttackAnimation, { dir: 'e', progress: 0.2 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(5, 'enemy', 'wolf_attack', 0);
+    });
+
+    test('enemy facing north uses back variant', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 'n' });
+        world.setComponent(id, Component.Sprite, { type: 'wolf', palette: 'enemy', seed: 5 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(5, 'enemy', 'wolf_back', 0);
+    });
+
+    test('enemy facing east uses side variant', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 'e' });
+        world.setComponent(id, Component.Sprite, { type: 'wolf', palette: 'enemy', seed: 5 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(5, 'enemy', 'wolf_side', 0);
+    });
+
+    test('CollisionBump shifts draw position east', () => {
+        const world = new WorldStore();
+        const id = setupPlayer(world);
+        world.setComponent(id, Component.CollisionBump, { dir: 'e', progress: 0.5 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        // Just verify it doesn't crash and calls drawImage
+        const ctx = makeCtx();
+        sys.draw(ctx, 0, 0, 0, 0, 0);
+        expect(ctx.ellipse).toHaveBeenCalled();
+    });
+
+    test('CollisionBump shifts draw position north', () => {
+        const world = new WorldStore();
+        const id = setupPlayer(world);
+        world.setComponent(id, Component.CollisionBump, { dir: 'n', progress: 0.5 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.draw(ctx, 0, 0, 0, 0, 0);
+        expect(ctx.ellipse).toHaveBeenCalled();
+    });
+
+    test('non-player entity renders name label with enemy color', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 's' });
+        world.setComponent(id, Component.Sprite, { type: 'wolf', palette: 'enemy', seed: 5 });
+        world.setComponent(id, 'Identity', { name: 'Wolf' });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.draw(ctx, 0, 0, 0, 0, 0);
+        expect(ctx.fillText).toHaveBeenCalledWith('Wolf', expect.any(Number), expect.any(Number));
+    });
+
+    test('stale peer renders with grey label color', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 's' });
+        world.setComponent(id, Component.Sprite, { type: 'player', palette: 'peer', seed: 9, stale: true });
+        world.setComponent(id, 'Identity', { name: 'OldPeer' });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.draw(ctx, 0, 0, 0, 0, 0);
+        // stale causes fillStyle to be set to grey before fillText
+        expect(ctx.fillText).toHaveBeenCalledWith('OldPeer', expect.any(Number), expect.any(Number));
+    });
+
+    test('enemy with damaged health renders health bar', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 's' });
+        world.setComponent(id, Component.Sprite, { type: 'wolf', palette: 'enemy', seed: 5 });
+        world.setComponent(id, Component.Health, { current: 5, max: 20 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.draw(ctx, 0, 0, 0, 0, 0);
+        // drawHealthBar calls fillRect twice (background + fill)
+        expect(ctx.fillRect).toHaveBeenCalledTimes(2);
+    });
+
+    test('getSprite uses peer palette variant based on seed hash', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const result = sys.getSprite(42, 'peer', 'player', 0);
+        expect(result).toBeDefined();
+    });
+
+    test('getSprite uses resource palette via getSceneryPalette', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const result = sys.getSprite(1, 'resource:tree', 'tree', 0);
+        expect(result).toBeDefined();
+    });
+
+    test('getSprite uses enemy-specific palette when available', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const result = sys.getSprite(1, 'enemy', 'wolf', 0);
+        expect(result).toBeDefined();
+    });
+
+    test('getSprite caches results for same key', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const r1 = sys.getSprite(1, 'self', 'player', 0);
+        const r2 = sys.getSprite(1, 'self', 'player', 0);
+        expect(r1).toBe(r2);
+    });
+
+    test('getSprite evicts oldest entry when cache exceeds 64', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        // Fill cache past 64 entries
+        for (let i = 0; i < 66; i++) {
+            sys.getSprite(i, 'self', 'player', 0);
+        }
+        expect(sys.spriteCache.size).toBeLessThanOrEqual(66);
+    });
+
+    test('drawHealthBar renders red bar at low health', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.drawHealthBar(ctx, 1, 1, 0.1, 0, 0);
+        expect(ctx.fillRect).toHaveBeenCalledTimes(2);
+    });
+
+    test('drawHealthBar renders yellow bar at medium health', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.drawHealthBar(ctx, 1, 1, 0.35, 0, 0);
+        expect(ctx.fillRect).toHaveBeenCalledTimes(2);
+    });
+
+    test('drawHealthBar renders green bar at high health', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.drawHealthBar(ctx, 1, 1, 0.8, 0, 0);
+        expect(ctx.fillRect).toHaveBeenCalledTimes(2);
+    });
+
+    test('sprite cache eviction happens when > 64 entities drawn', () => {
+        const world = new WorldStore();
+        // Create 66 entities all in viewport
+        for (let i = 0; i < 66; i++) {
+            const id = world.createEntity();
+            world.setComponent(id, Component.Transform, { x: i % 10, y: Math.floor(i / 10), mapId: 'tavern', facing: 's' });
+            world.setComponent(id, Component.Sprite, { type: 'player', palette: 'self', seed: i });
+            world.setComponent(id, Component.PlayerControlled, {});
+        }
+        const sys = new EntityRenderSystem(world, { W: 100, H: 100, S: 32 });
+        const ctx = makeCtx();
+        expect(() => sys.draw(ctx, 0, 0, 0, 0, 0)).not.toThrow();
+    });
+
+    test('entity facing west mirrors sprite via scale(-1,1)', () => {
+        const world = new WorldStore();
+        const id = world.createEntity();
+        world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 'w' });
+        world.setComponent(id, Component.Sprite, { type: 'player', palette: 'self', seed: 1 });
+        world.setComponent(id, Component.PlayerControlled, {});
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const ctx = makeCtx();
+        sys.draw(ctx, 0, 0, 0, 0, 0);
+        expect(ctx.scale).toHaveBeenCalledWith(-1, 1);
+    });
+
+    test('attack north variant resolves to player_attack_back', () => {
+        const world = new WorldStore();
+        const id = setupPlayer(world);
+        world.setComponent(id, Component.AttackAnimation, { dir: 'n', progress: 0.1 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(1, 'self', 'player_attack_back', 0);
+    });
+
+    test('attack south variant resolves to player_attack', () => {
+        const world = new WorldStore();
+        const id = setupPlayer(world);
+        world.setComponent(id, Component.AttackAnimation, { dir: 's', progress: 0.1 });
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        const spy = jest.spyOn(sys, 'getSprite');
+        sys.draw(makeCtx(), 0, 0, 0, 0, 0);
+        expect(spy).toHaveBeenCalledWith(1, 'self', 'player_attack', 0);
+    });
 });

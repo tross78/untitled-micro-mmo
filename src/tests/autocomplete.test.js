@@ -173,3 +173,131 @@ describe('Autocomplete — Unknown command argument', () => {
         expect(getSuggestions('clear something', ctx())).toEqual([]);
     });
 });
+
+describe('Autocomplete — /talk <npc>', () => {
+    const NPCS = {
+        barkeep: { name: 'Barkeep', role: 'shop', shop: ['potion'] },
+        merchant: { name: 'Merchant', role: 'misc', shop: [] },
+    };
+    const getNPCLocation = jest.fn((id) => id === 'barkeep' ? 'cellar' : 'market');
+    const worldState = { seed: 'seed', day: 1 };
+
+    test('talk + space shows NPCs at current location', () => {
+        const results = getSuggestions('talk ', ctx({ NPCS, getNPCLocation, worldState }));
+        expect(results.length).toBeGreaterThan(0);
+        expect(results.some(r => r.display === 'Barkeep')).toBe(true);
+    });
+
+    test('talk + partial filters NPC names', () => {
+        const results = getSuggestions('talk b', ctx({ NPCS, getNPCLocation, worldState }));
+        expect(results.some(r => r.display === 'Barkeep')).toBe(true);
+    });
+
+    test('talk returns empty without getNPCLocation', () => {
+        const results = getSuggestions('talk ', ctx({ NPCS, getNPCLocation: null, worldState }));
+        expect(results).toEqual([]);
+    });
+
+    test('talk returns empty without NPCS', () => {
+        const results = getSuggestions('talk ', ctx({ NPCS: null, getNPCLocation, worldState }));
+        expect(results).toEqual([]);
+    });
+
+    test('talk fill is lowercase', () => {
+        const results = getSuggestions('talk ', ctx({ NPCS, getNPCLocation, worldState }));
+        const r = results.find(r => r.display === 'Barkeep');
+        expect(r?.fill).toBe('talk barkeep');
+    });
+});
+
+describe('Autocomplete — /buy <item>', () => {
+    const NPCS = {
+        barkeep: { name: 'Barkeep', role: 'shop', shop: ['potion', 'iron_sword'] },
+    };
+    const getNPCLocation = jest.fn(() => 'cellar');
+    const worldState = { seed: 'seed', day: 1 };
+
+    test('buy shows shop items at current location', () => {
+        const results = getSuggestions('buy ', ctx({ NPCS, getNPCLocation, worldState }));
+        expect(results.some(r => r.display === 'Potion')).toBe(true);
+    });
+
+    test('buy partial filters shop items', () => {
+        const results = getSuggestions('buy p', ctx({ NPCS, getNPCLocation, worldState }));
+        expect(results.every(r => r.display.toLowerCase().startsWith('p'))).toBe(true);
+    });
+
+    test('buy returns empty if no shop NPC at location', () => {
+        const noShopNpcs = { barkeep: { name: 'Barkeep', role: 'misc', shop: [] } };
+        const results = getSuggestions('buy ', ctx({ NPCS: noShopNpcs, getNPCLocation, worldState }));
+        expect(results).toEqual([]);
+    });
+
+    test('buy returns empty without getNPCLocation', () => {
+        const results = getSuggestions('buy ', ctx({ NPCS, getNPCLocation: null, worldState }));
+        expect(results).toEqual([]);
+    });
+});
+
+describe('Autocomplete — /sell <item>', () => {
+    test('sell shows inventory items', () => {
+        const results = getSuggestions('sell ', ctx({ inventory: ['potion', 'wolf_pelt'] }));
+        expect(results.some(r => r.display === 'Potion')).toBe(true);
+        expect(results.some(r => r.display === 'Wolf Pelt')).toBe(true);
+    });
+
+    test('sell partial filters by name prefix', () => {
+        const results = getSuggestions('sell p', ctx({ inventory: ['potion', 'wolf_pelt'] }));
+        expect(results.every(r => r.display.toLowerCase().startsWith('p'))).toBe(true);
+    });
+
+    test('sell deduplicates inventory', () => {
+        const results = getSuggestions('sell ', ctx({ inventory: ['potion', 'potion', 'wolf_pelt'] }));
+        const names = results.map(r => r.display);
+        expect(new Set(names).size).toBe(names.length);
+    });
+});
+
+describe('Autocomplete — /quest <sub>', () => {
+    test('quest + space shows list/accept/complete', () => {
+        const results = getSuggestions('quest ', ctx());
+        expect(results.some(r => r.display === 'list')).toBe(true);
+        expect(results.some(r => r.display === 'accept')).toBe(true);
+        expect(results.some(r => r.display === 'complete')).toBe(true);
+    });
+
+    test('quest partial filters subcommands', () => {
+        const results = getSuggestions('quest l', ctx());
+        expect(results).toHaveLength(1);
+        expect(results[0].display).toBe('list');
+    });
+
+    test('quest list is immediate', () => {
+        const results = getSuggestions('quest l', ctx());
+        expect(results[0].immediate).toBe(true);
+    });
+
+    test('quest accept/complete are not immediate', () => {
+        const results = getSuggestions('quest a', ctx());
+        expect(results[0].immediate).toBe(false);
+    });
+});
+
+describe('Autocomplete — /bank <sub>', () => {
+    test('bank + space shows deposit/withdraw', () => {
+        const results = getSuggestions('bank ', ctx());
+        expect(results.some(r => r.display === 'deposit')).toBe(true);
+        expect(results.some(r => r.display === 'withdraw')).toBe(true);
+    });
+
+    test('bank partial filters subcommands', () => {
+        const results = getSuggestions('bank d', ctx());
+        expect(results).toHaveLength(1);
+        expect(results[0].display).toBe('deposit');
+    });
+
+    test('bank suggestions are not immediate', () => {
+        const results = getSuggestions('bank ', ctx());
+        results.forEach(r => expect(r.immediate).toBe(false));
+    });
+});

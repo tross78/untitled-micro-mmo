@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { handleCommand } from '../commands/index.js';
-import { localPlayer, worldState, players } from '../state/store.js';
+import { localPlayer, worldState } from '../state/store.js';
 import { bus } from '../state/eventbus.js';
 import { appRuntime } from '../app/runtime.js';
 import { gameActions } from '../network/index.js';
