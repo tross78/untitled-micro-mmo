@@ -34,6 +34,9 @@ export class UIRenderSystem {
         this.menuHitRegions = [];
         this.dialogueHitRegions = [];
         this.hudHitRegions = [];
+        // Cache for _getContextualBtns — recomputed only when location/combat state changes
+        this._ctxBtnCache = null;
+        this._ctxBtnKey = '';
     }
 
     /**
@@ -111,11 +114,20 @@ export class UIRenderSystem {
 
     _getContextualBtns(player, loc) {
         if (!loc) return [];
-        const btns = [];
+
         const sharedEnemy = this.shardEnemies?.get(player.location);
-        const enemyDead = !!sharedEnemy && sharedEnemy.hp <= 0;
+        const enemyHp = sharedEnemy?.hp ?? -1;
+        const lootLen = sharedEnemy?.loot?.length ?? 0;
+        const duelKey = pendingDuel ? pendingDuel.expiresAt : 0;
+
+        // Cheap fingerprint — skip the 5 world queries when nothing has changed
+        const key = `${player.location}|${player.currentEnemy}|${enemyHp}|${lootLen}|${duelKey}`;
+        if (key === this._ctxBtnKey && this._ctxBtnCache) return this._ctxBtnCache;
+
+        const btns = [];
+        const enemyDead = !!sharedEnemy && enemyHp <= 0;
         const enemyAlive = !!loc.enemy && !enemyDead && ENEMIES[loc.enemy];
-        const hasLoot = enemyDead && (sharedEnemy?.loot?.length ?? 0) > 0;
+        const hasLoot = enemyDead && lootLen > 0;
         const inCombat = !!player.currentEnemy;
         const npcs = this.getNPCsAt(player.location);
         const hasBank = roomHasFeature(player.location, 'bank');
@@ -133,14 +145,19 @@ export class UIRenderSystem {
             return Math.max(Math.abs(t.x - playerTransform.x), Math.abs(t.y - playerTransform.y)) <= 1;
         };
 
-        // Enemy range check
-        const enemyEntities = enemyAlive
-            ? [...this.world.query([Component.Transform, Component.Sprite])].filter(eid => {
-                const sp = this.world.getComponent(eid, Component.Sprite);
-                return sp?.palette === 'enemy';
-            })
-            : [];
-        const enemyInRange = inCombat || enemyEntities.some(isAdjacentTo);
+        // Query [Transform, Sprite] once and partition by palette — was queried 3× before
+        const spriteEntities = this.world.query([Component.Transform, Component.Sprite]);
+        const enemyEntities = [];
+        const npcEntityIds = [];
+        const peerEntityIds = [];
+        for (const eid of spriteEntities) {
+            const sp = this.world.getComponent(eid, Component.Sprite);
+            if (sp?.palette === 'enemy') enemyEntities.push(eid);
+            else if (sp?.palette === 'peer') peerEntityIds.push(eid);
+            else npcEntityIds.push(eid);
+        }
+
+        const enemyInRange = inCombat || (enemyAlive && enemyEntities.some(isAdjacentTo));
 
         if (enemyAlive && enemyInRange) {
             btns.push({ label: inCombat ? 'Strike' : 'Attack', action: 'attack', danger: inCombat });
@@ -165,13 +182,8 @@ export class UIRenderSystem {
         }
 
         // NPC range check — only show Talk when adjacent to that NPC's entity
-        const npcEntities = this.world.query([Component.Transform, Component.Sprite]);
         const nearbyNpc = npcs.find(_npcId =>
-            [...npcEntities].some(eid => {
-                const sp = this.world.getComponent(eid, Component.Sprite);
-                if (sp?.palette === 'enemy') return false;
-                return isAdjacentTo(eid);
-            })
+            npcEntityIds.some(eid => isAdjacentTo(eid))
         );
         if (nearbyNpc && !inCombat) btns.push({ label: 'Talk', action: 'npc', payload: { npcId: nearbyNpc } });
 
@@ -179,14 +191,9 @@ export class UIRenderSystem {
 
         // Duel — show when a peer entity is adjacent and not in combat
         if (!inCombat && this.players) {
-            const peerEntities = [...this.world.query([Component.Transform, Component.Sprite])].filter(eid => {
-                const sp = this.world.getComponent(eid, Component.Sprite);
-                return sp?.palette === 'peer';
-            });
-            const nearbyPeer = peerEntities.find(isAdjacentTo);
+            const nearbyPeer = peerEntityIds.find(isAdjacentTo);
             if (nearbyPeer) {
                 const sp = this.world.getComponent(nearbyPeer, Component.Sprite);
-                // Seed is hash(peerId) — find the peer whose id hashes to this seed
                 const hashId = (str) => { let h = 0; for (let i = 0; i < str.length; i++) h = (Math.imul(h ^ str.charCodeAt(i), 0x9e3779b9) >>> 0); return h; };
                 const peerEntry = sp?.seed != null ? [...this.players.entries()].find(([id]) => hashId(id) === sp.seed) : null;
                 const peerId = peerEntry?.[0];
@@ -194,6 +201,8 @@ export class UIRenderSystem {
             }
         }
 
+        this._ctxBtnKey = key;
+        this._ctxBtnCache = btns;
         return btns;
     }
 
@@ -467,15 +476,15 @@ export class UIRenderSystem {
         ctx.lineWidth = 2;
         const cx = this.VP.CW / 2;
         const cy = by + bh / 2;
+        const inner = Math.floor(this.VP.S * 1.2);
+        const outer = Math.floor(this.VP.S * 3.4);
+        ctx.beginPath();
         for (let i = 0; i < 8; i++) {
             const angle = (Math.PI * 2 * i) / 8;
-            const inner = Math.floor(this.VP.S * 1.2);
-            const outer = Math.floor(this.VP.S * 3.4);
-            ctx.beginPath();
             ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
             ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
-            ctx.stroke();
         }
+        ctx.stroke();
         
         ctx.strokeStyle = `rgba(199, 216, 171, ${alpha})`;
         ctx.lineWidth = 4;

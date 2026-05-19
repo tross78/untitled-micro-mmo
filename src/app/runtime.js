@@ -90,8 +90,9 @@ class AppRuntime {
     if (!this.playerEntityId) this.hydratePlayer(localPlayerStore);
     
     this.updateViewport();
-    window.addEventListener('resize', () => this.updateViewport());
-    window.addEventListener('orientationchange', () => this.updateViewport());
+    this._resizeHandler = () => this.updateViewport();
+    window.addEventListener('resize', this._resizeHandler);
+    window.addEventListener('orientationchange', this._resizeHandler);
 
     this.syncSystem = new SyncSystem(this.world, localPlayerStore, this.playerEntityId);
     
@@ -129,20 +130,24 @@ class AppRuntime {
 
     this._canvas = document.getElementById('game-canvas');
 
+    // Cache the 2D context once — getContext is a DOM call, not free on every frame
+    this._ctx = null;
+
     this.loop = new GameLoop({
       fps: 60,
       update: (dt) => this.update(dt),
       render: (gameTime) => {
           if (!this._canvas) this._canvas = document.getElementById('game-canvas');
           if (this._canvas instanceof HTMLCanvasElement) {
-              const ctx = this._canvas.getContext('2d');
-              if (ctx) this.draw(ctx, localPlayerStore, gameTime);
+              if (!this._ctx) this._ctx = this._canvas.getContext('2d');
+              if (this._ctx) this.draw(this._ctx, localPlayerStore, gameTime);
           }
       },
     });
   }
 
   updateViewport() {
+    const prevS = this.VP.S;
     const width  = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
     const isPortrait = height > width;
@@ -163,10 +168,17 @@ class AppRuntime {
     if (this.weatherRender) this.weatherRender.VP = this.VP;
     if (this.uiRender) this.uiRender.VP = this.VP;
 
+    // Tile and sprite caches are built at a specific VP.S. Invalidate when scale changes
+    // so the next frame rebuilds them at the new tile size rather than blitting stale data.
+    if (this.VP.S !== prevS) {
+        if (this.mapRender) this.mapRender.invalidate();
+        if (this.entityRender) this.entityRender.invalidate();
+    }
+
     const canvas = document.getElementById('game-canvas');
     if (canvas instanceof HTMLCanvasElement) {
-        if (canvas.width !== this.VP.CW) canvas.width = this.VP.CW;
-        if (canvas.height !== this.VP.CH) canvas.height = this.VP.CH;
+        if (canvas.width !== this.VP.CW) { canvas.width = this.VP.CW; this._ctx = null; }
+        if (canvas.height !== this.VP.CH) { canvas.height = this.VP.CH; this._ctx = null; }
     }
   }
 
@@ -240,16 +252,19 @@ class AppRuntime {
     if (this.mapRender) this.mapRender.VP = worldVP;
     if (this.entityRender) this.entityRender.VP = worldVP;
     if (this.weatherRender) this.weatherRender.VP = worldVP;
-    this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY, gameTime);
-    this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY, gameTime);
-    if (this.weatherRender) this.weatherRender.draw(ctx, worldState, transform.mapId, gameTime);
-    if (this.mapRender) this.mapRender.VP = this.VP;
-    if (this.entityRender) this.entityRender.VP = this.VP;
-    if (this.weatherRender) this.weatherRender.VP = this.VP;
-    ctx.restore();
+    try {
+        this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY, gameTime);
+        this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY, gameTime);
+        if (this.weatherRender) this.weatherRender.draw(ctx, worldState, transform.mapId, gameTime);
+    } finally {
+        if (this.mapRender) this.mapRender.VP = this.VP;
+        if (this.entityRender) this.entityRender.VP = this.VP;
+        if (this.weatherRender) this.weatherRender.VP = this.VP;
+        ctx.restore();
+    }
 
     this.uiRender.draw(ctx, localPlayerStore);
-    this._drawTransitionFade(ctx);
+    this._drawTransitionFade(ctx, gameTime);
   }
 
   getTopChromeHeight() {
@@ -280,21 +295,24 @@ class AppRuntime {
   }
 
   _startFade() {
-    this._transition = { active: true, phase: 'out', alpha: 0 };
+    this._transition = { active: true, phase: 'out', alpha: 0, startTime: null };
   }
 
   _endFade() {
     this._transition.phase = 'in';
+    this._transition.startTime = null;
   }
 
-  _drawTransitionFade(ctx) {
+  _drawTransitionFade(ctx, gameTime = 0) {
     const t = this._transition;
     if (!t.active) return;
-    const SPEED = 1 / (0.2 * 60); // 200ms at 60fps
+    const FADE_DURATION = 0.2; // 200ms in game-time seconds
+    if (t.startTime == null) t.startTime = gameTime;
+    const elapsed = gameTime - t.startTime;
     if (t.phase === 'out') {
-        t.alpha = Math.min(1, t.alpha + SPEED);
+        t.alpha = Math.min(1, elapsed / FADE_DURATION);
     } else if (t.phase === 'in') {
-        t.alpha = Math.max(0, t.alpha - SPEED);
+        t.alpha = Math.max(0, 1 - elapsed / FADE_DURATION);
         if (t.alpha === 0) t.active = false;
     }
     if (t.alpha > 0) {

@@ -12,8 +12,9 @@ export class WeatherRenderSystem {
     constructor(vp) {
         this.VP = vp;
         this.overlayAlpha = 0;
-        this.currentWeather = null; // weather currently being shown at full alpha
-        this.targetWeather = null;  // weather we are transitioning toward
+        this.targetWeather = null;   // weather we are fading in
+        this.previousWeather = null; // weather we are fading out
+        this.previousAlpha = 0;      // current fade-out alpha for previousWeather
 
         // Phase 8.76: Precomputed fog alpha palette to avoid thousands of string allocations per frame
         this._fogPalette = [];
@@ -35,6 +36,9 @@ export class WeatherRenderSystem {
         const weather = worldState.weather || 'clear';
 
         if (weather !== this.targetWeather) {
+            // Capture the outgoing weather and its current alpha for fade-out
+            this.previousWeather = this.targetWeather;
+            this.previousAlpha = this.overlayAlpha;
             this.targetWeather = weather;
             this.overlayAlpha = 0;
         }
@@ -44,6 +48,17 @@ export class WeatherRenderSystem {
         }
 
         const topY = this.VP.topChrome ?? 0;
+
+        // Fade out the previous weather while fading in the new one
+        if (this.previousWeather && this.previousAlpha > 0) {
+            this.previousAlpha = Math.max(0, this.previousAlpha - 1 / 90);
+            if (this.previousWeather === 'storm') {
+                this.drawStorm(ctx, this.previousAlpha, gameTime, topY);
+            } else if (this.previousWeather === 'fog') {
+                this.drawFog(ctx, room.zone, this.previousAlpha, gameTime, topY);
+            }
+            if (this.previousAlpha === 0) this.previousWeather = null;
+        }
 
         if (this.targetWeather === 'storm') {
             this.drawStorm(ctx, this.overlayAlpha, gameTime, topY);
@@ -77,9 +92,11 @@ export class WeatherRenderSystem {
 
     drawFog(ctx, zone, alpha = 1, gameTime = 0, topY = 0) {
         const maxAlpha = zone === 'wilderness' ? 0.38 : 0.18;
-        const patch = 12;
-        const h = this.VP.CH;
-        for (let row = 0; row < h; row += patch) {
+        // 24px patches (vs 12px) halves iteration count with imperceptible quality loss on mobile
+        const patch = 24;
+        // Only iterate the visible world rows — bottom chrome is clipped and wastes CPU
+        const worldH = (this.VP.worldPxH ?? this.VP.CH) + patch;
+        for (let row = 0; row < worldH; row += patch) {
             for (let x = 0; x < this.VP.CW; x += patch) {
                 // Three incommensurate waves at different speeds/directions — breaks up banding
                 const w1 = Math.sin(gameTime * 0.31 + x * 0.071 + row * 0.113);

@@ -41,7 +41,7 @@ export class MapRenderSystem {
         if (!loc) return;
 
         const tileType = zoneTileType(locId);
-        const locKey = `${locId}:${loc.width}:${loc.height}:${worldState.day}`;
+        const locKey = `${locId}:${loc.width}:${loc.height}:${worldState.day}:${this.VP.S}`;
 
         // 1. Manage Cache — rebuild only when room or day changes, not on camera movement
         if (!this.tileCache || this.tileCache.locKey !== locKey) {

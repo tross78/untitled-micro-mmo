@@ -170,4 +170,26 @@ describe('MapRenderSystem', () => {
             expect(() => system.draw(ctx, makeState(room), 0, 0)).not.toThrow();
         });
     });
+
+    test('cache key includes VP.S so tile size changes trigger a rebuild', () => {
+        const state = makeState('cellar');
+        system.draw(ctx, state, 0, 0);
+        const firstCache = system.tileCache;
+        // Simulate a window resize that changes tile scale
+        system.VP = { ...VP, S: VP.S * 2, CW: VP.W * VP.S * 2, CH: VP.H * VP.S * 2 };
+        system.draw(ctx, state, 0, 0);
+        // Cache key changed because VP.S is embedded — must rebuild
+        expect(system.tileCache).not.toBe(firstCache);
+        expect(system.tileCache.locKey).toContain(String(VP.S * 2));
+    });
+
+    test('invalidate followed by draw rebuilds cache even with same location/day', () => {
+        const state = makeState('cellar');
+        system.draw(ctx, state, 0, 0);
+        const firstCache = system.tileCache;
+        system.invalidate();
+        system.draw(ctx, state, 0, 0);
+        // Cache object reference should differ after invalidation
+        expect(system.tileCache).not.toBe(firstCache);
+    });
 });

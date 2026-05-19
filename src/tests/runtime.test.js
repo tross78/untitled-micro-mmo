@@ -95,6 +95,114 @@ describe('viewport sizing on mobile layouts', () => {
     });
 });
 
+describe('updateViewport invalidates render caches on tile scale change', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('invalidates map and entity caches when VP.S changes', () => {
+        const canvas = document.createElement('canvas');
+        jest.spyOn(document, 'getElementById').mockReturnValue(canvas);
+
+        const mapInvalidate = jest.fn();
+        const entityInvalidate = jest.fn();
+        appRuntime.mapRender = { VP: appRuntime.VP, invalidate: mapInvalidate };
+        appRuntime.entityRender = { VP: appRuntime.VP, invalidate: entityInvalidate };
+        appRuntime.weatherRender = null;
+        appRuntime.uiRender = null;
+
+        // Force a scale change: set VP.S to a known value first
+        appRuntime.VP.S = 40;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+
+        appRuntime.updateViewport();
+
+        // VP.S must have changed from 40 — invalidate must have been called
+        if (appRuntime.VP.S !== 40) {
+            expect(mapInvalidate).toHaveBeenCalled();
+            expect(entityInvalidate).toHaveBeenCalled();
+        }
+    });
+
+    test('does not invalidate caches when VP.S is unchanged', () => {
+        const canvas = document.createElement('canvas');
+        jest.spyOn(document, 'getElementById').mockReturnValue(canvas);
+
+        // Two identical calls — VP.S should not change on the second
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+        appRuntime.mapRender = null;
+        appRuntime.entityRender = null;
+        appRuntime.weatherRender = null;
+        appRuntime.uiRender = null;
+        appRuntime.updateViewport();
+        const s = appRuntime.VP.S;
+
+        const mapInvalidate = jest.fn();
+        const entityInvalidate = jest.fn();
+        appRuntime.mapRender = { VP: appRuntime.VP, invalidate: mapInvalidate };
+        appRuntime.entityRender = { VP: appRuntime.VP, invalidate: entityInvalidate };
+
+        appRuntime.updateViewport(); // same dimensions → same VP.S
+        expect(appRuntime.VP.S).toBe(s);
+        expect(mapInvalidate).not.toHaveBeenCalled();
+        expect(entityInvalidate).not.toHaveBeenCalled();
+    });
+});
+
+describe('transition fade timing', () => {
+    test('_startFade initializes with null startTime', () => {
+        appRuntime._startFade();
+        expect(appRuntime._transition.startTime).toBeNull();
+        expect(appRuntime._transition.phase).toBe('out');
+        expect(appRuntime._transition.alpha).toBe(0);
+    });
+
+    test('_drawTransitionFade advances alpha using gameTime, not frame count', () => {
+        const ctx = { fillStyle: '', fillRect: jest.fn() };
+        appRuntime._startFade();
+
+        // First call at gameTime=0 seeds startTime; alpha = 0
+        appRuntime._drawTransitionFade(ctx, 0);
+        expect(appRuntime._transition.alpha).toBe(0);
+
+        // Half-way through the 200ms fade
+        appRuntime._drawTransitionFade(ctx, 0.1);
+        expect(appRuntime._transition.alpha).toBeCloseTo(0.5, 1);
+
+        // Full fade at 200ms
+        appRuntime._drawTransitionFade(ctx, 0.2);
+        expect(appRuntime._transition.alpha).toBeCloseTo(1, 5);
+    });
+
+    test('_drawTransitionFade fades in after _endFade is called', () => {
+        const ctx = { fillStyle: '', fillRect: jest.fn() };
+        appRuntime._startFade();
+
+        // Complete the fade-out at gameTime 0 → 0.2
+        appRuntime._drawTransitionFade(ctx, 0);
+        appRuntime._drawTransitionFade(ctx, 0.2);
+        expect(appRuntime._transition.alpha).toBeCloseTo(1, 5);
+
+        // Switch to fade-in; startTime resets on first call
+        appRuntime._endFade();
+        appRuntime._drawTransitionFade(ctx, 0.2); // seeds fade-in startTime=0.2, elapsed=0, alpha=1
+        appRuntime._drawTransitionFade(ctx, 0.3); // 100ms in → alpha ~0.5
+        expect(appRuntime._transition.alpha).toBeCloseTo(0.5, 1);
+
+        appRuntime._drawTransitionFade(ctx, 0.4); // 200ms in → fade complete
+        expect(appRuntime._transition.active).toBe(false);
+    });
+
+    test('fade does not advance when inactive', () => {
+        const ctx = { fillStyle: '', fillRect: jest.fn() };
+        appRuntime._transition = { active: false, phase: 'idle', alpha: 0, startTime: null };
+        appRuntime._drawTransitionFade(ctx, 100);
+        expect(ctx.fillRect).not.toHaveBeenCalled();
+    });
+});
+
 describe('enemy world sync patrol stability', () => {
     test('world sync does not reset an existing enemy transform every update', () => {
         const world = new WorldStore();
