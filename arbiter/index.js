@@ -84,12 +84,20 @@ async function startArbiter() {
         process.exit(1);
     }
 
-    const { privateKey: arbiterPrivateKey } = await (async () => {
-        // Deterministically derive Ed25519 from secret
+    const { privateKey: arbiterPrivateKey, derivedPublicKeyB64 } = await (async () => {
+        // Deterministically derive Ed25519 keypair from secret
         const encoder = new TextEncoder();
         const seed = await crypto.subtle.digest('SHA-256', encoder.encode(MASTER_SECRET_KEY));
-        const b64Seed = Buffer.from(seed).toString('base64');
-        return { privateKey: b64Seed }; 
+        const seedBuf = Buffer.from(seed);
+        const b64Seed = seedBuf.toString('base64');
+        // Derive and log the public key so operators can verify MASTER_PUBLIC_KEY in constants.js
+        const pkcs8Header = Buffer.from('302e020100300506032b657004220420', 'hex');
+        const keyObj = crypto.createPrivateKey({ key: Buffer.concat([pkcs8Header, seedBuf]), format: 'der', type: 'pkcs8' });
+        const spki = crypto.createPublicKey(keyObj).export({ type: 'spki', format: 'der' });
+        const pubKeyB64 = Buffer.from(spki).subarray(spki.length - 32).toString('base64');
+        console.log(`[Arbiter] Derived public key: ${pubKeyB64}`);
+        console.log(`[Arbiter] MASTER_PUBLIC_KEY in constants.js should equal the above.`);
+        return { privateKey: b64Seed, derivedPublicKeyB64: pubKeyB64 };
     })();
 
     // Arbiter joins the `global` room — the same room the browser uses for
@@ -123,15 +131,22 @@ async function startArbiter() {
         const registered = presenceDirectory.register(payload);
         if (registered && registered.id) {
             console.log(`[Arbiter] Peer discovered via network: ${registered.id} (${registered.name}) on ${registered.shard}`);
-            // Push shard peer hints back to the registering peer via Trystero so
-            // they can seed HyParView immediately — no ARBITER_URL config required.
-            const hints = presenceDirectory.list(registered.shard)
-                .filter(p => p.id && p.id !== registered.id)
-                .slice(0, 8)
-                .map(p => ({ id: p.id, ph: p.ph }));
-            if (hints.length > 0 && peerId) {
-                sendPeerHints(hints, [peerId]);
-                console.log(`[Arbiter] Sent ${hints.length} peer hint(s) to ${peerId.slice(0, 8)}`);
+            const shardPeers = presenceDirectory.list(registered.shard);
+            const others = shardPeers.filter(p => p.id && p.id !== registered.id);
+
+            // Push existing shard peers back to the new/refreshed peer.
+            if (others.length > 0 && peerId) {
+                sendPeerHints(others.slice(0, 8).map(p => ({ id: p.id, ph: p.ph })), [peerId]);
+                console.log(`[Arbiter] Sent ${Math.min(others.length, 8)} peer hint(s) to ${peerId.slice(0, 8)}`);
+            }
+
+            // Push the new/refreshed peer back to all existing shard peers.
+            // This is the key fix for refresh: when A refreshes and gets a new peer ID,
+            // existing peers (B) won't discover A unless we tell them here.
+            const existingPeerTrysteroIds = others.map(p => p.id).filter(Boolean);
+            if (existingPeerTrysteroIds.length > 0) {
+                sendPeerHints([{ id: registered.id, ph: registered.ph }], existingPeerTrysteroIds);
+                console.log(`[Arbiter] Notified ${existingPeerTrysteroIds.length} existing peer(s) about ${registered.id.slice(0, 8)}`);
             }
         }
     });
@@ -313,7 +328,10 @@ async function startArbiter() {
 
         const url = new URL(req.url, `http://${req.headers.host}`);
 
-        if (url.pathname === '/bans') {
+        if (url.pathname === '/public-key') {
+            res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ publicKey: derivedPublicKeyB64 }));
+        } else if (url.pathname === '/bans') {
             res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
             res.end(JSON.stringify([...bans]));
         } else if (url.pathname === '/health') {
