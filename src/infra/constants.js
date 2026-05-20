@@ -31,8 +31,7 @@ export const APP_ID = GAME_NAME + '-Qu8SC4sn';
 //   tracker.btorrent.xyz       — SSL cert mismatch (domain sold/hijacked, removed)
 //   tracker.files.fm:7073      — returns HTTP 403 (removed; was crashing arbiter)
 export const TORRENT_TRACKERS = [
-    'wss://tracker.openwebtorrent.com',
-    'wss://tracker.webtorrent.dev',
+    'wss://tracker.openwebtorrent.com'
 ];
 
 // Optimized STUN list for faster NAT traversal and to avoid Firefox "5+ servers" warning.
