@@ -1,6 +1,6 @@
 import { GAME_NAME } from '../content/data.js';
 
-export const MASTER_PUBLIC_KEY = 'Qu8SC4sndLy3JCD642IaKiynfdp90Oht6W68KQkYSoU=';
+export const MASTER_PUBLIC_KEY = 'o3aLY6pfkQd7zlcYRa5cQN/HLYMKh5EpXOVy+4Dulm8=';
 
 export const VIEWPORT_W = 15;  // tiles wide (ALttP style)
 export const VIEWPORT_H = 11;  // tiles tall

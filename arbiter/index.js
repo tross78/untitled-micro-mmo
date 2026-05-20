@@ -120,6 +120,7 @@ async function startArbiter() {
     const [, getFraud] = globalRoom.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
     const [, getRegisterPresence] = globalRoom.makeAction('register_presence');
     const [sendPeerHints] = globalRoom.makeAction('arbiter_peer_hints');
+    const [, getSeekingShard] = globalRoom.makeAction('seeking_shard');
 
     const lastRollups = new Map(); // shard -> { root, ts, proposer }
     const lastRollupTime = new Map(); // publicKey -> ts
@@ -150,6 +151,25 @@ async function startArbiter() {
             }
         }
     });
+
+    // When a browser calls joinInstance it sends seeking_shard. The arbiter is
+    // always in the global room, so it responds immediately with peer hints for
+    // that shard — this is especially important after a page refresh when the
+    // refreshed browser may not share the global room with its old peers yet.
+    getSeekingShard((data, peerId) => {
+        if (!peerId) return;
+        const shard = typeof data === 'string' ? data : data?.shard;
+        if (!shard || typeof shard !== 'string') return;
+        const hints = presenceDirectory.list(shard)
+            .filter(p => p.id && p.id !== peerId)
+            .slice(0, 8)
+            .map(p => ({ id: p.id, ph: p.ph }));
+        if (hints.length > 0) {
+            sendPeerHints(hints, [peerId]);
+            console.log(`[Arbiter] seeking_shard ${shard}: sent ${hints.length} hint(s) to ${peerId.slice(0, 8)}`);
+        }
+    });
+
     let trackedPublishBeacon = async () => {};
 
     const ROLLUP_INTERVAL = 10000;
