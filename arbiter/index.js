@@ -111,17 +111,28 @@ async function startArbiter() {
     const [, getRollup] = globalRoom.makeAction(NETWORK_ACTIONS.ROLLUP_SUBMIT);
     const [, getFraud] = globalRoom.makeAction(NETWORK_ACTIONS.FRAUD_REPORT);
     const [, getRegisterPresence] = globalRoom.makeAction('register_presence');
+    const [sendPeerHints] = globalRoom.makeAction('arbiter_peer_hints');
 
     const lastRollups = new Map(); // shard -> { root, ts, proposer }
     const lastRollupTime = new Map(); // publicKey -> ts
     const bans = new Set();
     const presenceDirectory = createPresenceDirectory();
 
-    getRegisterPresence((payload) => {
+    getRegisterPresence((payload, peerId) => {
         if (!payload || typeof payload !== 'object') return;
         const registered = presenceDirectory.register(payload);
         if (registered && registered.id) {
             console.log(`[Arbiter] Peer discovered via network: ${registered.id} (${registered.name}) on ${registered.shard}`);
+            // Push shard peer hints back to the registering peer via Trystero so
+            // they can seed HyParView immediately — no ARBITER_URL config required.
+            const hints = presenceDirectory.list(registered.shard)
+                .filter(p => p.id && p.id !== registered.id)
+                .slice(0, 8)
+                .map(p => ({ id: p.id, ph: p.ph }));
+            if (hints.length > 0 && peerId) {
+                sendPeerHints(hints, [peerId]);
+                console.log(`[Arbiter] Sent ${hints.length} peer hint(s) to ${peerId.slice(0, 8)}`);
+            }
         }
     });
     let trackedPublishBeacon = async () => {};

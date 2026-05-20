@@ -248,6 +248,12 @@ export const initNetworking = async (rtcConfig) => {
         const [sendStateRequest, getStateRequest] = globalRooms.torrent.makeAction('state_request');
         const [sendRegisterPresence, getRegisterPresence] = globalRooms.torrent.makeAction('register_presence');
         gameActions.sendRegisterPresence = (data) => sendRegisterPresence(data);
+        const [, getArbiterPeerHints] = globalRooms.torrent.makeAction('arbiter_peer_hints');
+        getArbiterPeerHints((hints) => {
+            if (!Array.isArray(hints) || hints.length === 0) return;
+            const peerIds = hints.map(h => h.id || h.ph).filter(Boolean);
+            if (peerIds.length > 0 && shardApi?.seedIntroducers) shardApi.seedIntroducers(peerIds);
+        });
         const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
         const [sendSeekingShard, getSeekingShard] = globalRooms.torrent.makeAction('seeking_shard');
         gameActions.sendSeekingShard = (shard) => sendSeekingShard(shard);
