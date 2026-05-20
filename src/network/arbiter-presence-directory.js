@@ -21,6 +21,15 @@ export const createPresenceDirectory = () => {
         prune(now = Date.now()) {
             prunePresenceCache(presenceCache, now);
         },
+        removeById(trysteroId) {
+            for (const [ph, entry] of presenceCache.entries()) {
+                if (entry.id === trysteroId) {
+                    presenceCache.delete(ph);
+                    return true;
+                }
+            }
+            return false;
+        },
         size() {
             return presenceCache.size;
         },

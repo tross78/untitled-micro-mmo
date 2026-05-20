@@ -185,8 +185,12 @@ async function startArbiter() {
 
     globalRoom.onPeerJoin(peerId => {
         console.log(`[Arbiter] Peer joined: ${peerId}`);
-        // Send current state to new peer
         if (lastValidStatePacket) sendState(lastValidStatePacket, [peerId]);
+    });
+
+    globalRoom.onPeerLeave(peerId => {
+        console.log(`[Arbiter] Peer left: ${peerId}`);
+        presenceDirectory.removeById(peerId);
     });
 
     getRollup(async (packet, _peerId) => {
