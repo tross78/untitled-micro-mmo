@@ -39,9 +39,11 @@ export const STUN_SERVERS = [
     { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
-// TURN is the relay fallback. Reduced to one reliable port to avoid discovery lag.
+// TURN is the relay fallback. UDP port 443 for most networks; TCP variant for
+// networks that block UDP (common on restrictive corporate/school wifi).
 export const TURN_SERVERS = [
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 export const ICE_SERVERS = [...STUN_SERVERS, ...TURN_SERVERS];

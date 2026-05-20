@@ -59,7 +59,6 @@ const startChrome = async () => {
         '--disable-gpu',
         '--no-first-run',
         '--no-default-browser-check',
-        '--disable-background-networking',
         '--remote-debugging-port=0',
         '--allow-running-insecure-content',
         `--user-data-dir=${userDataDir}`,

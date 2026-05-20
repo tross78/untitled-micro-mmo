@@ -150,7 +150,7 @@ class CdpClient {
 }
 
 const openPage = async (endpoint, url) => {
-    const res = await fetch(`${endpoint}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' });
+    const res = await fetch(`${endpoint}/json/new`, { method: 'PUT' });
     if (!res.ok) throw new Error(`Failed to create page: ${await res.text()}`);
     const target = await res.json();
     const client = new CdpClient(target.webSocketDebuggerUrl, `${endpoint}/json/close/${target.id}`);
@@ -158,6 +158,7 @@ const openPage = async (endpoint, url) => {
     await client.send('Page.enable');
     await client.send('Log.enable');
     await client.send('Runtime.enable');
+    await client.send('Page.navigate', { url });
     await waitFor('document readiness', async () => {
         const ready = await client.evaluate('document.readyState');
         return ready === 'complete';

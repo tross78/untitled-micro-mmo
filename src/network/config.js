@@ -1,4 +1,4 @@
-import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
+import { STUN_SERVERS, ICE_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
 
 const ICE_GATHER_TIMEOUT_MS = 1500;
 

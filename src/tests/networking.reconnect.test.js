@@ -100,9 +100,10 @@ describe('reconnect and liveness regressions', () => {
         // Advance past stale window + one sweep tick (20s + 5s).
         await jest.advanceTimersByTimeAsync(26_000);
 
-        // Peer should be evicted from players map.
+        // Peer should be stale or evicted (stale after NETWORK_PEER_STALE_MS, evicted at GHOST_TTL_MS).
+        // With same-shard rejoin preserving players, the entry stays but becomes stale=true.
         const entry = players.get('peer-silent');
-        expect(!entry || entry.ghost).toBeTruthy();
+        expect(!entry || entry.ghost || entry.stale).toBeTruthy();
 
         // Heal should have fired: joinRoom called again for shard.
         const newCallCount = joinRoom.mock.calls.length;

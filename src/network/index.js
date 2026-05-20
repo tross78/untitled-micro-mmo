@@ -1,7 +1,7 @@
 // @ts-check
 import { joinRoom as joinTorrent, selfId } from './transport.js';
 import { getShardName, hashStr, seededRNG, xpToLevel, rollLoot } from '../rules/index.js';
-import { STUN_SERVERS, TURN_SERVERS, ARBITER_URL } from '../infra/constants.js';
+import { STUN_SERVERS, TURN_SERVERS, ICE_SERVERS, ARBITER_URL } from '../infra/constants.js';
 import {
     worldState, localPlayer, hasSyncedWithArbiter,
     TAB_CHANNEL, activeChannels, setPendingDuel,
@@ -47,7 +47,7 @@ import {
 } from './presence.js';
 import { updateSimulation, initOfflineDayTick } from './simulation.js';
 import {
-    getCurrentInstance, setCurrentInstance, preJoinShard, getPreJoined, clearShardState
+    getCurrentInstance, setCurrentInstance, preJoinShard, getPreJoined, clearShardState, clearShardChannels
 } from './shard.js';
 import { buildShardActions } from './actions.js';
 import { filterConnectedPeerIds } from './peer-filter.js';
@@ -71,7 +71,7 @@ export const knownPeers = shardKnownPeers;
 const globalPeerHints = new Map();
 export let lastRollupReceivedAt = 0;
 export let lastValidStatePacket = null;
-export let currentRtcConfig = { iceServers: STUN_SERVERS };
+export let currentRtcConfig = { iceServers: ICE_SERVERS };
 export let joinTime = Date.now();
 let lastShardPresenceAt = Date.now();
 let lastNetworkHealAt = 0;
@@ -222,7 +222,7 @@ const isProposer = () => {
 };
 
 export const initNetworking = async (rtcConfig) => {
-    currentRtcConfig = rtcConfig || { iceServers: STUN_SERVERS };
+    currentRtcConfig = rtcConfig || { iceServers: ICE_SERVERS };
     markNetworkEvent('network:init');
 
     // Respond to same-origin tab shard probes with our current known non-ghost peers.
@@ -461,9 +461,12 @@ export const initNetworking = async (rtcConfig) => {
 
     await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
     setTimeout(async () => {
+        // TURN is included in the initial ICE config, so this is a no-op in normal operation.
+        // Kept as a safety net in case initNetworking is called with a STUN-only override.
+        if (isUsingTurnFallback(currentRtcConfig)) return;
         const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
-        if (usableShardPeers > 0 || globalKnownPeers.size > 0 || isUsingTurnFallback(currentRtcConfig)) return;
-        currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+        if (usableShardPeers > 0 || globalKnownPeers.size > 0) return;
+        currentRtcConfig = { iceServers: ICE_SERVERS };
         markNetworkEvent('heal:start', { force: true, reason: 'startup_turn_fallback', globalPeers: 0, usableShardPeers: 0 });
         await connectGlobal(currentRtcConfig);
         await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
@@ -494,10 +497,10 @@ export const initNetworking = async (rtcConfig) => {
             markNetworkEvent('heal:start', { force, urgent, usableShardPeers, globalPeers, attempt: _healAttempts });
         try {
             if (globalPeers > 0) {
-                if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+                if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: ICE_SERVERS };
                 await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
             } else {
-                if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: [...STUN_SERVERS, ...TURN_SERVERS] };
+                if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: ICE_SERVERS };
                 await connectGlobal(currentRtcConfig);
                 await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
             }
@@ -548,16 +551,25 @@ export const initNetworking = async (rtcConfig) => {
 let _shardTeardown = null;
 
 export const joinInstance = async (location, instanceId, rtcConfig) => {
+    const incomingShard = getShardName(location, instanceId);
+    const activeShard = rooms.torrent ? getShardName(localPlayer.location, getCurrentInstance()) : null;
+    const isSameShard = activeShard === incomingShard;
+
     // Save introducers and tear down overlay timers before leaving the old shard.
     if (rooms.torrent) {
-        const currentShard = getShardName(localPlayer.location, getCurrentInstance());
-        saveIntroducers(currentShard);
+        saveIntroducers(activeShard);
         if (_shardTeardown) { _shardTeardown(); _shardTeardown = null; }
         rooms.torrent.leave();
     }
     shardKnownPeers.clear();
     _peerLastPresenceAt.clear();
-    clearShardState(location);
+    // Preserve the players map when rejoining the same shard (heal / ICE escalation).
+    // Only wipe it on actual room transitions so peer sprites survive reconnects.
+    if (isSameShard) {
+        clearShardChannels(location);
+    } else {
+        clearShardState(location);
+    }
     clearSecurityState();
     pendingCommits.clear();
     feedHeads.clear();

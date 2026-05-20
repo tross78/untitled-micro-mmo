@@ -41,3 +41,13 @@ export const clearShardState = (location) => {
     for (const [, chan] of activeChannels) clearTimeout(chan.timeoutId);
     activeChannels.clear();
 };
+
+// Like clearShardState but preserves the players map. Used when rejoining the
+// same shard for healing or ICE config changes — peer knowledge must survive
+// so sprites stay visible and handshakes don't restart from scratch.
+export const clearShardChannels = (location) => {
+    shardEnemies.delete(location);
+    localPlayer.currentEnemy = null;
+    for (const [, chan] of activeChannels) clearTimeout(chan.timeoutId);
+    activeChannels.clear();
+};

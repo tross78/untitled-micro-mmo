@@ -1,7 +1,13 @@
 import { installFakeTransport } from './tests/e2e/fake-transport.js';
-import { useFakeTransport } from './infra/runtime.js';
+import { installRealWebRTCTransport } from './tests/e2e/real-webrtc-transport.js';
+import { useFakeTransport, isE2EMode } from './infra/runtime.js';
 
-if (useFakeTransport()) installFakeTransport();
+const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+if (isE2EMode() && params?.get('transport') === 'real') {
+    installRealWebRTCTransport();
+} else if (useFakeTransport()) {
+    installFakeTransport();
+}
 
 import('./main.js').then(async () => {
     const [{ buildTestSnapshot }, { handleCommand }, { triggerLogicalRefresh }, { appRuntime }] = await Promise.all([
