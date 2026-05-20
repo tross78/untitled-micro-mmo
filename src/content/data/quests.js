@@ -29,8 +29,8 @@ export const QUESTS = {
     // The Scholar Chain (Sage)
     ruins_survey: defineQuest('ruins_survey', {
         id: 'ruins_survey', name: 'Ruins Survey', giver: 'sage', receiver: 'sage', type: 'explore',
-        description: 'Visit the Old Ruins.', lore: 'The Sage wants to know if the shadows are moving.',
-        objective: { type: 'explore', target: 'ruins' }, prerequisite: null,
+        description: 'Scout the northern descent below the Old Ruins.', lore: 'The Sage needs fresh eyes on the stair where the shadows gather.',
+        objective: { type: 'explore', target: 'ruins_descent' }, prerequisite: null,
         reward: { xp: 20, gold: 0, item: 'old_tome' }, chain: 'scholar'
     }),
     tome_collection: defineQuest('tome_collection', {
@@ -68,7 +68,7 @@ export const QUESTS = {
         id: 'craft_sword', name: 'Sword Crafting', giver: 'merchant', receiver: 'merchant', type: 'craft',
         description: 'Craft an iron sword at the Market.', lore: 'It is time you learned to forge your own path.',
         objective: { type: 'craft', target: 'iron_sword', count: 1 }, prerequisite: 'iron_supply',
-        reward: { xp: 50, gold: 0, item: 'iron_sword' }, chain: 'trade'
+        reward: { xp: 50, gold: 20 }, chain: 'trade'
     }),
     market_recovery: defineQuest('market_recovery', {
         id: 'market_recovery', name: 'Market Recovery', giver: 'merchant', receiver: 'merchant', type: 'fetch',

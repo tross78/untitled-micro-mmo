@@ -298,6 +298,45 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
             });
         });
 
+        test('delivery progress happens before the receiver menu is queued', async () => {
+            localPlayer.location = 'ruins';
+            localPlayer.inventory = ['ale'];
+            localPlayer.quests.courier_run = { progress: 0, completed: false };
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('talk sage');
+
+            const eventNames = emitSpy.mock.calls.map(([eventName]) => eventName);
+            expect(eventNames.indexOf('quest:progress')).toBeGreaterThanOrEqual(0);
+            expect(eventNames.indexOf('ui:queue-menu')).toBeGreaterThanOrEqual(0);
+            expect(eventNames.indexOf('quest:progress')).toBeLessThan(eventNames.indexOf('ui:queue-menu'));
+        });
+
+        test('deliver quests can complete directly at the receiver when holding the item', async () => {
+            localPlayer.location = 'ruins';
+            localPlayer.inventory = ['ale'];
+            localPlayer.quests.courier_run = { progress: 0, completed: false };
+            localPlayer.xp = 0;
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('quest complete courier_run');
+
+            expect(localPlayer.inventory).not.toContain('ale');
+            expect(localPlayer.quests.courier_run.progress).toBe(1);
+            expect(localPlayer.quests.courier_run.completed).toBe(true);
+            expect(localPlayer.xp).toBe(QUESTS.courier_run.reward.xp);
+        });
+
+        test('ruins survey sends the player beyond the Sage instead of completing in place', async () => {
+            localPlayer.location = 'ruins';
+            appRuntime.hydratePlayer(localPlayer);
+
+            await handleCommand('quest accept ruins_survey');
+
+            expect(QUESTS.ruins_survey.objective.target).toBe('ruins_descent');
+            expect(localPlayer.quests.ruins_survey.progress).toBe(0);
+        });
+
         test('deliver quests progress generically when selling the target item to the receiver shop npc', async () => {
             localPlayer.location = 'market';
             localPlayer.inventory = ['wood'];

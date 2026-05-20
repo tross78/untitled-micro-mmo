@@ -6,6 +6,29 @@ import { bus } from '../state/eventbus.js';
 import { saveLocalState } from '../state/persistence.js';
 import { getNPCsAt, getBuyPrice, getSellPrice, getShopInventory, grantItem } from './helpers.js';
 
+const deliverQuestItemsToNpc = (targetId, npc, onlyQuestId = null) => {
+    let delivered = false;
+    Object.entries(localPlayer.quests || {}).forEach(([qid, pq]) => {
+        if (onlyQuestId && qid !== onlyQuestId) return;
+        const q = QUESTS[qid];
+        if (!q || pq.completed || q.type !== 'deliver' || q.receiver !== targetId) return;
+        const deliverItemId = q.objective?.target;
+        const goal = q.objective?.count || 1;
+        if (!deliverItemId || (pq.progress || 0) >= goal) return;
+
+        while ((pq.progress || 0) < goal) {
+            const invIdx = localPlayer.inventory.indexOf(deliverItemId);
+            if (invIdx === -1) break;
+            localPlayer.inventory.splice(invIdx, 1);
+            pq.progress = Math.min(goal, (pq.progress || 0) + 1);
+            delivered = true;
+            bus.emit('quest:progress', { questId: qid, name: q.name, current: pq.progress, total: goal });
+            log(`[Quest] You deliver ${ITEMS[deliverItemId]?.name || deliverItemId} to ${npc.name}.`, '#ff0');
+        }
+    });
+    return delivered;
+};
+
 export const handleNPCCommands = async (command, args) => {
     switch (command) {
         case 'talk': {
@@ -16,6 +39,8 @@ export const handleNPCCommands = async (command, args) => {
             
             const npc = NPCS[targetId];
             const dialogue = getNPCDialogue(targetId, worldState.seed, worldState.day, worldState.mood, localPlayer.location, worldState, localPlayer);
+            const delivered = deliverQuestItemsToNpc(targetId, npc);
+            if (delivered) saveLocalState(localPlayer, true);
             if (npc.role === 'shop' || npc.role === 'quest') {
                 bus.emit('npc:speak', { npcName: npc.name, text: dialogue });
                 bus.emit('ui:queue-menu', { type: 'npc', context: { npcId: targetId, text: dialogue } });
@@ -43,22 +68,6 @@ export const handleNPCCommands = async (command, args) => {
                 } else {
                     log(`[Quest] ${npc.name}: "How is that task (${q.name}) coming along? (${current}/${count})"`, '#0ff');
                 }
-            });
-
-            Object.entries(localPlayer.quests || {}).forEach(([qid, pq]) => {
-                const q = QUESTS[qid];
-                if (!q || pq.completed || q.type !== 'deliver' || q.receiver !== targetId) return;
-                const deliverItemId = q.objective?.target;
-                const goal = q.objective?.count || 1;
-                if (!deliverItemId || (pq.progress || 0) >= goal) return;
-
-                const invIdx = localPlayer.inventory.indexOf(deliverItemId);
-                if (invIdx === -1) return;
-
-                localPlayer.inventory.splice(invIdx, 1);
-                pq.progress = Math.min(goal, (pq.progress || 0) + 1);
-                bus.emit('quest:progress', { questId: qid, name: q.name, current: pq.progress, total: goal });
-                log(`[Quest] You deliver ${ITEMS[deliverItemId]?.name || deliverItemId} to ${npc.name}.`, '#ff0');
             });
             return true;
         }
@@ -211,13 +220,16 @@ export const handleNPCCommands = async (command, args) => {
                 if (localPlayer.quests[id].completed) { log(`Already completed.`); return true; }
                 
                 const required = q.objective.count || 1;
+                const npcs = getNPCsAt(localPlayer.location);
+                if (q.receiver !== null && !npcs.includes(q.receiver)) { log(`Return to the receiver to complete this.`); return true; }
+                if (q.type === 'deliver' && q.receiver) {
+                    deliverQuestItemsToNpc(q.receiver, NPCS[q.receiver], id);
+                }
                 if (q.type === 'fetch' && q.objective.target) {
                     const held = localPlayer.inventory.filter(i => i === q.objective.target).length;
                     if (held < required) { log(`You need ${required - held} more ${ITEMS[q.objective.target]?.name || q.objective.target}.`); return true; }
                 } else if (localPlayer.quests[id].progress < required) { log(`Quest not finished yet.`); return true; }
                 
-                const npcs = getNPCsAt(localPlayer.location);
-                if (q.receiver !== null && !npcs.includes(q.receiver)) { log(`Return to the receiver to complete this.`); return true; }
                 if (localPlayer.quests[id].completed) { log(`Already completed.`); return true; }
 
                 localPlayer.quests[id].completed = true;

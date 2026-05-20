@@ -217,6 +217,41 @@ describe('contract: quest prerequisite resolution', () => {
         }
         expect(broken).toEqual([]);
     });
+
+    test('explore quests do not target the room where their giver is authored', () => {
+        const npcAuthoredRooms = new Map();
+        for (const [roomId, room] of Object.entries(ROOMS)) {
+            for (const entry of room.staticEntities || []) {
+                if (!npcAuthoredRooms.has(entry.id)) npcAuthoredRooms.set(entry.id, new Set());
+                npcAuthoredRooms.get(entry.id).add(roomId);
+            }
+        }
+        for (const [npcId, npc] of Object.entries(NPCS)) {
+            if (!npcAuthoredRooms.has(npcId)) npcAuthoredRooms.set(npcId, new Set());
+            if (npc.home) npcAuthoredRooms.get(npcId).add(npc.home);
+        }
+
+        const broken = [];
+        for (const [questId, quest] of Object.entries(QUESTS)) {
+            if (quest.objective?.type !== 'explore' || !quest.giver) continue;
+            const giverRooms = npcAuthoredRooms.get(quest.giver) || new Set();
+            if (giverRooms.has(quest.objective.target)) {
+                broken.push(`Quest "${questId}" explores giver "${quest.giver}" room "${quest.objective.target}"`);
+            }
+        }
+        expect(broken).toEqual([]);
+    });
+
+    test('fetch and craft quests do not reward the same item they ask for', () => {
+        const broken = [];
+        for (const [questId, quest] of Object.entries(QUESTS)) {
+            if (!['fetch', 'craft'].includes(quest.objective?.type)) continue;
+            if (quest.reward?.item === quest.objective.target) {
+                broken.push(`Quest "${questId}" rewards objective item "${quest.objective.target}"`);
+            }
+        }
+        expect(broken).toEqual([]);
+    });
 });
 
 describe('command registry', () => {
