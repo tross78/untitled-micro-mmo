@@ -17,9 +17,10 @@ export const GH_GIST_ID = '2e8f42685ce96e29f60da95ed9ca3be9';
 // GitHub username that owns the Gist above
 export const GH_GIST_USERNAME = 'tross78';
 
-// Derived from MASTER_PUBLIC_KEY so this room is unique to your Pi instance.
-// Strip non-alphanumeric chars — base64 contains + and / which can break Trystero's room hashing.
-export const APP_ID = GAME_NAME + '-' + MASTER_PUBLIC_KEY.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+// Stable suffix that makes this game instance's rooms unique across the tracker.
+// Intentionally NOT derived from MASTER_PUBLIC_KEY — key rotations must not
+// change room names, which would disconnect all existing players.
+export const APP_ID = GAME_NAME + '-Qu8SC4sn';
 
 // Torrent signaling relays. ICE/STUN handles the peer connection after
 // signaling; these trackers are only for rendezvous and candidate exchange.
