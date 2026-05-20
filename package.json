@@ -15,6 +15,7 @@
     "test": "jest",
     "test:browser": "npm run build:e2e && node scripts/browser-two-peer.mjs",
     "test:browser:live": "npm run build:e2e && node scripts/browser-two-peer-live.mjs",
+    "test:ice": "node scripts/browser-ice-test.mjs",
     "lint": "eslint src/**/*.js arbiter/**/*.js scripts/**/*.js",
     "typecheck": "tsc -p tsconfig.json",
     "validate:content": "node scripts/validate-content.js",

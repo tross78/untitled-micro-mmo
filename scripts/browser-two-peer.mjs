@@ -57,7 +57,7 @@ const waitFor = async (label, fn, timeoutMs = 10000, intervalMs = 100) => {
 const startChrome = async () => {
     const userDataDir = await mkdtemp(join(tmpdir(), 'hearthwick-e2e-'));
     const child = spawn(chromePath, [
-        '--headless',
+        '--headless=new',
         '--disable-gpu',
         '--no-first-run',
         '--no-default-browser-check',
