@@ -252,7 +252,7 @@ export const initNetworking = async (rtcConfig) => {
         getArbiterPeerHints((hints) => {
             if (!Array.isArray(hints) || hints.length === 0) return;
             const peerIds = hints.map(h => h.id || h.ph).filter(Boolean);
-            if (peerIds.length > 0 && shardApi?.seedIntroducers) shardApi.seedIntroducers(peerIds);
+            if (peerIds.length > 0 && gameActions.seedShardIntroducers) gameActions.seedShardIntroducers(peerIds);
         });
         const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
         const [sendSeekingShard, getSeekingShard] = globalRooms.torrent.makeAction('seeking_shard');
