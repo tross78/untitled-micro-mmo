@@ -26,11 +26,13 @@ export const APP_ID = GAME_NAME + '-Qu8SC4sn';
 // signaling; these trackers are only for rendezvous and candidate exchange.
 // Verified 2026-05-20:
 //   tracker.openwebtorrent.com — healthy (~765ms)
-//   tracker.webtorrent.dev     — returns "Invalid request" (broken, removed 2026-05-20)
+//   tracker.webtorrent.dev     — intermittent "Invalid request"; kept as backup since
+//                                 Trystero falls back gracefully and two channels beat one
 //   tracker.btorrent.xyz       — SSL cert mismatch (domain sold/hijacked, removed)
 //   tracker.files.fm:7073      — returns HTTP 403 (removed; was crashing arbiter)
 export const TORRENT_TRACKERS = [
     'wss://tracker.openwebtorrent.com',
+    'wss://tracker.webtorrent.dev',
 ];
 
 // Optimized STUN list for faster NAT traversal and to avoid Firefox "5+ servers" warning.
