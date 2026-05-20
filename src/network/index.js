@@ -253,11 +253,6 @@ export const initNetworking = async (rtcConfig) => {
             if (!Array.isArray(hints) || hints.length === 0) return;
             const peerIds = hints.map(h => h.id || h.ph).filter(Boolean);
             if (peerIds.length > 0 && gameActions.seedShardIntroducers) gameActions.seedShardIntroducers(peerIds);
-            // If we have no shard peers, hints mean the arbiter knows about peers we haven't
-            // connected to yet. Schedule a heal so we leave and rejoin the shard room — this
-            // forces a fresh tracker announce and new ICE negotiation with those peers.
-            const usable = countUsableShardPeers(shardKnownPeers, players);
-            if (usable === 0 && peerIds.length > 0) scheduleHeal(500);
         });
         const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
         const [sendSeekingShard, getSeekingShard] = globalRooms.torrent.makeAction('seeking_shard');
