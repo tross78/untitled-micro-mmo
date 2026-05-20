@@ -118,11 +118,10 @@ describe('updateViewport invalidates render caches on tile scale change', () => 
 
         appRuntime.updateViewport();
 
-        // VP.S must have changed from 40 — invalidate must have been called
-        if (appRuntime.VP.S !== 40) {
-            expect(mapInvalidate).toHaveBeenCalled();
-            expect(entityInvalidate).toHaveBeenCalled();
-        }
+        // At 1440×900 landscape: sFromW=72, sFromH=69 → VP.S=69, which differs from 40
+        expect(appRuntime.VP.S).toBe(69);
+        expect(mapInvalidate).toHaveBeenCalled();
+        expect(entityInvalidate).toHaveBeenCalled();
     });
 
     test('does not invalidate caches when VP.S is unchanged', () => {
