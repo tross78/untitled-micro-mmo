@@ -1,7 +1,7 @@
 // @ts-check
 import { joinRoom as joinTorrent, selfId } from './transport.js';
 import { getShardName, hashStr, seededRNG, xpToLevel, rollLoot } from '../rules/index.js';
-import { STUN_SERVERS, TURN_SERVERS, ICE_SERVERS, ARBITER_URL } from '../infra/constants.js';
+import { ICE_SERVERS, ARBITER_URL } from '../infra/constants.js';
 import {
     worldState, localPlayer, hasSyncedWithArbiter,
     TAB_CHANNEL, activeChannels, setPendingDuel,
@@ -16,7 +16,7 @@ import { HyParView } from './hyparview.js';
 import { sendHLC } from './hlc.js';
 import {
     unpackMove,
-    packPresence, unpackDuelCommit,
+    unpackDuelCommit,
     unpackActionLog, unpackTradeCommit,
     packPresenceBatch, unpackPresenceBatch,
     presenceSignaturePayload
