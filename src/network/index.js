@@ -337,7 +337,12 @@ export const initNetworking = async (rtcConfig) => {
             trackPlayer(peerId, { ...entry, publicKey: packet.publicKey, ph, ts: Date.now() });
             markPeerNetworkEvent(peerId, 'peer:identity_known');
             if (gameActions.processPresence) {
-                const buf = (packet.presence instanceof Uint8Array) ? packet.presence : packPresence(packet.presence);
+                // Trystero serializes Uint8Array fields inside plain objects via msgpack/JSON,
+                // which may arrive as a plain object with numeric keys or a regular Array.
+                // Normalize to Uint8Array regardless of the wire form — never try to re-pack.
+                const raw = packet.presence;
+                const buf = raw instanceof Uint8Array ? raw
+                    : new Uint8Array(Array.isArray(raw) ? raw : Object.values(raw));
                 await gameActions.processPresence(buf, peerId);
             }
         });
