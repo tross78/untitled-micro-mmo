@@ -120,8 +120,9 @@ export class UIRenderSystem {
         const lootLen = sharedEnemy?.loot?.length ?? 0;
         const duelKey = pendingDuel ? pendingDuel.expiresAt : 0;
 
-        // Cheap fingerprint — skip the 5 world queries when nothing has changed
-        const key = `${player.location}|${player.currentEnemy}|${enemyHp}|${lootLen}|${duelKey}`;
+        // Cheap fingerprint — skip the 5 world queries when nothing has changed.
+        // Include tile position so adjacency-gated buttons (Duel, Talk) recompute on move.
+        const key = `${player.location}|${player.x}|${player.y}|${player.currentEnemy}|${enemyHp}|${lootLen}|${duelKey}`;
         if (key === this._ctxBtnKey && this._ctxBtnCache) return this._ctxBtnCache;
 
         const btns = [];
