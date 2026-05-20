@@ -14,6 +14,7 @@ import {
     restoreBansFromPacket,
 } from '../src/network/arbiter-state.js';
 import { NETWORK_ACTIONS } from '../src/network/contracts.js';
+import { createSerializedPublisher } from '../src/network/arbiter-beacon-scheduler.js';
 
 // Suppress tracker/STUN network noise that libraries emit directly to stderr.
 // These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
@@ -66,10 +67,18 @@ process.on('unhandledRejection', (reason, _promise) => {
     }
 });
 
+if (process.env.ARBITER_TRACE_WARNINGS === '1') {
+    process.on('warning', (warning) => {
+        if (warning?.name !== 'MaxListenersExceededWarning') return;
+        console.warn(`[Arbiter] ${warning.name}: ${warning.message}`);
+        if (warning.stack) console.warn(warning.stack);
+    });
+}
+
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
-    const { STUN_SERVERS } = await import('../src/infra/constants.js');
+    const { ICE_SERVERS } = await import('../src/infra/constants.js');
     const { buildTorrentConfig } = await import('../src/network/config.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
     const dotenv = await import('dotenv');
@@ -106,7 +115,7 @@ async function startArbiter() {
     // exist but the browser never joined it, so rollups/fraud silently dropped.
     let globalRoom;
     try {
-        globalRoom = joinTorrent(buildTorrentConfig({ iceServers: STUN_SERVERS }), 'global');
+        globalRoom = joinTorrent(buildTorrentConfig({ iceServers: ICE_SERVERS }), 'global');
     } catch (err) {
         console.error('[Arbiter] Torrent join failed:', err.message);
         process.exit(1);
@@ -302,37 +311,38 @@ async function startArbiter() {
                     content: JSON.stringify(gistPayload)
                 }
             };
-            fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
-                method: 'PATCH',
-                headers: { 'Authorization': `token ${GH_GIST_TOKEN}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ files })
-            }).then(r => {
-                if (r.ok) console.log(`[Arbiter] Beacon updated (Gist).`);
-                else console.error(`[Arbiter] Gist update failed: ${r.status}`);
-            }).catch(err => console.error(`[Arbiter] Gist error:`, err));
+            try {
+                const response = await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `token ${GH_GIST_TOKEN}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ files }),
+                    signal: AbortSignal.timeout(15000),
+                });
+                if (response.ok) console.log(`[Arbiter] Beacon updated (Gist).`);
+                else console.error(`[Arbiter] Gist update failed: ${response.status}`);
+            } catch (err) {
+                console.error(`[Arbiter] Gist error:`, err);
+            }
         }
 
         // Broadcast to all connected peers
         sendState(packet);
     };
 
-    let lastBeaconAt = 0;
-    const _origPublishBeacon = publishBeacon;
-    trackedPublishBeacon = async () => {
-        await _origPublishBeacon();
-        lastBeaconAt = Date.now();
-    };
+    const beaconPublisher = createSerializedPublisher(publishBeacon);
+    trackedPublishBeacon = beaconPublisher.publish;
 
     // Dead-man's switch — warn if no beacon published in 30 minutes
     setInterval(() => {
+        const lastBeaconAt = beaconPublisher.getLastPublishedAt();
         if (lastBeaconAt > 0 && Date.now() - lastBeaconAt > 30 * 60 * 1000) {
             console.error(`[Arbiter] WATCHDOG: No beacon published in >30 minutes. Check for errors.`);
         }
     }, 5 * 60 * 1000);
 
     // Publish every 60s
-    setTimeout(trackedPublishBeacon, 5000);
-    setInterval(trackedPublishBeacon, 60000);
+    setTimeout(() => trackedPublishBeacon().catch(err => console.error('[Arbiter] Beacon publish failed:', err)), 5000);
+    setInterval(() => trackedPublishBeacon().catch(err => console.error('[Arbiter] Beacon publish failed:', err)), 60000);
 
     // Prune caches every hour
     setInterval(() => {
@@ -360,6 +370,7 @@ async function startArbiter() {
             res.end(JSON.stringify([...bans]));
         } else if (url.pathname === '/health') {
             const uptime = process.uptime();
+            const lastBeaconAt = beaconPublisher.getLastPublishedAt();
             const lastBeaconAge = lastBeaconAt ? Math.floor((Date.now() - lastBeaconAt) / 1000) : null;
             const healthy = lastBeaconAge !== null && lastBeaconAge < 1800;
             res.writeHead(healthy ? 200 : 503, { ...cors, 'Content-Type': 'application/json' });
@@ -367,6 +378,7 @@ async function startArbiter() {
                 ok: healthy,
                 uptime,
                 lastBeaconAgeSecs: lastBeaconAge,
+                beaconPublishInFlight: beaconPublisher.isInFlight(),
                 peers: presenceDirectory.size(),
                 gistConfigured: Boolean(GH_GIST_TOKEN && GH_GIST_ID),
             }));

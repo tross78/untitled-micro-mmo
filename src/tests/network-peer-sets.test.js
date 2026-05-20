@@ -101,6 +101,25 @@ describe('network peer set scoping', () => {
         expect(shardKnownPeers.has('shard-peer')).toBe(false);
     });
 
+    test('browser global and shard rooms start with TURN-capable ICE config', async () => {
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        await initNetworking();
+
+        const globalConfig = joinRoom.mock.calls.find(([, name]) => name === 'global')?.[0];
+        const shardConfig = joinRoom.mock.calls.find(([, name]) => name === 'cellar-1')?.[0];
+
+        expect(globalConfig?.rtcConfig?.iceServers.some(server =>
+            String(Array.isArray(server.urls) ? server.urls[0] : server.urls).startsWith('turn:')
+        )).toBe(true);
+        expect(shardConfig?.rtcConfig?.iceServers.some(server =>
+            String(Array.isArray(server.urls) ? server.urls[0] : server.urls).startsWith('turn:')
+        )).toBe(true);
+    });
+
     test('late global peers get an immediate shard hint and registration payload', async () => {
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer } = await import('../state/store.js');
@@ -124,6 +143,71 @@ describe('network peer set scoping', () => {
                 ph: 'abcd1234',
             }),
             ['late-peer']
+        );
+    });
+
+    test('arbiter peer hints seed the shard introducer view without forcing a heal', async () => {
+        const { HyParView } = await import('../network/hyparview.js');
+        const mergeSpy = jest.spyOn(HyParView.prototype, 'mergeShuffle');
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+
+        const joinCountBeforeHints = joinRoom.mock.calls.length;
+        const globalRoom = joinRoom.mock.results.find((r) => r.value.name === 'global').value;
+        globalRoom.emitAction('arbiter_peer_hints', [
+            { id: 'hint-peer-1', ph: 'aaaa1111' },
+            { id: 'hint-peer-2', ph: 'bbbb2222' },
+        ], 'arbiter-peer');
+
+        expect(mergeSpy).toHaveBeenCalledWith(
+            expect.arrayContaining(['hint-peer-1', 'hint-peer-2']),
+            'self-peer-id'
+        );
+        expect(joinRoom.mock.calls.length).toBe(joinCountBeforeHints);
+    });
+
+    test('direct same-shard global registration sends immediate signed presence bootstrap', async () => {
+        const { HyParView } = await import('../network/hyparview.js');
+        const mergeSpy = jest.spyOn(HyParView.prototype, 'mergeShuffle');
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer, players } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+
+        const globalRoom = joinRoom.mock.results.find((r) => r.value.name === 'global').value;
+        const sendPresenceBootstrap = globalRoom._sends.get('presence_bootstrap');
+
+        await globalRoom.emitAction('register_presence', {
+            ph: 'beef0001',
+            id: 'same-shard-peer',
+            name: 'Beta',
+            location: 'cellar',
+            shard: 'cellar-1',
+            level: 1,
+            x: 5,
+            y: 5,
+            publicKey: 'peer-public-key',
+        }, 'same-shard-peer');
+
+        expect(players.get('same-shard-peer')).toEqual(expect.objectContaining({
+            publicKey: 'peer-public-key',
+            ph: 'beef0001',
+        }));
+        expect(mergeSpy).toHaveBeenCalledWith(['same-shard-peer'], 'self-peer-id');
+        expect(sendPresenceBootstrap).toHaveBeenCalledWith(
+            expect.objectContaining({
+                publicKey: 'self-public-key',
+                presence: expect.any(Uint8Array),
+            }),
+            ['same-shard-peer']
         );
     });
 });

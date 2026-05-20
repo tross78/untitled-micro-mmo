@@ -15,6 +15,7 @@
     "test": "jest",
     "test:browser": "npm run build:e2e && node scripts/browser-two-peer.mjs",
     "test:browser:live": "npm run build:e2e && node scripts/browser-two-peer-live.mjs",
+    "test:browser:reconnect:live": "npm run build:e2e && node scripts/browser-two-peer-reconnect-live.mjs",
     "test:ice": "node scripts/browser-ice-test.mjs",
     "test:ice:game": "node scripts/browser-ice-game-test.mjs",
     "lint": "eslint src/**/*.js arbiter/**/*.js scripts/**/*.js",

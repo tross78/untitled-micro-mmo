@@ -94,4 +94,70 @@ describe('arbiter presence directory', () => {
             },
         ]);
     });
+
+    test('removeById removes entries by Trystero id without touching other shard peers', () => {
+        const directory = createPresenceDirectory();
+        const now = 300000;
+
+        directory.register({
+            ph: 'aaaa1111',
+            id: 'old-trystero-id',
+            name: 'Old',
+            location: 'cellar',
+            shard: 'cellar-1',
+            level: 2,
+            ts: now,
+        }, now);
+        directory.register({
+            ph: 'bbbb2222',
+            id: 'live-trystero-id',
+            name: 'Live',
+            location: 'cellar',
+            shard: 'cellar-1',
+            level: 3,
+            ts: now,
+        }, now);
+
+        expect(directory.removeById('old-trystero-id')).toBe(true);
+        expect(directory.removeById('missing-trystero-id')).toBe(false);
+        expect(directory.list('cellar-1', now)).toEqual([
+            expect.objectContaining({
+                ph: 'bbbb2222',
+                id: 'live-trystero-id',
+                name: 'Live',
+            }),
+        ]);
+    });
+
+    test('sequential same-shard registrations expose earlier peers to later hint lookups', () => {
+        const directory = createPresenceDirectory();
+        const now = 400000;
+
+        const first = directory.register({
+            ph: 'aaaa1111',
+            id: 'peer-a',
+            name: 'Alpha',
+            location: 'cellar',
+            shard: 'cellar-1',
+            level: 1,
+            ts: now,
+        }, now);
+        const second = directory.register({
+            ph: 'bbbb2222',
+            id: 'peer-b',
+            name: 'Beta',
+            location: 'cellar',
+            shard: 'cellar-1',
+            level: 1,
+            ts: now + 1,
+        }, now + 1);
+
+        const peersVisibleToSecond = directory
+            .list(second.shard, now + 1)
+            .filter(peer => peer.id && peer.id !== second.id)
+            .map(peer => peer.id);
+
+        expect(first.id).toBe('peer-a');
+        expect(peersVisibleToSecond).toContain('peer-a');
+    });
 });

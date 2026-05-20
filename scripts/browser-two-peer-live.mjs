@@ -160,6 +160,10 @@ const openPage = async (endpoint, url) => {
     await client.send('Log.enable');
     await client.send('Runtime.enable');
     await client.send('Page.navigate', { url });
+    await waitFor('navigation commit', async () => {
+        const href = await client.evaluate('location.href');
+        return href === url;
+    }, 15000, 100);
     await waitFor('document readiness', async () => {
         const ready = await client.evaluate('document.readyState');
         return ready === 'complete';
@@ -222,8 +226,8 @@ try {
     const discoveryStartedAt = Date.now();
     const discovery = await waitFor('real transport discovery', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
-        const seesB = snapA.network.globalPeers > 0 || snapA.network.shardPeers > 0 || snapA.peers.some(p => !p.ghost);
-        const seesA = snapB.network.globalPeers > 0 || snapB.network.shardPeers > 0 || snapB.peers.some(p => !p.ghost);
+        const seesB = snapA.peers.some(p => p.id === initialB.selfId && !p.ghost && p.location === 'cellar');
+        const seesA = snapB.peers.some(p => p.id === initialA.selfId && !p.ghost && p.location === 'cellar');
         return seesA && seesB ? { snapA, snapB } : null;
     }, 45000, 500);
     const discoveryElapsedMs = Date.now() - discoveryStartedAt;

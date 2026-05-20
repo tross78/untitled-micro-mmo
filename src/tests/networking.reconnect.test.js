@@ -276,4 +276,55 @@ describe('reconnect and liveness regressions', () => {
         expect(savedPeers).toContain('peer-with-presence');
         expect(savedPeers).not.toContain('peer-no-presence');
     });
+
+    test('same-shard rejoin preserves players while rebuilding shard channels', async () => {
+        const { initNetworking, joinInstance } = await import('../network/index.js');
+        const { localPlayer, players, trackPlayer } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+
+        trackPlayer('peer-stays-visible', {
+            name: 'Visible',
+            location: 'cellar',
+            publicKey: 'visible-key',
+            ph: 'beef0001',
+            ghost: false,
+            presenceVerifiedAt: Date.now(),
+        });
+        const firstShardRoom = joinRoom.mock.results.find((r) => r.value.name === 'cellar-1').value;
+
+        await joinInstance('cellar', 1, null);
+
+        expect(firstShardRoom.leave).toHaveBeenCalled();
+        expect(players.get('peer-stays-visible')).toEqual(expect.objectContaining({
+            name: 'Visible',
+            publicKey: 'visible-key',
+            ghost: false,
+        }));
+    });
+
+    test('different-shard join clears prior shard players', async () => {
+        const { initNetworking, joinInstance } = await import('../network/index.js');
+        const { localPlayer, players, trackPlayer } = await import('../state/store.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+
+        trackPlayer('peer-old-shard', {
+            name: 'Old',
+            location: 'cellar',
+            publicKey: 'old-key',
+            ph: 'beef0002',
+            ghost: false,
+            presenceVerifiedAt: Date.now(),
+        });
+
+        await joinInstance('tavern', 1, null);
+
+        expect(players.has('peer-old-shard')).toBe(false);
+    });
 });

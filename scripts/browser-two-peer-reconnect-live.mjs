@@ -159,6 +159,10 @@ const openPage = async (endpoint, url) => {
     await client.send('Log.enable');
     await client.send('Runtime.enable');
     await client.send('Page.navigate', { url });
+    await waitFor('navigation commit', async () => {
+        const href = await client.evaluate('location.href');
+        return href === url;
+    }, 15000, 100);
     await waitFor('document readiness', async () => {
         const ready = await client.evaluate('document.readyState');
         return ready === 'complete';
@@ -174,6 +178,7 @@ const getSnapshot = (client) => client.evaluate('window.__HEARTHWICK_TEST__.getS
 const issueCommand = (client, cmd) => client.evaluate(`window.__HEARTHWICK_TEST__.issueCommand(${JSON.stringify(cmd)})`);
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
+const PEER_SPRITE_BUDGET_MS = 3000;
 const DISCOVERY_TIMEOUT_MS = 45000;
 const LEAVE_TIMEOUT_MS = 45000;
 const REDISCOVERY_TIMEOUT_MS = 45000;
@@ -225,11 +230,14 @@ try {
     const discoveryStartedAt = Date.now();
     const initialDiscovery = await waitFor('initial real transport discovery', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
-        const aSeesB = snapA.peers.some(p => p.id === initialB.selfId && !p.ghost);
-        const bSeesA = snapB.peers.some(p => p.id === initialA.selfId && !p.ghost);
+        const aSeesB = snapA.peers.some(p => p.id === initialB.selfId && !p.ghost && p.location === 'cellar');
+        const bSeesA = snapB.peers.some(p => p.id === initialA.selfId && !p.ghost && p.location === 'cellar');
         return aSeesB && bSeesA ? { snapA, snapB } : null;
     }, DISCOVERY_TIMEOUT_MS, 500);
     const initialDiscoveryMs = Date.now() - discoveryStartedAt;
+    if (initialDiscoveryMs > PEER_SPRITE_BUDGET_MS) {
+        throw new Error(`initial real transport discovery exceeded ${PEER_SPRITE_BUDGET_MS}ms budget: ${initialDiscoveryMs}ms`);
+    }
 
     await issueCommand(pageA, 'rename Alpha');
     await issueCommand(pageB, 'rename Beta');
@@ -261,17 +269,26 @@ try {
     const rediscoveryStartedAt = Date.now();
     const rediscovery = await waitFor('peer B rediscovery', async () => {
         const [snapA, snapB] = await Promise.all([getSnapshot(pageA), getSnapshot(pageB)]);
-        const aSeesNewB = snapA.peers.some(p => p.id === restartedB.selfId && !p.ghost);
-        const bSeesA = snapB.peers.some(p => p.id === initialA.selfId && !p.ghost);
+        const aSeesNewB = snapA.peers.some(p => p.id === restartedB.selfId && !p.ghost && p.location === 'cellar');
+        const bSeesA = snapB.peers.some(p => p.id === initialA.selfId && !p.ghost && p.location === 'cellar');
         return aSeesNewB && bSeesA ? { snapA, snapB } : null;
     }, REDISCOVERY_TIMEOUT_MS, 500);
     const rediscoveryMs = Date.now() - rediscoveryStartedAt;
+    if (rediscoveryMs > PEER_SPRITE_BUDGET_MS) {
+        throw new Error(`refresh rediscovery exceeded ${PEER_SPRITE_BUDGET_MS}ms budget: ${rediscoveryMs}ms`);
+    }
+    const staleOldPeerVisible = rediscovery.snapA.peers.some(p => p.id === initialB.selfId && !p.ghost);
+    assert(!staleOldPeerVisible, 'peer A still sees peer B old Trystero id as live after refresh');
 
     console.log('Two-peer live reconnect E2E passed.');
     console.log(JSON.stringify({
         initialDiscoveryMs,
+        peerSpriteBudgetMs: PEER_SPRITE_BUDGET_MS,
         leaveMs,
         rediscoveryMs,
+        withinInitialBudget: initialDiscoveryMs <= PEER_SPRITE_BUDGET_MS,
+        withinRediscoveryBudget: rediscoveryMs <= PEER_SPRITE_BUDGET_MS,
+        staleOldPeerVisible,
         peerAInitial: buildLatencySummary(initialDiscovery.snapA, initialB.selfId),
         peerALeaveState: leaveSnapshot.network,
         peerARediscovery: buildLatencySummary(rediscovery.snapA, restartedB.selfId),
