@@ -275,7 +275,13 @@ describe('networking exported module behavior', () => {
     });
 
     test('buildTorrentConfig uses relayUrls for Trystero torrent strategy', () => {
+        const originalUA = navigator.userAgent;
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        });
         const config = buildTorrentConfig({ iceServers: STUN_SERVERS });
+        Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUA });
 
         expect(config).toEqual({
             appId: APP_ID,
@@ -320,7 +326,13 @@ describe('networking exported module behavior', () => {
     });
 
     test('buildFastRoomConfig uses torrent signaling with trickle ICE by default', () => {
+        const originalUA = navigator.userAgent;
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        });
         const config = buildFastRoomConfig({ iceServers: STUN_SERVERS });
+        Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUA });
 
         expect(config).toEqual({
             appId: APP_ID,

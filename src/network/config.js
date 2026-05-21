@@ -129,7 +129,13 @@ export const INTRODUCER_TTL_WARM_MS = 8 * 3600_000;  // 8h
 
 const buildRtcConfig = (rtcConfig) => {
     const base = rtcConfig || { iceServers: STUN_SERVERS };
-    return { ...base, iceCandidatePoolSize: 3 };
+    // iceCandidatePoolSize pre-gathers candidates to hide gathering latency.
+    // Disabled on Safari: Trystero pre-warms 20 offer PCs, so 20×3 = 60 concurrent
+    // gather requests overwhelm Safari's ICE scheduler and most PCs stay at
+    // iceGatheringState:"new". Safari also doesn't start gathering on data-channel
+    // offers until setRemoteDescription is called, so pre-gathering is wasted anyway.
+    const poolSize = isWebKitRtcBrowser() ? 0 : 3;
+    return { ...base, iceCandidatePoolSize: poolSize };
 };
 
 export const buildTorrentConfig = (rtcConfig) => {
