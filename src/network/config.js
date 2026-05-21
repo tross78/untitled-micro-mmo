@@ -2,6 +2,14 @@ import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
 
 const ICE_GATHER_TIMEOUT_MS = 1500;
 
+export const isWebKitRtcBrowser = () => {
+    if (typeof navigator === 'undefined' || !navigator.userAgent) return false;
+    const ua = navigator.userAgent;
+    return /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|Edg|OPR)/i.test(ua);
+};
+
+export const shouldUseAggressiveDataChannelTuning = () => !isWebKitRtcBrowser();
+
 /**
  * @typedef {RTCPeerConnection & { __dcPatched?: boolean }} PatchedPeerInstance
  * @typedef {(new (configuration?: RTCConfiguration) => PatchedPeerInstance) & {
@@ -16,17 +24,21 @@ const ICE_GATHER_TIMEOUT_MS = 1500;
 //   2. Unreliable data channels — all Trystero channels get UDP-like semantics
 //      (maxPacketLifeTime 150 ms). Game state is latest-wins so stale packets
 //      should be dropped, not queued. Critical actions have app-layer retries.
+//      Disabled on WebKit/Safari, where partial-reliability data channels are a
+//      higher compatibility risk during initial Trystero handshakes.
 //   3. SCTP warm-up — 1200-byte dummy on first channel open triggers PMTU
 //      discovery and stabilises the congestion window before real traffic flows.
+//      Also disabled on WebKit/Safari for the same compatibility reason.
 export const patchIceGatheringTimeout = () => {
     if (typeof RTCPeerConnection === 'undefined') return;
     /** @type {PatchedPeerCtor} */
     const NativePeer = /** @type {PatchedPeerCtor} */ (RTCPeerConnection);
     if (NativePeer.__iceTimeoutPatched) return;
     const _NativePeer = NativePeer;
+    const useAggressiveDataChannels = shouldUseAggressiveDataChannelTuning();
 
     // 2. Unreliable data channels (patch the native prototype once).
-    if (!_NativePeer.prototype.__dcPatched) {
+    if (useAggressiveDataChannels && !_NativePeer.prototype.__dcPatched) {
         const _nativeCreateDC = _NativePeer.prototype.createDataChannel;
         _NativePeer.prototype.createDataChannel = function(label, opts) {
             const o = (opts && typeof opts === 'object') ? { ...opts } : {};
@@ -62,18 +74,22 @@ export const patchIceGatheringTimeout = () => {
             }
         });
         // 3. SCTP warm-up on inbound data channels.
-        pc.addEventListener('datachannel', (e) => {
-            const ch = e.channel;
-            const doWarmup = () => { try { ch.send(new Uint8Array(1200)); } catch (_) { /* ignore warmup failures */ } };
-            if (ch.readyState === 'open') doWarmup();
-            else ch.addEventListener('open', doWarmup, { once: true });
-        });
+        if (useAggressiveDataChannels) {
+            pc.addEventListener('datachannel', (e) => {
+                const ch = e.channel;
+                const doWarmup = () => { try { ch.send(new Uint8Array(1200)); } catch (_) { /* ignore warmup failures */ } };
+                if (ch.readyState === 'open') doWarmup();
+                else ch.addEventListener('open', doWarmup, { once: true });
+            });
+        }
         return pc;
     };
     /** @type {PatchedPeerCtor} */
     const patchedPeerCtor = /** @type {PatchedPeerCtor} */ (/** @type {unknown} */ (PatchedPeer));
     patchedPeerCtor.prototype = _NativePeer.prototype;
-    patchedPeerCtor.generateCertificate = _NativePeer.generateCertificate.bind(_NativePeer);
+    if (typeof _NativePeer.generateCertificate === 'function') {
+        patchedPeerCtor.generateCertificate = _NativePeer.generateCertificate.bind(_NativePeer);
+    }
     patchedPeerCtor.__iceTimeoutPatched = true;
     Object.defineProperty(patchedPeerCtor, 'name', { value: 'RTCPeerConnection' });
     try {

@@ -154,7 +154,7 @@ export class UIRenderSystem {
         for (const eid of spriteEntities) {
             const sp = this.world.getComponent(eid, Component.Sprite);
             if (sp?.palette === 'enemy') enemyEntities.push(eid);
-            else if (sp?.palette === 'peer') peerEntityIds.push(eid);
+            else if (sp?.palette === 'peer' && !sp.ghost) peerEntityIds.push(eid);
             else npcEntityIds.push(eid);
         }
 

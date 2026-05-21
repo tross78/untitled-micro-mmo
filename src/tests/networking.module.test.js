@@ -33,6 +33,7 @@ jest.mock('@trystero-p2p/torrent', () => ({
 
 import { initNetworking, isProposer, seedFromSnapshot, updateSimulation, gameActions } from '../network/index.js';
 import { buildFastRoomConfig, buildTorrentConfig } from '../network/index.js';
+import { isWebKitRtcBrowser, shouldUseAggressiveDataChannelTuning } from '../network/config.js';
 import { hashStr } from '../rules/index.js';
 import {
     hasSyncedWithArbiter,
@@ -283,6 +284,39 @@ describe('networking exported module behavior', () => {
             rtcConfig: { iceServers: STUN_SERVERS, iceCandidatePoolSize: 3 },
         });
         expect(config.trackerUrls).toBeUndefined();
+    });
+
+    test('torrent tracker list has independent live rendezvous paths', () => {
+        expect(TORRENT_TRACKERS).toEqual([
+            'wss://tracker.openwebtorrent.com',
+            'wss://tracker.webtorrent.dev',
+        ]);
+        expect(TORRENT_TRACKERS).not.toContain('wss://tracker.btorrent.xyz');
+        expect(TORRENT_TRACKERS.some(url => url.includes('files.fm'))).toBe(false);
+    });
+
+    test('WebKit keeps reliable data channels for Safari peering compatibility', () => {
+        const originalUserAgent = navigator.userAgent;
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15',
+        });
+
+        expect(isWebKitRtcBrowser()).toBe(true);
+        expect(shouldUseAggressiveDataChannelTuning()).toBe(false);
+
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        });
+
+        expect(isWebKitRtcBrowser()).toBe(false);
+        expect(shouldUseAggressiveDataChannelTuning()).toBe(true);
+
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            value: originalUserAgent,
+        });
     });
 
     test('buildFastRoomConfig uses torrent signaling with trickle ICE by default', () => {

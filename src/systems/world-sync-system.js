@@ -74,11 +74,11 @@ export class WorldSyncSystem {
 
         // 2. Sync Other Players
         players.forEach((p, id) => {
-            if (p.location !== currentLoc || p.ghost) return;
+            if (p.location !== currentLoc) return;
             activeIds.add(id);
 
-            const px = p.x || 0;
-            const py = p.y || 0;
+            const px = p.x ?? 0;
+            const py = p.y ?? 0;
             let eid = this.entityMap.get(id);
             if (!eid) {
                 eid = this.world.createEntity();
@@ -86,7 +86,13 @@ export class WorldSyncSystem {
             }
             // Re-write the sprite each frame so the stale flag flips on/off as
             // presence drops or recovers; refreshing the seed-based sprite is cheap.
-            this.world.setComponent(eid, Component.Sprite, { type: 'peer', palette: 'peer', seed: this.hash(id), stale: !!p.stale });
+            this.world.setComponent(eid, Component.Sprite, {
+                type: 'peer',
+                palette: 'peer',
+                seed: this.hash(id),
+                stale: !!p.stale || !!p.ghost,
+                ghost: !!p.ghost,
+            });
             const prev = this.prevPos.get(id);
             this.world.setComponent(eid, Component.Transform, { mapId: p.location, x: px, y: py, facing: p.direction || 's' });
             // Interpolate movement within the same room (same as local player)

@@ -203,6 +203,48 @@ describe('transition fade timing', () => {
 });
 
 describe('enemy world sync patrol stability', () => {
+    test('world sync projects arbiter snapshot ghosts as stale peer sprites', () => {
+        const world = new WorldStore();
+        const stores = {
+            localPlayer: { location: 'cellar' },
+            shardEnemies: new Map(),
+            NPCS: {},
+            players: new Map([['ghost:feed0001', {
+                ghost: true,
+                name: 'Safari Peer',
+                location: 'cellar',
+                x: 6,
+                y: 5,
+                hp: 10,
+                maxHp: 10,
+            }]])
+        };
+        const worldData = {
+            cellar: { width: 10, height: 10, staticEntities: [] }
+        };
+        const system = new WorldSyncSystem(world, stores, worldData);
+
+        system.update();
+
+        const peerId = system.entityMap.get('ghost:feed0001');
+        expect(peerId).toBeTruthy();
+        expect(world.getComponent(peerId, Component.Sprite)).toMatchObject({
+            type: 'peer',
+            palette: 'peer',
+            stale: true,
+            ghost: true,
+        });
+        expect(world.getComponent(peerId, Component.Transform)).toMatchObject({
+            mapId: 'cellar',
+            x: 6,
+            y: 5,
+        });
+        expect(world.getComponent(peerId, 'Identity')).toMatchObject({
+            name: 'Safari Peer',
+            id: 'ghost:feed0001',
+        });
+    });
+
     test('world sync does not reset an existing enemy transform every update', () => {
         const world = new WorldStore();
         const stores = {

@@ -1,6 +1,8 @@
 // @ts-check
 import { jest } from '@jest/globals';
 
+jest.setTimeout(15000);
+
 // ── Shared mock harness ──────────────────────────────────────────────────────
 
 const makeMockRoom = (name) => {
@@ -71,6 +73,8 @@ jest.mock('../network/arbiter-signal.js', () => ({
     registerWithHints: jest.fn(async () => []),
 }));
 
+const originalFetch = global.fetch;
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('reconnect and liveness regressions', () => {
@@ -83,6 +87,7 @@ describe('reconnect and liveness regressions', () => {
     afterEach(() => {
         jest.clearAllMocks();
         jest.clearAllTimers();
+        global.fetch = originalFetch;
         jest.useRealTimers();
     });
 
@@ -210,6 +215,83 @@ describe('reconnect and liveness regressions', () => {
         await jest.advanceTimersByTimeAsync(70_000);
 
         expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+    });
+
+    test('long browser resume rebuilds global and shard rooms', async () => {
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+
+        const initialJoinCallCount = joinRoom.mock.calls.length;
+        let visibilityState = 'hidden';
+        Object.defineProperty(document, 'visibilityState', {
+            configurable: true,
+            get: () => visibilityState,
+        });
+
+        document.dispatchEvent(new Event('visibilitychange'));
+        await jest.advanceTimersByTimeAsync(20_000);
+        visibilityState = 'visible';
+        document.dispatchEvent(new Event('visibilitychange'));
+        await jest.advanceTimersByTimeAsync(0);
+
+        expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+        expect(joinRoom.mock.calls.filter(([, name]) => name === 'global').length).toBeGreaterThan(1);
+        expect(joinRoom.mock.calls.filter(([, name]) => name === 'cellar-1').length).toBeGreaterThan(1);
+    });
+
+    test('join polls arbiter peer snapshots after an initially empty response', async () => {
+        global.fetch = jest.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ peers: [], shard: 'cellar-1', ts: Date.now(), signature: 'sig-empty' }),
+            })
+            .mockResolvedValue({
+                ok: true,
+                json: async () => ({
+                    peers: [{
+                        ph: 'feed0001',
+                        name: 'Safari Peer',
+                        location: 'cellar',
+                        shard: 'cellar-1',
+                        level: 1,
+                        xp: 0,
+                        x: 6,
+                        y: 5,
+                        ts: Date.now(),
+                    }],
+                    shard: 'cellar-1',
+                    ts: Date.now(),
+                    signature: 'sig-peers',
+                }),
+            });
+        localStorage.setItem('fenhollow_arbiter_url', 'localhost:3000');
+
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer, players } = await import('../state/store.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+        expect(players.has('ghost:feed0001')).toBe(false);
+
+        await jest.advanceTimersByTimeAsync(1600);
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            'http://localhost:3000/peers?shard=cellar-1',
+            expect.any(Object),
+        );
+        expect(players.get('ghost:feed0001')).toMatchObject({
+            ghost: true,
+            name: 'Safari Peer',
+            location: 'cellar',
+            x: 6,
+            y: 5,
+        });
     });
 
     test('failed handshake peer triggers heal and is tracked for future exclusion', async () => {

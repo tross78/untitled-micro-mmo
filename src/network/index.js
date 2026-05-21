@@ -72,6 +72,9 @@ const globalPeerHints = new Map();
 // Stale hints can outlive the shard they advertise. Prune anything older than this
 // before reading the map so dead peers stop influencing same-shard bootstrap.
 const GLOBAL_PEER_HINT_TTL_MS = 5 * 60_000;
+const NETWORK_RESUME_RECONNECT_MIN_HIDDEN_MS = 15_000;
+const NETWORK_RESUME_RECONNECT_COOLDOWN_MS = 5_000;
+const SHARD_SNAPSHOT_REFRESH_DELAYS_MS = [1500, 5000, 12000, 30000];
 const pruneGlobalPeerHints = (now = Date.now()) => {
     for (const [peerId, hint] of globalPeerHints) {
         if (!hint || now - (hint.ts || 0) > GLOBAL_PEER_HINT_TTL_MS) globalPeerHints.delete(peerId);
@@ -100,6 +103,7 @@ let lastNetworkHealAt = 0;
 let networkHealInFlight = false;
 let scheduledHealTimer = null;
 let healNetworking = async (_opts = {}) => {};
+let networkResumeCleanup = null;
 const scheduleHeal = (delay = NETWORK_EVENT_HEAL_DELAY_MS, options = {}) => {
     const { force = false, urgent = false } = options;
     if (scheduledHealTimer) clearTimeout(scheduledHealTimer);
@@ -110,6 +114,7 @@ const scheduleHeal = (delay = NETWORK_EVENT_HEAL_DELAY_MS, options = {}) => {
 };
 
 const runtimeArbiterUrl = () => getArbiterUrl(ARBITER_URL);
+const roomPeerCount = (room) => room?.getPeers ? Object.keys(room.getPeers()).length : 0;
 const supportsChannelEvents = (channel) =>
     channel && typeof channel.addEventListener === 'function' && typeof channel.removeEventListener === 'function';
 const addChannelListener = (channel, handler) => {
@@ -120,6 +125,36 @@ const addChannelListener = (channel, handler) => {
 const removeChannelListener = (channel, handler) => {
     if (!supportsChannelEvents(channel)) return;
     /** @type {BroadcastChannel} */ (channel).removeEventListener('message', handler);
+};
+
+const fetchArbiterPeerSnapshot = async (shard) => {
+    const arbiterUrl = runtimeArbiterUrl();
+    if (!arbiterUrl || typeof fetch !== 'function') return 0;
+    try {
+        const timeoutSignal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+            ? AbortSignal.timeout(3000)
+            : undefined;
+        const response = await fetch(`${arbiterUrl}/peers?shard=${encodeURIComponent(shard)}`, { signal: timeoutSignal });
+        const body = response?.ok ? await response.json() : null;
+        if (!body) return 0;
+        if (Array.isArray(body)) {
+            recordShardPeerHints(body.length);
+            seedFromSnapshot(body);
+            return body.length;
+        }
+        if (!body.signature || !Array.isArray(body.peers)) return 0;
+        const payload = { peers: body.peers, shard: body.shard || null, ts: body.ts };
+        const ok = await verifyMessage(stableStringify(payload), body.signature, arbiterPublicKey).catch(() => false);
+        if (!ok) return 0;
+        recordShardPeerHints(body.peers.length);
+        seedFromSnapshot(body.peers);
+        if (body.peers.length > 0) {
+            markNetworkEvent('shard:arbiter_snapshot', { shard, count: body.peers.length });
+        }
+        return body.peers.length;
+    } catch {
+        return 0;
+    }
 };
 
 // --- Introducer cache -------------------------------------------------------
@@ -584,6 +619,75 @@ export const initNetworking = async (rtcConfig) => {
         } finally { networkHealInFlight = false; }
     };
 
+    let lastPageHiddenAt = 0;
+    let lastResumeReconnectAt = 0;
+    let resumeReconnectInFlight = false;
+
+    const shouldReconnectOnResume = (reason, now) => {
+        if (reason === 'online' || reason === 'pageshow_bfcache') return true;
+        const hiddenLongEnough = lastPageHiddenAt > 0
+            && now - lastPageHiddenAt >= NETWORK_RESUME_RECONNECT_MIN_HIDDEN_MS;
+        const transportLooksEmpty = roomPeerCount(globalRooms.torrent) === 0
+            && roomPeerCount(rooms.torrent) === 0;
+        const silentLongEnough = now - Math.max(joinTime, lastShardPresenceAt) >= NETWORK_STALL_MS;
+        return hiddenLongEnough || (transportLooksEmpty && silentLongEnough);
+    };
+
+    const reconnectAfterResume = async (reason) => {
+        const now = Date.now();
+        if (resumeReconnectInFlight) return;
+        if (now - lastResumeReconnectAt < NETWORK_RESUME_RECONNECT_COOLDOWN_MS) return;
+        if (!shouldReconnectOnResume(reason, now)) return;
+
+        resumeReconnectInFlight = true;
+        lastResumeReconnectAt = now;
+        _healAttempts = 0;
+        lastNetworkHealAt = 0;
+        markNetworkEvent('network:resume_reconnect', {
+            reason,
+            globalPeers: roomPeerCount(globalRooms.torrent),
+            shardPeers: roomPeerCount(rooms.torrent),
+        });
+        try {
+            await connectGlobal(currentRtcConfig);
+            await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
+        } finally {
+            resumeReconnectInFlight = false;
+        }
+    };
+
+    const bindNetworkResumeLifecycle = () => {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                lastPageHiddenAt = Date.now();
+                return;
+            }
+            reconnectAfterResume('visibility').catch(() => {});
+        };
+        const onPageShow = (event) => {
+            const reason = event?.persisted ? 'pageshow_bfcache' : 'pageshow';
+            reconnectAfterResume(reason).catch(() => {});
+        };
+        const onOnline = () => reconnectAfterResume('online').catch(() => {});
+        const onFocus = () => reconnectAfterResume('focus').catch(() => {});
+
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('pageshow', onPageShow);
+        window.addEventListener('online', onOnline);
+        window.addEventListener('focus', onFocus);
+
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            window.removeEventListener('pageshow', onPageShow);
+            window.removeEventListener('online', onOnline);
+            window.removeEventListener('focus', onFocus);
+        };
+    };
+
+    if (networkResumeCleanup) networkResumeCleanup();
+    networkResumeCleanup = bindNetworkResumeLifecycle();
+
     setInterval(() => { healNetworking().catch(() => {}); }, 10000);
 
     setInterval(async () => {
@@ -659,25 +763,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
     if (globalRooms.torrent && gameActions.sendSeekingShard) gameActions.sendSeekingShard(shard);
 
-    const arbiterUrl = runtimeArbiterUrl();
-    if (arbiterUrl) {
-        fetch(`${arbiterUrl}/peers?shard=${encodeURIComponent(shard)}`, { signal: AbortSignal.timeout(3000) })
-            .then(r => r.ok ? r.json() : null)
-            .then(async body => {
-                // Tolerate legacy plain-array responses while we transition; reject any
-                // response that *claims* to be signed but fails verification.
-                if (!body) return;
-                if (Array.isArray(body)) { recordShardPeerHints(body.length); seedFromSnapshot(body); return; }
-                if (!body.signature || !Array.isArray(body.peers)) return;
-                const payload = { peers: body.peers, shard: body.shard || null, ts: body.ts };
-                const ok = await verifyMessage(stableStringify(payload), body.signature, arbiterPublicKey).catch(() => false);
-                if (ok) {
-                    recordShardPeerHints(body.peers.length);
-                    seedFromSnapshot(body.peers);
-                }
-            })
-            .catch(() => { });
-    }
+    fetchArbiterPeerSnapshot(shard);
+    const snapshotRefreshTimers = SHARD_SNAPSHOT_REFRESH_DELAYS_MS
+        .map(delay => setTimeout(() => { fetchArbiterPeerSnapshot(shard); }, delay));
 
     const preJoined = getPreJoined(shard);
     if (preJoined) {
@@ -1296,6 +1384,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     _shardTeardown = () => {
         clearTimeout(registerStartTimer);
         clearInterval(registerHeartbeatTimer);
+        snapshotRefreshTimers.forEach(clearTimeout);
         r.teardown();
     };
 
