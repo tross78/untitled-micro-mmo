@@ -317,11 +317,10 @@ async function startArbiter() {
     setTimeout(() => trackedPublishBeacon().catch(err => console.error('[Arbiter] Beacon publish failed:', err)), 5000);
     setInterval(() => trackedPublishBeacon().catch(err => console.error('[Arbiter] Beacon publish failed:', err)), 60000);
 
-    // Prune caches every hour
-    setInterval(() => {
-        lastRollupTime.clear();
-        presenceDirectory.prune();
-    }, 3600000);
+    // Prune presence every 5 minutes (TTL is 120s; hourly pruning left stale hints for up to 1h).
+    // Rollup-time cache cleared hourly — it only prevents duplicate submissions within a window.
+    setInterval(() => presenceDirectory.prune(), 5 * 60 * 1000);
+    setInterval(() => lastRollupTime.clear(), 3600000);
 
     // HTTP Server for fallback discovery and presence cache
     const server = createServer(async (req, res) => {

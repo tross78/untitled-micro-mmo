@@ -1,7 +1,9 @@
 import { stableStringify } from '../security/crypto.js';
 
 export const listPersistedBans = (source) => {
-    const list = Array.isArray(source) ? source : [];
+    const list = source instanceof Set ? [...source]
+        : Array.isArray(source) ? source
+        : [];
     return [...new Set(list.filter(value => typeof value === 'string' && value.trim()))].sort();
 };
 

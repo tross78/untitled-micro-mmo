@@ -251,7 +251,7 @@ export const initNetworking = async (rtcConfig) => {
         const [, getArbiterPeerHints] = globalRooms.torrent.makeAction('arbiter_peer_hints');
         getArbiterPeerHints((hints) => {
             if (!Array.isArray(hints) || hints.length === 0) return;
-            const peerIds = hints.map(h => h.id || h.ph).filter(Boolean);
+            const peerIds = hints.map(h => h.id).filter(Boolean);
             if (peerIds.length > 0 && gameActions.seedShardIntroducers) gameActions.seedShardIntroducers(peerIds);
         });
         const [sendStateOffer, getStateOffer] = globalRooms.torrent.makeAction('state_offer');
@@ -450,6 +450,7 @@ export const initNetworking = async (rtcConfig) => {
         if (!isSilenced && globalPeerCount >= 5 && usableShardPeers > 0) {
             markNetworkEvent('global:silenced', { globalPeerCount, usableShardPeers });
             globalRooms.torrent.leave();
+            globalRooms.torrent = null;
             globalKnownPeers.clear();
             isSilenced = true;
         } else if (isSilenced && usableShardPeers === 0) {
@@ -1114,15 +1115,15 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (!peerJoinTimes.has(peerId)) peerJoinTimes.set(peerId, Date.now());
             hpv.onJoin(peerId);
             try { sendSketch(buildSketch().serialize(), [peerId]); } catch (_e) { /* ignore */ }
-            const handshake = async () => {
-                if (!shardKnownPeers.has(peerId) || !playerKeys) return;
+            const handshake = async (attempt = 0) => {
+                if (!shardKnownPeers.has(peerId) || !playerKeys || attempt >= 5) return;
                 try {
                     markPeerNetworkEvent(peerId, 'peer:identity_sent');
                     sendIdentity({ publicKey: await exportKey(playerKeys.publicKey) }, [peerId]);
                     const e = await myEntry(); if (e) sendPresenceSingle(await packSignedPresence({ ...e, hlc: sendHLC() }), [peerId]);
                     markPeerNetworkEvent(peerId, 'peer:presence_sent');
                 } catch (_e2) { /* ignore */ }
-                if (!players.get(peerId)?.publicKey) setTimeout(handshake, 3000);
+                if (!players.get(peerId)?.publicKey) setTimeout(() => handshake(attempt + 1), 3000);
             };
             setTimeout(handshake, 100);
             setTimeout(() => {
@@ -1147,7 +1148,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const msgCacheTimer = setInterval(() => {
             const cutoff = Date.now() - 60000;
             for (const [k, v] of _msgCache) { if (v.ts < cutoff) _msgCache.delete(k); }
-        }, 30000);
+        }, 15000);
 
         return {
             sendMove, sendMonsterDmg, sendPresenceSingle, sendPresenceBatch,
