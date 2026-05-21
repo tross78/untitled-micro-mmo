@@ -47,6 +47,10 @@ export const STUN_SERVERS = [
 export const TURN_SERVERS = [
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    // freestun.net: second independent TURN relay — improves Safari relay coverage
+    // when openrelay is slow or unreliable (observed: no relay candidates in Safari 17.6).
+    { urls: 'turn:freestun.net:3479', username: 'free', credential: 'free' },
+    { urls: 'turn:freestun.net:3479?transport=tcp', username: 'free', credential: 'free' },
 ];
 
 export const ICE_SERVERS = [...STUN_SERVERS, ...TURN_SERVERS];

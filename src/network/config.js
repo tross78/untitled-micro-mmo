@@ -2,6 +2,10 @@ import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
 import { recordPeerConnection } from './diagnostics.js';
 
 const ICE_GATHER_TIMEOUT_MS = 1500;
+// Safari/WebKit STUN resolution is significantly slower than Chrome (~2-4s vs <1s).
+// Without a longer budget, the 1500ms flush fires before srflx candidates arrive,
+// leaving only host candidates in the SDP and causing NAT traversal failures.
+const ICE_GATHER_TIMEOUT_WEBKIT_MS = 5000;
 
 export const isWebKitRtcBrowser = () => {
     if (typeof navigator === 'undefined' || !navigator.userAgent) return false;
@@ -53,6 +57,8 @@ export const patchIceGatheringTimeout = () => {
     }
 
     // 1. ICE gathering timeout wrapper.
+    const iceGatherTimeoutMs = useAggressiveDataChannels ? ICE_GATHER_TIMEOUT_MS : ICE_GATHER_TIMEOUT_WEBKIT_MS;
+
     const PatchedPeer = function(...args) {
         const pc = new _NativePeer(...args);
         recordPeerConnection(pc, {
@@ -75,7 +81,7 @@ export const patchIceGatheringTimeout = () => {
         pc.addEventListener('icecandidate', (e) => {
             if (!e.candidate && timer) { clearTimeout(timer); timer = null; return; }
             if (e.candidate && !timer) {
-                timer = setTimeout(flush, ICE_GATHER_TIMEOUT_MS);
+                timer = setTimeout(flush, iceGatherTimeoutMs);
             }
         });
         // 3. SCTP warm-up on inbound data channels.
