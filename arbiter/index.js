@@ -90,7 +90,11 @@ process.on('warning', (warning) => {
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
-    const { ICE_SERVERS } = await import('../src/infra/constants.js');
+    // STUN only — the arbiter has direct internet reachability, and routing
+    // through TURN would waste the Pi's bandwidth on every browser peer.
+    // openrelay.metered.ca was also returning ECONNREFUSED on TCP 443 from
+    // the Pi, which spammed the logs on every ICE gathering pass.
+    const { STUN_SERVERS } = await import('../src/infra/constants.js');
     const { buildTorrentConfig } = await import('../src/network/config.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
     const { presenceSignaturePayload } = await import('../src/network/packer.js');
@@ -129,7 +133,7 @@ async function startArbiter() {
     // exist but the browser never joined it, so rollups/fraud silently dropped.
     let globalRoom;
     try {
-        globalRoom = joinTorrent(buildArbiterRoomConfig(buildTorrentConfig({ iceServers: ICE_SERVERS })), 'global');
+        globalRoom = joinTorrent(buildArbiterRoomConfig(buildTorrentConfig({ iceServers: STUN_SERVERS })), 'global');
     } catch (err) {
         console.error('[Arbiter] Torrent join failed:', err.message);
         process.exit(1);
