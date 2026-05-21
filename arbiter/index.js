@@ -5,7 +5,14 @@ import { readFileSync, existsSync } from 'node:fs';
 import { writeFile as writeFileAsync } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { setDefaultResultOrder } from 'node:dns';
 import { RTCPeerConnection } from 'werift';
+
+// Prefer IPv4 — Pi deployments commonly have no IPv6 route. Without this,
+// Node 18+ resolves IPv6 first when both records exist, hangs on the
+// unreachable v6 address until timeout, then falls back to v4. The arbiter
+// only needs reachability, not v6, so just skip the wait.
+setDefaultResultOrder('ipv4first');
 import {
     createPresenceDirectory,
 } from '../src/network/arbiter-presence-directory.js';
