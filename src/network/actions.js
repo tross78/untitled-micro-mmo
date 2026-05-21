@@ -20,13 +20,13 @@ import { playerKeys } from '../security/identity.js';
 export const buildShardActions = (r) => ({
     sendMove: async (data) => {
         if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return;
-        const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: Date.now() };
+        const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, hlc: sendHLC() };
         r.plumBroadcast('move', packMove({ ...moveData, signature: await signMessage(JSON.stringify(moveData), playerKeys.privateKey) }));
     },
     sendMoveTo: async (data, targetPeerIds) => {
         if (!playerKeys || !localPlayer.ph || localPlayer.ph === '00000000') return;
         if (!targetPeerIds || targetPeerIds.length === 0) return;
-        const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, ts: Date.now() };
+        const moveData = { from: data.from, to: data.to, x: data.x || 0, y: data.y || 0, hlc: sendHLC() };
         const packed = packMove({ ...moveData, signature: await signMessage(JSON.stringify(moveData), playerKeys.privateKey) });
         r.sendMove(packed, targetPeerIds);
     },

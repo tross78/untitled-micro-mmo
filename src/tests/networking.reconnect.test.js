@@ -5,6 +5,7 @@ import { jest } from '@jest/globals';
 
 const makeMockRoom = (name) => {
     const actionHandlers = new Map();
+    const connectedPeers = new Set();
     const room = {
         name,
         _onPeerJoin: null,
@@ -17,15 +18,28 @@ const makeMockRoom = (name) => {
         }),
         onPeerJoin: jest.fn((cb) => { room._onPeerJoin = cb; }),
         onPeerLeave: jest.fn((cb) => { room._onPeerLeave = cb; }),
-        getPeers: jest.fn(() => ({})),
+        // getPeers reflects who has been emitted-joined but not emitted-left, so
+        // production code that checks `filterConnectedPeerIds` against the room
+        // membership sees the same view it would in real Trystero.
+        getPeers: jest.fn(() => {
+            const out = {};
+            for (const id of connectedPeers) out[id] = true;
+            return out;
+        }),
         leave: jest.fn(),
         _sends: new Map(),
         emitAction(action, ...args) {
             const handler = actionHandlers.get(action);
             return handler ? handler(...args) : undefined;
         },
-        emitPeerJoin(peerId) { return room._onPeerJoin?.(peerId); },
-        emitPeerLeave(peerId) { return room._onPeerLeave?.(peerId); },
+        emitPeerJoin(peerId) {
+            connectedPeers.add(peerId);
+            return room._onPeerJoin?.(peerId);
+        },
+        emitPeerLeave(peerId) {
+            connectedPeers.delete(peerId);
+            return room._onPeerLeave?.(peerId);
+        },
     };
     return room;
 };
@@ -130,9 +144,9 @@ describe('reconnect and liveness regressions', () => {
         expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
     });
 
-    test('arbiter hints from registerWithHints seed HyParView passive view', async () => {
+    test('arbiter hints from registerWithHints seed HyParView active view', async () => {
         const { HyParView } = await import('../network/hyparview.js');
-        const mergeSpy = jest.spyOn(HyParView.prototype, 'mergeShuffle');
+        const seedSpy = jest.spyOn(HyParView.prototype, 'seedAsActive');
 
         const { registerWithHints } = await import('../network/arbiter-signal.js');
         registerWithHints.mockResolvedValueOnce([
@@ -148,7 +162,7 @@ describe('reconnect and liveness regressions', () => {
         // registerWithArbiter fires after 1s timeout.
         await jest.advanceTimersByTimeAsync(1500);
 
-        expect(mergeSpy).toHaveBeenCalledWith(
+        expect(seedSpy).toHaveBeenCalledWith(
             expect.arrayContaining(['hint-peer-1', 'hint-peer-2']),
             'self-peer-id',
         );

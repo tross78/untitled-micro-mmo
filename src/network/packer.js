@@ -170,12 +170,12 @@ export const presenceSignaturePayload = (p) => {
 };
 
 export const packMove = (m) => {
-    const s = new SchemaBuffer(74);
+    const s = new SchemaBuffer(76);
     s.u8(ROOM_MAP.indexOf(m.from));
     s.u8(ROOM_MAP.indexOf(m.to));
     s.u8(m.x || 0);
     s.u8(m.y || 0);
-    s.ts(m.ts);
+    s.hlc(m.hlc);
     s.sig(m.signature);
     return s.buf;
 };
@@ -187,7 +187,7 @@ export const unpackMove = (buf) => {
         to: ROOM_MAP[r.u8()] ?? SPAWN_ROOM_ID,
         x: r.u8(),
         y: r.u8(),
-        ts: r.ts(),
+        hlc: r.hlc(),
         signature: r.sig(),
     };
 };

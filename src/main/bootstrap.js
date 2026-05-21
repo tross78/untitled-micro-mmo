@@ -1,6 +1,6 @@
 import { localPlayer, hasSyncedWithArbiter, worldState, TAB_CHANNEL, loadLocalState, pruneStale } from '../state/store.js';
 import { log, startTicker } from '../ui/index.js';
-import { initIdentity, arbiterPublicKey, myEntry } from '../security/identity.js';
+import { initIdentity, arbiterPublicKey } from '../security/identity.js';
 import { getRuntimeParam, isE2EMode, getArbiterUrl } from '../infra/runtime.js';
 import { initAds, showBanner } from '../engine/ads.js';
 import { inputManager } from '../engine/input.js';
@@ -23,7 +23,9 @@ import { appRuntime } from '../app/runtime.js';
 import { selfId } from '../network/transport.js';
 import { markNetworkEvent, resetNetworkAudit } from '../network/audit-debug.js';
 
-const HEARTBEAT_MS = 30000;
+// Shard-room heartbeat lives in src/network/index.js (NETWORK_PRESENCE_HEARTBEAT_MS).
+// Pruning still runs from here at this interval.
+const PRUNE_INTERVAL_MS = 30000;
 
 export const processBeacon = async (packet, source) => {
     if (!packet) return false;
@@ -170,19 +172,11 @@ export const start = async () => {
             }
         }
 
-        // Heartbeat for presence
-        setInterval(async () => {
-            if (typeof gameActions.sendPresenceSingle === 'function') {
-                const entry = await myEntry();
-                if (entry) gameActions.sendPresenceSingle(entry);
-            }
-        }, HEARTBEAT_MS);
-        
         const PRESENCE_TTL = 600000;
         setInterval(() => {
             pruneStale(PRESENCE_TTL);
             triggerLogicalRefresh();
-        }, HEARTBEAT_MS);
+        }, PRUNE_INTERVAL_MS);
 
         log(`\nWelcome to ${GAME_NAME.charAt(0).toUpperCase() + GAME_NAME.slice(1)}.`);
         log(`Your Peer ID: ${selfId}`);

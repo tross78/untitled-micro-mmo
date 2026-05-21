@@ -69,6 +69,14 @@ export const globalKnownPeers = new Set();
 export const shardKnownPeers = new Set();
 export const knownPeers = shardKnownPeers;
 const globalPeerHints = new Map();
+// Stale hints can outlive the shard they advertise. Prune anything older than this
+// before reading the map so dead peers stop influencing same-shard bootstrap.
+const GLOBAL_PEER_HINT_TTL_MS = 5 * 60_000;
+const pruneGlobalPeerHints = (now = Date.now()) => {
+    for (const [peerId, hint] of globalPeerHints) {
+        if (!hint || now - (hint.ts || 0) > GLOBAL_PEER_HINT_TTL_MS) globalPeerHints.delete(peerId);
+    }
+};
 export let lastRollupReceivedAt = 0;
 export let lastValidStatePacket = null;
 export let currentRtcConfig = { iceServers: ICE_SERVERS };
@@ -79,11 +87,11 @@ let networkHealInFlight = false;
 let scheduledHealTimer = null;
 let healNetworking = async (_opts = {}) => {};
 const scheduleHeal = (delay = NETWORK_EVENT_HEAL_DELAY_MS, options = {}) => {
-    const { force = false } = options;
+    const { force = false, urgent = false } = options;
     if (scheduledHealTimer) clearTimeout(scheduledHealTimer);
     scheduledHealTimer = setTimeout(() => {
         scheduledHealTimer = null;
-        healNetworking({ force }).catch(() => {});
+        healNetworking({ force, urgent }).catch(() => {});
     }, delay);
 };
 
@@ -108,9 +116,25 @@ const removeChannelListener = (channel, handler) => {
 const INTRODUCER_CACHE_KEY = `${GAME_NAME}_introducers_v2`;
 
 // Peers that have sent verified presence at least once this session.
+// Bounded LRU so a long-running session does not accumulate every peer ever seen.
+const INTRO_PEER_SET_CAP = 512;
+const _addBoundedSetEntry = (set, value) => {
+    if (set.has(value)) {
+        set.delete(value);
+        set.add(value);
+        return;
+    }
+    if (set.size >= INTRO_PEER_SET_CAP) {
+        const oldest = set.values().next().value;
+        set.delete(oldest);
+    }
+    set.add(value);
+};
 const _introSuccessPeers = new Set();
 // Peers that timed out on handshake this session — deprioritised on next load.
 const _introFailedPeers = new Set();
+const markIntroSuccess = (peerId) => _addBoundedSetEntry(_introSuccessPeers, peerId);
+const markIntroFailed = (peerId) => _addBoundedSetEntry(_introFailedPeers, peerId);
 
 const saveIntroducers = (shard) => {
     const directPeers = rooms.torrent?.getPeers?.() || {};
@@ -144,7 +168,27 @@ const applyActionLogToShadow = (peerId, data) => {
     const entry = players.get(peerId);
     const rng = seededRNG(hashStr(worldState.seed + '|' + entry.publicKey + '|' + data.index));
     if (data.type === 'kill' && ENEMIES[data.target]) {
-        shadow.xp += ENEMIES[data.target].xp;
+        const expectedXp = ENEMIES[data.target].xp;
+        // If the peer claimed a per-kill XP value (data.data) that doesn't match the
+        // canonical enemy XP, that's an attempt to over-claim — submit xp_fraud.
+        // Older clients send data: 0 which we treat as "no claim" (skip the check).
+        if (data.data && data.data !== expectedXp && gameActions.submitFraudProof) {
+            gameActions.submitFraudProof({
+                type: 'xp_fraud',
+                proof: {
+                    publicKey: entry.publicKey,
+                    feedEntry: { type: data.type, target: data.target, xp: data.data },
+                    actionEntropy: worldState.seed + '|' + entry.publicKey + '|' + data.index,
+                },
+                witness: { publicKey: null },
+            });
+            return;
+        }
+        // Rate-limit XP gain from action_log the same way presence-announced XP is gated.
+        // Without this, a peer can pump shadow XP via valid-signature kill spam even
+        // when each individual kill claims the legitimate XP value.
+        if (!checkXpRate(peerId, shadow.xp + expectedXp, shadow.xp)) return;
+        shadow.xp += expectedXp;
         shadow.level = xpToLevel(shadow.xp);
         shadow.inventory.push(...rollLoot(data.target, rng));
         shadow.gold += rng(10);
@@ -286,6 +330,7 @@ export const initNetworking = async (rtcConfig) => {
             sendSeekingShard(shard, [peerId]);
             const registration = await buildRegistration(shard);
             if (registration) sendRegisterPresence(registration, [peerId]);
+            pruneGlobalPeerHints();
             if (globalPeerHints.get(peerId)?.shard === shard) await maybeSendSameShardBootstrap(peerId, shard);
         };
 
@@ -417,7 +462,8 @@ export const initNetworking = async (rtcConfig) => {
 
             log(`[System] Received state rescue offer from ${peerId.slice(0, 8)}!`, '#0f0');
             if (shadow.xp > localPlayer.xp) {
-                if (shadow.name) localPlayer.name = shadow.name;
+                // localPlayer.name is locally authoritative — never overwrite from a
+                // peer-supplied shadow. The offerer cannot legitimately claim a name change.
                 localPlayer.xp = shadow.xp;
                 localPlayer.level = derivedLevel;
                 localPlayer.gold = Math.max(localPlayer.gold, shadow.gold || 0);
@@ -443,22 +489,11 @@ export const initNetworking = async (rtcConfig) => {
 
     await connectGlobal(currentRtcConfig);
 
-    let isSilenced = false;
-    setInterval(async () => {
-        const globalPeerCount = globalKnownPeers.size;
-        const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
-        if (!isSilenced && globalPeerCount >= 5 && usableShardPeers > 0) {
-            markNetworkEvent('global:silenced', { globalPeerCount, usableShardPeers });
-            globalRooms.torrent.leave();
-            globalRooms.torrent = null;
-            globalKnownPeers.clear();
-            isSilenced = true;
-        } else if (isSilenced && usableShardPeers === 0) {
-            markNetworkEvent('global:resume_discovery');
-            await connectGlobal(currentRtcConfig);
-            isSilenced = false;
-        }
-    }, 30000);
+    // Silencing the global room was removed: it broke arbiter-bound rollup and
+    // fraud submission. submitRollup/submitFraudProof are captured by closures
+    // bound to the live globalRooms.torrent senders, so leaving the room dropped
+    // every subsequent rollup/fraud-report into a dead closure. The savings
+    // (one extra tracker WS per peer) is not worth giving up fraud detection.
 
     setInterval(() => {
         const g = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
@@ -503,7 +538,14 @@ export const initNetworking = async (rtcConfig) => {
             _healAttempts++;
             markNetworkEvent('heal:start', { force, urgent, usableShardPeers, globalPeers, attempt: _healAttempts });
         try {
-            if (globalPeers > 0) {
+            // Fast path: urgent heal with the shard room still alive and ICE config unchanged.
+            // Skip leave/rejoin (which drops every tracker WS and the WebRTC mesh) and just
+            // re-announce presence in place. Tracker spam from heal storms was the cost.
+            const canReuse = urgent && rooms.torrent && globalRooms.torrent
+                && !isUsingTurnFallback(currentRtcConfig);
+            if (canReuse) {
+                markNetworkEvent('heal:reuse_room');
+            } else if (globalPeers > 0) {
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: ICE_SERVERS };
                 await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
             } else {
@@ -574,10 +616,19 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     // Only wipe it on actual room transitions so peer sprites survive reconnects.
     if (isSameShard) {
         clearShardChannels(location);
+        // Drop join-time records for peers no longer in the preserved players map
+        // so router election (refreshRouters) doesn't keep promoting stale ids.
+        for (const id of peerJoinTimes.keys()) {
+            if (!players.has(id)) peerJoinTimes.delete(id);
+        }
     } else {
         clearShardState(location);
+        peerJoinTimes.clear();
+        // Different shard means different peer set — drop HLC monotonicity records
+        // since they were keyed to peers we will no longer interact with.
+        clearSecurityState();
     }
-    clearSecurityState();
+    // Same-shard rejoin preserves peerHlc to keep replay defense intact during heal.
     pendingCommits.clear();
     feedHeads.clear();
     joinTime = Date.now();
@@ -594,8 +645,17 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     const arbiterUrl = runtimeArbiterUrl();
     if (arbiterUrl) {
         fetch(`${arbiterUrl}/peers?shard=${encodeURIComponent(shard)}`, { signal: AbortSignal.timeout(3000) })
-            .then(r => r.ok ? r.json() : [])
-            .then(entries => seedFromSnapshot(entries))
+            .then(r => r.ok ? r.json() : null)
+            .then(async body => {
+                // Tolerate legacy plain-array responses while we transition; reject any
+                // response that *claims* to be signed but fails verification.
+                if (!body) return;
+                if (Array.isArray(body)) { seedFromSnapshot(body); return; }
+                if (!body.signature || !Array.isArray(body.peers)) return;
+                const payload = { peers: body.peers, shard: body.shard || null, ts: body.ts };
+                const ok = await verifyMessage(stableStringify(payload), body.signature, arbiterPublicKey).catch(() => false);
+                if (ok) seedFromSnapshot(body.peers);
+            })
             .catch(() => { });
     }
 
@@ -725,6 +785,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         // overlay self-healing under churn without manual re-discovery.
         getIdentity(({ publicKey }, peerId) => {
             if (!publicKey || peerId === selfId) return;
+            // Refuse identity packets from peerIds Trystero no longer attributes to the room.
+            // Without this, a stale handshake delivered after the peer disconnected would
+            // re-add them and keep them counting toward usable-peer totals until the ghost
+            // sweep fires up to GHOST_TTL_MS later.
+            if (filterConnectedPeerIds(r, [peerId]).length === 0) return;
             shardKnownPeers.add(peerId);
             const ph = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
             trackPlayer(peerId, { publicKey, ph, ts: Date.now() });
@@ -838,10 +903,14 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             _peerLastPresenceAt.set(peerId, verifiedAt);
             // Strip stale flag — fresh presence means they're back.
             const { stale: _stale, staleSince: _staleSince, ...prior } = entry;
+            // rawPresence is the peer's signed buffer; we forward it verbatim during
+            // sketch reconciliation since we cannot sign on their behalf. The HLC check
+            // above guarantees we only overwrite it with a strictly newer signed packet,
+            // so old captures cannot be re-introduced through this path.
             trackPlayer(peerId, { ...prior, ...unpacked, ts: verifiedAt, rawPresence: buf, presenceVerifiedAt: verifiedAt });
             trackShadowPlayer(peerId, unpacked);
             lastShardPresenceAt = verifiedAt;
-            _introSuccessPeers.add(peerId);
+            markIntroSuccess(peerId);
             markPeerNetworkEvent(peerId, 'peer:presence_verified', { location: unpacked.location, x: unpacked.x, y: unpacked.y });
             players.delete('ghost:' + unpacked.ph);
         };
@@ -902,7 +971,16 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             sendLazyPush({ msgId, type: cached.type, data: Array.from(cached.buf), originPeerId: cached.originPeerId }, [peerId]);
         });
 
+        // Reject sketch/request work originating from peers whose key we have banned.
+        // Decoding a sketch is bounded but non-trivial; a banned peer must not be able
+        // to keep triggering Minisketch.decode + Ed25519 verifies on every honest peer.
+        const isBannedPeer = (peerId) => {
+            const pub = players.get(peerId)?.publicKey;
+            return pub ? bans.has(pub) : false;
+        };
+
         getSketch(async (remoteArr, peerId) => {
+            if (isBannedPeer(peerId)) return;
             const localMs = buildSketch();
             const remoteMs = Minisketch.fromSerialized(remoteArr);
             const { added, removed, failure } = Minisketch.decode(localMs, remoteMs);
@@ -927,6 +1005,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         });
 
         getRequest(async (idStrings, peerId) => {
+            if (isBannedPeer(peerId)) return;
             const response = {};
             const myIdHash = Number(Minisketch.hashId(selfId));
             const matchesSelf = idStrings.some(s => s === selfId || (Number.isInteger(Number(s)) && Number(s) === myIdHash));
@@ -942,9 +1021,15 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (Object.keys(response).length > 0) sendPresenceBatch(packPresenceBatch(response), [peerId]);
         });
 
-        getPresenceSingle(async (buf, peerId) => { if (peerId === selfId) return; hpv.markSeen(HyParView.msgId(hashStr, buf)); await processPresenceSingle(buf, peerId); });
+        getPresenceSingle(async (buf, peerId) => {
+            if (peerId === selfId) return;
+            if (isBannedPeer(peerId)) return;
+            hpv.markSeen(HyParView.msgId(hashStr, buf));
+            await processPresenceSingle(buf, peerId);
+        });
 
-        getPresenceBatch(async (data) => {
+        getPresenceBatch(async (data, peerId) => {
+            if (isBannedPeer(peerId)) return;
             const batch = unpackPresenceBatch(data);
             for (const [id, { presence, publicKey }] of Object.entries(batch)) {
                 if (id === selfId || !publicKey || bans.has(publicKey)) continue;
@@ -1024,9 +1109,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             const entry = players.get(peerId);
             if (!entry?.publicKey) return;
             try {
-                const movePayload = { from: data.from, to: data.to, x: data.x, y: data.y, ts: data.ts };
+                const movePayload = { from: data.from, to: data.to, x: data.x, y: data.y, hlc: data.hlc };
                 const pubKey = await importKey(entry.publicKey, 'public');
                 if (!await verifyMessage(JSON.stringify(movePayload), data.signature, pubKey)) return;
+                // Reject replays — peerHlc tracks per-peer monotonicity so old signed bytes
+                // can't be re-injected after the seen-msg cache evicts them. Check runs after
+                // verification so a junk-signature message can't pre-bump the HLC ceiling.
+                if (data.hlc && !checkAndUpdateHlc(peerId, data.hlc)) return;
                 if (data.from !== data.to) {
                     const validExits = Object.values(worldGraph[data.from]?.exits || {});
                     if (!validExits.includes(data.to)) {
@@ -1064,7 +1153,11 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getLazyPush(async ({ msgId, type, data, originPeerId }, peerId) => {
             if (hpv.hasSeen(msgId)) return;
             hpv.markSeen(msgId);
-            const buf = new Uint8Array(data);
+            // Trystero may deliver `data` as a Uint8Array, a plain Array (from
+            // Array.from at the sender), or a numeric-keyed object (msgpack-via-JSON).
+            // Mirror the same normalizer used by presence_bootstrap.
+            const buf = data instanceof Uint8Array ? data
+                : new Uint8Array(Array.isArray(data) ? data : Object.values(data || {}));
             const origin = originPeerId || peerId;
             const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
             const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
@@ -1107,7 +1200,9 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         // and never their location/x/y, so they're invisible in the world view until the
         // shard room's own presence_single arrives (which may be slow with small rooms).
         gameActions.processPresence = processPresenceSingle;
-        gameActions.seedShardIntroducers = (peerIds) => hpv.mergeShuffle(peerIds, selfId);
+        // seedAsActive (not mergeShuffle) so introducer hints get the first broadcast
+        // directly — saves a lazy-pull round trip on cold paths.
+        gameActions.seedShardIntroducers = (peerIds) => hpv.seedAsActive(peerIds, selfId);
 
         r.onPeerJoin(async peerId => {
             shardKnownPeers.add(peerId);
@@ -1130,7 +1225,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (!shardKnownPeers.has(peerId)) return;
                 if (players.get(peerId)?.presenceVerifiedAt) return;
                 markPeerNetworkEvent(peerId, 'peer:handshake_timeout');
-                _introFailedPeers.add(peerId);
+                markIntroFailed(peerId);
                 scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
             }, NETWORK_HANDSHAKE_TIMEOUT_MS);
         });
@@ -1141,7 +1236,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             hpv.onLeave(peerId);
             evictShardPeer(peerId, { emitLeave: true });
             if (countUsableShardPeers(shardKnownPeers, players) === 0) {
-                scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
+                // Last usable peer just left — bypass cooldown via urgent.
+                scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true, urgent: true });
             }
         });
 
@@ -1157,7 +1253,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             sendActionLog, sendTradeOffer, sendTradeAccept, sendTradeCommit, sendTradeFinal,
             sendCommit, sendReveal, plumSend, plumBroadcast, sendPresenceDelta, sendIdentity,
             processPresenceSingle,
-            seedIntroducers: (peerIds) => hpv.mergeShuffle(peerIds, selfId),
+            seedIntroducers: (peerIds) => hpv.seedAsActive(peerIds, selfId),
             teardown: () => {
                 clearInterval(shuffleTimer);
                 clearInterval(routerTimer);

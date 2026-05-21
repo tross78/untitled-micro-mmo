@@ -21,19 +21,20 @@ describe('Binary Packer', () => {
             to: 'market',
             x: 10,
             y: 12,
-            ts: 1619184000000,
+            hlc: { wall: 1619184000000, logical: 7 },
             signature: btoa('m'.repeat(64))
         };
         const packed = packMove(move);
         expect(packed).toBeInstanceOf(Uint8Array);
-        expect(packed).toHaveLength(74);
-        
+        expect(packed).toHaveLength(76);
+
         const unpacked = unpackMove(packed);
         expect(unpacked.from).toBe(move.from);
         expect(unpacked.to).toBe(move.to);
         expect(unpacked.x).toBe(move.x);
         expect(unpacked.y).toBe(move.y);
-        expect(unpacked.ts).toBe(move.ts);
+        expect(unpacked.hlc.wall).toBe(move.hlc.wall);
+        expect(unpacked.hlc.logical).toBe(move.hlc.logical);
         expect(unpacked.signature).toBe(move.signature);
     });
 
@@ -173,12 +174,12 @@ describe('Binary Packer', () => {
     });
 
     test('Unknown room index in move packet falls back to cellar', () => {
-        const buf = new Uint8Array(74);
+        const buf = new Uint8Array(76);
         buf[0] = 255;
         buf[1] = 255;
         const sig = btoa('z'.repeat(64));
         const sigBytes = Uint8Array.from(atob(sig), c => c.charCodeAt(0));
-        buf.set(sigBytes, 10); // Offset shift for x/y
+        buf.set(sigBytes, 12); // 2 room bytes + 2 xy + 8 hlc = 12
 
         const unpacked = unpackMove(buf);
         expect(unpacked.from).toBe('cellar');
@@ -289,7 +290,7 @@ describe('Binary Packer', () => {
     });
 
     test('unpackMove tolerates ArrayBuffer input', () => {
-        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, ts: Date.now(), signature: btoa('a'.repeat(64)) };
+        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, hlc: { wall: Date.now(), logical: 0 }, signature: btoa('a'.repeat(64)) };
         const packed = packMove(move);
         const asArrayBuffer = packed.buffer.slice(packed.byteOffset, packed.byteOffset + packed.byteLength);
         const unpacked = unpackMove(asArrayBuffer);
@@ -297,7 +298,7 @@ describe('Binary Packer', () => {
     });
 
     test('unpackMove tolerates Array input', () => {
-        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, ts: Date.now(), signature: btoa('a'.repeat(64)) };
+        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, hlc: { wall: Date.now(), logical: 0 }, signature: btoa('a'.repeat(64)) };
         const packed = packMove(move);
         const asArray = Array.from(packed);
         const unpacked = unpackMove(asArray);
@@ -305,7 +306,7 @@ describe('Binary Packer', () => {
     });
 
     test('unpackMove tolerates Buffer-like object with type:Buffer', () => {
-        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, ts: Date.now(), signature: btoa('a'.repeat(64)) };
+        const move = { from: 'cellar', to: 'hallway', x: 3, y: 4, hlc: { wall: Date.now(), logical: 0 }, signature: btoa('a'.repeat(64)) };
         const packed = packMove(move);
         const bufferLike = { type: 'Buffer', data: Array.from(packed) };
         const unpacked = unpackMove(bufferLike);

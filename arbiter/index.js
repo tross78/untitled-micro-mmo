@@ -1,7 +1,8 @@
 import crypto, { webcrypto } from 'node:crypto';
 import { createServer } from 'node:http';
 import WebSocket from 'ws';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { writeFile as writeFileAsync } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { RTCPeerConnection } from 'werift';
@@ -12,6 +13,7 @@ import {
     buildPersistedArbiterPacket,
     getBansVersion,
     restoreBansFromPacket,
+    restoreLastRollupsFromPacket,
 } from '../src/network/arbiter-state.js';
 import { NETWORK_ACTIONS } from '../src/network/contracts.js';
 import { createSerializedPublisher } from '../src/network/arbiter-beacon-scheduler.js';
@@ -23,7 +25,12 @@ import {
 } from '../src/network/arbiter-log-filter.js';
 import { buildArbiterRoomConfig } from '../src/network/arbiter-runtime-config.js';
 
-installArbiterConsoleNoiseFilter(console);
+// Opt-in via env var: the filter rewrites any console.error containing patterns
+// like "SSL" or "certificate" as a warning, which can hide genuine config issues.
+// Operators that want the noise suppressed set ARBITER_FILTER_NETWORK_NOISE=1.
+if (process.env.ARBITER_FILTER_NETWORK_NOISE === '1') {
+    installArbiterConsoleNoiseFilter(console);
+}
 
 // Polyfills
 if (typeof global.crypto === 'undefined') global.crypto = webcrypto;
@@ -68,6 +75,8 @@ async function startArbiter() {
     const { ICE_SERVERS } = await import('../src/infra/constants.js');
     const { buildTorrentConfig } = await import('../src/network/config.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
+    const { presenceSignaturePayload } = await import('../src/network/packer.js');
+    const { hashStr } = await import('../src/rules/index.js');
     const dotenv = await import('dotenv');
 
     dotenv.config({ path: new URL('.env', import.meta.url).pathname });
@@ -123,8 +132,23 @@ async function startArbiter() {
     const bans = new Set();
     const presenceDirectory = createPresenceDirectory();
 
-    getRegisterPresence((payload, peerId) => {
+    // Reject register_presence payloads that don't carry a publicKey-bound signature
+    // and a ph that matches hashStr(publicKey). Without this check, a peer can flood
+    // the presence directory with phantom entries pointing at arbitrary Trystero ids.
+    const verifyRegistrationPayload = async (payload) => {
+        if (!payload || typeof payload !== 'object') return false;
+        const { publicKey, signature, ph } = payload;
+        if (!publicKey || !signature || !ph) return false;
+        const expectedPh = (hashStr(publicKey) >>> 0).toString(16).padStart(8, '0');
+        if (ph !== expectedPh) return false;
+        try {
+            return await verifyMessage(JSON.stringify(presenceSignaturePayload(payload)), signature, publicKey);
+        } catch { return false; }
+    };
+
+    getRegisterPresence(async (payload, peerId) => {
         if (!payload || typeof payload !== 'object') return;
+        if (!await verifyRegistrationPayload(payload)) return;
         const registered = presenceDirectory.register(payload);
         if (registered && registered.id) {
             console.log(`[Arbiter] Peer discovered via network: ${registered.id} (${registered.name}) on ${registered.shard}`);
@@ -189,6 +213,17 @@ async function startArbiter() {
         presenceDirectory.removeById(peerId);
     });
 
+    // Cap lastRollupTime explicitly so a key-rotation attack can't fill memory
+    // for an hour at a time. LRU eviction by insertion order is enough — the
+    // intent is just rate-limiting per publicKey, not historical accounting.
+    const LAST_ROLLUP_TIME_CAP = 1000;
+    const recordRollupTime = (publicKey, ts) => {
+        if (lastRollupTime.size >= LAST_ROLLUP_TIME_CAP && !lastRollupTime.has(publicKey)) {
+            lastRollupTime.delete(lastRollupTime.keys().next().value);
+        }
+        lastRollupTime.set(publicKey, ts);
+    };
+
     getRollup(async (packet, _peerId) => {
         const { rollup, signature, publicKey } = packet;
         if (!rollup || !signature || !publicKey) return;
@@ -196,7 +231,7 @@ async function startArbiter() {
 
         const last = lastRollupTime.get(publicKey) || 0;
         if (Date.now() - last < ROLLUP_INTERVAL * 0.8) return;
-        lastRollupTime.set(publicKey, Date.now());
+        recordRollupTime(publicKey, Date.now());
 
         if (await verifyMessage(stableStringify(rollup), signature, publicKey)) {
             console.log(`[Arbiter] Rollup: ${rollup.shard}`);
@@ -270,7 +305,9 @@ async function startArbiter() {
         try {
             lastValidStatePacket = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
             restoreBansFromPacket(lastValidStatePacket).forEach(publicKey => bans.add(publicKey));
-            console.log(`[Arbiter] Loaded state from disk.`);
+            const restoredRollups = restoreLastRollupsFromPacket(lastValidStatePacket);
+            for (const [shard, rollup] of restoredRollups) lastRollups.set(shard, rollup);
+            console.log(`[Arbiter] Loaded state from disk (${restoredRollups.size} rollup records).`);
         } catch (_err) { console.error(`[Arbiter] Load error:`, _err); }
     }
 
@@ -290,11 +327,15 @@ async function startArbiter() {
         };
         const stateStr = stableStringify(state);
         const signature = await signMessage(stateStr, arbiterPrivateKey);
-        const packet = buildPersistedArbiterPacket(state, signature, bans);
+        const packet = buildPersistedArbiterPacket(state, signature, bans, lastRollups);
         lastValidStatePacket = packet;
 
-        // Save to local disk
-        writeFileSync(STATE_FILE, JSON.stringify(packet));
+        // Save to local disk asynchronously so a slow SD card on Pi Zero cannot
+        // block the event loop (Trystero signaling, WebRTC negotiation, HTTP)
+        // for hundreds of milliseconds while we wait for fsync.
+        await writeFileAsync(STATE_FILE, JSON.stringify(packet)).catch(err =>
+            console.error('[Arbiter] State persist failed:', err && err.message ? err.message : err)
+        );
 
         await gistPublisher.publish(packet);
 
@@ -318,9 +359,49 @@ async function startArbiter() {
     setInterval(() => trackedPublishBeacon().catch(err => console.error('[Arbiter] Beacon publish failed:', err)), 60000);
 
     // Prune presence every 5 minutes (TTL is 120s; hourly pruning left stale hints for up to 1h).
-    // Rollup-time cache cleared hourly — it only prevents duplicate submissions within a window.
+    // lastRollupTime is now LRU-capped per insertion (see recordRollupTime above) so no
+    // periodic clear is needed — that previously freed memory while also dropping rate
+    // limits for legitimate peers in the middle of a session.
     setInterval(() => presenceDirectory.prune(), 5 * 60 * 1000);
-    setInterval(() => lastRollupTime.clear(), 3600000);
+
+    // --- Per-IP token bucket rate limiter ----------------------------------
+    // Pi-Zero W has a single 700MHz core. Without this, a single peer can hold a
+    // tight fetch loop on /peers or /register and saturate the event loop.
+    const HTTP_BUCKET_CAP = 20;          // burst
+    const HTTP_REFILL_PER_SEC = 5;       // sustained
+    const HTTP_BUCKET_TTL_MS = 60_000;   // garbage-collect idle buckets
+    const HTTP_BUCKET_MAX_ENTRIES = 4096; // hard cap so the map itself can't blow up
+    const _httpBuckets = new Map();
+    const takeHttpToken = (ip) => {
+        const now = Date.now();
+        let bucket = _httpBuckets.get(ip);
+        if (!bucket) {
+            if (_httpBuckets.size >= HTTP_BUCKET_MAX_ENTRIES) {
+                // Drop the oldest seen ip; cheap protection against unbounded sources.
+                _httpBuckets.delete(_httpBuckets.keys().next().value);
+            }
+            bucket = { tokens: HTTP_BUCKET_CAP, last: now };
+            _httpBuckets.set(ip, bucket);
+        }
+        const elapsed = (now - bucket.last) / 1000;
+        bucket.tokens = Math.min(HTTP_BUCKET_CAP, bucket.tokens + elapsed * HTTP_REFILL_PER_SEC);
+        bucket.last = now;
+        if (bucket.tokens < 1) return false;
+        bucket.tokens -= 1;
+        return true;
+    };
+    setInterval(() => {
+        const cutoff = Date.now() - HTTP_BUCKET_TTL_MS;
+        for (const [ip, bucket] of _httpBuckets) {
+            if (bucket.last < cutoff) _httpBuckets.delete(ip);
+        }
+    }, HTTP_BUCKET_TTL_MS).unref?.();
+
+    const clientIp = (req) => {
+        const forwarded = req.headers['x-forwarded-for'];
+        if (typeof forwarded === 'string' && forwarded.length > 0) return forwarded.split(',')[0].trim();
+        return req.socket?.remoteAddress || 'unknown';
+    };
 
     // HTTP Server for fallback discovery and presence cache
     const server = createServer(async (req, res) => {
@@ -333,6 +414,13 @@ async function startArbiter() {
         if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
 
         const url = new URL(req.url, `http://${req.headers.host}`);
+
+        // Apply rate limit to every endpoint except /health (operators may scrape it).
+        if (url.pathname !== '/health' && !takeHttpToken(clientIp(req))) {
+            res.writeHead(429, { ...cors, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: 'rate_limited' }));
+            return;
+        }
 
         if (url.pathname === '/public-key') {
             res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
@@ -356,12 +444,18 @@ async function startArbiter() {
                 gistStatus: gistPublisher.getStatus(),
             }));
         } else if (url.pathname === '/state') {
-            res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
+            // Brief shared cache so a burst of tab reloads collapses into one origin hit.
+            res.writeHead(200, { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=10' });
             res.end(JSON.stringify(lastValidStatePacket));
         } else if (url.pathname === '/peers') {
             const shard = url.searchParams.get('shard');
-            res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(presenceDirectory.list(shard)));
+            // Sign the peers list so MITM cannot inject phantom entries into shards.
+            // The client verifies signature against MASTER_PUBLIC_KEY in seedFromSnapshot.
+            const peers = presenceDirectory.list(shard);
+            const payload = { peers, shard: shard || null, ts: Date.now() };
+            const peersSignature = await signMessage(stableStringify(payload), arbiterPrivateKey);
+            res.writeHead(200, { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store' });
+            res.end(JSON.stringify({ ...payload, signature: peersSignature }));
         } else if (url.pathname === '/register' && req.method === 'POST') {
             let body = '';
             let oversized = false;
@@ -373,10 +467,15 @@ async function startArbiter() {
                     req.socket.destroy();
                 }
             });
-            req.on('end', () => {
+            req.on('end', async () => {
                 if (oversized) return;
                 try {
                     const parsed = JSON.parse(body);
+                    if (!await verifyRegistrationPayload(parsed)) {
+                        res.writeHead(400, { ...cors, 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ ok: false, error: 'invalid_signature' }));
+                        return;
+                    }
                     const registered = presenceDirectory.register(parsed);
                     if (!registered) {
                         res.writeHead(400, { ...cors, 'Content-Type': 'application/json' });

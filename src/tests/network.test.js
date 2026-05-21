@@ -153,13 +153,14 @@ describe('Network Protocol Integration', () => {
 
     describe('Binary Packet Chaining', () => {
         test('Move packets survive round-trip', () => {
-            const move = { from: 'cellar', to: 'hallway', x: 5, y: 5, ts: 123, signature: btoa('m'.repeat(64)) };
+            const move = { from: 'cellar', to: 'hallway', x: 5, y: 5, hlc: { wall: 123, logical: 0 }, signature: btoa('m'.repeat(64)) };
             const buf = packMove(move);
             const data = unpackMove(buf);
             expect(data.from).toBe('cellar');
             expect(data.to).toBe('hallway');
             expect(data.x).toBe(5);
             expect(data.y).toBe(5);
+            expect(data.hlc.wall).toBe(123);
         });
 
         test('Presence packets survive round-trip with all fields intact', () => {

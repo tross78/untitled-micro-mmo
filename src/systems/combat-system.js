@@ -369,7 +369,9 @@ export class CombatSystem {
       type: 'kill',
       index: this.localPlayer.actionIndex,
       target: enemyType,
-      data: 0
+      // Carry the claimed per-kill XP so observers can detect inflated values and
+      // submit an xp_fraud proof (the arbiter's xp_fraud branch verifies this).
+      data: enemyDef.xp || 0
     };
 
     if (playerKeys.privateKey) {

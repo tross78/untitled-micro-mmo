@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 
 const makeMockRoom = (name) => {
     const actionHandlers = new Map();
+    const connectedPeers = new Set();
     const room = {
         name,
         _onPeerJoin: null,
@@ -14,7 +15,11 @@ const makeMockRoom = (name) => {
         }),
         onPeerJoin: jest.fn((cb) => { room._onPeerJoin = cb; }),
         onPeerLeave: jest.fn((cb) => { room._onPeerLeave = cb; }),
-        getPeers: jest.fn(() => ({})),
+        getPeers: jest.fn(() => {
+            const out = {};
+            for (const id of connectedPeers) out[id] = true;
+            return out;
+        }),
         leave: jest.fn(),
         _sends: new Map(),
         emitAction(action, ...args) {
@@ -22,9 +27,11 @@ const makeMockRoom = (name) => {
             return handler ? handler(...args) : undefined;
         },
         emitPeerJoin(peerId) {
+            connectedPeers.add(peerId);
             return room._onPeerJoin ? room._onPeerJoin(peerId) : undefined;
         },
         emitPeerLeave(peerId) {
+            connectedPeers.delete(peerId);
             return room._onPeerLeave ? room._onPeerLeave(peerId) : undefined;
         },
     };
@@ -148,7 +155,7 @@ describe('network peer set scoping', () => {
 
     test('arbiter peer hints seed the shard introducer view without forcing a heal', async () => {
         const { HyParView } = await import('../network/hyparview.js');
-        const mergeSpy = jest.spyOn(HyParView.prototype, 'mergeShuffle');
+        const seedSpy = jest.spyOn(HyParView.prototype, 'seedAsActive');
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer } = await import('../state/store.js');
         const { joinRoom } = await import('../network/transport.js');
@@ -164,7 +171,7 @@ describe('network peer set scoping', () => {
             { id: 'hint-peer-2', ph: 'bbbb2222' },
         ], 'arbiter-peer');
 
-        expect(mergeSpy).toHaveBeenCalledWith(
+        expect(seedSpy).toHaveBeenCalledWith(
             expect.arrayContaining(['hint-peer-1', 'hint-peer-2']),
             'self-peer-id'
         );
@@ -173,7 +180,7 @@ describe('network peer set scoping', () => {
 
     test('direct same-shard global registration sends immediate signed presence bootstrap', async () => {
         const { HyParView } = await import('../network/hyparview.js');
-        const mergeSpy = jest.spyOn(HyParView.prototype, 'mergeShuffle');
+        const seedSpy = jest.spyOn(HyParView.prototype, 'seedAsActive');
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer, players } = await import('../state/store.js');
         const { joinRoom } = await import('../network/transport.js');
@@ -201,7 +208,7 @@ describe('network peer set scoping', () => {
             publicKey: 'peer-public-key',
             ph: 'beef0001',
         }));
-        expect(mergeSpy).toHaveBeenCalledWith(['same-shard-peer'], 'self-peer-id');
+        expect(seedSpy).toHaveBeenCalledWith(['same-shard-peer'], 'self-peer-id');
         expect(sendPresenceBootstrap).toHaveBeenCalledWith(
             expect.objectContaining({
                 publicKey: 'self-public-key',

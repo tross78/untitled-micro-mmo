@@ -94,6 +94,26 @@ export class HyParView {
         }
     }
 
+    // Seed introducer hints into the active view so the first broadcast reaches
+    // them directly instead of forcing a lazy-pull round trip. Falls back to
+    // passive when the active view is already full.
+    seedAsActive(peerIds, selfId) {
+        for (const pid of peerIds) {
+            if (!pid || pid === selfId) continue;
+            if (this._active.has(pid)) continue;
+            this._passive.delete(pid);
+            if (this._active.size >= ACTIVE_VIEW_SIZE) {
+                if (this._passive.size >= PASSIVE_VIEW_SIZE) {
+                    const evict = this._passive.values().next().value;
+                    this._passive.delete(evict);
+                }
+                this._passive.add(pid);
+                continue;
+            }
+            this._active.add(pid);
+        }
+    }
+
     eagerPeers() { return Array.from(this._active); }
     lazyPeers() { return Array.from(this._passive); }
     allPeers() { return [...this._active, ...this._passive]; }

@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 
 const makeMockRoom = (name) => {
     const actionHandlers = new Map();
+    const connectedPeers = new Set();
     const room = {
         name,
         _onPeerJoin: null,
@@ -14,7 +15,11 @@ const makeMockRoom = (name) => {
         }),
         onPeerJoin: jest.fn((cb) => { room._onPeerJoin = cb; }),
         onPeerLeave: jest.fn((cb) => { room._onPeerLeave = cb; }),
-        getPeers: jest.fn(() => ({})),
+        getPeers: jest.fn(() => {
+            const out = {};
+            for (const id of connectedPeers) out[id] = true;
+            return out;
+        }),
         leave: jest.fn(),
         _sends: new Map(),
         emitAction(action, ...args) {
@@ -22,6 +27,7 @@ const makeMockRoom = (name) => {
             return handler ? handler(...args) : undefined;
         },
         emitPeerJoin(peerId) {
+            connectedPeers.add(peerId);
             return room._onPeerJoin ? room._onPeerJoin(peerId) : undefined;
         },
     };
@@ -114,9 +120,9 @@ describe('networking bugfix regressions', () => {
         expect(payload).toBeInstanceOf(Uint8Array);
     });
 
-    test('cached introducers seed HyParView passive view on shard join', async () => {
+    test('cached introducers seed HyParView active view on shard join', async () => {
         const { HyParView } = await import('../network/hyparview.js');
-        const mergeSpy = jest.spyOn(HyParView.prototype, 'mergeShuffle');
+        const seedSpy = jest.spyOn(HyParView.prototype, 'seedAsActive');
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer } = await import('../state/store.js');
 
@@ -127,6 +133,6 @@ describe('networking bugfix regressions', () => {
 
         await initNetworking();
 
-        expect(mergeSpy).toHaveBeenCalledWith(['peer-x', 'peer-y'], 'self-peer-id');
+        expect(seedSpy).toHaveBeenCalledWith(['peer-x', 'peer-y'], 'self-peer-id');
     });
 });
