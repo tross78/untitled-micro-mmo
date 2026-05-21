@@ -48,3 +48,14 @@ export const TURN_SERVERS = [
 ];
 
 export const ICE_SERVERS = [...STUN_SERVERS, ...TURN_SERVERS];
+
+// The Node arbiter also needs a relay candidate when it sits behind home NAT,
+// but the public TCP TURN endpoint has been noisy from the Pi. Keep UDP TURN
+// for reachability while excluding the TCP URL that produced ECONNREFUSED logs.
+export const ARBITER_ICE_SERVERS = [
+    ...STUN_SERVERS,
+    ...TURN_SERVERS.filter(server => {
+        const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+        return !urls.some(url => String(url).includes('transport=tcp'));
+    }),
+];

@@ -5,6 +5,7 @@ import {
 } from '../network/arbiter-log-filter.js';
 import { buildArbiterRoomConfig } from '../network/arbiter-runtime-config.js';
 import { buildTorrentConfig } from '../network/config.js';
+import { ARBITER_ICE_SERVERS } from '../infra/constants.js';
 
 describe('arbiter runtime hardening', () => {
     test('arbiter room config enables mDNS host fallback without changing browser room config', () => {
@@ -14,6 +15,14 @@ describe('arbiter runtime hardening', () => {
         expect(browserConfig._test_only_mdnsHostFallbackToLoopback).toBeUndefined();
         expect(arbiterConfig._test_only_mdnsHostFallbackToLoopback).toBe(true);
         expect(arbiterConfig.relayUrls).toBe(browserConfig.relayUrls);
+    });
+
+    test('arbiter ICE keeps UDP TURN fallback while excluding noisy TCP TURN', () => {
+        const urls = ARBITER_ICE_SERVERS.flatMap(server => Array.isArray(server.urls) ? server.urls : [server.urls]);
+
+        expect(urls.some(url => String(url).startsWith('stun:'))).toBe(true);
+        expect(urls.some(url => String(url).startsWith('turn:'))).toBe(true);
+        expect(urls.some(url => String(url).includes('transport=tcp'))).toBe(false);
     });
 
     test('network log filter detects nested error details beyond the first console argument', () => {

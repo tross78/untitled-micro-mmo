@@ -77,6 +77,20 @@ const pruneGlobalPeerHints = (now = Date.now()) => {
         if (!hint || now - (hint.ts || 0) > GLOBAL_PEER_HINT_TTL_MS) globalPeerHints.delete(peerId);
     }
 };
+let lastShardHintAt = 0;
+let lastShardHintCount = 0;
+const recordShardPeerHints = (count, now = Date.now()) => {
+    lastShardHintAt = now;
+    lastShardHintCount = count;
+};
+const hasRecentShardPeerExpectation = (now = Date.now()) => {
+    const currentShard = getShardName(localPlayer.location, getCurrentInstance());
+    pruneGlobalPeerHints(now);
+    for (const hint of globalPeerHints.values()) {
+        if (hint?.shard === currentShard) return true;
+    }
+    return lastShardHintCount > 0 && now - lastShardHintAt <= GLOBAL_PEER_HINT_TTL_MS;
+};
 export let lastRollupReceivedAt = 0;
 export let lastValidStatePacket = null;
 export let currentRtcConfig = { iceServers: ICE_SERVERS };
@@ -295,6 +309,7 @@ export const initNetworking = async (rtcConfig) => {
         const [, getArbiterPeerHints] = globalRooms.torrent.makeAction('arbiter_peer_hints');
         getArbiterPeerHints((hints) => {
             if (!Array.isArray(hints) || hints.length === 0) return;
+            recordShardPeerHints(hints.length);
             const peerIds = hints.map(h => h.id).filter(Boolean);
             if (peerIds.length > 0 && gameActions.seedShardIntroducers) gameActions.seedShardIntroducers(peerIds);
         });
@@ -526,6 +541,7 @@ export const initNetworking = async (rtcConfig) => {
             const silentFor = now - Math.max(joinTime, lastShardPresenceAt);
 
             if (usableShardPeers > 0) { _healAttempts = 0; return; }
+            if (!force && !urgent && !hasRecentShardPeerExpectation(now)) { _healAttempts = 0; return; }
             if (!force && !urgent && silentFor < NETWORK_STALL_MS) return;
             if (!force && !urgent && now - lastNetworkHealAt < _healBackoffMs()) return;
             // force: event-driven heal with cooldown guard
@@ -638,6 +654,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
     const shard = getShardName(location, instanceId);
     markNetworkEvent('shard:join_start', { shard, location, instanceId });
     console.log(`[P2P] Joining Shard Room: ${shard}`);
+    recordShardPeerHints(0);
     const config = rtcConfig || currentRtcConfig;
 
     if (globalRooms.torrent && gameActions.sendSeekingShard) gameActions.sendSeekingShard(shard);
@@ -650,11 +667,14 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 // Tolerate legacy plain-array responses while we transition; reject any
                 // response that *claims* to be signed but fails verification.
                 if (!body) return;
-                if (Array.isArray(body)) { seedFromSnapshot(body); return; }
+                if (Array.isArray(body)) { recordShardPeerHints(body.length); seedFromSnapshot(body); return; }
                 if (!body.signature || !Array.isArray(body.peers)) return;
                 const payload = { peers: body.peers, shard: body.shard || null, ts: body.ts };
                 const ok = await verifyMessage(stableStringify(payload), body.signature, arbiterPublicKey).catch(() => false);
-                if (ok) seedFromSnapshot(body.peers);
+                if (ok) {
+                    recordShardPeerHints(body.peers.length);
+                    seedFromSnapshot(body.peers);
+                }
             })
             .catch(() => { });
     }
@@ -690,6 +710,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         // registerWithHints returns peer hints synchronously in the HTTP response,
         // bypassing a full tracker announce cycle for the warm path.
         const hintedPeers = await registerWithHints(shard, registration);
+        recordShardPeerHints(hintedPeers.length);
         if (hintedPeers.length > 0 && shardApi?.seedIntroducers) {
             shardApi.seedIntroducers(hintedPeers.map(p => p.id || p.ph).filter(Boolean));
             markNetworkEvent('shard:arbiter_hints', { count: hintedPeers.length, source: 'register' });

@@ -168,6 +168,50 @@ describe('reconnect and liveness regressions', () => {
         );
     });
 
+    test('periodic heal does not rejoin an empty shard with no peer hints', async () => {
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        await initNetworking();
+
+        const initialJoinCallCount = joinRoom.mock.calls.length;
+
+        await jest.advanceTimersByTimeAsync(70_000);
+
+        expect(joinRoom.mock.calls.length).toBe(initialJoinCallCount);
+    });
+
+    test('periodic heal still rejoins when a same-shard peer was advertised', async () => {
+        const { initNetworking } = await import('../network/index.js');
+        const { localPlayer } = await import('../state/store.js');
+        const { joinRoom } = await import('../network/transport.js');
+
+        localPlayer.ph = 'abcd1234';
+        localPlayer.location = 'cellar';
+        await initNetworking();
+
+        const initialJoinCallCount = joinRoom.mock.calls.length;
+        const globalRoom = joinRoom.mock.results.find((r) => r.value.name === 'global').value;
+
+        await globalRoom.emitAction('register_presence', {
+            ph: 'beef0001',
+            id: 'same-shard-peer',
+            name: 'Beta',
+            location: 'cellar',
+            shard: 'cellar-1',
+            level: 1,
+            x: 5,
+            y: 5,
+            publicKey: 'peer-public-key',
+        }, 'same-shard-peer');
+
+        await jest.advanceTimersByTimeAsync(70_000);
+
+        expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+    });
+
     test('failed handshake peer triggers heal and is tracked for future exclusion', async () => {
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer } = await import('../state/store.js');
