@@ -61,13 +61,24 @@ process.on('unhandledRejection', (reason, _promise) => {
     }
 });
 
-if (process.env.ARBITER_TRACE_WARNINGS === '1') {
-    process.on('warning', (warning) => {
-        if (warning?.name !== 'MaxListenersExceededWarning') return;
-        console.warn(`[Arbiter] ${warning.name}: ${warning.message}`);
-        if (warning.stack) console.warn(warning.stack);
-    });
-}
+// Suppress noisy MaxListenersExceededWarning emitted by werift/mDNS internals
+// (their mdnsInstance is capped at 50 listeners; a burst of incoming peer
+// candidates briefly pushes us past it before lookup() cleanup runs). Without a
+// handler attached, Node logs the full stack to stderr on every burst.
+// Set ARBITER_TRACE_WARNINGS=1 to see them for debugging.
+process.on('warning', (warning) => {
+    const trace = process.env.ARBITER_TRACE_WARNINGS === '1';
+    if (warning?.name === 'MaxListenersExceededWarning') {
+        if (trace) {
+            console.warn(`[Arbiter] ${warning.name}: ${warning.message}`);
+            if (warning.stack) console.warn(warning.stack);
+        }
+        return;
+    }
+    // Pass other warnings through so genuinely-novel issues stay visible.
+    console.warn(`[Arbiter] ${warning.name}: ${warning.message}`);
+    if (trace && warning.stack) console.warn(warning.stack);
+});
 
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
