@@ -4,6 +4,7 @@ import {
     normalizeArbiterUrl,
     setResolvedArbiterUrl,
 } from '../infra/runtime.js';
+import { ARBITER_URL } from '../infra/constants.js';
 import { appRuntime } from '../app/runtime.js';
 import { WorldStore } from '../domain/ecs.js';
 import { WorldSyncSystem } from '../systems/world-sync-system.js';
@@ -32,6 +33,11 @@ describe('runtime bootstrap resolution', () => {
     test('getArbiterUrl accepts explicitly configured future arbiter endpoints', () => {
         localStorage.setItem('fenhollow_arbiter_url', 'arbiter.tysonross.com/');
         expect(getArbiterUrl('')).toBe('https://arbiter.tysonross.com');
+    });
+
+    test('default arbiter url enables HTTP discovery for fresh browser profiles', () => {
+        expect(ARBITER_URL).toBe('https://arbiter.tysonross.com');
+        expect(getArbiterUrl(ARBITER_URL)).toBe('https://arbiter.tysonross.com');
     });
 
     test('getArbiterUrl ignores invalid fallback values', () => {
