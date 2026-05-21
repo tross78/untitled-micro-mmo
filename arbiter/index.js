@@ -15,18 +15,15 @@ import {
 } from '../src/network/arbiter-state.js';
 import { NETWORK_ACTIONS } from '../src/network/contracts.js';
 import { createSerializedPublisher } from '../src/network/arbiter-beacon-scheduler.js';
+import { createOptionalGistPublisher } from '../src/network/arbiter-gist-publisher.js';
+import {
+    installArbiterConsoleNoiseFilter,
+    isNonfatalNetworkLog,
+    summarizeLogArgs,
+} from '../src/network/arbiter-log-filter.js';
+import { buildArbiterRoomConfig } from '../src/network/arbiter-runtime-config.js';
 
-// Suppress tracker/STUN network noise that libraries emit directly to stderr.
-// These are non-fatal connection errors (tracker unreachable, STUN timeout, etc.).
-const NOISE_PATTERNS = ['ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH',
-    'EHOSTUNREACH', 'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT',
-    'socket hang up', 'Unexpected server response', 'SSL', 'certificate'];
-const _origConsoleError = console.error.bind(console);
-console.error = (...args) => {
-    const msg = String(args[0] ?? '');
-    if (NOISE_PATTERNS.some(p => msg.includes(p))) { console.warn('[Arbiter] Network noise (non-fatal):', msg.slice(0, 120)); return; }
-    _origConsoleError(...args);
-};
+installArbiterConsoleNoiseFilter(console);
 
 // Polyfills
 if (typeof global.crypto === 'undefined') global.crypto = webcrypto;
@@ -39,18 +36,9 @@ const REGISTER_BODY_LIMIT = 16 * 1024;
 
 // Non-fatal network/tracker error patterns — these come from tracker WebSocket
 // connections that reject, time out, or return unexpected HTTP status codes (e.g. 403).
-const NONFATAL_PATTERNS = [
-    'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH',
-    'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT',
-    'WebSocket', 'socket hang up', 'Unexpected server response',
-    'SSL', 'certificate', 'handshake',
-];
-const isNonfatalNetworkError = (msg) => NONFATAL_PATTERNS.some(p => msg.includes(p));
-
 process.on('uncaughtException', (err) => {
-    const msg = err.message || String(err);
-    if (isNonfatalNetworkError(msg)) {
-        console.warn('[Arbiter] Network error (non-fatal):', msg.slice(0, 160));
+    if (isNonfatalNetworkLog([err])) {
+        console.warn('[Arbiter] Network error (non-fatal):', summarizeLogArgs([err], 160));
     } else {
         console.error('[FATAL] Uncaught exception:', err);
         process.exit(1);
@@ -58,9 +46,8 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason, _promise) => {
-    const msg = reason?.message || String(reason);
-    if (isNonfatalNetworkError(msg)) {
-        console.warn('[Arbiter] Network rejection (non-fatal):', msg.slice(0, 160));
+    if (isNonfatalNetworkLog([reason])) {
+        console.warn('[Arbiter] Network rejection (non-fatal):', summarizeLogArgs([reason], 160));
     } else {
         console.error('[FATAL] Unhandled rejection:', reason);
         process.exit(1);
@@ -115,7 +102,7 @@ async function startArbiter() {
     // exist but the browser never joined it, so rollups/fraud silently dropped.
     let globalRoom;
     try {
-        globalRoom = joinTorrent(buildTorrentConfig({ iceServers: ICE_SERVERS }), 'global');
+        globalRoom = joinTorrent(buildArbiterRoomConfig(buildTorrentConfig({ iceServers: ICE_SERVERS })), 'global');
     } catch (err) {
         console.error('[Arbiter] Torrent join failed:', err.message);
         process.exit(1);
@@ -287,6 +274,11 @@ async function startArbiter() {
         } catch (_err) { console.error(`[Arbiter] Load error:`, _err); }
     }
 
+    const gistPublisher = createOptionalGistPublisher({
+        gistId: GH_GIST_ID,
+        token: GH_GIST_TOKEN,
+    });
+
     const publishBeacon = async () => {
         const day = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
         const state = {
@@ -304,26 +296,7 @@ async function startArbiter() {
         // Save to local disk
         writeFileSync(STATE_FILE, JSON.stringify(packet));
 
-        if (GH_GIST_TOKEN && GH_GIST_ID) {
-            const gistPayload = { ...packet, ts: Date.now() };
-            const files = {
-                'mmo_arbiter_discovery_v4.json': {
-                    content: JSON.stringify(gistPayload)
-                }
-            };
-            try {
-                const response = await fetch(`https://api.github.com/gists/${GH_GIST_ID}`, {
-                    method: 'PATCH',
-                    headers: { 'Authorization': `token ${GH_GIST_TOKEN}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ files }),
-                    signal: AbortSignal.timeout(15000),
-                });
-                if (response.ok) console.log(`[Arbiter] Beacon updated (Gist).`);
-                else console.error(`[Arbiter] Gist update failed: ${response.status}`);
-            } catch (err) {
-                console.error(`[Arbiter] Gist error:`, err);
-            }
-        }
+        await gistPublisher.publish(packet);
 
         // Broadcast to all connected peers
         sendState(packet);
@@ -380,7 +353,8 @@ async function startArbiter() {
                 lastBeaconAgeSecs: lastBeaconAge,
                 beaconPublishInFlight: beaconPublisher.isInFlight(),
                 peers: presenceDirectory.size(),
-                gistConfigured: Boolean(GH_GIST_TOKEN && GH_GIST_ID),
+                gistConfigured: gistPublisher.isConfigured(),
+                gistStatus: gistPublisher.getStatus(),
             }));
         } else if (url.pathname === '/state') {
             res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
