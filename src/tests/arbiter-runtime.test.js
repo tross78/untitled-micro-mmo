@@ -17,12 +17,11 @@ describe('arbiter runtime hardening', () => {
         expect(arbiterConfig.relayUrls).toBe(browserConfig.relayUrls);
     });
 
-    test('arbiter ICE keeps UDP TURN fallback while excluding noisy TCP TURN', () => {
+    test('arbiter ICE stays STUN-only because werift falls back TURN to noisy TCP', () => {
         const urls = ARBITER_ICE_SERVERS.flatMap(server => Array.isArray(server.urls) ? server.urls : [server.urls]);
 
         expect(urls.some(url => String(url).startsWith('stun:'))).toBe(true);
-        expect(urls.some(url => String(url).startsWith('turn:'))).toBe(true);
-        expect(urls.some(url => String(url).includes('transport=tcp'))).toBe(false);
+        expect(urls.some(url => String(url).startsWith('turn:'))).toBe(false);
     });
 
     test('network log filter detects nested error details beyond the first console argument', () => {

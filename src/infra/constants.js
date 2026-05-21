@@ -49,13 +49,9 @@ export const TURN_SERVERS = [
 
 export const ICE_SERVERS = [...STUN_SERVERS, ...TURN_SERVERS];
 
-// The Node arbiter also needs a relay candidate when it sits behind home NAT,
-// but the public TCP TURN endpoint has been noisy from the Pi. Keep UDP TURN
-// for reachability while excluding the TCP URL that produced ECONNREFUSED logs.
-export const ARBITER_ICE_SERVERS = [
-    ...STUN_SERVERS,
-    ...TURN_SERVERS.filter(server => {
-        const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-        return !urls.some(url => String(url).includes('transport=tcp'));
-    }),
-];
+// Keep the Node arbiter STUN-only. Werift falls back from any TURN URL to TCP
+// internally when UDP TURN fails, even if the URL omits `transport=tcp`; on the
+// Pi this hammers openrelay.metered.ca:443 with ECONNREFUSED logs. Browsers
+// still use ICE_SERVERS (STUN + TURN), and a browser-side relay candidate is
+// enough for restricted clients to reach the arbiter's STUN candidate.
+export const ARBITER_ICE_SERVERS = STUN_SERVERS;

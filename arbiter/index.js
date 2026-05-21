@@ -90,8 +90,9 @@ process.on('warning', (warning) => {
 async function startArbiter() {
     const { joinRoom: joinTorrent, selfId } = await import('@trystero-p2p/torrent');
     const { signMessage, verifyMessage, stableStringify } = await import('../src/security/crypto.js');
-    // STUN + UDP TURN. The Pi is not guaranteed to be directly reachable when
-    // it sits behind home NAT, but the TCP TURN endpoint was noisy from the Pi.
+    // STUN only on Node/werift: browsers still publish TURN relay candidates,
+    // but werift's TURN client falls back to TCP and spams ECONNREFUSED from
+    // the Pi when OpenRelay refuses tcp/443.
     const { ARBITER_ICE_SERVERS } = await import('../src/infra/constants.js');
     const { buildTorrentConfig } = await import('../src/network/config.js');
     const { world, ENEMIES } = await import('../src/content/data.js');
