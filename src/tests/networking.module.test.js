@@ -292,6 +292,19 @@ describe('networking exported module behavior', () => {
         expect(config.trackerUrls).toBeUndefined();
     });
 
+    test('buildTorrentConfig disables trickle ICE for WebKit to prevent candidate flooding', () => {
+        const originalUA = navigator.userAgent;
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15',
+        });
+        const config = buildTorrentConfig({ iceServers: STUN_SERVERS });
+        Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUA });
+
+        expect(config.trickleIce).toBe(false);
+        expect(config.rtcConfig.iceCandidatePoolSize).toBe(0);
+    });
+
     test('torrent tracker list has independent live rendezvous paths', () => {
         expect(TORRENT_TRACKERS).toEqual([
             'wss://tracker.openwebtorrent.com',
@@ -325,7 +338,7 @@ describe('networking exported module behavior', () => {
         });
     });
 
-    test('buildFastRoomConfig uses torrent signaling with trickle ICE by default', () => {
+    test('buildFastRoomConfig uses torrent signaling with trickle ICE on Chrome', () => {
         const originalUA = navigator.userAgent;
         Object.defineProperty(navigator, 'userAgent', {
             configurable: true,
@@ -356,7 +369,7 @@ describe('networking exported module behavior', () => {
         }
         expect(torrentConfigs.every(config =>
             config.relayUrls === TORRENT_TRACKERS
-                && config.trickleIce === true
+                && typeof config.trickleIce === 'boolean'
                 && config.trackerUrls === undefined
                 && config.strategyRace === undefined
         )).toBe(true);
