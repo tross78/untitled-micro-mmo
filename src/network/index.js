@@ -53,6 +53,7 @@ import { buildShardActions } from './actions.js';
 import { filterConnectedPeerIds } from './peer-filter.js';
 import { countUsableShardPeers, shouldRunEventHeal } from './heal.js';
 import { markNetworkEvent, markPeerNetworkEvent } from './audit-debug.js';
+import { installNetworkDiagnostics, setNetworkDiagnosticContextProvider } from './diagnostics.js';
 
 export { seedFromSnapshot, updateSimulation, initOfflineDayTick, preJoinShard, buildFastRoomConfig, buildTorrentConfig, isProposer };
 
@@ -317,6 +318,17 @@ const isProposer = () => {
 export const initNetworking = async (rtcConfig) => {
     currentRtcConfig = rtcConfig || { iceServers: ICE_SERVERS };
     markNetworkEvent('network:init');
+    setNetworkDiagnosticContextProvider(() => ({
+        globalPeers: roomPeerCount(globalRooms.torrent),
+        shardPeers: roomPeerCount(rooms.torrent),
+        globalKnownPeers: globalKnownPeers.size,
+        shardKnownPeers: shardKnownPeers.size,
+        trackedPlayers: players.size,
+        synced: hasSyncedWithArbiter,
+        location: localPlayer.location,
+        shard: getShardName(localPlayer.location, getCurrentInstance()),
+    }));
+    installNetworkDiagnostics();
 
     // Respond to same-origin tab shard probes with our current known non-ghost peers.
     addChannelListener(TAB_CHANNEL, (e) => {
@@ -545,10 +557,15 @@ export const initNetworking = async (rtcConfig) => {
     // every subsequent rollup/fraud-report into a dead closure. The savings
     // (one extra tracker WS per peer) is not worth giving up fraud detection.
 
+    let zeroPeerDiagHintShown = false;
     setInterval(() => {
         const g = globalRooms.torrent ? Object.keys(globalRooms.torrent.getPeers()).length : 0;
         const s = rooms.torrent ? Object.keys(rooms.torrent.getPeers()).length : 0;
         console.log(`[P2P] Global (${g}) | Shard (${s}) | Synced: ${hasSyncedWithArbiter}`);
+        if (!zeroPeerDiagHintShown && g === 0 && s === 0 && Date.now() - joinTime > 15000) {
+            zeroPeerDiagHintShown = true;
+            console.log('[P2P] No WebRTC peers yet. Run window.__fenhollowNetDiag() for tracker/ICE diagnostics.');
+        }
     }, 10000);
 
     await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);

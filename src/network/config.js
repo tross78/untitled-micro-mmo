@@ -1,4 +1,5 @@
 import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
+import { recordPeerConnection } from './diagnostics.js';
 
 const ICE_GATHER_TIMEOUT_MS = 1500;
 
@@ -54,6 +55,10 @@ export const patchIceGatheringTimeout = () => {
     // 1. ICE gathering timeout wrapper.
     const PatchedPeer = function(...args) {
         const pc = new _NativePeer(...args);
+        recordPeerConnection(pc, {
+            aggressiveDataChannels: useAggressiveDataChannels,
+            config: args[0] || null,
+        });
         let timer = null;
         const flush = () => {
             if (timer) { clearTimeout(timer); timer = null; }
