@@ -573,9 +573,7 @@ export const initNetworking = async (rtcConfig) => {
 
     await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
     setTimeout(async () => {
-        // TURN is included in the initial ICE config, so this is a no-op in normal operation.
-        // Kept as a safety net in case initNetworking is called with a STUN-only override.
-        if (isUsingTurnFallback(currentRtcConfig)) return;
+        // If after startup we still have no peers, force a full reconnect.
         const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
         // Also check Trystero's live peer count — onPeerJoin fires after data channel opens,
         // but getPeers() may show peers whose ICE is still connecting. Either is sufficient

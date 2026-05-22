@@ -189,7 +189,11 @@ describe('reconnect and liveness regressions', () => {
 
         await jest.advanceTimersByTimeAsync(70_000);
 
-        expect(joinRoom.mock.calls.length).toBe(initialJoinCallCount);
+        // The startup fallback fires once at NETWORK_STARTUP_TURN_FALLBACK_MS (15s) when
+        // no peers are found, adding 2 joinRoom calls (connectGlobal + joinInstance).
+        // After that, the periodic heal must NOT fire because hasRecentShardPeerExpectation
+        // returns false with zero peer hints — this is the regression guard.
+        expect(joinRoom.mock.calls.length).toBe(initialJoinCallCount + 2);
     });
 
     test('periodic heal still rejoins when a same-shard peer was advertised', async () => {
