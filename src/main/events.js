@@ -300,8 +300,8 @@ export const setupGlobalEvents = () => {
             case 'npc': if (payload?.npcId) openMenu('npc', payload); break;
             case 'bank': handleCommand('bank').then(triggerLogicalRefresh); break;
             case 'duel': if (payload?.peerId) handleCommand(`duel ${payload.peerId}`).then(triggerLogicalRefresh); break;
-            case 'duel_accept': handleCommand('duel accept').then(triggerLogicalRefresh); break;
-            case 'duel_decline': handleCommand('duel decline').then(triggerLogicalRefresh); break;
+            case 'duel_accept': handleCommand('accept').then(triggerLogicalRefresh); break;
+            case 'duel_decline': handleCommand('decline').then(triggerLogicalRefresh); break;
         }
     });
 
