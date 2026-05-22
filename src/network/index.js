@@ -102,6 +102,7 @@ export let joinTime = Date.now();
 let lastShardPresenceAt = Date.now();
 let lastNetworkHealAt = 0;
 let networkHealInFlight = false;
+let lastGlobalPeerAt = 0;
 let scheduledHealTimer = null;
 let healNetworking = async (_opts = {}) => {};
 let networkResumeCleanup = null;
@@ -343,6 +344,7 @@ export const initNetworking = async (rtcConfig) => {
         markNetworkEvent('global:connect_start');
         if (globalRooms.torrent) globalRooms.torrent.leave();
         globalKnownPeers.clear();
+        lastGlobalPeerAt = 0;
         globalPeerHints.clear();
         globalRooms.torrent = joinTorrent(buildTorrentConfig(config), 'global');
 
@@ -485,6 +487,7 @@ export const initNetworking = async (rtcConfig) => {
 
         globalRooms.torrent.onPeerJoin(async peerId => {
             globalKnownPeers.add(peerId);
+            lastGlobalPeerAt = Date.now();
             markPeerNetworkEvent(peerId, 'global:peer_join');
             requestState(true, [peerId]);
             if (lastValidStatePacket) setTimeout(() => sendWorldState(lastValidStatePacket, [peerId]), 500);
@@ -613,7 +616,10 @@ export const initNetworking = async (rtcConfig) => {
                 && !isUsingTurnFallback(currentRtcConfig);
             if (canReuse) {
                 markNetworkEvent('heal:reuse_room');
-            } else if (globalPeers > 0) {
+            } else if (globalPeers > 0 || (globalRooms.torrent && now - lastGlobalPeerAt < NETWORK_STALL_MS)) {
+                // Global room is alive (has peers, or had one recently) — just rejoin the shard.
+                // Calling connectGlobal here would leave/rejoin the global room, causing the remote
+                // peer to see a leave+join cycle which re-triggers their heal: the reconnect storm.
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: ICE_SERVERS };
                 await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
             } else {
