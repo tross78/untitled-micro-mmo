@@ -7,9 +7,10 @@
 //   Minisketch.decode(localMs, remoteMs) -> { added, removed }
 //   Minisketch.hashId(peerId) -> BigInt
 //
-// Internally this uses a small invertible sketch. The previous polynomial
-// decoder could not recover remote-only peer hashes without candidate IDs,
-// which made shard roster reconciliation silently fail.
+// Internally this uses a small invertible Bloom filter (XOR-based IBLT).
+// Keys are 64-bit (two 32-bit halves stored as hi/lo) to eliminate the ~29%
+// birthday collision probability at 50 peers that existed with 32-bit keys.
+// (Goodrich & Mitzenmacher 2011; birthday bound: P(collision) ≈ n²/2^b)
 
 const CELLS_PER_ITEM = 5;
 
@@ -22,21 +23,31 @@ const hashU32 = (str, seed = 0x811c9dc5) => {
     return h === 0 ? 1 : h;
 };
 
-const hashPeerId = (id) => hashU32(typeof id === 'string' ? id : String(id));
-const checkHash = (key) => hashU32(String(key), 0x9e3779b9);
+// 64-bit peer ID hash as two independent 32-bit halves.
+const hashPeerIdHi = (id) => hashU32(typeof id === 'string' ? id : String(id), 0x811c9dc5);
+const hashPeerIdLo = (id) => hashU32(typeof id === 'string' ? id : String(id), 0x9e3779b9);
 
-const indexesFor = (key, cellCount) => {
-    const a = hashU32(String(key), 0x85ebca6b);
-    const b = hashU32(String(key), 0xc2b2ae35);
-    const c = hashU32(String(key), 0x27d4eb2f);
-    const d = hashU32(String(key), 0x38b06037);
-    const e = hashU32(String(key), 0x4f420323);
+const checkHashHi = (hi, lo) => hashU32(`${hi >>> 0}:${lo >>> 0}`, 0x85ebca6b);
+const checkHashLo = (hi, lo) => hashU32(`${hi >>> 0}:${lo >>> 0}`, 0xc2b2ae35);
+
+const indexesFor = (hi, lo, cellCount) => {
+    const a = hashU32(`${hi}a${lo}`, 0x85ebca6b);
+    const b = hashU32(`${hi}b${lo}`, 0xc2b2ae35);
+    const c = hashU32(`${hi}c${lo}`, 0x27d4eb2f);
+    const d = hashU32(`${hi}d${lo}`, 0x38b06037);
+    const e = hashU32(`${hi}e${lo}`, 0x4f420323);
     return [a % cellCount, b % cellCount, c % cellCount, d % cellCount, e % cellCount];
 };
 
-const makeCells = (count) => Array.from({ length: count }, () => ({ count: 0, keyXor: 0, hashXor: 0 }));
+const makeCells = (count) => Array.from({ length: count }, () => ({
+    count: 0, keyHiXor: 0, keyLoXor: 0, hashHiXor: 0, hashLoXor: 0,
+}));
 
-const cloneCells = (cells) => cells.map(c => ({ count: c.count, keyXor: c.keyXor >>> 0, hashXor: c.hashXor >>> 0 }));
+const cloneCells = (cells) => cells.map(c => ({
+    count: c.count,
+    keyHiXor: c.keyHiXor >>> 0, keyLoXor: c.keyLoXor >>> 0,
+    hashHiXor: c.hashHiXor >>> 0, hashLoXor: c.hashLoXor >>> 0,
+}));
 
 export class Minisketch {
     constructor(capacity = 32) {
@@ -46,25 +57,31 @@ export class Minisketch {
     }
 
     add(id) {
-        const key = hashPeerId(id);
-        const checksum = checkHash(key);
-        for (const idx of indexesFor(key, this._cellCount)) {
+        const hi = hashPeerIdHi(id);
+        const lo = hashPeerIdLo(id);
+        const chkHi = checkHashHi(hi, lo);
+        const chkLo = checkHashLo(hi, lo);
+        for (const idx of indexesFor(hi, lo, this._cellCount)) {
             const cell = this._cells[idx];
             cell.count += 1;
-            cell.keyXor = (cell.keyXor ^ key) >>> 0;
-            cell.hashXor = (cell.hashXor ^ checksum) >>> 0;
+            cell.keyHiXor = (cell.keyHiXor ^ hi) >>> 0;
+            cell.keyLoXor = (cell.keyLoXor ^ lo) >>> 0;
+            cell.hashHiXor = (cell.hashHiXor ^ chkHi) >>> 0;
+            cell.hashLoXor = (cell.hashLoXor ^ chkLo) >>> 0;
         }
     }
 
     serialize() {
         const out = [this._cap, this._cellCount];
-        for (const cell of this._cells) out.push(cell.count, cell.keyXor >>> 0, cell.hashXor >>> 0);
+        for (const cell of this._cells) {
+            out.push(cell.count, cell.keyHiXor >>> 0, cell.keyLoXor >>> 0,
+                     cell.hashHiXor >>> 0, cell.hashLoXor >>> 0);
+        }
         return out;
     }
 
     static fromSerialized(arr) {
         const src = arr instanceof ArrayBuffer ? Array.from(new Int32Array(arr)) : Array.from(arr || []);
-        // Security: cap capacity and cellCount to prevent memory DoS
         const cap = Math.min(256, src[0] || 32);
         const cellCount = Math.min(1024, src[1] || Math.max(8, cap * CELLS_PER_ITEM));
         const ms = new Minisketch(cap);
@@ -72,11 +89,13 @@ export class Minisketch {
         ms._cells = makeCells(cellCount);
         let offset = 2;
         for (let i = 0; i < cellCount; i++) {
-            if (offset + 2 >= src.length) break;
+            if (offset + 4 >= src.length) break;
             ms._cells[i] = {
-                count: src[offset++] || 0,
-                keyXor: (src[offset++] || 0) >>> 0,
-                hashXor: (src[offset++] || 0) >>> 0,
+                count:      src[offset++] || 0,
+                keyHiXor:  (src[offset++] || 0) >>> 0,
+                keyLoXor:  (src[offset++] || 0) >>> 0,
+                hashHiXor: (src[offset++] || 0) >>> 0,
+                hashLoXor: (src[offset++] || 0) >>> 0,
             };
         }
         return ms;
@@ -86,50 +105,66 @@ export class Minisketch {
         const cellCount = Math.min(local._cellCount, remote._cellCount);
         const cells = makeCells(cellCount);
         for (let i = 0; i < cellCount; i++) {
-            const a = local._cells[i] || { count: 0, keyXor: 0, hashXor: 0 };
-            const b = remote._cells[i] || { count: 0, keyXor: 0, hashXor: 0 };
+            const a = local._cells[i]  || { count: 0, keyHiXor: 0, keyLoXor: 0, hashHiXor: 0, hashLoXor: 0 };
+            const b = remote._cells[i] || { count: 0, keyHiXor: 0, keyLoXor: 0, hashHiXor: 0, hashLoXor: 0 };
             cells[i] = {
-                count: a.count - b.count,
-                keyXor: (a.keyXor ^ b.keyXor) >>> 0,
-                hashXor: (a.hashXor ^ b.hashXor) >>> 0,
+                count:      a.count - b.count,
+                keyHiXor:  (a.keyHiXor  ^ b.keyHiXor)  >>> 0,
+                keyLoXor:  (a.keyLoXor  ^ b.keyLoXor)  >>> 0,
+                hashHiXor: (a.hashHiXor ^ b.hashHiXor) >>> 0,
+                hashLoXor: (a.hashLoXor ^ b.hashLoXor) >>> 0,
             };
         }
 
+        const isPure = (c) => {
+            if (Math.abs(c.count) !== 1 || (c.keyHiXor === 0 && c.keyLoXor === 0)) return false;
+            return c.hashHiXor === checkHashHi(c.keyHiXor, c.keyLoXor)
+                && c.hashLoXor === checkHashLo(c.keyHiXor, c.keyLoXor);
+        };
+
         const work = cloneCells(cells);
+        // Results are 64-bit keys encoded as BigInt for caller lookup via hashId().
         const added = [];
         const removed = [];
         const queue = [];
-        const enqueuePure = (i) => {
-            const c = work[i];
-            if (Math.abs(c.count) === 1 && c.keyXor !== 0 && c.hashXor === checkHash(c.keyXor)) queue.push(i);
-        };
-        for (let i = 0; i < work.length; i++) enqueuePure(i);
+        for (let i = 0; i < work.length; i++) { if (isPure(work[i])) queue.push(i); }
 
         while (queue.length) {
             const idx = queue.shift();
             const cell = work[idx];
-            if (!(Math.abs(cell.count) === 1 && cell.keyXor !== 0 && cell.hashXor === checkHash(cell.keyXor))) continue;
+            if (!isPure(cell)) continue;
 
-            const key = cell.keyXor >>> 0;
-            const sign = cell.count;
-            if (sign > 0) removed.push(key);
+            const hi = cell.keyHiXor >>> 0;
+            const lo = cell.keyLoXor >>> 0;
+            const count = cell.count; // capture before peeling — cell may be its own neighbor
+            const key = (BigInt(hi) << 32n) | BigInt(lo);
+            if (count > 0) removed.push(key);
             else added.push(key);
 
-            for (const j of indexesFor(key, cellCount)) {
+            for (const j of indexesFor(hi, lo, cellCount)) {
                 const c = work[j];
                 if (!c) continue;
-                c.count -= sign;
-                c.keyXor = (c.keyXor ^ key) >>> 0;
-                c.hashXor = (c.hashXor ^ checkHash(key)) >>> 0;
-                enqueuePure(j);
+                c.count -= count;
+                c.keyHiXor  = (c.keyHiXor  ^ hi) >>> 0;
+                c.keyLoXor  = (c.keyLoXor  ^ lo) >>> 0;
+                c.hashHiXor = (c.hashHiXor ^ checkHashHi(hi, lo)) >>> 0;
+                c.hashLoXor = (c.hashLoXor ^ checkHashLo(hi, lo)) >>> 0;
+                if (isPure(c)) queue.push(j);
             }
         }
 
-        const success = work.every(c => c.count === 0 && c.keyXor === 0 && c.hashXor === 0);
+        const success = work.every(c =>
+            c.count === 0 && c.keyHiXor === 0 && c.keyLoXor === 0
+            && c.hashHiXor === 0 && c.hashLoXor === 0
+        );
         return success ? { added, removed, failure: false } : { added: [], removed: [], failure: true };
     }
 
+    // Returns a 64-bit BigInt key for a peer ID — used by callers to match
+    // against the added/removed arrays returned by decode().
     static hashId(id) {
-        return BigInt(hashPeerId(id));
+        const hi = hashPeerIdHi(id);
+        const lo = hashPeerIdLo(id);
+        return (BigInt(hi) << 32n) | BigInt(lo);
     }
 }

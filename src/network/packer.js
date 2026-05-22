@@ -144,8 +144,13 @@ if (typeof QUESTS !== 'undefined') {
 }
 
 export const presenceSignaturePayload = (p) => {
+    // Sort quest keys before building the signed payload. Object.entries key order
+    // depends on insertion order and differs between browsers, causing JSON.stringify
+    // to produce different strings for the same logical state → signature verification
+    // fails across browser implementations.
     const activeQuests = Object.entries(p.quests || {})
         .filter(([, q]) => !q.completed)
+        .sort(([a], [b]) => a.localeCompare(b))
         .slice(0, 8);
     const quests = {};
     activeQuests.forEach(([id, q]) => {

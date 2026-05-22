@@ -1137,13 +1137,13 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
             if (removed.length > 0) {
                 const response = {};
                 for (const id of localIds()) {
-                    const h = Number(Minisketch.hashId(id));
+                    const h = Minisketch.hashId(id);
                     if (!removed.some(r => r === h)) continue;
                     if (id === selfId) continue;
                     const data = players.get(id);
                     if (data?.rawPresence) response[id] = { presence: data.rawPresence, publicKey: data.publicKey };
                 }
-                if (removed.some(r => r === Number(Minisketch.hashId(selfId)))) {
+                if (removed.some(r => r === Minisketch.hashId(selfId))) {
                     const entry = await myEntry();
                     if (entry) response[selfId] = { presence: await packSignedPresence({ ...entry, hlc: sendHLC() }), publicKey: await exportKey(playerKeys.publicKey) };
                 }
@@ -1155,11 +1155,12 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getRequest(async (idStrings, peerId) => {
             if (isBannedPeer(peerId)) return;
             const response = {};
-            const myIdHash = Number(Minisketch.hashId(selfId));
-            const matchesSelf = idStrings.some(s => s === selfId || (Number.isInteger(Number(s)) && Number(s) === myIdHash));
+            const myIdHash = Minisketch.hashId(selfId);
+            const matchesSelf = idStrings.some(s => s === selfId || s === String(myIdHash));
             for (const [id, data] of players.entries()) {
                 if (data.ghost) continue;
-                const matches = idStrings.some(s => s === id || (Number.isInteger(Number(s)) && Number(s) === Number(Minisketch.hashId(id))));
+                const idHash = Minisketch.hashId(id);
+                const matches = idStrings.some(s => s === id || s === String(idHash));
                 if (matches && data.rawPresence) response[id] = { presence: data.rawPresence, publicKey: data.publicKey };
             }
             if (matchesSelf) {
@@ -1172,7 +1173,8 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getPresenceSingle(async (buf, peerId) => {
             if (peerId === selfId) return;
             if (isBannedPeer(peerId)) return;
-            hpv.markSeen(HyParView.msgId(hashStr, buf));
+            const msgId = HyParView.msgId(hashStr, buf);
+            if (!hpv.markSeen(msgId)) { hpv.prune(peerId); return; }
             await processPresenceSingle(buf, peerId);
         });
 
@@ -1221,7 +1223,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getActionLog(async (buf, peerId) => {
             const msgId = HyParView.msgId(hashStr, buf);
-            if (!hpv.markSeen(msgId)) return;
+            if (!hpv.markSeen(msgId)) { hpv.prune(peerId); return; }
             const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
             const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
             if (eager.length > 0) sendActionLog(buf, eager);
@@ -1324,7 +1326,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         getMove(async (buf, peerId) => {
             if (!checkThrottle(peerId)) return;
             const msgId = HyParView.msgId(hashStr, buf);
-            if (!hpv.markSeen(msgId)) return;
+            if (!hpv.markSeen(msgId)) { hpv.prune(peerId); return; }
             const eager = connectedOnly(hpv.eagerPeers()).filter(id => id !== peerId);
             const lazy  = connectedOnly(hpv.lazyPeers()).filter(id => id !== peerId);
             if (eager.length > 0) sendMove(buf, eager);

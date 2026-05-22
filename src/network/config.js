@@ -1,11 +1,6 @@
 import { STUN_SERVERS, TORRENT_TRACKERS, APP_ID } from '../infra/constants.js';
 import { recordPeerConnection } from './diagnostics.js';
 
-const ICE_GATHER_TIMEOUT_MS = 1500;
-// Safari/WebKit STUN resolution is significantly slower than Chrome (~2-4s vs <1s).
-// Without a longer budget, the 1500ms flush fires before srflx candidates arrive,
-// leaving only host candidates in the SDP and causing NAT traversal failures.
-const ICE_GATHER_TIMEOUT_WEBKIT_MS = 5000;
 
 export const isWebKitRtcBrowser = () => {
     if (typeof navigator === 'undefined' || !navigator.userAgent) return false;
@@ -56,33 +51,18 @@ export const patchIceGatheringTimeout = () => {
         _NativePeer.prototype.__dcPatched = true;
     }
 
-    // 1. ICE gathering timeout wrapper.
-    const iceGatherTimeoutMs = useAggressiveDataChannels ? ICE_GATHER_TIMEOUT_MS : ICE_GATHER_TIMEOUT_WEBKIT_MS;
+    // ICE gathering timeout note: with trickleIce: true (our config), Trystero
+    // signals the SDP immediately without waiting for gathering to complete, then
+    // sends individual candidates as they arrive. The icegatheringstatechange event
+    // is only checked by Trystero's waitForIceGathering which is only called in
+    // non-trickle mode. Dispatching a fake event is therefore a no-op and removed.
+    // Trystero has its own 15s internal ICE timeout for non-trickle paths.
 
     const PatchedPeer = function(...args) {
         const pc = new _NativePeer(...args);
         recordPeerConnection(pc, {
             aggressiveDataChannels: useAggressiveDataChannels,
             config: args[0] || null,
-        });
-        let timer = null;
-        const flush = () => {
-            if (timer) { clearTimeout(timer); timer = null; }
-            if (pc.iceGatheringState !== 'complete') {
-                pc.dispatchEvent(new Event('icegatheringstatechange'));
-            }
-        };
-        pc.addEventListener('icegatheringstatechange', () => {
-            if (pc.iceGatheringState === 'complete' && timer) {
-                clearTimeout(timer);
-                timer = null;
-            }
-        });
-        pc.addEventListener('icecandidate', (e) => {
-            if (!e.candidate && timer) { clearTimeout(timer); timer = null; return; }
-            if (e.candidate && !timer) {
-                timer = setTimeout(flush, iceGatherTimeoutMs);
-            }
         });
         // 3. SCTP warm-up on inbound data channels.
         if (useAggressiveDataChannels) {

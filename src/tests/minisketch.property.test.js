@@ -27,11 +27,12 @@ describe('Minisketch Property-Based Tests', () => {
 
           expect(diff.failure).toBe(false);
 
-          const expectedRemoved = localOnly.map(id => Number(Minisketch.hashId(id))).sort();
-          const expectedAdded = remoteOnly.map(id => Number(Minisketch.hashId(id))).sort();
+          const bigIntCmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+          const expectedRemoved = localOnly.map(id => Minisketch.hashId(id)).sort(bigIntCmp);
+          const expectedAdded = remoteOnly.map(id => Minisketch.hashId(id)).sort(bigIntCmp);
 
-          expect(diff.removed.sort()).toEqual(expectedRemoved);
-          expect(diff.added.sort()).toEqual(expectedAdded);
+          expect(diff.removed.sort(bigIntCmp)).toEqual(expectedRemoved);
+          expect(diff.added.sort(bigIntCmp)).toEqual(expectedAdded);
         }
       )
     );

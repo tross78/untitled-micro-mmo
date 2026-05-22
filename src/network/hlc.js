@@ -4,10 +4,15 @@
 let _wall = 0;
 let _logical = 0;
 
+// Cap at 16-bit maximum to match the packed wire format. Without this, unbounded
+// increments during a clock freeze wrap to 0 on the wire, causing checkAndUpdateHlc
+// to reject valid packets as replays. (Kulkarni et al. 2014, §3.3)
+const MAX_LOGICAL = 0xFFFF;
+
 export const sendHLC = () => {
     const now = Date.now();
     if (now > _wall) { _wall = now; _logical = 0; }
-    else { _logical++; }
+    else { _logical = Math.min(_logical + 1, MAX_LOGICAL); }
     return { wall: _wall, logical: _logical };
 };
 
@@ -16,9 +21,9 @@ export const recvHLC = (remote) => {
     const rwall = remote.wall ?? 0;
     const rlog = remote.logical ?? 0;
     if (now > _wall && now > rwall) { _wall = now; _logical = 0; }
-    else if (rwall > _wall) { _wall = rwall; _logical = rlog + 1; }
-    else if (rwall === _wall) { _logical = Math.max(_logical, rlog) + 1; }
-    else { _logical++; }
+    else if (rwall > _wall) { _wall = rwall; _logical = Math.min(rlog + 1, MAX_LOGICAL); }
+    else if (rwall === _wall) { _logical = Math.min(Math.max(_logical, rlog) + 1, MAX_LOGICAL); }
+    else { _logical = Math.min(_logical + 1, MAX_LOGICAL); }
     return { wall: _wall, logical: _logical };
 };
 

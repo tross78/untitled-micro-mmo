@@ -114,6 +114,19 @@ export class HyParView {
         }
     }
 
+    // Plumtree PRUNE: called when we receive a full payload from an eager peer for
+    // a message we already processed via another path. Demote the redundant sender
+    // to the lazy view. (Leitão et al. 2012, "Epidemic Broadcast Trees", §4.2)
+    prune(peerId) {
+        if (!this._active.has(peerId)) return;
+        this._active.delete(peerId);
+        if (this._passive.size >= PASSIVE_VIEW_SIZE) {
+            const evict = this._passive.values().next().value;
+            this._passive.delete(evict);
+        }
+        this._passive.add(peerId);
+    }
+
     eagerPeers() { return Array.from(this._active); }
     lazyPeers() { return Array.from(this._passive); }
     allPeers() { return [...this._active, ...this._passive]; }

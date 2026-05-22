@@ -11,8 +11,8 @@ describe('Minisketch peer reconciliation', () => {
 
         const diff = Minisketch.decode(local, remote);
 
-        expect(diff.removed).toContain(Number(Minisketch.hashId('user2')));
-        expect(diff.added).toContain(Number(Minisketch.hashId('user3')));
+        expect(diff.removed).toContain(Minisketch.hashId('user2'));
+        expect(diff.added).toContain(Minisketch.hashId('user3'));
     });
 
     test('round-trips through serialized wire format', () => {
@@ -23,11 +23,12 @@ describe('Minisketch peer reconciliation', () => {
 
         const decoded = Minisketch.decode(local, Minisketch.fromSerialized(remote.serialize()));
 
-        expect(decoded.removed).toEqual([Number(Minisketch.hashId('b'))]);
-        expect(decoded.added.sort((a, b) => a - b)).toEqual([
-            Number(Minisketch.hashId('d')),
-            Number(Minisketch.hashId('e')),
-        ].sort((a, b) => a - b));
+        expect(decoded.removed).toEqual([Minisketch.hashId('b')]);
+        const bigIntCmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+        expect(decoded.added.sort(bigIntCmp)).toEqual([
+            Minisketch.hashId('d'),
+            Minisketch.hashId('e'),
+        ].sort(bigIntCmp));
     });
 
     test('identical sets decode as empty', () => {
