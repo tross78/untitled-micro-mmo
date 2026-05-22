@@ -139,9 +139,15 @@ const buildRtcConfig = (rtcConfig) => {
 };
 
 export const buildTorrentConfig = (rtcConfig) => {
+    // tracker.webtorrent.dev is continuously rejected on Safari (ECONNRESET from server),
+    // causing Trystero to waste offer slots on a dead tracker. Filter it for WebKit so
+    // Safari only uses the reliable openwebtorrent.com path.
+    const relayUrls = isWebKitRtcBrowser()
+        ? TORRENT_TRACKERS.filter(u => !u.includes('webtorrent.dev'))
+        : TORRENT_TRACKERS;
     return {
         appId: APP_ID,
-        relayUrls: TORRENT_TRACKERS,
+        relayUrls,
         trickleIce: true,
         rtcConfig: buildRtcConfig(rtcConfig),
     };

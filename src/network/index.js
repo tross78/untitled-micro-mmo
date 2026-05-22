@@ -593,8 +593,13 @@ export const initNetworking = async (rtcConfig) => {
             const silentFor = now - Math.max(joinTime, lastShardPresenceAt);
 
             if (usableShardPeers > 0) { _healAttempts = 0; return; }
-            if (!force && !urgent && !hasRecentShardPeerExpectation(now)) { _healAttempts = 0; return; }
-            if (!force && !urgent && silentFor < NETWORK_STALL_MS) return;
+            // Allow cold-start heal after prolonged silence even when no peer hints exist.
+            // Without this, a broken tracker WS (e.g. Safari dropping webtorrent.dev) leaves
+            // hasPeerExpectation false permanently and the heal loop never fires.
+            const hasPeerExpectation = hasRecentShardPeerExpectation(now);
+            if (!force && !urgent && !hasPeerExpectation) { _healAttempts = 0; }
+            if (!force && !urgent && !hasPeerExpectation && silentFor < NETWORK_STALL_MS) return;
+            if (!force && !urgent && hasPeerExpectation && silentFor < NETWORK_STALL_MS) return;
             if (!force && !urgent && now - lastNetworkHealAt < _healBackoffMs()) return;
             // force: event-driven heal with cooldown guard
             if (force && !urgent && !shouldRunEventHeal(usableShardPeers, now - lastNetworkHealAt, NETWORK_HEAL_COOLDOWN_MS)) return;

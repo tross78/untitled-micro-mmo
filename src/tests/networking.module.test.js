@@ -292,7 +292,21 @@ describe('networking exported module behavior', () => {
         expect(config.trackerUrls).toBeUndefined();
     });
 
-test('torrent tracker list has independent live rendezvous paths', () => {
+    test('buildTorrentConfig filters webtorrent.dev for Safari (ECONNRESET on server side)', () => {
+        const originalUA = navigator.userAgent;
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15',
+        });
+        const config = buildTorrentConfig({ iceServers: STUN_SERVERS });
+        Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUA });
+
+        expect(config.relayUrls).not.toContain('wss://tracker.webtorrent.dev');
+        expect(config.relayUrls).toContain('wss://tracker.openwebtorrent.com');
+        expect(config.trickleIce).toBe(true);
+    });
+
+    test('torrent tracker list has independent live rendezvous paths', () => {
         expect(TORRENT_TRACKERS).toEqual([
             'wss://tracker.openwebtorrent.com',
             'wss://tracker.webtorrent.dev',
@@ -355,7 +369,9 @@ test('torrent tracker list has independent live rendezvous paths', () => {
             torrentConfigs.push(config);
         }
         expect(torrentConfigs.every(config =>
-            config.relayUrls === TORRENT_TRACKERS
+            Array.isArray(config.relayUrls)
+                && config.relayUrls.length >= 1
+                && config.relayUrls.every(u => TORRENT_TRACKERS.includes(u))
                 && config.trickleIce === true
                 && config.trackerUrls === undefined
                 && config.strategyRace === undefined
