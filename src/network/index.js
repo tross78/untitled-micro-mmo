@@ -577,7 +577,11 @@ export const initNetworking = async (rtcConfig) => {
         // Kept as a safety net in case initNetworking is called with a STUN-only override.
         if (isUsingTurnFallback(currentRtcConfig)) return;
         const usableShardPeers = countUsableShardPeers(shardKnownPeers, players);
-        if (usableShardPeers > 0 || globalKnownPeers.size > 0) return;
+        // Also check Trystero's live peer count — onPeerJoin fires after data channel opens,
+        // but getPeers() may show peers whose ICE is still connecting. Either is sufficient
+        // to confirm a live network and skip the destructive connectGlobal call.
+        if (usableShardPeers > 0 || globalKnownPeers.size > 0
+            || roomPeerCount(globalRooms.torrent) > 0 || roomPeerCount(rooms.torrent) > 0) return;
         currentRtcConfig = { iceServers: ICE_SERVERS };
         markNetworkEvent('heal:start', { force: true, reason: 'startup_turn_fallback', globalPeers: 0, usableShardPeers: 0 });
         await connectGlobal(currentRtcConfig);

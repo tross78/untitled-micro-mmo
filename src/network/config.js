@@ -117,7 +117,11 @@ export const NETWORK_EVENT_HEAL_DELAY_MS = 1500;
 // Safari ICE gathering alone takes up to 5s; allowing 20s gives the full
 // ICE+DTLS+SCTP stack plus two retry attempts before declaring failure.
 export const NETWORK_HANDSHAKE_TIMEOUT_MS = 20000;
-export const NETWORK_STARTUP_TURN_FALLBACK_MS = 3000;
+// Startup fallback delay: must exceed the worst-case ICE+DTLS+SCTP connection
+// setup time before declaring "no peers" and re-running connectGlobal+joinInstance.
+// Safari ICE gathering alone takes up to 5s; 15s covers the full stack.
+// At 3s this fired while ICE was still in progress, causing spurious disconnects.
+export const NETWORK_STARTUP_TURN_FALLBACK_MS = 15000;
 export const NETWORK_PRESENCE_HEARTBEAT_MS = 5000;
 export const NETWORK_PEER_STALE_MS = 20000;
 export const NETWORK_PEER_SWEEP_MS = 5000;
