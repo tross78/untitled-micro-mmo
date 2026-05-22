@@ -696,17 +696,22 @@ export const initNetworking = async (rtcConfig) => {
         };
         const onOnline = () => reconnectAfterResume('online').catch(() => {});
         const onFocus = () => reconnectAfterResume('focus').catch(() => {});
+        // iOS Safari sometimes fires blur/focus instead of visibilitychange on app-switch.
+        // Record blur so focus can correctly compute hiddenLongEnough.
+        const onBlur = () => { if (lastPageHiddenAt === 0 || document.visibilityState !== 'hidden') lastPageHiddenAt = Date.now(); };
 
         document.addEventListener('visibilitychange', onVisibilityChange);
         window.addEventListener('pageshow', onPageShow);
         window.addEventListener('online', onOnline);
         window.addEventListener('focus', onFocus);
+        window.addEventListener('blur', onBlur);
 
         return () => {
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('pageshow', onPageShow);
             window.removeEventListener('online', onOnline);
             window.removeEventListener('focus', onFocus);
+            window.removeEventListener('blur', onBlur);
         };
     };
 
