@@ -42,21 +42,23 @@ export const getNPCsAt = (location) => {
 };
 
 export const getBestGear = () => {
-    let weaponBonus = 0;
-    let defenseBonus = 0;
-    localPlayer.inventory.forEach(id => {
-        const item = ITEMS[id];
-        if (!item) return;
-        if (item.type === 'weapon' && item.bonus > weaponBonus) weaponBonus = item.bonus;
-        if (item.type === 'armor' && item.bonus > defenseBonus) defenseBonus = item.bonus;
-    });
     const eqWep = localPlayer.equipped?.weapon ? ITEMS[localPlayer.equipped.weapon] : null;
     const eqArm = localPlayer.equipped?.armor ? ITEMS[localPlayer.equipped.armor] : null;
 
-    return { 
-        weaponBonus: Math.max(weaponBonus, eqWep?.bonus || 0), 
-        defenseBonus: Math.max(defenseBonus, eqArm?.bonus || 0) 
-    };
+    // Equipped gear takes effect. Fall back to best in inventory only when nothing
+    // is equipped so players without equip habit aren't penalised, but equipping
+    // a specific piece locks in that bonus rather than auto-using the best available.
+    let weaponBonus = eqWep?.bonus ?? 0;
+    let defenseBonus = eqArm?.bonus ?? 0;
+    if (!eqWep || !eqArm) {
+        localPlayer.inventory.forEach(id => {
+            const item = ITEMS[id];
+            if (!item) return;
+            if (!eqWep && item.type === 'weapon' && item.bonus > weaponBonus) weaponBonus = item.bonus;
+            if (!eqArm && item.type === 'armor' && item.bonus > defenseBonus) defenseBonus = item.bonus;
+        });
+    }
+    return { weaponBonus, defenseBonus };
 };
 
 const WANDERING_TRADER_WARES = ['old_tome', 'healing_elixir', 'steel_sword'];

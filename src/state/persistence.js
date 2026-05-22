@@ -45,7 +45,7 @@ const dbGet = async (store, key) => {
  * Persists localPlayer state to IndexedDB (and legacy write-through).
  */
 export const saveLocalState = async (localPlayer, immediate = false) => {
-    const dataWithVersion = { ...localPlayer, _version: SAVE_VERSION };
+    const dataWithVersion = { ...localPlayer, _version: SAVE_VERSION, _savedAt: Date.now() };
     const persist = async () => {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(dataWithVersion));
@@ -77,7 +77,7 @@ export const saveLocalState = async (localPlayer, immediate = false) => {
  */
 export const flushSync = (localPlayer) => {
     try {
-        const dataWithVersion = { ...localPlayer, _version: SAVE_VERSION };
+        const dataWithVersion = { ...localPlayer, _version: SAVE_VERSION, _savedAt: Date.now() };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(dataWithVersion));
     } catch (e) {
         console.warn('[System] Emergency flush failed:', e.message);
@@ -85,15 +85,21 @@ export const flushSync = (localPlayer) => {
 };
 
 export const loadState = async () => {
+    let idbState = null;
+    let lsState = null;
     try {
-        // 1. Try IndexedDB
-        const idbState = await dbGet('player', 'local');
-        if (idbState) return idbState;
-    } catch (e) { console.error('[Persistence] Load fail:', e); }
+        idbState = await dbGet('player', 'local');
+    } catch (e) { console.error('[Persistence] IDB load fail:', e); }
     try {
-        // 2. Fallback to localStorage (migration / IDB unavailable)
         const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) return JSON.parse(saved);
+        if (saved) lsState = JSON.parse(saved);
     } catch (e) { console.error('[Persistence] localStorage load fail:', e); }
-    return null;
+
+    // Prefer the source with the newer _savedAt timestamp. This ensures that an
+    // emergency flushSync() write to localStorage (beforeunload) is not silently
+    // discarded when IDB still holds the previous save.
+    if (idbState && lsState) {
+        return (lsState._savedAt ?? 0) > (idbState._savedAt ?? 0) ? lsState : idbState;
+    }
+    return idbState ?? lsState ?? null;
 };

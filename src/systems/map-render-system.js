@@ -5,6 +5,21 @@ import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryP
 import { SCENERY_RENDER_STYLE, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { hashStr } from '../rules/index.js';
 
+// Module-level cache for colored scenery sprites. Key: "label:frameIdx".
+// applyPalette allocates an OffscreenCanvas + ImageData every call; without this
+// cache each frame re-allocates O(scenery-count) canvases causing GC jank on mobile.
+const _sceneryColorCache = new Map();
+const getColoredScenery = (label, frameIdx) => {
+    const key = `${label}:${frameIdx}`;
+    let cached = _sceneryColorCache.get(key);
+    if (!cached) {
+        const template = getGrayscaleTemplate(label, 0, frameIdx) || getGrayscaleTemplate('rock');
+        cached = applyPalette(template, getSceneryPalette(label));
+        _sceneryColorCache.set(key, cached);
+    }
+    return cached;
+};
+
 /**
  * MapRenderSystem handles procedural tile generation and background caching.
  */
@@ -235,9 +250,7 @@ export class MapRenderSystem {
         const dims = SCENERY_DIMENSIONS[label];
         const logicalW = usingCompiledShape ? compiledMeta.logicalWidth : (dims ? dims[0] : w);
         const logicalH = usingCompiledShape ? compiledMeta.logicalHeight : (dims ? dims[1] : h);
-        const template = getGrayscaleTemplate(label, 0, frameIdx) || getGrayscaleTemplate('rock');
-        const palette = getSceneryPalette(label);
-        const colored = applyPalette(template, palette);
+        const colored = getColoredScenery(label, frameIdx);
         const renderStyle = usingCompiledShape ? {
             heightTiles: compiledMeta.renderHeightTiles,
             yOffsetTiles: compiledMeta.renderYOffsetTiles,

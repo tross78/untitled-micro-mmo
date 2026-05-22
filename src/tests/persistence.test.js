@@ -48,8 +48,9 @@ describe('Persistence System (Phase 7.5 Audit)', () => {
         // Use the existing mock which triggers callbacks
         await saveLocalState(player, true);
         
-        const expected = { ...player, _version: SAVE_VERSION };
-        expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify(expected));
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        expect(saved).toMatchObject({ ...player, _version: SAVE_VERSION });
+        expect(typeof saved._savedAt).toBe('number');
     });
 
     test('saveLocalState does not mutate the caller object', async () => {
@@ -65,7 +66,9 @@ describe('Persistence System (Phase 7.5 Audit)', () => {
 
         flushSync(player);
 
-        expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify({ ...player, _version: SAVE_VERSION }));
+        const flushed = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        expect(flushed).toMatchObject({ ...player, _version: SAVE_VERSION });
+        expect(typeof flushed._savedAt).toBe('number');
     });
 
     test('loadState falls back to localStorage if IndexedDB empty', async () => {
@@ -145,7 +148,9 @@ describe('Persistence System (Phase 7.5 Audit)', () => {
         const player = { name: 'Fallback', gold: 25 };
         await saveLocalState(player, true);
 
-        expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify({ ...player, _version: SAVE_VERSION }));
+        const fallback = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        expect(fallback).toMatchObject({ ...player, _version: SAVE_VERSION });
+        expect(typeof fallback._savedAt).toBe('number');
     });
 
     test('loadState falls back to localStorage when IndexedDB open fails', async () => {

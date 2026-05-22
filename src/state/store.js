@@ -200,12 +200,13 @@ export const loadLocalState = async (log) => {
                 data._version = SAVE_VERSION;
             }
 
-            // E2: Field Clamping / Validation
-            data.maxHp = Math.max(1, data.maxHp ?? 50);
-            data.hp = Math.max(0, Math.min(data.hp ?? 0, data.maxHp));
-            data.gold = Math.max(0, data.gold ?? 0);
-            if (data.gold > 999999) data.gold = 999999;
-            data.xp = Math.max(0, data.xp ?? 0);
+            // E2: Field Clamping / Validation — coerce to finite first so corrupt
+            // strings like "abc" don't produce persistent NaN via Math.max/min.
+            const toFinite = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
+            data.maxHp = Math.max(1, toFinite(data.maxHp, 50));
+            data.hp = Math.max(0, Math.min(toFinite(data.hp, 0), data.maxHp));
+            data.gold = Math.min(999999, Math.max(0, toFinite(data.gold, 0)));
+            data.xp = Math.max(0, toFinite(data.xp, 0));
             data.level = xpToLevel(data.xp); // derive, don't trust
             
             if (!Array.isArray(data.inventory)) data.inventory = [];

@@ -4,7 +4,7 @@
  * Declarative serialization for high-frequency messages.
  */
 
-import { world, ENEMIES, SPAWN_ROOM_ID, QUESTS } from '../content/data.js';
+import { world, ENEMIES, SPAWN_ROOM_ID, QUESTS, ITEMS } from '../content/data.js';
 import { packHLC, unpackHLC } from './hlc.js';
 
 const toUint8Array = (buf) => {
@@ -122,11 +122,15 @@ const truncateName = (str, maxBytes) => {
 };
 
 const ACTION_TYPES = ['attack', 'kill', 'loot'];
+// ITEM_MAP is append-only — existing indices must never change (they're stored in saves
+// and transmitted in frames). Add new items from items.js at the end only.
 const ITEM_MAP = [
     'wolf_pelt', 'old_tome', 'iron_key', 'gold', 'potion', 'ale', 'bread',
     'iron_sword', 'steel_sword', 'magic_staff', 'healing_elixir', 'strength_elixir',
     'bandit_mask', 'wheat', 'wood', 'iron', 'herbs', 'red_mushroom',
-    'leather_armor', 'iron_armor', 'warm_cloak'
+    'leather_armor', 'iron_armor', 'warm_cloak',
+    'steel_armor', 'ancient_crown', 'stone', 'fiber', 'coal', 'fish', 'bone',
+    'antidote', 'energizing_meal', 'coal_torch', 'padded_armor', 'rope', 'stone_block',
 ];
 const QUEST_MAP = [
     'find_tavern', 'wolf_hunt', 'bandit_sweep', 'cave_troll_bounty',
@@ -136,10 +140,15 @@ const QUEST_MAP = [
     'herb_gathering', 'mushroom_study', 'field_tonic',
     'ancient_throne'
 ];
-// Validate at module load that all authored quests are packable
+// Validate at module load that all authored quests and items are packable
 if (typeof QUESTS !== 'undefined') {
     Object.keys(QUESTS).forEach(id => {
         if (!QUEST_MAP.includes(id)) console.warn(`[Packer] Quest "${id}" missing from QUEST_MAP — it will serialize as 255 and drop on unpack`);
+    });
+}
+if (typeof ITEMS !== 'undefined') {
+    Object.keys(ITEMS).forEach(id => {
+        if (!ITEM_MAP.includes(id)) console.warn(`[Packer] Item "${id}" missing from ITEM_MAP — it will serialize as 255 and drop on unpack`);
     });
 }
 

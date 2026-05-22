@@ -356,7 +356,7 @@ export class MovementSystem {
         localPlayer.gatheredNodes.nodes.add(nodeKey);
         const fishSeed = hashStr(`${locId}:${worldState.day}:fish:${facingTarget.x},${facingTarget.y}`);
         const rng = seededRNG(fishSeed);
-        if (rng() < 0.6) {
+        if (rng(100) < 60) {
             grantItem('fish');
             bus.emit('item:pickup', { item: ITEMS['fish'] });
             bus.emit('log', { msg: `You caught a fish!`, color: '#4080c0' });

@@ -125,7 +125,14 @@ export class UIRenderSystem {
         const key = `${player.location}|${player.x}|${player.y}|${player.currentEnemy}|${enemyHp}|${lootLen}|${duelKey}`;
         if (key === this._ctxBtnKey && this._ctxBtnCache) return this._ctxBtnCache;
 
+        // Pending duel challenge is inserted first so it always appears in the
+        // first 3 contextual slots. (Appending it after Attack/Flee/Pickup caused
+        // it to exceed the 3-button limit and be clipped on mobile.)
         const btns = [];
+        if (pendingDuel && Date.now() <= pendingDuel.expiresAt) {
+            btns.push({ label: 'Accept Duel', action: 'duel_accept' });
+            btns.push({ label: 'Decline Duel', action: 'duel_decline' });
+        }
         const enemyDead = !!sharedEnemy && enemyHp <= 0;
         const enemyAlive = !!loc.enemy && !enemyDead && ENEMIES[loc.enemy];
         const hasLoot = enemyDead && lootLen > 0;
@@ -174,12 +181,6 @@ export class UIRenderSystem {
                 return t && t.x === playerTransform.x && t.y === playerTransform.y && t.mapId === player.location;
             });
             if (hasGatherableAtFeet) btns.push({ label: 'Gather', action: 'pickup' });
-        }
-
-        // Pending duel challenge — show Accept/Decline regardless of position
-        if (pendingDuel && Date.now() <= pendingDuel.expiresAt) {
-            btns.push({ label: 'Accept Duel', action: 'duel_accept' });
-            btns.push({ label: 'Decline Duel', action: 'duel_decline' });
         }
 
         // NPC range check — only show Talk when adjacent to that NPC's entity

@@ -472,7 +472,34 @@ export const setupGlobalEvents = () => {
     const finalizeTrade = () => {
         if (!pendingTrade) return;
         const pt = pendingTrade;
-        log(`\n[Trade] TRADE FINALIZED! 🤝`, '#0f0');
+
+        // Ownership proof: verify the partner's signed presence confirms they hold
+        // what they committed. The signature on presence was verified on receipt via
+        // Ed25519 (see getPresenceSingle handler). Without this, a partner could sign
+        // a commit for gold/items they don't own and we would grant those assets locally.
+        const partnerPresence = players.get(pt.partnerId);
+        if (!partnerPresence?.presenceVerifiedAt) {
+            log(`[Trade] Cannot verify partner's inventory — trade aborted.`, '#f44');
+            setPendingTrade(null);
+            triggerLogicalRefresh();
+            return;
+        }
+        if ((partnerPresence.gold ?? 0) < pt.partnerOffer.gold) {
+            log(`[Trade] Partner lacks sufficient gold — trade aborted.`, '#f44');
+            setPendingTrade(null);
+            triggerLogicalRefresh();
+            return;
+        }
+        for (const item of pt.partnerOffer.items) {
+            if (!partnerPresence.inventory?.includes(item)) {
+                log(`[Trade] Partner does not have ${item} — trade aborted.`, '#f44');
+                setPendingTrade(null);
+                triggerLogicalRefresh();
+                return;
+            }
+        }
+
+        log(`\n[Trade] TRADE FINALIZED!`, '#0f0');
         localPlayer.gold -= pt.myOffer.gold;
         pt.myOffer.items.forEach(id => {
             const idx = localPlayer.inventory.indexOf(id);
