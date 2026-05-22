@@ -1366,12 +1366,21 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
                 if (!players.get(peerId)?.publicKey) setTimeout(() => handshake(attempt + 1), 3000);
             };
             setTimeout(handshake, 100);
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (!shardKnownPeers.has(peerId)) return;
                 if (players.get(peerId)?.presenceVerifiedAt) return;
                 markPeerNetworkEvent(peerId, 'peer:handshake_timeout');
                 markIntroFailed(peerId);
-                scheduleHeal(NETWORK_EVENT_HEAL_DELAY_MS, { force: true });
+                // Re-send identity to the stuck peer rather than rejoining the shard room.
+                // Rejoining causes the remote side to see a leave event, which triggers
+                // their heal — cascading into a storm. Identity re-send unblocks the
+                // pending presence queue on the remote side without disrupting the room.
+                try {
+                    if (playerKeys && gameActions.sendIdentity) {
+                        const pubKey = await exportKey(playerKeys.publicKey);
+                        gameActions.sendIdentity({ publicKey: pubKey }, [peerId]);
+                    }
+                } catch (_e3) { /* ignore */ }
             }, NETWORK_HANDSHAKE_TIMEOUT_MS);
         });
 

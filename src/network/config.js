@@ -114,7 +114,9 @@ export const PROPOSER_GRACE_MS = ROLLUP_INTERVAL * 1.5;
 export const NETWORK_STALL_MS = 60000;
 export const NETWORK_HEAL_COOLDOWN_MS = 30000;
 export const NETWORK_EVENT_HEAL_DELAY_MS = 1500;
-export const NETWORK_HANDSHAKE_TIMEOUT_MS = 5000;
+// Safari ICE gathering alone takes up to 5s; allowing 20s gives the full
+// ICE+DTLS+SCTP stack plus two retry attempts before declaring failure.
+export const NETWORK_HANDSHAKE_TIMEOUT_MS = 20000;
 export const NETWORK_STARTUP_TURN_FALLBACK_MS = 3000;
 export const NETWORK_PRESENCE_HEARTBEAT_MS = 5000;
 export const NETWORK_PEER_STALE_MS = 20000;

@@ -294,7 +294,7 @@ describe('reconnect and liveness regressions', () => {
         });
     });
 
-    test('failed handshake peer triggers heal and is tracked for future exclusion', async () => {
+    test('failed handshake peer triggers re-announce (not shard rejoin) on timeout', async () => {
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer } = await import('../state/store.js');
         const { joinRoom } = await import('../network/transport.js');
@@ -305,16 +305,22 @@ describe('reconnect and liveness regressions', () => {
         const shardRoom = joinRoom.mock.results.find((r) => r.value.name !== 'global').value;
         const initialJoinCallCount = joinRoom.mock.calls.length;
 
-        // peer-bad joins but never sends identity — handshake timeout fires at 5s.
+        // peer-bad joins but never sends identity — handshake timeout fires at 20s.
         shardRoom.emitPeerJoin('peer-bad');
-        await jest.advanceTimersByTimeAsync(7_000); // past NETWORK_HANDSHAKE_TIMEOUT_MS (5s) + heal delay
+        await jest.advanceTimersByTimeAsync(22_000); // past NETWORK_HANDSHAKE_TIMEOUT_MS (20s)
 
-        // Heal should have been triggered as a result of handshake timeout (scheduleHeal).
-        // Observable via joinRoom being called again for the shard room.
-        expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+        // Shard room should NOT be rejoined — that would cause the remote peer to see a
+        // leave event and trigger their own heal, causing a storm.
+        expect(joinRoom.mock.calls.length).toBe(initialJoinCallCount);
+        // Identity should have been re-sent to the stuck peer as a nudge to unblock
+        // the pending presence queue on their side.
+        const identitySend = shardRoom._sends.get('identity_handshake');
+        expect(identitySend).toBeDefined();
+        // Called at least once (from handshake retry loop), confirming identity was sent.
+        expect(identitySend.mock.calls.length).toBeGreaterThan(0);
     });
 
-    test('identity-only peer does not count as usable and still triggers handshake heal', async () => {
+    test('identity-only peer does not count as usable; timeout re-sends identity without shard rejoin', async () => {
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer, players } = await import('../state/store.js');
         const { joinRoom } = await import('../network/transport.js');
@@ -332,9 +338,13 @@ describe('reconnect and liveness regressions', () => {
         expect(players.get('peer-identity-only')?.publicKey).toBe('identity-only-key');
         expect(countUsableShardPeers(shardKnownPeers, players)).toBe(0);
 
-        await jest.advanceTimersByTimeAsync(7_000);
+        await jest.advanceTimersByTimeAsync(22_000);
 
-        expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+        // Shard room should NOT be rejoined on timeout — re-announce instead.
+        expect(joinRoom.mock.calls.length).toBe(initialJoinCallCount);
+        const identitySend = shardRoom._sends.get('identity_handshake');
+        expect(identitySend).toBeDefined();
+        expect(identitySend.mock.calls.length).toBeGreaterThan(0);
     });
 
     test('invalid presence does not refresh liveness or mark peer usable', async () => {
