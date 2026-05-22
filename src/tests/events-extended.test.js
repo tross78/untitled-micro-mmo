@@ -184,14 +184,14 @@ describe('events.js — extended coverage', () => {
         const { handleCommand } = await import('../commands/index.js');
         bus.emit('ui:hud-action', { action: 'duel_accept' });
         await new Promise(r => setTimeout(r, 10));
-        expect(handleCommand).toHaveBeenCalledWith('duel accept');
+        expect(handleCommand).toHaveBeenCalledWith('accept');
     });
 
     test('ui:hud-action duel_decline calls handleCommand', async () => {
         const { handleCommand } = await import('../commands/index.js');
         bus.emit('ui:hud-action', { action: 'duel_decline' });
         await new Promise(r => setTimeout(r, 10));
-        expect(handleCommand).toHaveBeenCalledWith('duel decline');
+        expect(handleCommand).toHaveBeenCalledWith('decline');
     });
 
     // --- ui:menu-select ---

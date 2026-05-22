@@ -668,6 +668,14 @@ export const initNetworking = async (rtcConfig) => {
         try {
             await connectGlobal(currentRtcConfig);
             await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
+            if (playerKeys && gameActions.sendPresenceSingle) {
+                const entry = await myEntry();
+                if (entry) {
+                    const pubKey = await exportKey(playerKeys.publicKey);
+                    if (gameActions.sendIdentity) gameActions.sendIdentity({ publicKey: pubKey });
+                    gameActions.sendPresenceSingle(entry);
+                }
+            }
         } finally {
             resumeReconnectInFlight = false;
         }
