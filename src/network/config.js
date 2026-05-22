@@ -139,17 +139,10 @@ const buildRtcConfig = (rtcConfig) => {
 };
 
 export const buildTorrentConfig = (rtcConfig) => {
-    // Safari/WebKit generates ~43 candidates per PC (33 host + 10 srflx) because it
-    // exposes every macOS virtual interface and doesn't mDNS-cloak them like Chrome.
-    // With Trystero's 20 pre-warmed PCs and trickle ICE, that's ~860 WebSocket
-    // messages flooding the tracker on join — Chrome's incoming answer gets delayed
-    // and ICE checking never starts. Disabling trickle ICE for WebKit bundles all
-    // candidates into one SDP per PC (20 messages total) after the 5s gather window.
-    const trickleIce = !isWebKitRtcBrowser();
     return {
         appId: APP_ID,
         relayUrls: TORRENT_TRACKERS,
-        trickleIce,
+        trickleIce: true,
         rtcConfig: buildRtcConfig(rtcConfig),
     };
 };
