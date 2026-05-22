@@ -613,20 +613,19 @@ export const initNetworking = async (rtcConfig) => {
             _healAttempts++;
             markNetworkEvent('heal:start', { force, urgent, usableShardPeers, globalPeers, attempt: _healAttempts });
         try {
-            // Fast path: urgent heal with the shard room still alive and ICE config unchanged.
-            // Skip leave/rejoin (which drops every tracker WS and the WebRTC mesh) and just
-            // re-announce presence in place. Tracker spam from heal storms was the cost.
-            const canReuse = urgent && rooms.torrent && globalRooms.torrent
-                && !isUsingTurnFallback(currentRtcConfig);
-            if (canReuse) {
+            // Urgent heal = last shard peer just left. The global room is still alive.
+            // Just re-announce presence in place; no room leave/rejoin needed.
+            // Previously gated on !isUsingTurnFallback but ICE_SERVERS always includes TURN,
+            // making that condition always false and sending every urgent heal through the
+            // destructive leave+rejoin path, which caused the arbiter to see rapid peer cycles.
+            if (urgent && rooms.torrent && globalRooms.torrent) {
                 markNetworkEvent('heal:reuse_room');
-            } else if (globalPeers > 0 || (globalRooms.torrent && now - lastGlobalPeerAt < NETWORK_STALL_MS)) {
-                // Global room is alive (has peers, or had one recently) — just rejoin the shard.
-                // Calling connectGlobal here would leave/rejoin the global room, causing the remote
-                // peer to see a leave+join cycle which re-triggers their heal: the reconnect storm.
+            } else if (!urgent && (globalPeers > 0 || (globalRooms.torrent && now - lastGlobalPeerAt < NETWORK_STALL_MS))) {
+                // Global room is alive — just rejoin the shard.
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: ICE_SERVERS };
                 await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);
             } else {
+                // Global room appears dead — full reconnect.
                 if (!isUsingTurnFallback(currentRtcConfig)) currentRtcConfig = { iceServers: ICE_SERVERS };
                 await connectGlobal(currentRtcConfig);
                 await joinInstance(localPlayer.location, getCurrentInstance(), currentRtcConfig);

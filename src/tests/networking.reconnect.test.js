@@ -124,9 +124,10 @@ describe('reconnect and liveness regressions', () => {
         const entry = players.get('peer-silent');
         expect(!entry || entry.ghost || entry.stale).toBeTruthy();
 
-        // Heal should have fired: joinRoom called again for shard.
-        const newCallCount = joinRoom.mock.calls.length;
-        expect(newCallCount).toBeGreaterThan(initialJoinCallCount);
+        // Urgent heal now re-announces presence without rejoining the shard room —
+        // rejoining caused the remote peer to see a leave event and trigger their heal,
+        // creating a cascade. joinRoom count should stay the same within 26s.
+        expect(joinRoom.mock.calls.length).toBe(initialJoinCallCount);
     });
 
     test('urgent heal fires immediately when last peer drops via onPeerLeave', async () => {
@@ -143,10 +144,13 @@ describe('reconnect and liveness regressions', () => {
         // Peer leaves explicitly — onPeerLeave triggers urgent heal.
         shardRoom.emitPeerLeave('peer-gone');
 
-        // Urgent heal bypasses the 10s interval; should fire within a very short window.
+        // Urgent heal bypasses the 10s interval and fires within a short window.
+        // It re-announces presence in place rather than rejoining the shard room —
+        // rejoining caused the remote side to see a leave event and trigger their own
+        // heal, creating a reconnect storm. joinRoom count stays the same.
         await jest.advanceTimersByTimeAsync(3_000);
 
-        expect(joinRoom.mock.calls.length).toBeGreaterThan(initialJoinCallCount);
+        expect(joinRoom.mock.calls.length).toBe(initialJoinCallCount);
     });
 
     test('arbiter hints from registerWithHints seed HyParView active view', async () => {
