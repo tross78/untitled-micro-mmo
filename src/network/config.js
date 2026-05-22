@@ -20,15 +20,17 @@ export const shouldUseAggressiveDataChannelTuning = () => !isWebKitRtcBrowser();
  */
 
 // One-time RTCPeerConnection patches applied at startup:
-//   1. ICE gathering timeout — prevents Chromium's 10 s hang on VPN/virtual adapters.
 //   2. Unreliable data channels — all Trystero channels get UDP-like semantics
 //      (maxPacketLifeTime 150 ms). Game state is latest-wins so stale packets
 //      should be dropped, not queued. Critical actions have app-layer retries.
-//      Disabled on WebKit/Safari, where partial-reliability data channels are a
-//      higher compatibility risk during initial Trystero handshakes.
-//   3. SCTP warm-up — 1200-byte dummy on first channel open triggers PMTU
-//      discovery and stabilises the congestion window before real traffic flows.
-//      Also disabled on WebKit/Safari for the same compatibility reason.
+//      Disabled on WebKit/Safari: empirical — no current public bug citation for
+//      Safari breaking partial-reliability handshakes (webkit.org/b/173052 was
+//      historical), but Safari data-channel behaviour under load is less tested.
+//   3. SCTP warm-up — 1200-byte dummy on first channel open. 1200 bytes is the
+//      conservative SCTP/IP MTU floor (RFC 8831 §5.1). Sending early triggers
+//      PMTU discovery and widens the cwnd before real traffic flows. Not a
+//      documented WebRTC best practice; treat as empirical optimisation.
+//      Disabled on WebKit/Safari for the same reason as (2).
 export const patchIceGatheringTimeout = () => {
     if (typeof RTCPeerConnection === 'undefined') return;
     /** @type {PatchedPeerCtor} */
@@ -115,11 +117,11 @@ export const INTRODUCER_TTL_WARM_MS = 8 * 3600_000;  // 8h
 
 const buildRtcConfig = (rtcConfig) => {
     const base = rtcConfig || { iceServers: STUN_SERVERS };
-    // iceCandidatePoolSize pre-gathers candidates to hide gathering latency.
-    // Disabled on Safari: Trystero pre-warms 20 offer PCs, so 20×3 = 60 concurrent
-    // gather requests overwhelm Safari's ICE scheduler and most PCs stay at
-    // iceGatheringState:"new". Safari also doesn't start gathering on data-channel
-    // offers until setRemoteDescription is called, so pre-gathering is wasted anyway.
+    // iceCandidatePoolSize pre-gathers candidates to hide gathering latency (MDN).
+    // Disabled on Safari: empirical — no citation for "Safari ICE scheduler stalls
+    // under concurrent gather load" or "data-channel offers don't gather until
+    // setRemoteDescription." Observed in practice with Trystero's 20-PC offer pool
+    // (20×3 = 60 concurrent gathers) but treat as unconfirmed until reproduced.
     const poolSize = isWebKitRtcBrowser() ? 0 : 3;
     return { ...base, iceCandidatePoolSize: poolSize };
 };

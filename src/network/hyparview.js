@@ -69,11 +69,13 @@ export class HyParView {
     }
 
     // Return a small sample of passive peers to exchange during a SHUFFLE round.
-    // Uses timestamp-based offset instead of Math.random to stay deterministic.
-    shuffle() {
+    // seed: caller mixes selfId hash ^ Date.now() so each node picks a different
+    // subset even when all nodes shuffle simultaneously (paper §4 requires random
+    // partial-view selection; Math.random() is banned in networking per policy).
+    shuffle(seed = Date.now()) {
         const passive = Array.from(this._passive);
         if (passive.length === 0) return [];
-        const offset = Date.now() % Math.max(passive.length, 1);
+        const offset = (seed >>> 0) % passive.length;
         const result = [];
         for (let i = 0; i < Math.min(SHUFFLE_SIZE, passive.length); i++) {
             result.push(passive[(offset + i) % passive.length]);

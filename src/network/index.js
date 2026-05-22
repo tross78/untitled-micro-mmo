@@ -887,6 +887,7 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
         const [sendShuffle, getShuffle] = r.makeAction('hpv_shuffle');
         const [sendLazyPull, getLazyPull] = r.makeAction('lazy_pull');
         const [sendLazyPush, getLazyPush] = r.makeAction('lazy_push');
+        const [sendGraft, getGraft] = r.makeAction('plum_graft');
 
         const hpv = new HyParView();
 
@@ -946,14 +947,15 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getShuffle((peerIds, peerId) => {
             hpv.mergeShuffle(peerIds, selfId);
-            const reply = hpv.shuffle();
+            const reply = hpv.shuffle((hashStr(selfId) ^ Date.now()) >>> 0);
             if (reply.length > 0 && shardKnownPeers.has(peerId)) sendShuffle(reply, [peerId]);
         });
         const shuffleTimer = setInterval(() => {
             const eager = connectedOnly(hpv.eagerPeers());
             if (eager.length === 0) return;
-            const target = eager[Date.now() % eager.length | 0];
-            const sample = hpv.shuffle();
+            const seed = (hashStr(selfId) ^ Date.now()) >>> 0;
+            const target = eager[seed % eager.length];
+            const sample = hpv.shuffle(seed);
             if (sample.length > 0) sendShuffle(sample, [target]);
         }, 30_000);
 
@@ -1103,12 +1105,20 @@ export const joinInstance = async (location, instanceId, rtcConfig) => {
 
         getAnnounce(async ({ msgId, type }, peerId) => {
             if (hpv.hasSeen(msgId)) return;
+            // Plumtree GRAFT (Leitão et al. 2012, §4.1): on cache miss, promote the
+            // sender locally AND tell them to promote us in their eager tree, so future
+            // messages flow directly rather than requiring another announce+pull round trip.
             hpv.promote(peerId);
+            sendGraft(null, [peerId]);
             if (!type || type === 'presence') {
                 sendRequest([peerId], [peerId]);
             } else {
                 sendLazyPull(msgId, [peerId]);
             }
+        });
+
+        getGraft((_, peerId) => {
+            hpv.promote(peerId);
         });
 
         getLazyPull((msgId, peerId) => {
