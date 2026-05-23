@@ -51,6 +51,20 @@ const testWorld = {
         tileOverrides: [{ x: 3, y: 3, type: 'wall' }, { x: 5, y: 5, type: 'water' }],
         scenery: [{ x: 7, y: 7, w: 2, h: 1, label: 'barrel' }],
     },
+    ruins: {
+        name: 'Ruins', width: 11, height: 11,
+        exits: { north: 'ruins_descent' },
+        exitTiles: [{ x: 5, y: 0, w: 1, h: 1, dest: 'ruins_descent', destX: 5, destY: 9, type: 'stairs' }],
+        tileOverrides: [],
+        scenery: [],
+    },
+    ruins_descent: {
+        name: 'Ruins Descent', width: 11, height: 11,
+        exits: { south: 'ruins' },
+        exitTiles: [{ x: 5, y: 10, w: 1, h: 1, dest: 'ruins', destX: 10, destY: 1, type: 'stairs' }],
+        tileOverrides: [],
+        scenery: [],
+    },
     hallway: { name: 'Hallway', width: 12, height: 10, exits: { south: 'cellar' }, exitTiles: [], tileOverrides: [], scenery: [] },
 };
 
@@ -233,6 +247,15 @@ describe('MovementSystem', () => {
         await system.handleMove(eid, transform, 'n');
         // Should transition to hallway
         expect(transform.mapId).toBe('hallway');
+    });
+
+    test('handleMove transitions via boundary stair tile', async () => {
+        const eid = world.createEntity();
+        const transform = { mapId: 'ruins', x: 5, y: 1, facing: 'n' };
+        world.setComponent(eid, Component.Transform, transform);
+        world.setComponent(eid, Component.PlayerControlled, {});
+        await system.handleMove(eid, transform, 'n');
+        expect(transform.mapId).toBe('ruins_descent');
     });
 
     test('handleMove OOB with no exit bumps', async () => {

@@ -1,6 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
+import { findSafeArrival } from '../rules/index.js';
 
 /**
  * WorldSyncSystem ensures entities in the canonical stores (players, shardEnemies)
@@ -18,6 +19,26 @@ export class WorldSyncSystem {
         this.worldData = worldData;
         this.entityMap = new Map(); // originalId -> entityId
         this.prevPos = new Map();   // peerId -> { x, y, location }
+    }
+
+    isWalkable(roomData) {
+        const blocked = new Set();
+        for (const tile of roomData.tileOverrides || []) {
+            if (tile.type === 'wall') blocked.add(`${tile.x},${tile.y}`);
+        }
+        for (const scenery of roomData.scenery || []) {
+            const w = scenery.w || 1;
+            const h = scenery.h || 1;
+            for (let dy = 0; dy < h; dy++) {
+                for (let dx = 0; dx < w; dx++) {
+                    blocked.add(`${scenery.x + dx},${scenery.y + dy}`);
+                }
+            }
+        }
+        return (x, y) => {
+            if (x < 0 || y < 0 || x >= roomData.width || y >= roomData.height) return false;
+            return !blocked.has(`${x},${y}`);
+        };
     }
 
     update() {
@@ -125,10 +146,19 @@ export class WorldSyncSystem {
             this.world.setComponent(eid, Component.Sprite, { type: enemyType, palette: 'enemy', seed: this.hash(enemyType) });
             const existingTransform = this.world.getComponent(eid, Component.Transform);
             if (!existingTransform || existingTransform.mapId !== currentLoc) {
+                const startX = roomData.enemyX ?? Math.floor(roomData.width / 2);
+                const startY = roomData.enemyY ?? Math.floor(roomData.height / 2);
+                const safe = findSafeArrival(
+                    startX,
+                    startY,
+                    roomData.width,
+                    roomData.height,
+                    this.isWalkable(roomData)
+                ) || { x: startX, y: startY };
                 this.world.setComponent(eid, Component.Transform, {
                     mapId: currentLoc,
-                    x: roomData.enemyX ?? 5,
-                    y: roomData.enemyY ?? 5
+                    x: safe.x,
+                    y: safe.y
                 });
             }
             const { ENEMIES } = require('../content/data.js');

@@ -1,4 +1,5 @@
 import { rooms } from './data/rooms.js';
+export { ROOM_BIBLE } from './data/room-bible.js';
 
 export const world = rooms;
 
@@ -26,6 +27,7 @@ export {
     DEFAULT_PLAYER_STATS, 
     INSTANCE_CAP 
 } from './data/constants.js';
+export { TILE_BIBLE, SCENERY_AUTHORING_RULES, TILE_IDS, SCENERY_IDS } from './data/tile-bible.js';
 
 export { ITEMS } from './data/items.js';
 export { ENEMIES } from './data/enemies.js';

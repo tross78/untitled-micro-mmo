@@ -92,25 +92,32 @@ export class WeatherRenderSystem {
 
     drawFog(ctx, zone, alpha = 1, gameTime = 0, topY = 0) {
         const maxAlpha = zone === 'wilderness' ? 0.38 : 0.18;
-        // 24px patches (vs 12px) halves iteration count with imperceptible quality loss on mobile
-        const patch = 24;
+        // Chunky patch clusters read more like pixel-art fog than soft gradients.
+        const patch = zone === 'wilderness' ? 16 : 20;
         // Only iterate the visible world rows — bottom chrome is clipped and wastes CPU
         const worldH = (this.VP.worldPxH ?? this.VP.CH) + patch;
         for (let row = 0; row < worldH; row += patch) {
             for (let x = 0; x < this.VP.CW; x += patch) {
                 // Three incommensurate waves at different speeds/directions — breaks up banding
-                const w1 = Math.sin(gameTime * 0.31 + x * 0.071 + row * 0.113);
-                const w2 = Math.sin(gameTime * 0.19 - x * 0.053 + row * 0.079 + 2.1);
-                const w3 = Math.sin(gameTime * 0.47 + x * 0.097 - row * 0.061 + 4.7);
+                const w1 = Math.sin(gameTime * 0.27 + x * 0.083 + row * 0.121);
+                const w2 = Math.sin(gameTime * 0.17 - x * 0.057 + row * 0.093 + 2.1);
+                const w3 = Math.sin(gameTime * 0.41 + x * 0.097 - row * 0.067 + 4.7);
                 // Per-patch static noise via cheap integer hash
                 const hash = ((x * 1619 + row * 31337) ^ (x >> 3)) & 0xffff;
-                const staticNoise = (hash / 0xffff) * 0.4 - 0.2; // -0.2..+0.2
+                const staticNoise = (hash / 0xffff) * 0.5 - 0.25; // -0.25..+0.25
                 const combined = (w1 + w2 + w3) / 3 + staticNoise;
-                if (combined <= 0.05) continue;
-                const patchAlpha = maxAlpha * alpha * Math.min(1, (combined - 0.05) * 1.5);
+                if (combined <= 0.08) continue;
+                const patchAlpha = maxAlpha * alpha * Math.min(1, (combined - 0.08) * 1.7);
                 const paletteIdx = Math.min(100, Math.max(0, Math.round(patchAlpha * 100)));
                 ctx.fillStyle = this._fogPalette[paletteIdx];
-                ctx.fillRect(x, topY + row, patch, patch);
+                const px = x + ((hash >> 1) & 1);
+                const py = topY + row + ((hash >> 2) & 1);
+                const w = patch - (((hash >> 3) & 1) + 1);
+                const h = patch - (((hash >> 4) & 1) + 1);
+                ctx.fillRect(px, py, w, h);
+                if (((hash >> 5) & 3) === 0) {
+                    ctx.fillRect(px + 2, py + 1, Math.max(2, Math.floor(w * 0.35)), Math.max(2, Math.floor(h * 0.35)));
+                }
             }
         }
     }

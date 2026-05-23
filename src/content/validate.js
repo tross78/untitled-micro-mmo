@@ -2,6 +2,7 @@
 import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants.js';
 import { findSafeArrival } from '../rules/index.js';
 import { COMPILED_ASSET_SHAPES } from '../generated/assets/compiled-assets.js';
+import { TILE_BIBLE, SCENERY_AUTHORING_RULES } from './data/tile-bible.js';
 
 // Runtime sprite shapes defined in graphics.js — valid sprite names for NPCs/enemies
 const RUNTIME_SPRITE_NAMES = new Set([
@@ -33,6 +34,72 @@ const RESOURCE_LABEL_TO_ITEM = {
 
 const hasDuplicateIds = (definitions) => new Set(definitions.map((entry) => entry.id)).size !== definitions.length;
 
+const roomContextTags = (room) => {
+  const tags = new Set(['all', room.zone]);
+  if (room.zone === 'town') tags.add('settlement');
+  if (room.zone === 'wilderness') tags.add('outdoor');
+  if (room.zone === 'dungeon') tags.add('underground');
+
+  const id = String(room.id || '').toLowerCase();
+  if (/(forest|crossroads|lake|shore|harbour|harbor|field|meadow|camp|cemetery|mountain|pass|path|ruins)/.test(id)) {
+    tags.add('outdoor');
+  }
+  if (/(cellar|hallway|tavern|library|mill|hut|shop|market|cell|den|room|tower|throne|crypt|catacomb|dungeon|sanctum|watchtower|house)/.test(id)) {
+    tags.add('indoor');
+    tags.add('settlement');
+  }
+  if (/(harbour|harbor|shore|lake|sea)/.test(id)) tags.add('shore');
+  if (/(cave|catacomb|dungeon|crypt|throne|ruins|tower|descent|cell|den)/.test(id)) tags.add('underground');
+  if (/(frozen|ice|snow|mountain)/.test(id)) tags.add('frozen');
+  if (/(ruins|ruin)/.test(id)) tags.add('ruins');
+  return tags;
+};
+
+const guideMatchesContext = (guide, tags) =>
+  guide.contexts.includes('all') || guide.contexts.some((ctx) => tags.has(ctx));
+
+const isNearWall = (room, sc) => {
+  const w = sc.w || 1;
+  const h = sc.h || 1;
+  const minEdge = Math.min(sc.x, sc.y, room.width - (sc.x + w), room.height - (sc.y + h));
+  const wallBand = Math.max(3, Math.floor(Math.min(room.width, room.height) / 3));
+  return minEdge <= wallBand;
+};
+
+const getTileAt = (room, x, y) => {
+  const override = (room.tileOverrides || []).find((t) => t.x === x && t.y === y);
+  return override?.type || null;
+};
+
+const findWaterComponents = (room) => {
+  const water = new Set();
+  for (const tile of room.tileOverrides || []) {
+    if (tile.type === 'water') water.add(`${tile.x},${tile.y}`);
+  }
+  const components = [];
+  const seen = new Set();
+  for (const key of water) {
+    if (seen.has(key)) continue;
+    const queue = [key];
+    const component = [];
+    seen.add(key);
+    while (queue.length) {
+      const current = queue.shift();
+      component.push(current);
+      const [x, y] = current.split(',').map((n) => +n);
+      for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+        const next = `${x + dx},${y + dy}`;
+        if (water.has(next) && !seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    components.push(component);
+  }
+  return components;
+};
+
 export const validateContent = (defs) => {
   if (!defs) throw new Error('validateContent: defs argument is required (ESM module — cannot use require). Pass the result of importing ./index.js.');
   const { itemDefinitions, enemyDefinitions, roomDefinitions, npcDefinitions, questDefinitions, recipeDefinitions } = defs;
@@ -60,6 +127,15 @@ export const validateContent = (defs) => {
     }
   }
 
+  for (const tileId of VALID_TILES) {
+    if (!TILE_BIBLE[tileId]) {
+      problems.push(`Tile "${tileId}" is missing a bible entry`);
+    } else if (!TILE_BIBLE[tileId].description) {
+      problems.push(`Tile "${tileId}" is missing a descriptive bible entry`);
+    }
+  }
+
+  const roomBible = defs.ROOM_BIBLE || {};
   const roomIds = new Set(rooms.map((room) => room.id));
   const itemIds = new Set(items.map((item) => item.id));
   const enemyIds = new Set(enemies.map((enemy) => enemy.id));
@@ -102,6 +178,11 @@ export const validateContent = (defs) => {
   };
 
   for (const room of rooms) {
+    const contextTags = roomContextTags(room);
+    const brief = roomBible[room.id];
+    if (brief && (!brief.summary || !brief.anchor || !brief.circulation)) {
+      problems.push(`Room "${room.id}" has an incomplete room bible entry`);
+    }
     // --- Visual Grammar Validation (Phase 8.55a) ---
     for (const to of room.tileOverrides || []) {
       if (to.type && !VALID_TILES.has(to.type)) {
@@ -111,6 +192,14 @@ export const validateContent = (defs) => {
     for (const sc of room.scenery || []) {
       if (sc.label && !VALID_SCENERY.has(sc.label)) {
         problems.push(`Room "${room.id}" uses non-canonical scenery label "${sc.label}"`);
+        continue;
+      }
+      const guide = SCENERY_AUTHORING_RULES[sc.label];
+      if (guide && !guideMatchesContext(guide, contextTags)) {
+        problems.push(`Room "${room.id}" places "${sc.label}" in a context the tile bible does not support`);
+      }
+      if (guide?.wallAnchored && !isNearWall(room, sc)) {
+        problems.push(`[warn] Room "${room.id}" places "${sc.label}" away from a wall or edge`);
       }
     }
     for (const scatter of room.sceneryScatter || []) {
@@ -122,6 +211,16 @@ export const validateContent = (defs) => {
         const itemId = RESOURCE_LABEL_TO_ITEM[scatter.label];
         if (itemId) noteSource(itemId, `gather:${room.id}`);
         else problems.push(`Room "${room.id}" uses unknown resource label "${scatter.label}"`);
+      }
+    }
+    for (const component of findWaterComponents(room)) {
+      if (component.length <= 1) {
+        const [x, y] = component[0].split(',').map((n) => +n);
+        const cardinalWaterNeighbors = [[0,1], [0,-1], [1,0], [-1,0]]
+          .filter(([dx, dy]) => getTileAt(room, x + dx, y + dy) === 'water');
+        if (cardinalWaterNeighbors.length === 0) {
+          problems.push(`[warn] Room "${room.id}" contains an isolated one-tile water patch at (${x},${y})`);
+        }
       }
     }
     const density = room.terrain?.density;

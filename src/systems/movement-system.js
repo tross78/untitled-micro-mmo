@@ -131,6 +131,16 @@ export class MovementSystem {
         return;
     }
 
+    const stairTile = (loc.exitTiles || []).find(t =>
+        t.type === 'stairs' &&
+        nx >= t.x && nx < t.x + (t.w || 1) &&
+        ny >= t.y && ny < t.y + (t.h || 1)
+    );
+    if (stairTile && this.isBoundaryExitTile(stairTile, loc)) {
+        await this.performTransition(entityId, transform, stairTile.dest, stairTile.destX, stairTile.destY);
+        return;
+    }
+
     // 2. Check Bounds — LttP-style full-edge transitions, preserving player position offset
     if (nx < 0 || nx >= loc.width || ny < 0 || ny >= loc.height) {
       const boundaryExit = this.findBoundaryExit(loc, transform.x, transform.y, dir);
@@ -436,6 +446,12 @@ export class MovementSystem {
       if (dir === 'w') return tile.x === 0 && y >= tile.y && y < tile.y + height;
       return false;
     }) || null;
+  }
+
+  isBoundaryExitTile(tile, loc) {
+    const width = tile.w || 1;
+    const height = tile.h || 1;
+    return tile.x === 0 || tile.y === 0 || tile.x + width === loc.width || tile.y + height === loc.height;
   }
 
   roomHasBoundaryExit(loc, dir) {

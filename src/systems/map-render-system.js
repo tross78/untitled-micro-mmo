@@ -1,6 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
+import { shapePool } from '../content/define.js';
 import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta, usesCompiledShape } from '../graphics/graphics.js';
 import { SCENERY_RENDER_STYLE, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { hashStr } from '../rules/index.js';
@@ -148,6 +149,11 @@ export class MapRenderSystem {
         // Build a Map of override positions for O(1) lookup
         const overrideMap = new Map();
         for (const o of (loc.tileOverrides || [])) overrideMap.set(`${o.x},${o.y}`, o.type);
+        const poolTiles = new Set(
+            Array.isArray(loc.terrain?.pools) && loc.terrain.pools.length
+                ? loc.terrain.pools.flatMap((pool, index) => shapePool(pool, loc.id, index).map((tile) => `${tile.x},${tile.y}`))
+                : []
+        );
         const getTileAt = (x, y) => {
             if (x < 0 || y < 0 || x >= loc.width || y >= loc.height) return null;
             return overrideMap.get(`${x},${y}`) || tileType;
@@ -166,6 +172,7 @@ export class MapRenderSystem {
             for (let wx = 0; wx < loc.width; wx++) {
                 const type = getTileAt(wx, wy);
                 const seed = baseHash ^ (wx * 7919) ^ (wy * 6271);
+                if (poolTiles.has(`${wx},${wy}`)) continue;
                 drawTile(octx, type, wx * this.VP.S, wy * this.VP.S, seed, this.VP.S, {
                     north: getTileAt(wx, wy - 1),
                     south: getTileAt(wx, wy + 1),
@@ -174,7 +181,167 @@ export class MapRenderSystem {
                 });
             }
         }
+
+        if (Array.isArray(loc.terrain?.pools) && loc.terrain.pools.length) {
+            this.drawTerrainPools(octx, loc, poolTiles, baseHash);
+        }
         this.tileCache = { locKey, canvas: off };
+    }
+
+    drawTerrainPools(ctx, loc, poolTiles, baseHash) {
+        const S = this.VP.S;
+        const seeded = (x, y, salt) => {
+            let v = (baseHash ^ (x * 374761393) ^ (y * 668265263) ^ salt) >>> 0;
+            v ^= v >>> 13;
+            v = Math.imul(v, 1274126177) >>> 0;
+            return v >>> 0;
+        };
+
+            const drawContour = (tiles, paletteSeed, type = 'water') => {
+                const occupied = new Set(tiles.map((t) => `${t.x},${t.y}`));
+                const edges = [];
+            const pushEdge = (sx, sy, ex, ey) => {
+                edges.push({ sx, sy, ex, ey, start: `${sx},${sy}`, end: `${ex},${ey}` });
+            };
+
+            for (const tile of tiles) {
+                const { x, y } = tile;
+                if (!occupied.has(`${x},${y - 1}`)) pushEdge(x, y, x + 1, y);
+                if (!occupied.has(`${x + 1},${y}`)) pushEdge(x + 1, y, x + 1, y + 1);
+                if (!occupied.has(`${x},${y + 1}`)) pushEdge(x + 1, y + 1, x, y + 1);
+                if (!occupied.has(`${x - 1},${y}`)) pushEdge(x, y + 1, x, y);
+            }
+
+            const starts = new Map();
+            edges.forEach((edge, idx) => {
+                if (!starts.has(edge.start)) starts.set(edge.start, []);
+                starts.get(edge.start).push(idx);
+            });
+
+            const used = new Set();
+            const loops = [];
+            const pickNext = (startKey) => {
+                const list = starts.get(startKey) || [];
+                for (const idx of list) {
+                    if (!used.has(idx)) return idx;
+                }
+                return null;
+            };
+
+            for (let i = 0; i < edges.length; i++) {
+                if (used.has(i)) continue;
+                const loop = [];
+                let current = edges[i];
+                used.add(i);
+                loop.push([current.sx, current.sy]);
+                let guard = 0;
+                while (guard++ < edges.length + 8) {
+                    loop.push([current.ex, current.ey]);
+                    const nextIndex = pickNext(current.end);
+                    if (nextIndex == null) break;
+                    current = edges[nextIndex];
+                    if (used.has(nextIndex)) break;
+                    used.add(nextIndex);
+                    if (current.end === `${loop[0][0]},${loop[0][1]}`) {
+                        loop.push([current.ex, current.ey]);
+                        break;
+                    }
+                }
+                if (loop.length > 3) loops.push(loop);
+            }
+
+            const pathForLoop = (loop, inset = 0) => {
+                const pts = loop.map(([gx, gy]) => ({
+                    x: gx * S + inset,
+                    y: gy * S + inset,
+                }));
+                if (pts.length < 3) return;
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length - 1; i++) {
+                    const prev = pts[i - 1];
+                    const cur = pts[i];
+                    const next = pts[i + 1];
+                    const m1x = (prev.x + cur.x) / 2;
+                    const m1y = (prev.y + cur.y) / 2;
+                    const m2x = (cur.x + next.x) / 2;
+                    const m2y = (cur.y + next.y) / 2;
+                    ctx.lineTo(m1x, m1y);
+                    ctx.quadraticCurveTo(cur.x, cur.y, m2x, m2y);
+                }
+                ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+                ctx.closePath();
+            };
+
+            const renderLayer = (fillStyle, inset, alpha = 1, blur = 0) => {
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = fillStyle;
+                ctx.strokeStyle = fillStyle;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.lineWidth = Math.max(1, S * 0.08);
+                for (const loop of loops) {
+                    pathForLoop(loop, inset);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+                if (blur > 0) {
+                    ctx.globalAlpha = alpha * 0.5;
+                    ctx.fillStyle = '#60c0e8';
+                    for (const loop of loops) {
+                        pathForLoop(loop, inset + 1);
+                        ctx.fill();
+                    }
+                }
+                ctx.restore();
+            };
+
+            const paletteForType = (type) => {
+                if (type === 'ice') {
+                    return [
+                        { fillStyle: '#6fa8c8', inset: 0, alpha: 1.0, blur: 0 },
+                        { fillStyle: '#9bd0ea', inset: 1, alpha: 0.92, blur: 0 },
+                        { fillStyle: '#e9fbff', inset: 2, alpha: 0.76, blur: 1 },
+                    ];
+                }
+                if (type === 'sand') {
+                    return [
+                        { fillStyle: '#a88840', inset: 0, alpha: 1.0, blur: 0 },
+                        { fillStyle: '#d8bc70', inset: 1, alpha: 0.92, blur: 0 },
+                        { fillStyle: '#f8eebc', inset: 2, alpha: 0.78, blur: 0 },
+                    ];
+                }
+                return [
+                    { fillStyle: '#0c2c68', inset: 0, alpha: 1.0, blur: 0 },
+                    { fillStyle: '#1848a8', inset: 1, alpha: 0.94, blur: 0 },
+                    { fillStyle: '#2870c8', inset: 2, alpha: 0.82, blur: 1 },
+                ];
+            };
+
+            for (const layer of paletteForType(type)) {
+                renderLayer(layer.fillStyle, layer.inset, layer.alpha, layer.blur);
+            }
+
+            // Shoreline sparkle and soft variation over the room-level blob.
+            ctx.save();
+            ctx.fillStyle = type === 'ice' ? '#ffffff' : (type === 'sand' ? '#f8eebc' : '#60c0e8');
+            for (const tile of tiles) {
+                const px = tile.x * S + S / 2;
+                const py = tile.y * S + S / 2;
+                const seed = seeded(tile.x, tile.y, paletteSeed ^ 0x9e3779b9);
+                if ((seed & 3) === 0) ctx.fillRect(px - 2, py - 5, 5, 1);
+                if ((seed & 7) === 0) ctx.fillRect(px + 1, py - 1, 2, 1);
+            }
+            ctx.restore();
+        };
+
+        const byPool = Array.isArray(loc.terrain?.pools) ? loc.terrain.pools : [];
+        byPool.forEach((pool, index) => {
+            const tiles = shapePool(pool, loc.id, index);
+            if (!tiles.length) return;
+            drawContour(tiles, index * 101, pool.type || 'water');
+        });
     }
 
     drawExitArrow(ctx, ex, loc, sx, sy, screenOffsetX, screenOffsetY, gameTime = 0) {

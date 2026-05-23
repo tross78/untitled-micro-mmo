@@ -1,4 +1,4 @@
-import { defineRoom } from '../content/define.js';
+import { defineRoom, shapePool } from '../content/define.js';
 import { validateContent } from '../content/validate.js';
 import { SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { getScatteredContent } from '../rules/world.js';
@@ -91,6 +91,26 @@ describe('Phase 8.5c: Constrained Terrain Generation', () => {
 
         expect(blockA).toBeFalsy();
         expect(blockB).toBeFalsy();
+    });
+
+    test('pool shaping generates deterministic irregular pools', () => {
+        const pool = { x: 5, y: 5, rx: 3, ry: 2, taper: 'south', irregularity: 0.2 };
+        const a = shapePool(pool, 'pool_test');
+        const b = shapePool(pool, 'pool_test');
+
+        expect(a).toEqual(b);
+        expect(a.length).toBeGreaterThan(0);
+        expect(a.length).toBeLessThan(25);
+        expect(a.some((cell) => cell.x === 5 && cell.y === 5 && cell.type === 'water')).toBe(true);
+        expect(a.some((cell) => cell.x === 1 && cell.y === 1)).toBe(false);
+    });
+
+    test('pool shaping preserves custom pool types', () => {
+        const icePool = shapePool({ x: 5, y: 5, rx: 3, ry: 2, type: 'ice' }, 'ice_pool_test');
+        const sandPool = shapePool({ x: 5, y: 5, rx: 3, ry: 2, type: 'sand' }, 'sand_pool_test');
+
+        expect(icePool.every((cell) => cell.type === 'ice')).toBe(true);
+        expect(sandPool.every((cell) => cell.type === 'sand')).toBe(true);
     });
 
     test('generated clutter uses canonical dimensions instead of tiny fallback props', () => {

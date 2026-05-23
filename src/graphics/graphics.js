@@ -12,6 +12,7 @@ function tileRng(seed) {
 import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { COMPILED_ASSET_SHAPES, COMPILED_ASSET_META } from '../generated/assets/compiled-assets.js';
 import { NPC_IDLE_FRAMES } from './npc-idle-frames.js';
+import { TILE_BIBLE } from '../content/data/tile-bible.js';
 
 /**
  * Fenhollow Graphics Bible & Tile Taxonomy (Phase 8.55a)
@@ -73,8 +74,18 @@ function getBlendProfile(tileType, neighborType) {
     const profiles = {
         'grass->dirt': { side: '#7a5a28', accent: '#a88446', mode: 'tuft' },
         'grass->cobble': { side: '#7a5a28', accent: '#9a907e', mode: 'tuft' },
+        'grass->water': { side: '#6aa03a', accent: '#8ed0ff', mode: 'shore' },
         'forest->grass': { side: '#2c5a1c', accent: '#6ea040', mode: 'tuft' },
         'forest->dirt': { side: '#5a3418', accent: '#7c5e30', mode: 'tuft' },
+        'forest->water': { side: '#24461a', accent: '#7ac8ff', mode: 'shore' },
+        'dirt->water': { side: '#7a5a28', accent: '#8ccae8', mode: 'shore' },
+        'sand->water': { side: '#d8c88a', accent: '#8ccae8', mode: 'shore' },
+        'stone_floor->wall': { side: '#504840', accent: '#b8aea0', mode: 'frame' },
+        'cobble->wall': { side: '#4c443c', accent: '#b0a89c', mode: 'frame' },
+        'interior->wall': { side: '#6a4018', accent: '#d09868', mode: 'frame' },
+        'dungeon->wall': { side: '#383c60', accent: '#96a8d0', mode: 'frame' },
+        'cave->wall': { side: '#4a2e1c', accent: '#9a7050', mode: 'frame' },
+        'mud->water': { side: '#35271b', accent: '#88bfe0', mode: 'shore' },
         'wall->stone_floor': { side: '#302c28', accent: '#a09488', mode: 'shadow' },
         'wall->dirt': { side: '#302018', accent: '#704a24', mode: 'shadow' },
         'wall->interior': { side: '#302018', accent: '#a46c3c', mode: 'shadow' },
@@ -87,6 +98,103 @@ function getBlendProfile(tileType, neighborType) {
         'ice->sand': { side: '#8bb6d4', accent: '#f2f5de', mode: 'crack' },
     };
     return profiles[key] || null;
+}
+
+function getNeighborSignature(tileType, neighbors) {
+    if (!neighbors) return 0;
+    return (
+        (neighbors.north === tileType ? 1 : 0) |
+        (neighbors.south === tileType ? 2 : 0) |
+        (neighbors.west === tileType ? 4 : 0) |
+        (neighbors.east === tileType ? 8 : 0)
+    );
+}
+
+function edgeState(neighbors, tileType) {
+    if (!neighbors) return 'isolated';
+    const same = sameNeighborCount(neighbors, tileType);
+    if (same === 4) return 'center';
+    if (same >= 2) return 'interior';
+    if (same === 1) return 'edge';
+    return 'isolated';
+}
+
+function sameNeighborCount(neighbors, tileType) {
+    if (!neighbors) return 0;
+    let count = 0;
+    for (const dir of ['north', 'south', 'west', 'east']) {
+        if (neighbors[dir] === tileType) count++;
+    }
+    return count;
+}
+
+function fillRoundedRect(ctx, x, y, w, h, r) {
+    const radius = Math.max(0, Math.min(r, Math.floor(Math.min(w, h) / 2)));
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(x, y, w, h, radius);
+        ctx.fill();
+        return;
+    }
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function drawCornerBlend(ctx, tileType, cx, cy, neighbors, S) {
+    if (!neighbors) return;
+    const corners = [
+        { dirs: ['north', 'west'], x: 0, y: 0 },
+        { dirs: ['north', 'east'], x: S - 3, y: 0 },
+        { dirs: ['south', 'west'], x: 0, y: S - 3 },
+        { dirs: ['south', 'east'], x: S - 3, y: S - 3 },
+    ];
+
+    for (const corner of corners) {
+        const [aDir, bDir] = corner.dirs;
+        const a = neighbors[aDir];
+        const b = neighbors[bDir];
+        if (a === tileType || b === tileType) continue;
+
+        const profile = getBlendProfile(tileType, a) || getBlendProfile(tileType, b);
+        if (!profile) continue;
+
+        const px = cx + corner.x;
+        const py = cy + corner.y;
+        if (profile.mode === 'foam' || profile.mode === 'shore') {
+            ctx.fillStyle = profile.side;
+            ctx.fillRect(px, py, 3, 1);
+            ctx.fillRect(px, py + 1, 2, 1);
+            ctx.fillRect(px + 1, py + 2, 1, 1);
+            ctx.fillStyle = profile.accent;
+            ctx.fillRect(px + 1, py + 1, 1, 1);
+        } else if (profile.mode === 'shadow' || profile.mode === 'frame') {
+            ctx.fillStyle = profile.side;
+            ctx.fillRect(px, py, 3, 1);
+            ctx.fillRect(px, py, 1, 3);
+            ctx.fillRect(px + 1, py + 2, 2, 1);
+            ctx.fillStyle = profile.accent;
+            ctx.fillRect(px + 1, py + 1, 1, 1);
+        } else if (profile.mode === 'tuft') {
+            ctx.fillStyle = profile.side;
+            ctx.fillRect(px + 1, py, 1, 2);
+            ctx.fillRect(px, py + 1, 2, 1);
+            ctx.fillRect(px + 2, py + 1, 1, 1);
+            ctx.fillStyle = profile.accent;
+            ctx.fillRect(px + 1, py + 1, 1, 1);
+        } else if (profile.mode === 'crack') {
+            ctx.fillStyle = profile.side;
+            ctx.fillRect(px, py, 1, 1);
+            ctx.fillRect(px + 1, py + 1, 1, 1);
+            ctx.fillRect(px + 2, py, 1, 1);
+            ctx.fillStyle = profile.accent;
+            ctx.fillRect(px + 2, py + 1, 1, 1);
+        }
+    }
 }
 
 function blendTileEdges(ctx, tileType, cx, cy, neighbors, S) {
@@ -106,17 +214,51 @@ function blendTileEdges(ctx, tileType, cx, cy, neighbors, S) {
             ctx.fillRect(cx + ox, cy + oy, w, h);
             ctx.globalAlpha = 1.0;
             ctx.fillStyle = profile.accent;
-            if (dir === 'north' || dir === 'south') ctx.fillRect(cx + 2, cy + oy, S - 4, 1);
-            else ctx.fillRect(cx + ox, cy + 2, 1, S - 4);
+            if (dir === 'north' || dir === 'south') {
+                ctx.fillRect(cx + 2, cy + oy, S - 4, 1);
+                ctx.fillRect(cx + 4, cy + oy + 1, S - 8, 1);
+            } else {
+                ctx.fillRect(cx + ox, cy + 2, 1, S - 4);
+                ctx.fillRect(cx + ox + 1, cy + 4, 1, S - 8);
+            }
             continue;
         }
 
-        if (dir === 'north' || dir === 'south') {
+        if (profile.mode === 'foam' || profile.mode === 'shore') {
+            const edgeY = dir === 'north' ? 0 : (dir === 'south' ? S - 3 : 0);
+            const edgeX = dir === 'west' ? 0 : (dir === 'east' ? S - 3 : 0);
+            if (dir === 'north' || dir === 'south') {
+                for (let x = 0; x < S; x += 2) {
+                    const pattern = (x + (dir === 'south' ? 1 : 0)) % 4;
+                    const yOff = pattern === 0 ? 0 : pattern === 1 ? 1 : 2;
+                    ctx.fillRect(cx + x, cy + edgeY + yOff, 2, 1);
+                    if (x % 4 === 0) ctx.fillRect(cx + x + 1, cy + edgeY + 1 + (pattern % 2), 1, 1);
+                    if (x % 6 === 0) ctx.fillRect(cx + x, cy + edgeY + 2, 1, 1);
+                    if (x % 8 === 0) ctx.fillRect(cx + x + 1, cy + edgeY + 2, 1, 1);
+                }
+            } else {
+                for (let y = 0; y < S; y += 2) {
+                    const pattern = (y + (dir === 'east' ? 1 : 0)) % 4;
+                    const xOff = pattern === 0 ? 0 : pattern === 1 ? 1 : 2;
+                    ctx.fillRect(cx + edgeX + xOff, cy + y, 1, 2);
+                    if (y % 4 === 0) ctx.fillRect(cx + edgeX + 1 + (pattern % 2), cy + y + 1, 1, 1);
+                    if (y % 6 === 0) ctx.fillRect(cx + edgeX + 2, cy + y, 1, 1);
+                    if (y % 8 === 0) ctx.fillRect(cx + edgeX + 2, cy + y + 1, 1, 1);
+                }
+            }
+            ctx.fillStyle = profile.accent;
+            if (dir === 'north' || dir === 'south') {
+                ctx.fillRect(cx + 2, cy + (dir === 'north' ? 2 : S - 4), S - 4, 1);
+            } else {
+                ctx.fillRect(cx + (dir === 'west' ? 2 : S - 4), cy + 2, 1, S - 4);
+            }
+        } else if (dir === 'north' || dir === 'south') {
             for (let x = 0; x < S; x += 2) {
                 const y0 = dir === 'north' ? 0 : S - 3;
                 ctx.fillRect(cx + x, cy + y0 + ((x / 2) % 2), 2, 1);
                 ctx.fillStyle = profile.accent;
                 ctx.fillRect(cx + x + (profile.mode === 'foam' ? 1 : 0), cy + y0 + 2, 1, 1);
+                if (profile.mode === 'shore' && x % 4 === 0) ctx.fillRect(cx + x + 1, cy + y0 + 1, 1, 1);
                 ctx.fillStyle = profile.side;
             }
         } else {
@@ -125,6 +267,7 @@ function blendTileEdges(ctx, tileType, cx, cy, neighbors, S) {
                 ctx.fillRect(cx + x0 + ((y / 2) % 2), cy + y, 1, 2);
                 ctx.fillStyle = profile.accent;
                 ctx.fillRect(cx + x0 + 2, cy + y + (profile.mode === 'foam' ? 1 : 0), 1, 1);
+                if (profile.mode === 'shore' && y % 4 === 0) ctx.fillRect(cx + x0 + 1, cy + y + 1, 1, 1);
                 ctx.fillStyle = profile.side;
             }
         }
@@ -140,23 +283,25 @@ function blendTileEdges(ctx, tileType, cx, cy, neighbors, S) {
             }
         }
     }
+    drawCornerBlend(ctx, tileType, cx, cy, neighbors, S);
 }
 
 export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = null) {
     const p = TILE_PAL[tileType] || TILE_PAL.stone_floor;
+    const guide = TILE_BIBLE[tileType] || TILE_BIBLE.stone_floor;
     // Use seed only to pick a variant (0-7), not per-pixel noise positions.
     // Invalid seeds can leak in from callers during partial world/bootstrap states.
     const safeSeed = Number.isFinite(rngSeed) ? Math.abs(Math.trunc(rngSeed)) : 0;
-    const variant = safeSeed % 8;
+    const variant = (safeSeed ^ (getNeighborSignature(tileType, neighbors) * 31)) % 8;
     const h = Math.floor(S / 2);
     const q = Math.floor(S / 4);
+    const motif = guide.motifs.length ? guide.motifs[variant % guide.motifs.length] : null;
 
     ctx.fillStyle = p.base;
     ctx.fillRect(cx, cy, S, S);
 
     if (tileType === 'grass' || tileType === 'forest') {
-        // 4 distinct sub-types (pairs of variants) each with a shifted base color
-        // v0-1: standard, v2-3: lush/damp, v4-5: dry/warm, v6-7: patchy/sparse
+        // Layered blades, tufts, and wear. The goal is a readably hand-authored turf tile.
         const grassBases = [
             p.base,    // v0-1: standard green
             '#386e22', // v2-3: lush, slightly cooler
@@ -167,90 +312,159 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         const subType = Math.floor(variant / 2);
         const baseColor = tileType === 'forest' ? (variant < 4 ? p.lo : '#1a3a10') : grassBases[subType];
         const hiColor   = tileType === 'forest' ? p.hi : grassHi[subType];
+        const shadowColor = tileType === 'forest' ? '#102808' : '#2e5318';
+        const state = edgeState(neighbors, tileType);
 
         ctx.fillStyle = baseColor;
         ctx.fillRect(cx, cy, S, S);
 
-        // 2 tuft patterns per sub-type
-        const tufts = [
-            [[2, S-6], [S-5, 3]],                    // v0
-            [[h-1, 2], [3, S-5], [S-4, h-1]],        // v1
-            [[2, 3], [S-5, S-6], [h, h-2]],           // v2
-            [[h-1, h-2], [2, h+1]],                   // v3
-            [[1, 2], [S-4, 2], [h-1, S-5]],           // v4
-            [[q, h-1], [S-q-1, h-1], [h-1, 3]],      // v5
-            [[h, 3], [S-4, S-4]],                     // v6: sparse
-            [[q, 2], [h, h-1]],                       // v7: minimal
+        // Three-layer turf structure: dark undergrowth, main blades, bright tips.
+        const tuftPlans = [
+            [[2, 11], [11, 4], [6, 2]],
+            [[4, 3], [10, 9], [12, 4]],
+            [[2, 5], [11, 11], [7, 3]],
+            [[4, 9], [11, 4], [2, 3]],
+            [[2, 3], [11, 3], [7, 10]],
+            [[4, 10], [9, 10], [7, 4]],
+            [[6, 3], [11, 11]],
+            [[3, 3], [8, 10]],
         ][variant];
 
-        tufts.forEach(([tx, ty]) => {
-            ctx.fillStyle = hiColor;
+        tuftPlans.forEach(([tx, ty], idx) => {
+            ctx.fillStyle = idx === 0 ? shadowColor : hiColor;
             ctx.fillRect(cx + tx, cy + ty, 1, 3);
             ctx.fillRect(cx + tx - 1, cy + ty + 1, 1, 1);
             ctx.fillRect(cx + tx + 1, cy + ty, 1, 1);
-            ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + tx, cy + ty, 1, 1);
+            if (idx > 0) {
+                ctx.fillStyle = p.accent;
+                ctx.fillRect(cx + tx, cy + ty, 1, 1);
+            }
         });
+
+        if (state === 'edge') {
+            ctx.fillStyle = tileType === 'forest' ? '#0a1606' : '#5aa031';
+            ctx.fillRect(cx + 1, cy + 1, 3, 1);
+            ctx.fillRect(cx + S - 4, cy + S - 4, 3, 1);
+        } else if (state === 'isolated') {
+            ctx.fillStyle = tileType === 'forest' ? '#0e2008' : '#67b83d';
+            ctx.fillRect(cx + 4, cy + 4, 2, 1);
+            ctx.fillRect(cx + 9, cy + 9, 2, 1);
+        }
+
+        // Small edge shadows keep the tile from reading like flat noise.
+        ctx.fillStyle = shadowColor;
+        ctx.fillRect(cx, cy + h + 2, 2, 1);
+        ctx.fillRect(cx + S - 3, cy + 2, 2, 1);
+        if (tileType === 'forest') {
+            ctx.fillRect(cx + 2, cy + S - 3, 3, 1);
+            ctx.fillRect(cx + S - 5, cy + h, 2, 1);
+        }
 
         // Sub-type detail overlays
         if (subType === 1) {
             // Lush: small damp patch
             ctx.fillStyle = tileType === 'forest' ? '#0e2008' : '#2a6018';
-            ctx.fillRect(cx + h + 1, cy + h + 2, 3, 2);
+            ctx.fillRect(cx + h, cy + h + 1, 4, 2);
+            ctx.fillRect(cx + h + 1, cy + h + 2, 1, 1);
         } else if (subType === 2) {
             // Dry: a few pale straw pixels
             ctx.fillStyle = '#c8b050';
-            ctx.fillRect(cx + 2, cy + h, 1, 2);
-            ctx.fillRect(cx + S-4, cy + h-1, 1, 2);
+            ctx.fillRect(cx + 2, cy + h - 1, 1, 2);
+            ctx.fillRect(cx + S - 4, cy + h - 2, 1, 3);
+            ctx.fillRect(cx + h, cy + 2, 1, 1);
         } else if (subType === 3) {
             // Patchy: bare dirt patch
             ctx.fillStyle = tileType === 'forest' ? '#3a1e0a' : '#906830';
-            ctx.fillRect(cx + h - 1, cy + h, 4, 3);
+            ctx.fillRect(cx + h - 1, cy + h - 1, 5, 3);
+            ctx.fillRect(cx + h, cy + h, 3, 1);
         }
 
         // Forest: leaf debris on all variants
         if (tileType === 'forest') {
             ctx.fillStyle = '#5a3010';
-            ctx.fillRect(cx + 1, cy + S-4, 2, 1);
-            if (variant % 2 === 0) ctx.fillRect(cx + S-4, cy + 2, 2, 1);
+            ctx.fillRect(cx + 1, cy + S - 4, 2, 1);
+            ctx.fillRect(cx + S - 4, cy + 2, 2, 1);
+            ctx.fillRect(cx + 3, cy + 3, 1, 1);
+            if (variant % 2 === 0) ctx.fillRect(cx + S - 5, cy + S - 5, 2, 1);
         }
 
-        // Small flower on v0 only
-        if (variant === 0 && tileType === 'grass') {
+        if (motif === 'flower' || motif === 'clearing') {
             ctx.fillStyle = '#ff80aa';
             ctx.fillRect(cx + q + 1, cy + q, 2, 2);
+            ctx.fillRect(cx + q + 3, cy + q + 2, 1, 1);
             ctx.fillStyle = '#fff8c0';
             ctx.fillRect(cx + q + 1, cy + q, 1, 1);
+        } else if (motif === 'dry_patch') {
+            ctx.fillStyle = '#6a4928';
+            ctx.fillRect(cx + h - 1, cy + h - 1, 4, 2);
+        } else if (motif === 'root') {
+            ctx.fillStyle = '#2a1408';
+            ctx.fillRect(cx + 1, cy + h, 3, 1);
+            ctx.fillRect(cx + h, cy + 2, 3, 1);
+            ctx.fillRect(cx + h - 1, cy + h - 1, 2, 1);
+        } else if (motif === 'leaf_litter') {
+            ctx.fillStyle = '#5a3010';
+            ctx.fillRect(cx + 2, cy + S - 4, 2, 1);
+            ctx.fillRect(cx + S - 4, cy + 3, 2, 1);
+            ctx.fillRect(cx + h - 2, cy + 2, 1, 1);
+        } else if (motif === 'dense') {
+            ctx.fillStyle = '#102808';
+            ctx.fillRect(cx + 2, cy + h, 4, 2);
+            ctx.fillRect(cx + h + 1, cy + h - 1, 2, 1);
+        } else if (motif === 'tuft') {
+            ctx.fillStyle = shadowColor;
+            ctx.fillRect(cx + 4, cy + 4, 2, 1);
         }
 
     } else if (tileType === 'stone_floor') {
-        // 4-quadrant flagstone with consistent mortar and bevels
+        // Worked stone slabs with slightly irregular cut lines and wear.
+        const slabX = [1, 1 + h - 1, 1, 1 + h - 1];
+        const slabY = [1, 1, 1 + h - 1, 1 + h - 1];
+        const slabW = [h - 2, h - 2, h - 2, h - 2];
+        const slabH = [h - 2, h - 2, h - 2, h - 2];
+        const seamJitter = [0, variant % 2, (variant + 1) % 2, variant % 2];
+
         ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + h, S, 2);       // horizontal mortar
-        ctx.fillRect(cx + h, cy, 2, S);       // vertical mortar
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(cx + 1,     cy + 1,     h - 3, 1);
-        ctx.fillRect(cx + 1,     cy + 1,     1, h - 3);
-        ctx.fillRect(cx + h + 3, cy + 1,     h - 3, 1);
-        ctx.fillRect(cx + h + 3, cy + 1,     1, h - 3);
-        ctx.fillRect(cx + 1,     cy + h + 3, h - 3, 1);
-        ctx.fillRect(cx + 1,     cy + h + 3, 1, h - 3);
-        ctx.fillRect(cx + h + 3, cy + h + 3, h - 3, 1);
-        ctx.fillRect(cx + h + 3, cy + h + 3, 1, h - 3);
-        // Wear (v0-v1), nothing extra (v2-v3), crack (v4-v5), moss (v6-v7)
-        if (variant < 2) {
+        ctx.fillRect(cx, cy + h - 1, S, 3);
+        ctx.fillRect(cx + h - 1, cy, 3, S);
+
+        for (let i = 0; i < 4; i++) {
+            const ox = slabX[i] + (i % 2 === 0 ? 0 : 1);
+            const oy = slabY[i] + (i < 2 ? 0 : 1);
+            ctx.fillStyle = i % 2 === 0 ? p.base : p.hi;
+            ctx.fillRect(cx + ox, cy + oy, slabW[i] - seamJitter[i], slabH[i] - seamJitter[(i + 1) % 4]);
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + ox + 1, cy + oy + 1, slabW[i] - 3, 1);
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + ox, cy + oy + slabH[i] - 1, slabW[i], 1);
+        }
+        // Wear, crack, moss, and clean stone variants.
+        if (motif === 'wear') {
             ctx.fillStyle = p.lo;
             ctx.fillRect(cx + q + 1, cy + q + 1, 2, 1);
-        } else if (variant >= 4 && variant <= 5) {
-            // Diagonal crack — use x0 offset, not 'cx' to avoid shadowing canvas position
+            ctx.fillRect(cx + h - 2, cy + h - 2, 2, 1);
+            ctx.fillRect(cx + 4, cy + 4, 1, 1);
+            ctx.fillRect(cx + 9, cy + 10, 1, 1);
+        } else if (motif === 'crack') {
             ctx.fillStyle = p.lo;
-            const x0 = variant === 4 ? 2 : h + 3;
-            for (let i = 0; i < h - 3; i++) { ctx.fillRect(cx + x0 + i, cy + 2 + i, 1, 1); }
-        } else if (variant >= 6) {
+            const crackStart = variant % 2 === 0 ? 2 : 4;
+            for (let i = 0; i < S - 6; i++) {
+                if (i % 3 !== 2) ctx.fillRect(cx + crackStart + i, cy + 2 + i, 1, 1);
+                if (i % 4 === 0) ctx.fillRect(cx + crackStart + i - 1, cy + 3 + i, 1, 1);
+            }
+        } else if (motif === 'moss') {
             ctx.fillStyle = '#486830';
-            ctx.fillRect(cx + 2, cy + h + 3, 3, 2);
+            ctx.fillRect(cx + 2, cy + h + 2, 4, 2);
+            ctx.fillRect(cx + 8, cy + 2, 2, 1);
             ctx.fillStyle = '#60883a';
             ctx.fillRect(cx + 3, cy + h + 3, 1, 1);
+            ctx.fillRect(cx + 9, cy + 3, 1, 1);
+        } else {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + 1, cy + 1, S - 2, 1);
+            ctx.fillRect(cx + 2, cy + h - 1, 2, 1);
+            ctx.fillRect(cx + S - 4, cy + S - 4, 1, 1);
+            ctx.fillRect(cx + 7, cy + 7, 1, 1);
         }
 
     } else if (tileType === 'cobble') {
@@ -271,33 +485,71 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
             ctx.fillStyle = p.lo;
             ctx.fillRect(cx + sx, cy + sy + sh, sw, 1); // bottom shadow
         });
+        ctx.fillStyle = p.lo;
+        ctx.fillRect(cx + q, cy + h - 1, 2, 1);
+        ctx.fillRect(cx + h - 3, cy + 3, 1, 2);
+        if (variant % 2 === 0) {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + h - 1, cy + q, 1, 1);
+            ctx.fillRect(cx + 2, cy + h - 3, 1, 1);
+        }
 
     } else if (tileType === 'dirt') {
-        // Diagonal crosshatch dithering — structured texture
-        ctx.fillStyle = p.hi;
-        for (let y = 0; y < S; y += 4) {
-            for (let x = 0; x < S; x += 4) {
-                ctx.fillRect(cx + x + (y/4 % 2)*2, cy + y, 2, 1);
-            }
+        // Packed earth with irregular clumps and soil variation; should read as ground, not planks.
+        const rng = tileRng(safeSeed ^ 0x6d2b79f5);
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx, cy, S, S);
+
+        // Broad soil mottling.
+        for (let i = 0; i < 12; i++) {
+            const px = 1 + rng(S - 3);
+            const py = 1 + rng(S - 3);
+            const w = 1 + rng(3);
+            const h2 = 1 + rng(2);
+            ctx.fillStyle = i % 4 === 0 ? p.lo : (i % 3 === 0 ? p.hi : p.base);
+            ctx.fillRect(cx + px, cy + py, w, h2);
         }
-        if (variant < 3) {
-            // Pebble
-            ctx.fillStyle = p.lo;
+
+        // Fine grit and stones keep it from reading like fabric or floorboards.
+        ctx.fillStyle = p.lo;
+        for (let i = 0; i < 10; i++) {
+            const px = 1 + rng(S - 2);
+            const py = 1 + rng(S - 2);
+            ctx.fillRect(cx + px, cy + py, 1, 1);
+        }
+        ctx.fillStyle = p.accent;
+        ctx.fillRect(cx + 2, cy + 3, 1, 1);
+        ctx.fillRect(cx + S - 4, cy + S - 5, 1, 1);
+        ctx.fillRect(cx + 4, cy + S - 4, 1, 1);
+        ctx.fillRect(cx + 8, cy + 5, 1, 1);
+
+        if (motif === 'pebble') {
             const px = q + (variant * q) % h;
+            ctx.fillStyle = p.lo;
             ctx.fillRect(cx + px, cy + h, 3, 2);
             ctx.fillStyle = p.accent;
             ctx.fillRect(cx + px, cy + h, 3, 1);
-        } else if (variant >= 3 && variant <= 5) {
-            // Rut — a shallow horizontal groove
+        } else if (motif === 'rut' || motif === 'path') {
+            // Trampled path wear should feel compressed and organic, not like planks.
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + 1, cy + h - 1, S - 2, 1);
+            for (let x = 1; x < S - 1; x += 2) {
+                const y0 = cy + h - 1 + ((x + variant) % 3 === 0 ? 1 : 0);
+                ctx.fillRect(cx + x, y0, 1, 1);
+                if ((x + variant) % 4 === 0) ctx.fillRect(cx + x, y0 + 1, 1, 1);
+            }
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + 1, cy + h - 2, S - 2, 1);
-        } else if (variant >= 6) {
-            // Cracked-earth — two intersecting fissure lines
+            ctx.fillRect(cx + 2, cy + h - 2, S - 4, 1);
+            if (variant % 2 === 0) ctx.fillRect(cx + 4, cy + h - 1, S - 8, 1);
+        } else if (motif === 'crack') {
             ctx.fillStyle = p.lo;
             ctx.fillRect(cx + q, cy + 2, 1, h - 2);
             ctx.fillRect(cx + h, cy + h, 1, h - 2);
+            ctx.fillRect(cx + 2, cy + h - 3, 4, 1);
+        } else if (motif === 'dune') {
+            ctx.fillStyle = p.hi;
+            ctx.fillRect(cx + 2, cy + 3, S - 4, 1);
+            ctx.fillRect(cx + 3, cy + 4, S - 6, 1);
+            ctx.fillRect(cx + 5, cy + 5, S - 10, 1);
         }
 
     } else if (tileType === 'mud') {
@@ -317,25 +569,69 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         ctx.globalAlpha = 0.45;
         ctx.fillRect(cx + sx, cy + sy, 2, 1);
         ctx.fillRect(cx + sx + 1, cy + sy + 1, 1, 1);
+        ctx.fillRect(cx + 2, cy + 2, 1, 1);
+        if (variant % 2 === 1) ctx.fillRect(cx + S - 4, cy + S - 4, 1, 1);
+        ctx.fillRect(cx + 4, cy + 5, 1, 1);
         ctx.globalAlpha = 1.0;
 
     } else if (tileType === 'sand') {
-        // Horizontal ripple bands at consistent Y positions
-        const rippleYs = [Math.floor(S*0.2), Math.floor(S*0.45), Math.floor(S*0.7)];
-        const rippleOffset = (variant % 4) * Math.floor(S / 8);
+        // Fine grain, broken ripples, and soft drift keep it from reading like wood planks.
+        const rippleYs = [Math.floor(S * 0.2), Math.floor(S * 0.47), Math.floor(S * 0.72)];
+        const rippleOffset = (variant % 4) * Math.max(1, Math.floor(S / 10));
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx, cy, S, S);
+        for (let i = 0; i < 12; i++) {
+            const px = 1 + ((variant * 3 + i * 5) % (S - 2));
+            const py = 1 + ((variant * 7 + i * 3) % (S - 2));
+            ctx.fillStyle = i % 4 === 0 ? p.lo : (i % 3 === 0 ? p.hi : p.base);
+            ctx.fillRect(cx + px, cy + py, 1, 1);
+        }
+        ctx.fillStyle = p.lo;
+        ctx.fillRect(cx, cy + S - 2, S, 2);
+        ctx.fillRect(cx + 1, cy + S - 3, S - 2, 1);
         rippleYs.forEach((ry, i) => {
             ctx.fillStyle = i === 1 ? p.accent : p.hi;
-            const rLen = Math.floor(S * 0.55);
-            ctx.fillRect(cx + rippleOffset % (S - rLen), cy + ry, rLen, 1);
+            const rLen = Math.floor(S * (0.35 + i * 0.08));
+            const rx = cx + (rippleOffset + i * 2) % Math.max(1, S - rLen);
+            ctx.fillRect(rx, cy + ry, Math.max(3, rLen), 1);
+            if (i === 1) ctx.fillRect(rx + 1, cy + ry + 1, Math.max(1, rLen - 2), 1);
+            if (i !== 0) ctx.fillRect(rx + 2, cy + ry - 1, Math.max(2, Math.floor(rLen * 0.35)), 1);
         });
+        if (motif === 'shoreline') {
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx, cy + S - 3, S, 1);
+            ctx.fillRect(cx + 2, cy + S - 4, S - 4, 1);
+            ctx.fillRect(cx + 4, cy + S - 5, S - 8, 1);
+        } else if (motif === 'wash') {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + q, cy + q + 1, h, 1);
+            ctx.fillRect(cx + q + 2, cy + q + 2, h - 4, 1);
+            ctx.fillRect(cx + q + 1, cy + q + 3, h - 6, 1);
+        } else if (motif === 'dune') {
+            ctx.fillStyle = p.hi;
+            ctx.fillRect(cx + 1, cy + 2, S - 2, 1);
+            ctx.fillRect(cx + 2, cy + 3, S - 4, 1);
+            ctx.fillRect(cx + 4, cy + 4, S - 8, 1);
+        }
         // Shadow at bottom
         ctx.fillStyle = p.lo;
         ctx.fillRect(cx, cy + S - 2, S, 2);
+        ctx.fillRect(cx + 2, cy + S - 4, S - 4, 1);
 
     } else if (tileType === 'wall') {
-        // Proper staggered brick — 2 rows, each half-height, bricks alternate offset
+        // Proper staggered brick with heavier top weight and a stronger support read.
         const bOff = (variant % 2) * h; // odd/even column stagger
         const bW = h - 1;
+        const same = sameNeighborCount(neighbors, tileType);
+        const exposed = Math.max(0, 4 - same);
+
+        // Outer massing so the wall reads like a chunk of structure, not a flat pattern.
+        ctx.fillStyle = p.lo;
+        ctx.fillRect(cx, cy, S, 2);
+        ctx.fillRect(cx, cy + S - 2, S, 2);
+        ctx.fillRect(cx, cy, 2, S);
+        ctx.fillRect(cx + S - 2, cy, 2, S);
+
         // Row 1
         ctx.fillStyle = p.hi;
         ctx.fillRect(cx + bOff + 1,     cy + 1,     bW - 1, h - 2);
@@ -345,36 +641,126 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         ctx.fillRect(cx + (bOff + h/2 | 0) + 1, cy + h + 1, bW - 1, h - 2);
         ctx.fillRect(cx + (bOff - h/2 | 0) + 1, cy + h + 1, bW - 1, h - 2);
         ctx.fillRect(cx + (bOff + h/2 | 0) - h + 1, cy + h + 1, bW - 1, h - 2);
-        // Mortar (dark lines)
+        // Mortar (dark lines) and highlight bevels keep the wall readable at a glance.
         ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + h, S, 2);        // horizontal mortar
+        ctx.fillRect(cx, cy + h, S, 2);
         for (let bx = 0; bx <= S; bx += h) {
-            ctx.fillRect(cx + (bx + bOff) % S, cy, 1, h);
-            ctx.fillRect(cx + (bx + bOff + h/2 | 0) % S, cy + h, 1, h);
+            ctx.fillRect(cx + ((bx + bOff) % S), cy, 1, h);
+            ctx.fillRect(cx + (((bx + bOff + (h / 2 | 0)) % S)), cy + h, 1, h);
         }
-        // Highlight bevel (top of each brick)
         ctx.fillStyle = p.accent;
         ctx.fillRect(cx + bOff + 2,     cy + 2, bW - 3, 1);
         ctx.fillRect(cx + (bOff + h/2 | 0) + 2, cy + h + 2, bW - 3, 1);
+        if (motif === 'crack' || exposed >= 2) {
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + q, cy + 2, 1, S - 4);
+            ctx.fillRect(cx + h - 2, cy + 2, 1, S - 4);
+            ctx.fillRect(cx + 3, cy + h - 1, S - 6, 1);
+            ctx.fillRect(cx + 5, cy + 4, 1, 3);
+        } else if (motif === 'buttress') {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + h - 1, cy + 1, 2, S - 2);
+            ctx.fillRect(cx + 1, cy + h - 1, 2, 1);
+            ctx.fillRect(cx + S - 4, cy + 2, 1, S - 4);
+        } else if (same <= 1) {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + 2, cy + 2, 2, 1);
+            ctx.fillRect(cx + S - 4, cy + S - 4, 2, 1);
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + 3, cy + 3, 1, S - 6);
+            ctx.fillRect(cx + S - 4, cy + 3, 1, S - 6);
+            ctx.fillRect(cx + 6, cy + 9, 1, 2);
+        }
 
     } else if (tileType === 'water') {
-        // Layered horizontal bands — dark base → bright crests
-        ctx.fillStyle = p.base;
-        ctx.fillRect(cx, cy, S, S);
-        // Wave crests at consistent Y offsets, shifted by variant
-        const waveShift = (variant * (S / 8)) % S;
-        [[S*0.15, p.hi, Math.floor(S*0.6)],
-         [S*0.4,  p.accent, Math.floor(S*0.35)],
-         [S*0.65, p.hi, Math.floor(S*0.5)]].forEach(([wy, color, wl]) => {
+        // Layered pool geometry — outer rim, deep center, and bright surface crests.
+        const state = edgeState(neighbors, tileType);
+        const isPool = state === 'isolated' || state === 'edge';
+        const isDeep = state === 'center' || state === 'interior';
+        const same = sameNeighborCount(neighbors, tileType);
+        const shiftX = ((variant % 3) - 1) * 0.35;
+        const shiftY = (((variant >> 1) % 3) - 1) * 0.25;
+        const missingNorth = neighbors?.north !== tileType;
+        const missingSouth = neighbors?.south !== tileType;
+        const missingWest = neighbors?.west !== tileType;
+        const missingEast = neighbors?.east !== tileType;
+        const blobSeed = tileRng(safeSeed ^ (same << 4) ^ (isPool ? 0x9e37 : 0x6a09));
+        const rx = isPool ? 5.2 : 4.7;
+        const ry = isPool ? 4.4 : 3.5;
+        const cornerBias = (x, y) => {
+            let cut = 0;
+            if (missingNorth && y < 4) cut += (4 - y) * 0.18;
+            if (missingSouth && y > 11) cut += (y - 11) * 0.18;
+            if (missingWest && x < 4) cut += (4 - x) * 0.18;
+            if (missingEast && x > 11) cut += (x - 11) * 0.18;
+            return cut;
+        };
+        const fillMass = (fillColor, rxMul, ryMul, threshold, jitter = 0) => {
+            ctx.fillStyle = fillColor;
+            for (let y = 1; y < S - 1; y++) {
+                for (let x = 1; x < S - 1; x++) {
+                    const dx = (x - h + 0.5 - shiftX) / (rx * rxMul);
+                    const dy = (y - h + 0.5 + shiftY) / (ry * ryMul);
+                    const wobble = ((blobSeed(11) - 5) * 0.02) + ((blobSeed(7) - 3) * 0.015) + jitter;
+                    const d = (dx * dx) + (dy * dy) + cornerBias(x, y) + wobble;
+                    if (d <= threshold) ctx.fillRect(cx + x, cy + y, 1, 1);
+                }
+            }
+        };
+
+        // Build a visibly organic mass using per-pixel distance fields so the tile stops reading as a square.
+        fillMass(p.lo, 1.00, 1.00, 1.02);
+        fillMass(p.base, 0.86, 0.84, 0.88, -0.04);
+        fillMass(p.hi, 0.62, 0.56, 0.96, 0.02);
+        fillMass(p.accent, 0.36, 0.30, 0.98, 0.05);
+
+        // Soft outer rim and surface contrast.
+        ctx.fillStyle = p.hi;
+        ctx.fillRect(cx + 2, cy + 4, 3, 1);
+        ctx.fillRect(cx + S - 5, cy + 4, 3, 1);
+        ctx.fillRect(cx + 4, cy + 2, 2, 1);
+        ctx.fillRect(cx + 4, cy + S - 5, 2, 1);
+
+        // Wave crests at consistent Y offsets, shifted by variant.
+        const waveShift = ((variant + same) * (S / 8)) % S;
+        [[S * 0.15, p.hi, Math.floor(S * 0.6)],
+         [S * 0.4,  p.accent, Math.floor(S * 0.35)],
+         [S * 0.65, p.hi, Math.floor(S * 0.5)]].forEach(([wy, color, wl]) => {
             ctx.fillStyle = color;
-            const wx = Math.floor((waveShift) % (S - wl));
+            const wx = Math.floor((waveShift) % Math.max(1, (S - wl)));
             ctx.fillRect(cx + wx, cy + Math.floor(wy), wl, 1);
+            ctx.fillRect(cx + wx + 1, cy + Math.floor(wy) + 1, Math.max(1, wl - 2), 1);
         });
+        if (motif === 'pool' || motif === 'foam' || isPool) {
+            ctx.fillStyle = p.accent;
+            ctx.globalAlpha = 0.35;
+            ctx.fillRect(cx + 2, cy + 2, S - 4, 1);
+            ctx.fillRect(cx + 3, cy + 3, S - 6, 1);
+            ctx.fillRect(cx + 4, cy + 4, S - 8, 1);
+            ctx.globalAlpha = 1.0;
+        } else if (motif === 'deep' || isDeep) {
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = p.lo;
+            for (let y = 2; y < S - 2; y++) {
+                for (let x = 2; x < S - 2; x++) {
+                    const dx = (x - h + 0.5 - shiftX * 0.4) / (isPool ? 3.8 : 3.2);
+                    const dy = (y - h + 0.5 - shiftY * 0.4) / (isPool ? 3.0 : 2.4);
+                    if ((dx * dx) + (dy * dy) <= 1.02) ctx.fillRect(cx + x, cy + y, 1, 1);
+                }
+            }
+            ctx.globalAlpha = 1.0;
+        } else if (motif === 'ripple') {
+            ctx.fillStyle = p.hi;
+            ctx.fillRect(cx + 1, cy + h, S - 2, 1);
+            ctx.fillRect(cx + 2, cy + h - 2, S - 4, 1);
+            ctx.fillRect(cx + 3, cy + h + 1, S - 6, 1);
+        }
         // Sparkle — only on variant 0
-        if (variant === 0) {
+        if (variant === 0 || sameNeighborCount(neighbors, tileType) >= 3 || isPool) {
             ctx.fillStyle = '#ffffff';
             ctx.globalAlpha = 0.5;
             ctx.fillRect(cx + q, cy + q, 2, 1);
+            ctx.fillRect(cx + S - 5, cy + 3, 1, 1);
             ctx.globalAlpha = 1.0;
         }
 
@@ -396,25 +782,41 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         ctx.fill();
 
     } else if (tileType === 'interior') {
-        // Stardew-style wood planks — 3 horizontal planks
-        const gapY = [Math.floor(S*0.33), Math.floor(S*0.66)];
-        // Draw planks
-        [0, gapY[0]+1, gapY[1]+1].forEach((py, i) => {
-            const ph = (i === 2 ? S : gapY[i]) - py;
+        // Wood planks with stronger grain direction and less flat plank-strip feel.
+        const plankHeights = [5, 5, 6];
+        const plankYs = [0, 5, 10];
+        plankYs.forEach((py, i) => {
+            const ph = plankHeights[i];
             ctx.fillStyle = i % 2 === 0 ? p.base : p.hi;
             ctx.fillRect(cx, cy + py, S, ph);
-            // Grain highlight strip along top of each plank
             ctx.fillStyle = p.accent;
             ctx.fillRect(cx + 1, cy + py + 1, S - 2, 1);
-            // Grain shadow along bottom
+            ctx.fillRect(cx + 2, cy + py + 3, S - 4, 1);
             ctx.fillStyle = p.lo;
             ctx.fillRect(cx, cy + py + ph - 1, S, 1);
+            ctx.fillRect(cx + 2, cy + py + 2, S - 4, 1);
         });
-        // Dark gap lines between planks
+        // Dark seam lines and end caps make the floor feel assembled.
         ctx.fillStyle = p.lo;
-        gapY.forEach(gy => ctx.fillRect(cx, cy + gy, S, 1));
-        // Knot on variant 0
-        if (variant === 0) {
+        ctx.fillRect(cx, cy + 5, S, 1);
+        ctx.fillRect(cx, cy + 10, S, 1);
+        ctx.fillRect(cx + 1, cy + 1, 1, S - 2);
+        ctx.fillRect(cx + S - 2, cy + 1, 1, S - 2);
+        // Knot, rug, and wear variants.
+        if (motif === 'rug') {
+            ctx.fillStyle = '#704018';
+            ctx.fillRect(cx + 2, cy + h - 2, S - 4, 3);
+            ctx.fillStyle = '#c8a868';
+            ctx.fillRect(cx + 3, cy + h - 1, S - 6, 1);
+            ctx.fillRect(cx + 4, cy + h, S - 8, 1);
+            ctx.fillRect(cx + 6, cy + h - 3, S - 12, 1);
+        } else if (motif === 'wear') {
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + 2, cy + h, 3, 1);
+            ctx.fillRect(cx + S - 5, cy + 2, 2, 1);
+            ctx.fillRect(cx + 4, cy + 4, 1, 1);
+            ctx.fillRect(cx + 8, cy + 9, 1, 1);
+        } else if (variant === 0) {
             const kx = cx + q + 2, ky = cy + q + 1;
             ctx.fillStyle = p.lo;
             ctx.fillRect(kx, ky, 4, 3);
@@ -422,74 +824,138 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
             ctx.fillRect(kx+1, ky+3, 2, 1);
             ctx.fillStyle = p.base;
             ctx.fillRect(kx+1, ky+1, 2, 1);
+        } else if (variant === 3) {
+            ctx.fillStyle = '#7c5228';
+            ctx.fillRect(cx + 2, cy + 3, S - 4, 1);
+            ctx.fillRect(cx + 3, cy + 4, 1, 1);
+            ctx.fillRect(cx + 5, cy + 5, 1, 1);
+            ctx.fillRect(cx + 7, cy + 6, 1, 1);
+            ctx.fillRect(cx + 10, cy + 9, 1, 1);
         }
 
     } else if (tileType === 'dungeon') {
-        // LttP checkerboard — alternating hi/base quadrants + mortar + bevel
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(cx + 1, cy + 1, h - 2, h - 2);
-        ctx.fillRect(cx + h + 1, cy + h + 1, h - 2, h - 2);
-        ctx.fillStyle = p.base;
-        ctx.fillRect(cx + h + 1, cy + 1, h - 2, h - 2);
-        ctx.fillRect(cx + 1, cy + h + 1, h - 2, h - 2);
-        // Mortar
+        // Ceremonial masonry with a more carved read than a pure checkerboard.
         ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + h, S, 2);
-        ctx.fillRect(cx + h, cy, 2, S);
-        // Bevel on hi quadrants
+        ctx.fillRect(cx, cy, S, 2);
+        ctx.fillRect(cx, cy + S - 2, S, 2);
+        ctx.fillRect(cx, cy, 2, S);
+        ctx.fillRect(cx + S - 2, cy, 2, S);
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx + 1, cy + 1, S - 2, S - 2);
+        ctx.fillStyle = p.hi;
+        ctx.fillRect(cx + 2, cy + 2, h - 3, h - 3);
+        ctx.fillRect(cx + h + 2, cy + h + 2, h - 3, h - 3);
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx + h + 2, cy + 2, h - 3, h - 3);
+        ctx.fillRect(cx + 2, cy + h + 2, h - 3, h - 3);
+        // Mortar and bevels.
+        ctx.fillStyle = p.lo;
+        ctx.fillRect(cx + h - 1, cy, 2, S);
+        ctx.fillRect(cx, cy + h - 1, S, 2);
         ctx.fillStyle = p.accent;
-        ctx.fillRect(cx + 1, cy + 1, h - 3, 1);
-        ctx.fillRect(cx + 1, cy + 1, 1, h - 3);
-        ctx.fillRect(cx + h + 2, cy + h + 2, h - 3, 1);
-        ctx.fillRect(cx + h + 2, cy + h + 2, 1, h - 3);
-        // Corner ornament on every 4th tile
-        if (variant === 0) {
+        ctx.fillRect(cx + 2, cy + 2, h - 4, 1);
+        ctx.fillRect(cx + 2, cy + 2, 1, h - 4);
+        ctx.fillRect(cx + h + 3, cy + h + 3, h - 4, 1);
+        ctx.fillRect(cx + h + 3, cy + h + 3, 1, h - 4);
+        if (motif === 'glyph') {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + h - 1, cy + h - 1, 3, 1);
+            ctx.fillRect(cx + h, cy + h - 2, 1, 3);
+        } else if (variant === 0) {
             const mx = cx + h, my = cy + h;
             ctx.fillStyle = p.accent;
             ctx.fillRect(mx - 1, my, 3, 1);
             ctx.fillRect(mx, my - 1, 1, 3);
             ctx.fillStyle = p.lo;
             ctx.fillRect(mx, my, 1, 1);
+        } else if (motif === 'ornament') {
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + 2, cy + 2, 2, 1);
+            ctx.fillRect(cx + S - 4, cy + S - 4, 2, 1);
+            ctx.fillRect(cx + 3, cy + 3, 1, 1);
+            ctx.fillRect(cx + 10, cy + 10, 1, 1);
+            ctx.fillRect(cx + 5, cy + 9, 1, 1);
         }
 
     } else if (tileType === 'cave') {
-        // Structured stone cells — 6 fixed positions, Stardew mine style
+        // Cave stone in lumpy masses, closer to carved rock than hard rectangles.
         const cells = [
-            [1,     1,     h-2, h-2],
-            [h+2,   2,     h-2, h-3],
-            [2,     h+2,   h-1, h-2],
-            [h+1,   h+2,   h-1, h-1],
-            [q,     q,     q-1, q],
-            [h+q,   h+q-1, q,   q],
+            [1, 1, 5, 4], [6, 1, 5, 5],
+            [1, 5, 4, 5], [5, 5, 6, 4],
+            [3, 2, 2, 2], [8, 8, 2, 2],
         ];
         cells.forEach(([sx, sy, sw, sh], i) => {
+            const ox = sx + (i % 2);
+            const oy = sy + ((variant + i) % 2);
+            const w = sw + ((i + variant) % 2);
+            const h2 = sh + (i % 3 === 0 ? 1 : 0);
             ctx.fillStyle = i % 3 === 0 ? p.lo : (i % 2 ? p.hi : p.base);
-            ctx.fillRect(cx+sx, cy+sy, sw, sh);
+            ctx.fillRect(cx + ox, cy + oy, w, h2);
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx+sx, cy+sy, sw, 1);        // top highlight
+            ctx.fillRect(cx + ox, cy + oy, w, 1);
             ctx.fillStyle = '#1a0a00';
-            ctx.fillRect(cx+sx, cy+sy+sh, sw, 1);     // bottom shadow
+            ctx.fillRect(cx + ox, cy + oy + h2, w, 1);
         });
+        ctx.fillStyle = '#27170b';
+        ctx.fillRect(cx + 2, cy + h - 2, 2, 1);
+        ctx.fillRect(cx + S - 4, cy + 3, 1, 2);
+        ctx.fillRect(cx + 4, cy + 9, 1, 1);
+        if (motif === 'glint') {
+            ctx.fillStyle = p.accent;
+            ctx.globalAlpha = 0.6;
+            ctx.fillRect(cx + h - 1, cy + q, 2, 1);
+            ctx.fillRect(cx + 7, cy + 6, 2, 1);
+            ctx.globalAlpha = 1.0;
+        } else if (motif === 'pocket') {
+            ctx.fillStyle = '#1a0a00';
+            ctx.fillRect(cx + 2, cy + h - 1, 3, 2);
+            ctx.fillRect(cx + S - 5, cy + 2, 2, 1);
+        } else if (motif === 'vein') {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + 2, cy + 2, S - 4, 1);
+            ctx.fillRect(cx + 3, cy + S - 4, S - 6, 1);
+            ctx.fillRect(cx + h - 1, cy + h - 1, 2, 1);
+            ctx.fillRect(cx + 4, cy + 4, 1, 1);
+            ctx.fillRect(cx + 9, cy + 7, 1, 1);
+        }
 
     } else if (tileType === 'ice') {
-        // Pale blue-white — mostly flat with structured decoration
+        // Frozen surface with layered plates and sharper crack lines.
         ctx.fillStyle = p.hi;
         ctx.fillRect(cx, cy, S, S);
-        // Horizontal shimmer band at consistent position
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx + 1, cy + 1, S - 2, S - 2);
         ctx.fillStyle = p.accent;
         ctx.fillRect(cx + q, cy + q, h, 1);
-        // Crack — L-shaped at fixed position per variant
-        if (variant < 3) {
+        ctx.fillRect(cx + 3, cy + 3, 3, 1);
+        ctx.fillRect(cx + 8, cy + 7, 2, 1);
+        // Crack clusters vary by motif.
+        const crackStart = cx + 2 + (variant % 3);
+        const crackY = cy + 4 + (variant % 2);
+        if (motif === 'crack' || motif === 'sheet') {
             ctx.fillStyle = p.lo;
-            const cx2 = cx + q + (variant * 3 % q);
-            const cy2 = cy + h;
-            ctx.fillRect(cx2, cy2, q + 2, 1);          // horizontal
-            ctx.fillRect(cx2 + q + 1, cy2, 1, q);      // vertical drop
+            ctx.fillRect(crackStart, crackY, 6, 1);
+            ctx.fillRect(crackStart + 5, crackY, 1, 5);
+            ctx.fillRect(cx + 7, cy + 2, 1, 4);
+            ctx.fillRect(cx + 4, cy + 10, 4, 1);
+        } else if (motif === 'frost') {
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + 1, cy + h - 2, S - 2, 1);
+            ctx.fillRect(cx + h - 1, cy + 1, 1, S - 2);
+            ctx.fillRect(cx + 3, cy + 3, 2, 1);
+            ctx.fillRect(cx + 6, cy + 6, 2, 1);
+            ctx.fillRect(cx + 9, cy + 4, 1, 2);
         }
-        // Corner glint
+        // Frosted plate highlights and corner bite-out keep it from reading as flat blue.
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(cx + 2, cy + 2, 2, 1);
         ctx.fillRect(cx + 2, cy + 2, 1, 2);
+        ctx.fillRect(cx + 10, cy + 3, 1, 1);
+        ctx.fillRect(cx + 3, cy + 9, 1, 1);
+        if (variant % 2 === 0) {
+            ctx.fillStyle = p.lo;
+            ctx.fillRect(cx + S - 4, cy + S - 4, 2, 1);
+        }
     }
 
     blendTileEdges(ctx, tileType, cx, cy, neighbors, S);

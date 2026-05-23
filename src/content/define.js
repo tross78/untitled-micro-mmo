@@ -50,6 +50,109 @@ function rectsOverlap(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+function markFootprint(blockedTiles, x, y, w = 1, h = 1) {
+    for (let oy = 0; oy < h; oy++) {
+        for (let ox = 0; ox < w; ox++) blockedTiles.add(`${x + ox},${y + oy}`);
+    }
+}
+
+function shapePool(pool, roomId, index = 0) {
+    const cx = pool.x;
+    const cy = pool.y;
+    const rx = Math.max(1, pool.rx || 1);
+    const ry = Math.max(1, pool.ry || 1);
+    const type = pool.type || 'water';
+    const irregularity = Math.max(0, pool.irregularity ?? 0.24);
+    const taper = pool.taper || null;
+    const taperStrength = Math.max(0, pool.taperStrength ?? 0.26);
+    const seed = hashStr(`${roomId}:${index}:${cx},${cy}:${rx},${ry}:${type}`);
+    const minX = Math.max(0, Math.floor(cx - rx - 1));
+    const maxX = Math.ceil(cx + rx + 1);
+    const minY = Math.max(0, Math.floor(cy - ry - 1));
+    const maxY = Math.ceil(cy + ry + 1);
+    const tiles = new Set();
+
+    const axisBias = (dx, dy) => {
+        if (!taper) return 0;
+        if (taper === 'north') return -dy;
+        if (taper === 'south') return dy;
+        if (taper === 'west') return -dx;
+        if (taper === 'east') return dx;
+        return 0;
+    };
+
+    for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+            const dx = ((x + 0.5) - cx) / rx;
+            const dy = ((y + 0.5) - cy) / ry;
+            const dist = (dx * dx) + (dy * dy);
+            const angle = Math.atan2(dy, dx);
+            const cellRng = seededRNG(seed ^ hashStr(`${x},${y}`));
+            const wobble = ((cellRng(1000) / 1000) - 0.5) * 2 * irregularity;
+            const taperBias = axisBias(dx, dy) * taperStrength;
+            const angularBite =
+                0.18 * Math.sin(angle * 3 + (seed % 31)) +
+                0.11 * Math.sin(angle * 5 + (seed % 17)) +
+                0.06 * Math.sin(angle * 7 + (seed % 13));
+            const threshold = 1 + wobble + taperBias + angularBite;
+            if (dist <= threshold) tiles.add(`${x},${y}`);
+        }
+    }
+
+    // Add 1-2 overlapping lobes so pools read like a shaped basin rather than a single ellipse.
+    const lobeCount = 1 + (seed % 2);
+    for (let i = 0; i < lobeCount; i++) {
+        const lobeSeed = seed ^ hashStr(`lobe:${i}`);
+        const lobeRng = seededRNG(lobeSeed);
+        const angle = lobeRng(360) * Math.PI / 180;
+        const offsetX = Math.round(Math.cos(angle) * (rx * (0.32 + lobeRng(30) / 100)));
+        const offsetY = Math.round(Math.sin(angle) * (ry * (0.24 + lobeRng(30) / 100)));
+        const lcx = cx + offsetX;
+        const lcy = cy + offsetY;
+        const lrx = Math.max(1.2, rx * (0.52 + lobeRng(18) / 100));
+        const lry = Math.max(1.0, ry * (0.48 + lobeRng(18) / 100));
+        const lminX = Math.max(0, Math.floor(lcx - lrx - 1));
+        const lmaxX = Math.ceil(lcx + lrx + 1);
+        const lminY = Math.max(0, Math.floor(lcy - lry - 1));
+        const lmaxY = Math.ceil(lcy + lry + 1);
+        for (let y = lminY; y <= lmaxY; y++) {
+            for (let x = lminX; x <= lmaxX; x++) {
+                const dx = ((x + 0.5) - lcx) / lrx;
+                const dy = ((y + 0.5) - lcy) / lry;
+                const angle = Math.atan2(dy, dx);
+                const wobble = ((lobeRng(1000) / 1000) - 0.5) * 2 * Math.max(0.08, irregularity * 0.6);
+                const taperBias = axisBias(dx, dy) * (taperStrength * 0.65);
+                const angularBite =
+                    0.14 * Math.sin(angle * 3 + (lobeSeed % 23)) +
+                    0.08 * Math.sin(angle * 5 + (lobeSeed % 19));
+                if ((dx * dx) + (dy * dy) <= 1 + wobble + taperBias + angularBite) tiles.add(`${x},${y}`);
+            }
+        }
+    }
+
+    // Erode a few edge tiles to avoid boxy silhouettes; keep the basin connected and readable.
+    const erosion = [];
+    for (const key of tiles) {
+        const [x, y] = key.split(',').map((n) => +n);
+        let neighbors = 0;
+        for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+            if (tiles.has(`${x + dx},${y + dy}`)) neighbors++;
+        }
+        if (neighbors <= 1) {
+            const edgeRng = seededRNG(seed ^ hashStr(`edge:${x},${y}`));
+            if (edgeRng(100) < 45) erosion.push(key);
+        }
+    }
+    erosion.forEach((key) => tiles.delete(key));
+
+    return Array.from(tiles, (key) => {
+        const [x, y] = key.split(',').map((n) => +n);
+        return { x, y, type };
+    });
+}
+
+export { shapePool };
+
 function canPlaceGeneratedScenery(candidate, placedScenery, blockedTiles, width, height) {
     const rule = getSceneryRule(candidate.label);
     if (candidate.x < rule.edgeClearance || candidate.y < rule.edgeClearance) return false;
@@ -106,6 +209,16 @@ export const defineRoom = (id, definition) => {
     }
     // Parse tile grid (Phase 8.2) — overrides tileOverrides where char != '.'
     if (Array.isArray(definition.tiles)) {
+        if (typeof definition.height === 'number' && definition.tiles.length !== definition.height) {
+            throw new Error(`Room "${id}" tile grid has ${definition.tiles.length} rows but height is ${definition.height}`);
+        }
+        if (typeof definition.width === 'number') {
+            definition.tiles.forEach((row, idx) => {
+                if (row.length !== definition.width) {
+                    throw new Error(`Room "${id}" tile grid row ${idx} has width ${row.length} but width is ${definition.width}`);
+                }
+            });
+        }
         const extras = [];
         definition.tiles.forEach((row, wy) => {
             for (let wx = 0; wx < row.length; wx++) {
@@ -116,9 +229,15 @@ export const defineRoom = (id, definition) => {
         definition.tileOverrides = (definition.tileOverrides || []).concat(extras);
         delete definition.tiles;
     }
+    if (Array.isArray(definition.terrain?.pools) && definition.terrain.pools.length) {
+        // Pool shapes should win over the base floor so the water silhouette survives.
+        const poolOverrides = definition.terrain.pools.flatMap((pool, index) => shapePool(pool, id, index));
+        definition.tileOverrides = (definition.tileOverrides || []).concat(poolOverrides);
+    }
 
     // Constrained Terrain Generation (Phase 8.5c)
-    if (definition.terrain && !definition.tileOverrides?.length && !definition.scenery?.length) {
+    const useTerrainOverlay = !!definition.terrain?.overlay;
+    if (definition.terrain && (useTerrainOverlay || (!definition.tileOverrides?.length && !definition.scenery?.length))) {
         const t = definition.terrain;
         const rng = seededRNG(hashStr(id));
         const width = definition.width || 11;
@@ -141,6 +260,10 @@ export const defineRoom = (id, definition) => {
             }
         });
         (definition.staticEntities || []).forEach(se => exitPoints.push({ x: se.x, y: se.y }));
+        if (useTerrainOverlay) {
+            (definition.tileOverrides || []).forEach((tile) => markFootprint(protectedTiles, tile.x, tile.y, tile.w || 1, tile.h || 1));
+            (definition.scenery || []).forEach((scenery) => markFootprint(protectedTiles, scenery.x, scenery.y, scenery.w || 1, scenery.h || 1));
+        }
 
         // 2. Protect 3x3 zones around critical points and shortest paths
         exitPoints.forEach(p => {
@@ -185,6 +308,10 @@ export const defineRoom = (id, definition) => {
                 const isEdge = x === 0 || x === width - 1 || y === 0 || y === height - 1;
                 const isProtected = protectedTiles.has(`${x},${y}`);
                 const isExit = exitPoints.some(p => p.x === x && p.y === y);
+
+                if (useTerrainOverlay && isProtected) {
+                    continue;
+                }
 
                 if (isEdge && !isExit) {
                     overrides.push({ x, y, type: 'wall' });

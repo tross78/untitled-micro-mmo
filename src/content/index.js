@@ -16,6 +16,7 @@ import {
   ITEMS,
   RECIPES,
   world,
+  ROOM_BIBLE,
   DEFAULT_PLAYER_STATS,
   INSTANCE_CAP,
 } from './data.js';
@@ -34,6 +35,7 @@ export {
   CORPORA,
   DEFAULT_PLAYER_STATS,
   INSTANCE_CAP,
+  ROOM_BIBLE,
 };
 
 export const itemRegistry = new Registry('items').registerAll(

@@ -11,8 +11,8 @@ The runtime does not load PNGs directly. Instead:
 
 Current constraints:
 
-* `strict` import mode: only the exact 4-role source palette is accepted
-* `quantized` import mode: arbitrary opaque pixel colors are reduced to the nearest of the 4 palette roles
+* `strict` import mode: only the exact five-role source palette is accepted
+* `quantized` import mode: arbitrary opaque pixel colors are reduced to the nearest of the five palette roles
 * transparent background required
 * directional/static base frames only
 * no runtime PNG dependency
@@ -34,7 +34,8 @@ Example:
       "outline": "#000000",
       "secondary": "#888888",
       "primary": "#cccccc",
-      "accent": "#ffffff"
+      "accent": "#ffffff",
+      "shadow": "#444444"
     }
   }
 }
@@ -56,6 +57,7 @@ That rewrites the PNG in place so every opaque pixel becomes the nearest of:
 * `#888888`
 * `#cccccc`
 * `#ffffff`
+* `#444444`
 
 You can also write to a separate output file:
 

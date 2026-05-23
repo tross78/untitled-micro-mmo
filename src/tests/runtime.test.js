@@ -269,4 +269,36 @@ describe('enemy world sync patrol stability', () => {
         expect(secondTransform.x).toBe(7);
         expect(secondTransform.y).toBe(8);
     });
+
+    test('world sync moves blocked enemy spawns to a safe tile', () => {
+        const world = new WorldStore();
+        const stores = {
+            localPlayer: { location: 'blocked_room' },
+            shardEnemies: new Map([['blocked_room', { hp: 10 }]]),
+            NPCS: {},
+            players: new Map()
+        };
+        const worldData = {
+            blocked_room: {
+                width: 11,
+                height: 11,
+                enemy: 'mountain_troll',
+                enemyX: 5,
+                enemyY: 5,
+                tileOverrides: [{ x: 5, y: 5, type: 'wall' }],
+                scenery: [],
+            }
+        };
+        const system = new WorldSyncSystem(world, stores, worldData);
+
+        system.update();
+
+        const enemyId = system.entityMap.get('enemy_blocked_room');
+        const transform = world.getComponent(enemyId, Component.Transform);
+        expect(transform.x === 5 && transform.y === 5).toBe(false);
+        expect(transform.x).toBeGreaterThanOrEqual(0);
+        expect(transform.y).toBeGreaterThanOrEqual(0);
+        expect(transform.x).toBeLessThan(worldData.blocked_room.width);
+        expect(transform.y).toBeLessThan(worldData.blocked_room.height);
+    });
 });

@@ -12,7 +12,7 @@
 // birthday collision probability at 50 peers that existed with 32-bit keys.
 // (Goodrich & Mitzenmacher 2011; birthday bound: P(collision) ≈ n²/2^b)
 
-const CELLS_PER_ITEM = 5;
+const CELLS_PER_ITEM = 12;
 
 const hashU32 = (str, seed = 0x811c9dc5) => {
     let h = seed >>> 0;
@@ -31,12 +31,24 @@ const checkHashHi = (hi, lo) => hashU32(`${hi >>> 0}:${lo >>> 0}`, 0x85ebca6b);
 const checkHashLo = (hi, lo) => hashU32(`${hi >>> 0}:${lo >>> 0}`, 0xc2b2ae35);
 
 const indexesFor = (hi, lo, cellCount) => {
-    const a = hashU32(`${hi}a${lo}`, 0x85ebca6b);
-    const b = hashU32(`${hi}b${lo}`, 0xc2b2ae35);
-    const c = hashU32(`${hi}c${lo}`, 0x27d4eb2f);
-    const d = hashU32(`${hi}d${lo}`, 0x38b06037);
-    const e = hashU32(`${hi}e${lo}`, 0x4f420323);
-    return [a % cellCount, b % cellCount, c % cellCount, d % cellCount, e % cellCount];
+    const raw = [
+        hashU32(`${hi}a${lo}`, 0x85ebca6b),
+        hashU32(`${hi}b${lo}`, 0xc2b2ae35),
+        hashU32(`${hi}c${lo}`, 0x27d4eb2f),
+        hashU32(`${hi}d${lo}`, 0x38b06037),
+        hashU32(`${hi}e${lo}`, 0x4f420323),
+    ];
+    const out = [];
+    const used = new Set();
+    for (let i = 0; i < raw.length; i++) {
+        let idx = raw[i] % cellCount;
+        const stepSeed = (raw[(i + 1) % raw.length] ^ raw[(i + 2) % raw.length]) >>> 0;
+        const step = 1 + (stepSeed % Math.max(1, cellCount - 1));
+        while (used.has(idx)) idx = (idx + step) % cellCount;
+        used.add(idx);
+        out.push(idx);
+    }
+    return out;
 };
 
 const makeCells = (count) => Array.from({ length: count }, () => ({
@@ -103,6 +115,7 @@ export class Minisketch {
 
     static decode(local, remote) {
         const cellCount = Math.min(local._cellCount, remote._cellCount);
+        const cap = Math.min(local._cap || 0, remote._cap || 0) || 0;
         const cells = makeCells(cellCount);
         for (let i = 0; i < cellCount; i++) {
             const a = local._cells[i]  || { count: 0, keyHiXor: 0, keyLoXor: 0, hashHiXor: 0, hashLoXor: 0 };
@@ -126,6 +139,7 @@ export class Minisketch {
         // Results are 64-bit keys encoded as BigInt for caller lookup via hashId().
         const added = [];
         const removed = [];
+        let peeled = 0;
         const queue = [];
         for (let i = 0; i < work.length; i++) { if (isPure(work[i])) queue.push(i); }
 
@@ -140,6 +154,7 @@ export class Minisketch {
             const key = (BigInt(hi) << 32n) | BigInt(lo);
             if (count > 0) removed.push(key);
             else added.push(key);
+            peeled += 1;
 
             for (const j of indexesFor(hi, lo, cellCount)) {
                 const c = work[j];
@@ -157,7 +172,8 @@ export class Minisketch {
             c.count === 0 && c.keyHiXor === 0 && c.keyLoXor === 0
             && c.hashHiXor === 0 && c.hashLoXor === 0
         );
-        return success ? { added, removed, failure: false } : { added: [], removed: [], failure: true };
+        if (!success || peeled > cap) return { added: [], removed: [], failure: true };
+        return { added, removed, failure: false };
     }
 
     // Returns a 64-bit BigInt key for a peer ID — used by callers to match

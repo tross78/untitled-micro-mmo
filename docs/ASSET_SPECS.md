@@ -1,6 +1,6 @@
 # Asset Specs
 
-This file is the quick reference for PNG authoring sizes in the `8.525` asset pipeline.
+This file is the quick reference for PNG authoring sizes in the current asset pipeline.
 
 Use it together with:
 
@@ -21,7 +21,7 @@ The pipeline supports both:
 * **single-frame PNGs**
 * **horizontal frame strips** for assets whose manifest entry declares `frameCount`
 
-The manifest is the runtime source of truth.
+The manifest is the source of truth for source sizes, frame counts, and palette roles.
 
 ## Players
 
@@ -86,19 +86,19 @@ That means a `tree` is authored as a `48x48` compiled scenery frame while still 
 
 ## Strict Import Rules
 
-The compiler currently accepts the strict role palette:
+The compiler accepts the strict five-role palette:
 
 * outline: `#000000`
 * secondary: `#888888`
 * primary: `#cccccc`
 * accent: `#ffffff`
-* shadow: `#444444` (optional but supported end-to-end)
+* shadow: `#444444`
 
-Anything else will fail compilation.
+Anything outside those exact opaque role colors will fail compilation in strict mode.
 
 ## Quantized Import Option
 
-If you want to start from existing pixel art instead of hand-authoring in the strict 4-role palette, set:
+If you want to start from existing pixel art instead of hand-authoring in the strict five-role palette, set:
 
 ```json
 {
