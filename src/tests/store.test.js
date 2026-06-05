@@ -132,14 +132,15 @@ describe('store state helpers', () => {
             _version: 1,
             name: 'Saved',
             location: 'cellar',
-            x: 5,
+            x: 4,
             y: 5,
         });
 
         await loadLocalState();
 
         expect(localPlayer.location).toBe('cellar');
-        expect({ x: localPlayer.x, y: localPlayer.y }).not.toEqual({ x: 5, y: 5 });
+        // (4,5) is the cellar_guard static-entity spawn; load must relocate off it.
+        expect({ x: localPlayer.x, y: localPlayer.y }).not.toEqual({ x: 4, y: 5 });
     });
 
     test('loadLocalState migrates old saves and fills missing runtime defaults', async () => {

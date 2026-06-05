@@ -69,6 +69,15 @@ body { background: #1a1a1a; color: #ccc; font: 12px/1.4 monospace; display: flex
     <input type="number" id="inp-height" style="width:35px; background:none; border:none; color:#fff; font:inherit">
   </div>
 
+  <div style="display:flex; align-items:center; gap:4px; margin-left:8px; background:#333; padding:2px 6px; border:1px solid #555" title="Blue-noise place a prop across the room's walkable area with a minimum gap. Click again to re-roll.">
+    <span style="font-size:10px; color:#888">SCATTER:</span>
+    <select id="scatter-label" style="background:#333; color:#fff; border:1px solid #555; font:inherit; font-size:10px"></select>
+    <span style="font-size:10px; color:#888">gap</span>
+    <input type="number" id="scatter-gap" value="3" min="1" style="width:30px; background:none; border:none; color:#fff; font:inherit">
+    <button id="btn-scatter" style="background:#335577; color:#aaccff; border:1px solid #446688">Scatter</button>
+    <button id="btn-scatter-clear" style="background:#553333; color:#ccc; border:1px solid #664444">Clear</button>
+  </div>
+
   <button id="btn-exit-place" style="background:#444; color:#ccc; border:1px solid #555" title="Toggle exit-place mode: click a tile to set exit X/Y coordinates. Shift+click any exit tile to navigate to that room.">Exit Place</button>
   <button id="btn-revert" style="background:#444; color:#fff; border:1px solid #555">Revert Room</button>
   <button id="btn-export" style="background:#2a4a8a; color:#fff; border:1px solid #3a5aaa">Export All (Download)</button>

@@ -52,6 +52,26 @@ export const SCENERY_RENDER_STYLE = {
 };
 
 /**
+ * Footprint-relative draw scale for small ground clutter whose sprite art fills its whole cell.
+ * Without this they render as tile-sized boulders/objects. Scaled sprites are centered horizontally
+ * and seated on the bottom of their tile so they read as objects lying on the ground. Default is 1.
+ */
+export const SCENERY_RENDER_SCALE = {
+    rock: 0.66,
+    stone: 0.6,
+    ore: 0.62,
+    coal: 0.6,
+    bones: 0.66,
+    log: 0.7,
+    mushroom: 0.62,
+    shell: 0.55,
+    herbs: 0.62,
+    fiber: 0.6,
+    flower: 0.6,
+    snowflake: 0.55,
+};
+
+/**
  * HUD and Overlay Palette (Phase 8.55e)
  * Warm, readable, and cohesive.
  */

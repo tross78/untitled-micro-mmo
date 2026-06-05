@@ -68,5 +68,66 @@ export const NPCS = {
         home: 'cellar',
         role: 'flavor',
         baseDialogue: "New here? Head through the door to the north. The tavern's where people find work around these parts."
-    })
+    }),
+    watchman: defineNpc('watchman', {
+        name: 'Watchman',
+        sprite: 'guard',
+        palette: 'npcGuard',
+        home: 'watchtower',
+        role: 'flavor',
+        baseDialogue: "From up here I can see smoke over the forest. The bandits have been closer than usual this season.",
+        locationDialogue: {
+            watchtower: "The mountain pass gets quiet before something moves through it. Keep your ears open down there.",
+        },
+    }),
+    miller: defineNpc('miller', {
+        name: 'Miller Bram',
+        sprite: 'merchant',
+        palette: 'npcTrade',
+        home: 'mill',
+        role: 'flavor',
+        baseDialogue: "Grain from the crossroads, flour for the town. Same work, every day.",
+        locationDialogue: {
+            mill: "The wheel needs a new pin, but the smith is busy. You see anything useful out there, bring it back.",
+        },
+    }),
+    librarian: defineNpc('librarian', {
+        name: 'Archivist',
+        sprite: 'sage',
+        palette: 'npcSage',
+        home: 'library',
+        role: 'shop',
+        shop: ['old_tome'],
+        baseDialogue: "Knowledge is the only thing the ruins did not take.",
+        locationDialogue: {
+            library: "The old texts mention something below the catacombs. I do not recommend looking.",
+        },
+    }),
+    fisherman: defineNpc('fisherman', {
+        name: 'Old Fisher',
+        sprite: 'bard',
+        palette: 'npcSong',
+        home: 'harbour',
+        role: 'flavor',
+        baseDialogue: "That sea cave to the south is not safe. Something lives in the tide pool.",
+        locationDialogue: {
+            harbour: "Best fishing is at the lake shore. Too cold here, and the smugglers make the dock unpleasant.",
+        },
+    }),
+    grocer: defineNpc('grocer', {
+        name: 'Grocer',
+        sprite: 'merchant',
+        palette: 'npcWarm',
+        home: 'market',
+        role: 'flavor',
+        baseDialogue: "Turnips, onions, barley — fresh off the morning cart. Coin first, then you squeeze.",
+    }),
+    town_crier: defineNpc('town_crier', {
+        name: 'Town Crier',
+        sprite: 'bard',
+        palette: 'npcSong',
+        home: 'market',
+        role: 'flavor',
+        baseDialogue: "Hear it, hear it! The roads east run thick with wolves, and the watchtower wants able hands.",
+    }),
 };

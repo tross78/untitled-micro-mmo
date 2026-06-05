@@ -72,11 +72,7 @@ export { zoneTileType };
 function getBlendProfile(tileType, neighborType) {
     const key = `${tileType}->${neighborType}`;
     const profiles = {
-        'grass->dirt': { side: '#7a5a28', accent: '#a88446', mode: 'tuft' },
-        'grass->cobble': { side: '#7a5a28', accent: '#9a907e', mode: 'tuft' },
         'grass->water': { side: '#6aa03a', accent: '#8ed0ff', mode: 'shore' },
-        'forest->grass': { side: '#2c5a1c', accent: '#6ea040', mode: 'tuft' },
-        'forest->dirt': { side: '#5a3418', accent: '#7c5e30', mode: 'tuft' },
         'forest->water': { side: '#24461a', accent: '#7ac8ff', mode: 'shore' },
         'dirt->water': { side: '#7a5a28', accent: '#8ccae8', mode: 'shore' },
         'sand->water': { side: '#d8c88a', accent: '#8ccae8', mode: 'shore' },
@@ -97,7 +93,16 @@ function getBlendProfile(tileType, neighborType) {
         'ice->dirt': { side: '#8bb6d4', accent: '#d1e8f4', mode: 'crack' },
         'ice->sand': { side: '#8bb6d4', accent: '#f2f5de', mode: 'crack' },
     };
-    return profiles[key] || null;
+    if (profiles[key]) return profiles[key];
+    // Generic ground↔ground transition: dither the neighbour's colour into this tile's edge so two
+    // different floor types don't meet in a hard, blocky seam (a procedural stand-in for transition tiles).
+    // Walls and water keep their explicit profiles above; we only auto-blend walkable floor types.
+    const GROUND = new Set(['grass', 'forest', 'dirt', 'sand', 'cobble', 'stone_floor', 'dungeon', 'cave', 'interior', 'mud', 'ice']);
+    if (tileType !== neighborType && GROUND.has(tileType) && GROUND.has(neighborType)) {
+        const np = TILE_PAL[neighborType];
+        if (np) return { side: np.base, accent: np.lo, mode: 'round' };
+    }
+    return null;
 }
 
 function getNeighborSignature(tileType, neighbors) {
@@ -158,10 +163,33 @@ function drawCornerBlend(ctx, tileType, cx, cy, neighbors, S) {
         const [aDir, bDir] = corner.dirs;
         const a = neighbors[aDir];
         const b = neighbors[bDir];
-        if (a === tileType || b === tileType) continue;
+        // Only round where BOTH neighbours are real, differing tiles. If one is off-map (null at the
+        // room boundary) we must not round — otherwise edge-of-screen tiles cut a corner toward the void
+        // and show a reversed-colour artefact.
+        if (!a || !b || a === tileType || b === tileType) continue;
 
         const profile = getBlendProfile(tileType, a) || getBlendProfile(tileType, b);
         if (!profile) continue;
+
+        if (profile.mode === 'round') {
+            // Cut this convex corner along a quarter-circle and fill it with the neighbour colour, so the
+            // floor region reads as a smooth rounded blob (like the water pool) instead of a blocky step.
+            const r = Math.max(2, Math.round(S * 0.42));
+            const west = corner.dirs.includes('west');
+            const north = corner.dirs.includes('north');
+            const accx = west ? r : S - 1 - r;
+            const accy = north ? r : S - 1 - r;
+            const x0 = west ? 0 : S - r, x1 = west ? r : S - 1;
+            const y0 = north ? 0 : S - r, y1 = north ? r : S - 1;
+            ctx.fillStyle = profile.side;
+            for (let yy = y0; yy <= y1; yy++) {
+                for (let xx = x0; xx <= x1; xx++) {
+                    const ddx = xx - accx, ddy = yy - accy;
+                    if (ddx * ddx + ddy * ddy > r * r) ctx.fillRect(cx + xx, cy + yy, 1, 1);
+                }
+            }
+            continue;
+        }
 
         const px = cx + corner.x;
         const py = cy + corner.y;
@@ -221,6 +249,13 @@ function blendTileEdges(ctx, tileType, cx, cy, neighbors, S) {
                 ctx.fillRect(cx + ox, cy + 2, 1, S - 4);
                 ctx.fillRect(cx + ox + 1, cy + 4, 1, S - 8);
             }
+            continue;
+        }
+
+        if (profile.mode === 'round') {
+            // The smooth, water-like outline is produced entirely by the corner rounding in
+            // drawCornerBlend. Feathering straight runs here produced a dotted seam line that traced the
+            // whole boundary, so we deliberately draw nothing on straight edges — clean colour boundary.
             continue;
         }
 
@@ -302,16 +337,11 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
 
     if (tileType === 'grass' || tileType === 'forest') {
         // Layered blades, tufts, and wear. The goal is a readably hand-authored turf tile.
-        const grassBases = [
-            p.base,    // v0-1: standard green
-            '#386e22', // v2-3: lush, slightly cooler
-            '#5a8a28', // v4-5: dry, warmer/yellower
-            p.base,    // v6-7: patchy — same base, different detail
-        ];
-        const grassHi = [p.hi, '#58a030', '#78aa38', p.hi];
+        // Cohesive turf: keep the base fill consistent across tiles so the ground does not read as a
+        // checkerboard of different greens. Variation lives in the blade/tuft detail, not the base color.
         const subType = Math.floor(variant / 2);
-        const baseColor = tileType === 'forest' ? (variant < 4 ? p.lo : '#1a3a10') : grassBases[subType];
-        const hiColor   = tileType === 'forest' ? p.hi : grassHi[subType];
+        const baseColor = tileType === 'forest' ? p.lo : p.base;
+        const hiColor   = p.hi;
         const shadowColor = tileType === 'forest' ? '#102808' : '#2e5318';
         const state = edgeState(neighbors, tileType);
 
@@ -372,11 +402,11 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
             ctx.fillRect(cx + 2, cy + h - 1, 1, 2);
             ctx.fillRect(cx + S - 4, cy + h - 2, 1, 3);
             ctx.fillRect(cx + h, cy + 2, 1, 1);
-        } else if (subType === 3) {
-            // Patchy: bare dirt patch
-            ctx.fillStyle = tileType === 'forest' ? '#3a1e0a' : '#906830';
-            ctx.fillRect(cx + h - 1, cy + h - 1, 5, 3);
-            ctx.fillRect(cx + h, cy + h, 3, 1);
+        } else if (subType === 3 && variant === 7) {
+            // Rare, subtle ground wear — kept small and tonal so it does not read as scattered brown blobs.
+            ctx.fillStyle = tileType === 'forest' ? '#26340f' : '#3f6a22';
+            ctx.fillRect(cx + h, cy + h, 2, 1);
+            ctx.fillRect(cx + h + 1, cy + h + 1, 1, 1);
         }
 
         // Forest: leaf debris on all variants
@@ -575,48 +605,33 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         ctx.globalAlpha = 1.0;
 
     } else if (tileType === 'sand') {
-        // Fine grain, broken ripples, and soft drift keep it from reading like wood planks.
-        const rippleYs = [Math.floor(S * 0.2), Math.floor(S * 0.47), Math.floor(S * 0.72)];
-        const rippleOffset = (variant % 4) * Math.max(1, Math.floor(S / 10));
+        // Wind-blown grain: scattered speckle + a couple of short, offset ripples. Deliberately NO
+        // full-width horizontal bands or per-tile bottom shadow — those tile up into plank/panel seams.
         ctx.fillStyle = p.base;
         ctx.fillRect(cx, cy, S, S);
-        for (let i = 0; i < 12; i++) {
-            const px = 1 + ((variant * 3 + i * 5) % (S - 2));
-            const py = 1 + ((variant * 7 + i * 3) % (S - 2));
-            ctx.fillStyle = i % 4 === 0 ? p.lo : (i % 3 === 0 ? p.hi : p.base);
+        for (let i = 0; i < 20; i++) {
+            const px = (variant * 5 + i * 7) % S;
+            const py = (variant * 3 + i * 11) % S;
+            ctx.fillStyle = i % 6 === 0 ? p.lo : (i % 3 === 0 ? p.hi : p.base);
             ctx.fillRect(cx + px, cy + py, 1, 1);
         }
+        // two short, broken ripples at varied positions — never spanning the full tile width
+        ctx.fillStyle = p.hi;
+        ctx.fillRect(cx + (variant * 3) % Math.max(1, S - 6), cy + 3 + (variant % 4), 3 + (variant % 3), 1);
         ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + S - 2, S, 2);
-        ctx.fillRect(cx + 1, cy + S - 3, S - 2, 1);
-        rippleYs.forEach((ry, i) => {
-            ctx.fillStyle = i === 1 ? p.accent : p.hi;
-            const rLen = Math.floor(S * (0.35 + i * 0.08));
-            const rx = cx + (rippleOffset + i * 2) % Math.max(1, S - rLen);
-            ctx.fillRect(rx, cy + ry, Math.max(3, rLen), 1);
-            if (i === 1) ctx.fillRect(rx + 1, cy + ry + 1, Math.max(1, rLen - 2), 1);
-            if (i !== 0) ctx.fillRect(rx + 2, cy + ry - 1, Math.max(2, Math.floor(rLen * 0.35)), 1);
-        });
+        ctx.fillRect(cx + 2 + (variant * 5) % Math.max(1, S - 7), cy + S - 5 - (variant % 3), 3 + ((variant + 1) % 3), 1);
+        if (variant % 2 === 0) {
+            ctx.fillStyle = p.accent;
+            ctx.fillRect(cx + (variant * 2) % Math.max(1, S - 2), cy + h, 2, 1);
+        }
         if (motif === 'shoreline') {
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx, cy + S - 3, S, 1);
-            ctx.fillRect(cx + 2, cy + S - 4, S - 4, 1);
-            ctx.fillRect(cx + 4, cy + S - 5, S - 8, 1);
-        } else if (motif === 'wash') {
-            ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + q, cy + q + 1, h, 1);
-            ctx.fillRect(cx + q + 2, cy + q + 2, h - 4, 1);
-            ctx.fillRect(cx + q + 1, cy + q + 3, h - 6, 1);
+            ctx.fillRect(cx + 2, cy + S - 3, S - 4, 1);
+            ctx.fillRect(cx + 5, cy + S - 4, S - 10, 1);
         } else if (motif === 'dune') {
             ctx.fillStyle = p.hi;
-            ctx.fillRect(cx + 1, cy + 2, S - 2, 1);
-            ctx.fillRect(cx + 2, cy + 3, S - 4, 1);
-            ctx.fillRect(cx + 4, cy + 4, S - 8, 1);
+            ctx.fillRect(cx + 3, cy + 2, S - 6, 1);
         }
-        // Shadow at bottom
-        ctx.fillStyle = p.lo;
-        ctx.fillRect(cx, cy + S - 2, S, 2);
-        ctx.fillRect(cx + 2, cy + S - 4, S - 4, 1);
 
     } else if (tileType === 'wall') {
         // Proper staggered brick with heavier top weight and a stronger support read.

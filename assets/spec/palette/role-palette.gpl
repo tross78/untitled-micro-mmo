@@ -1,0 +1,9 @@
+GIMP Palette
+Name: Fenhollow Role Grays
+Columns: 5
+#
+  0   0   0	outline
+ 68  68  68	shadow
+136 136 136	secondary
+204 204 204	primary
+255 255 255	accent

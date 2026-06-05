@@ -157,7 +157,8 @@ export function setPendingTrade(val) {
 
 const isRoomTileWalkable = (room, x, y) => {
     if (!room || x < 0 || y < 0 || x >= room.width || y >= room.height) return false;
-    const wall = (room.tileOverrides || []).find((t) => t.x === x && t.y === y && t.type === 'wall');
+    // Walls and water are impassable (matches movement-system.isWalkable).
+    const wall = (room.tileOverrides || []).find((t) => t.x === x && t.y === y && (t.type === 'wall' || t.type === 'water'));
     if (wall) return false;
     const scenery = (room.scenery || []).find((s) =>
         x >= s.x && x < s.x + (s.w || 1) &&

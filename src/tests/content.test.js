@@ -20,6 +20,59 @@ describe('content validation', () => {
         });
     });
 
+    test('placement integrity flags overlaps, water/wall props, and covered exits', () => {
+        const result = validateContent({
+            itemDefinitions: [],
+            enemyDefinitions: [],
+            npcDefinitions: [],
+            recipeDefinitions: [],
+            questDefinitions: [],
+            roomDefinitions: [{
+                id: 'qa_room', name: 'QA', zone: 'dungeon', width: 5, height: 5,
+                exits: {},
+                tileOverrides: [{ x: 2, y: 2, type: 'wall' }, { x: 3, y: 3, type: 'water' }],
+                scenery: [
+                    { x: 1, y: 1, label: 'rock', w: 1, h: 1 },
+                    { x: 1, y: 1, label: 'bones', w: 1, h: 1 },
+                    { x: 3, y: 3, label: 'rock', w: 1, h: 1 },
+                    { x: 2, y: 2, label: 'crate', w: 1, h: 1 },
+                    { x: 3, y: 1, label: 'bookshelf', w: 2, h: 1 },
+                    { x: 3, y: 0, label: 'barrel', w: 1, h: 1 },
+                ],
+                staticEntities: [{ id: 'qa_npc', x: 2, y: 2 }],
+                enemy: 'qa_enemy', enemyX: 3, enemyY: 3,
+                exitTiles: [{ x: 2, y: 2, dest: 'qa_room', destX: 3, destY: 3, type: 'edge', w: 1, h: 1 }],
+            }],
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.problems).toContain('Room "qa_room" has overlapping scenery at (1,1): "rock" and "bones"');
+        expect(result.problems).toContain('Room "qa_room" places "rock" on a water tile at (3,3)');
+        expect(result.problems).toContain('Room "qa_room" NPC "qa_npc" stands on a wall tile at (2,2)');
+        expect(result.problems).toContain('Room "qa_room" enemy "qa_enemy" spawns in water at (3,3)');
+        expect(result.problems).toContain('Room "qa_room" exit to "qa_room" is covered by a wall at (2,2)');
+        expect(result.problems).toContain('Room "qa_room" exit to "qa_room" lands the player in water at (3,3)');
+        expect(result.problems).toContain('Room "qa_room" places solid prop "crate" inside a wall at (2,2)');
+        expect(result.problems).toContain('Room "qa_room" tall prop "bookshelf" at (3,1) is overlapped by "barrel" directly above at (3,0)');
+    });
+
+    test('clutter validator flags an over-propped room', () => {
+        const result = validateContent({
+            itemDefinitions: [], enemyDefinitions: [], npcDefinitions: [], recipeDefinitions: [], questDefinitions: [],
+            roomDefinitions: [{
+                id: 'cram', name: 'Cram', zone: 'town', width: 4, height: 4, exits: {},
+                scenery: [
+                    { x: 0, y: 0, label: 'rock', w: 1, h: 1 }, { x: 1, y: 0, label: 'rock', w: 1, h: 1 },
+                    { x: 2, y: 0, label: 'rock', w: 1, h: 1 }, { x: 0, y: 1, label: 'rock', w: 1, h: 1 },
+                    { x: 2, y: 1, label: 'rock', w: 1, h: 1 }, { x: 0, y: 2, label: 'rock', w: 1, h: 1 },
+                    { x: 1, y: 2, label: 'rock', w: 1, h: 1 }, { x: 3, y: 3, label: 'rock', w: 1, h: 1 },
+                ],
+            }],
+        });
+        expect(result.ok).toBe(false);
+        expect(result.problems.some((p) => p.startsWith('Room "cram" is overcluttered'))).toBe(true);
+    });
+
     test('npc definitions require compiled sprite ids', () => {
         const result = validateContent({
             itemDefinitions: [],

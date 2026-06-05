@@ -19,6 +19,11 @@ const RUNTIME_SPRITE_NAMES = new Set([
 
 const VALID_TILES = new Set(Object.values(TILE_TAXONOMY).flat());
 const VALID_SCENERY = new Set(Object.values(SCENERY_SIZE_CLASSES).flat());
+// Labels that legitimately occupy a wall tile (mounted on / built into the wall).
+const WALL_MOUNTABLE = new Set(['torch', 'candle', 'sign', 'ladder', 'fireplace']);
+// Props that render taller than 1 tile and shifted upward; the tile directly above must stay clear
+// of other scenery or it gets visually overlapped (e.g. a barrel drawn behind a bookshelf).
+const TALL_SCENERY = new Set(['tree', 'bookshelf', 'fireplace', 'door_arch', 'pillar']);
 const FORAGE_LABEL_TO_ITEM = {
   herbs: 'herbs',
   mushroom: 'red_mushroom',
@@ -167,10 +172,11 @@ export const validateContent = (defs) => {
   }
   const getIsWalkable = (r) => (x, y) => {
     if (x < 0 || x >= r.width || y < 0 || y >= r.height) return false;
-    const wall = (r.tileOverrides || []).find(t => t.x === x && t.y === y && t.type === 'wall');
-    if (wall) return false;
-    const scenery = (r.scenery || []).find(s => 
-      x >= s.x && x < s.x + (s.w || 1) && 
+    // Match runtime movement-system.isWalkable: walls AND water are impassable.
+    const blocked = (r.tileOverrides || []).find(t => t.x === x && t.y === y && (t.type === 'wall' || t.type === 'water'));
+    if (blocked) return false;
+    const scenery = (r.scenery || []).find(s =>
+      x >= s.x && x < s.x + (s.w || 1) &&
       y >= s.y && y < s.y + (s.h || 1)
     );
     if (scenery) return false;
@@ -202,6 +208,100 @@ export const validateContent = (defs) => {
         problems.push(`[warn] Room "${room.id}" places "${sc.label}" away from a wall or edge`);
       }
     }
+
+    // --- Placement Integrity (props / NPCs / enemies / exits) ---
+    // map-render-system resolves overlapping tile overrides last-wins, so detect the
+    // effective (rendered) tile type the same way rather than first-match.
+    const effectiveTileType = (() => {
+      const m = new Map();
+      for (const o of room.tileOverrides || []) m.set(`${o.x},${o.y}`, o.type);
+      return (x, y) => (m.has(`${x},${y}`) ? m.get(`${x},${y}`) : null);
+    })();
+    const isWallTile = (x, y) => effectiveTileType(x, y) === 'wall';
+    const isWaterTile = (x, y) => effectiveTileType(x, y) === 'water';
+    const sceneryFootprint = new Map();
+    for (const sc of room.scenery || []) {
+      for (let oy = 0; oy < (sc.h || 1); oy++) {
+        for (let ox = 0; ox < (sc.w || 1); ox++) {
+          const cx = sc.x + ox, cy = sc.y + oy;
+          if (cx < 0 || cy < 0 || cx >= room.width || cy >= room.height) {
+            problems.push(`Room "${room.id}" scenery "${sc.label}" extends out of bounds at (${cx},${cy})`);
+            continue;
+          }
+          const key = `${cx},${cy}`;
+          if (sceneryFootprint.has(key)) {
+            problems.push(`Room "${room.id}" has overlapping scenery at (${cx},${cy}): "${sceneryFootprint.get(key)}" and "${sc.label}"`);
+          } else {
+            sceneryFootprint.set(key, sc.label);
+          }
+          if (isWaterTile(cx, cy)) {
+            problems.push(`Room "${room.id}" places "${sc.label}" on a water tile at (${cx},${cy})`);
+          }
+          if (isWallTile(cx, cy) && !WALL_MOUNTABLE.has(sc.label)) {
+            problems.push(`Room "${room.id}" places solid prop "${sc.label}" inside a wall at (${cx},${cy})`);
+          }
+        }
+      }
+    }
+    const sceneryLabelAt = (x, y) => sceneryFootprint.get(`${x},${y}`);
+    for (const sc of room.scenery || []) {
+      if (!TALL_SCENERY.has(sc.label) || sc.y <= 0) continue;
+      for (let ox = 0; ox < (sc.w || 1); ox++) {
+        const aboveLabel = sceneryLabelAt(sc.x + ox, sc.y - 1);
+        if (aboveLabel) {
+          problems.push(`Room "${room.id}" tall prop "${sc.label}" at (${sc.x},${sc.y}) is overlapped by "${aboveLabel}" directly above at (${sc.x + ox},${sc.y - 1})`);
+        }
+      }
+    }
+    for (const e of room.staticEntities || []) {
+      if (typeof e.x !== 'number' || typeof e.y !== 'number') continue;
+      if (e.x < 0 || e.y < 0 || e.x >= room.width || e.y >= room.height) continue;
+      if (isWallTile(e.x, e.y)) problems.push(`Room "${room.id}" NPC "${e.id}" stands on a wall tile at (${e.x},${e.y})`);
+      if (isWaterTile(e.x, e.y)) problems.push(`Room "${room.id}" NPC "${e.id}" stands in water at (${e.x},${e.y})`);
+      if (sceneryLabelAt(e.x, e.y)) problems.push(`Room "${room.id}" NPC "${e.id}" stands on scenery "${sceneryLabelAt(e.x, e.y)}" at (${e.x},${e.y})`);
+    }
+    if (room.enemy && Number.isFinite(room.enemyX) && Number.isFinite(room.enemyY)) {
+      if (isWallTile(room.enemyX, room.enemyY)) problems.push(`Room "${room.id}" enemy "${room.enemy}" spawns on a wall tile at (${room.enemyX},${room.enemyY})`);
+      if (isWaterTile(room.enemyX, room.enemyY)) problems.push(`Room "${room.id}" enemy "${room.enemy}" spawns in water at (${room.enemyX},${room.enemyY})`);
+      if (sceneryLabelAt(room.enemyX, room.enemyY)) problems.push(`Room "${room.id}" enemy "${room.enemy}" spawns on scenery "${sceneryLabelAt(room.enemyX, room.enemyY)}" at (${room.enemyX},${room.enemyY})`);
+    }
+    for (const et of room.exitTiles || []) {
+      for (let oy = 0; oy < (et.h || 1); oy++) {
+        for (let ox = 0; ox < (et.w || 1); ox++) {
+          const cx = et.x + ox, cy = et.y + oy;
+          if (cx < 0 || cy < 0 || cx >= room.width || cy >= room.height) continue;
+          if (isWallTile(cx, cy)) problems.push(`Room "${room.id}" exit to "${et.dest}" is covered by a wall at (${cx},${cy})`);
+          if (sceneryLabelAt(cx, cy)) problems.push(`Room "${room.id}" exit to "${et.dest}" is blocked by scenery "${sceneryLabelAt(cx, cy)}" at (${cx},${cy})`);
+          if (isWaterTile(cx, cy)) problems.push(`Room "${room.id}" exit to "${et.dest}" lands on a water tile at (${cx},${cy})`);
+        }
+      }
+      // The arrival tile in the destination room must not be water (player would spawn in the sea).
+      const destRoom = rooms.find((rr) => rr.id === et.dest);
+      if (destRoom && Number.isFinite(et.destX) && Number.isFinite(et.destY)) {
+        let landingType = null;
+        for (const o of destRoom.tileOverrides || []) {
+          if (o.x === et.destX && o.y === et.destY) landingType = o.type; // last write wins (render order)
+        }
+        if (landingType === 'water') {
+          problems.push(`Room "${room.id}" exit to "${et.dest}" lands the player in water at (${et.destX},${et.destY})`);
+        }
+      }
+    }
+
+    // Clutter: authored scenery should not dominate the open floor (a cramped, over-propped room).
+    let openFloor = 0;
+    for (let yy = 0; yy < room.height; yy++) {
+      for (let xx = 0; xx < room.width; xx++) {
+        const t = effectiveTileType(xx, yy);
+        if (t !== 'wall' && t !== 'water') openFloor++;
+      }
+    }
+    let sceneryFootCells = 0;
+    for (const sc of room.scenery || []) sceneryFootCells += (sc.w || 1) * (sc.h || 1);
+    if (openFloor > 0 && sceneryFootCells / openFloor > 0.33) {
+      problems.push(`Room "${room.id}" is overcluttered — scenery covers ${Math.round((sceneryFootCells / openFloor) * 100)}% of the open floor (max 33%)`);
+    }
+
     for (const scatter of room.sceneryScatter || []) {
       if (scatter.type === 'flora') {
         const itemId = FORAGE_LABEL_TO_ITEM[scatter.label];
@@ -393,6 +493,31 @@ export const validateContent = (defs) => {
             }
             if (!ok) problems.push(`Room "${room.id}": ${p.label} is unreachable`);
           }
+      }
+    }
+
+    // Full navigability: the walkable area must be one connected region (water-aware), so the
+    // player can move all the way around lakes/props without isolated pockets or unreachable tiles.
+    const walkableCells = [];
+    for (let yy = 0; yy < room.height; yy++) {
+      for (let xx = 0; xx < room.width; xx++) {
+        if (isWalkable(xx, yy)) walkableCells.push(`${xx},${yy}`);
+      }
+    }
+    if (walkableCells.length > 1) {
+      const wset = new Set(walkableCells);
+      const wseen = new Set([walkableCells[0]]);
+      const wq = [walkableCells[0]];
+      while (wq.length) {
+        const [cx, cy] = wq.pop().split(',').map((n) => +n);
+        for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+          const k = `${cx + dx},${cy + dy}`;
+          if (wset.has(k) && !wseen.has(k)) { wseen.add(k); wq.push(k); }
+        }
+      }
+      if (wseen.size < walkableCells.length) {
+        const isolated = walkableCells.filter((c) => !wseen.has(c));
+        problems.push(`Room "${room.id}" has ${isolated.length} walkable tile(s) cut off from the rest of the room (e.g. ${isolated[0]}) — likely a water or scenery blockage`);
       }
     }
   }

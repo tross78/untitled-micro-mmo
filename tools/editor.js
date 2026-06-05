@@ -6,6 +6,7 @@
 
 import { drawTile, zoneTileType, getGrayscaleTemplate, applyPalette, getSceneryPalette } from '../src/graphics/graphics.js';
 import { rooms } from '../src/content/data/rooms.js';
+import { SCENERY_DIMENSIONS } from '../src/infra/graphics-constants.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,13 @@ const SCENERY_SHAPES = [
     'torch','bones','anchor','snowflake','crown','ladder','shell',
     'scroll','altar','grave','mushroom','door_arch','candle',
 ];
+
+// Placement metadata (mirrors src/content/validate.js so the editor warns the same way the engine does).
+const FOOT = (label) => SCENERY_DIMENSIONS[label] || [1, 1];
+const WALL_MOUNTABLE = new Set(['torch', 'candle', 'sign', 'ladder', 'fireplace']);
+const TALL_SCENERY = new Set(['tree', 'bookshelf', 'fireplace', 'door_arch', 'pillar']);
+const WALL_ANCHORED = new Set(['torch', 'crate', 'barrel', 'counter', 'bed', 'door_arch', 'stall', 'ladder', 'stairs', 'bookshelf', 'fireplace']);
+const CLUTTER_WARN = 0.25; // scenery footprint over 25% of open floor reads as cramped
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -64,6 +72,7 @@ function init() {
     setupToolbar();
     setupExitHandlers();
     setupExitPlaceMode();
+    setupScatter();
 }
 
 function buildDestSelect() {
@@ -711,6 +720,59 @@ function buildSceneryModal() {
     });
 }
 
+// ── Scatter tool (blue-noise / best-candidate placement) ──────────────────────
+
+function scatterBlocked(tx, ty) {
+    const room = rooms[state.roomId];
+    // edge clearance of 1 so props never hug the outer wall band
+    if (tx < 1 || ty < 1 || tx >= room.width - 1 || ty >= room.height - 1) return true;
+    const ch = state.grid[ty]?.[tx] || '.';
+    if (ch === 'W' || ch === 'V') return true; // never on walls or water
+    if (state.scenery.some(s => { const [w, h] = FOOT(s.label); return tx >= s.x && tx < s.x + w && ty >= s.y && ty < s.y + h; })) return true;
+    if (state.exitTiles.some(e => tx >= e.x && tx < e.x + (e.w || 1) && ty >= e.y && ty < e.y + (e.h || 1))) return true;
+    return false;
+}
+
+function scatterScenery() {
+    const room = rooms[state.roomId];
+    if (!room) return;
+    const label = document.getElementById('scatter-label').value;
+    const gap = Math.max(1, parseInt(document.getElementById('scatter-gap').value, 10) || 3);
+
+    const cands = [];
+    for (let y = 1; y < room.height - 1; y++) {
+        for (let x = 1; x < room.width - 1; x++) {
+            if (!scatterBlocked(x, y)) cands.push([x, y]);
+        }
+    }
+    // Authoring tool — Math.random is fine here (re-roll until it looks good); not simulation code.
+    for (let i = cands.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cands[i], cands[j]] = [cands[j], cands[i]]; }
+
+    const others = state.scenery.filter(s => s.label !== label);
+    const obstacles = others.map(s => [s.x, s.y]);
+    const placed = [];
+    for (const [x, y] of cands) {
+        const clear = [...placed, ...obstacles].every(([px, py]) => Math.max(Math.abs(px - x), Math.abs(py - y)) >= gap);
+        if (clear) placed.push([x, y]);
+    }
+    state.scenery = others.concat(placed.map(([x, y]) => ({ x, y, label })));
+    renderTileCanvas(); renderDSL(); renderValidation(); saveEditorState();
+    document.getElementById('status').textContent = `Scattered ${placed.length} × ${label} (min gap ${gap}). Click again to re-roll.`;
+}
+
+function setupScatter() {
+    const sel = document.getElementById('scatter-label');
+    if (!sel) return;
+    SCENERY_SHAPES.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o); });
+    document.getElementById('btn-scatter')?.addEventListener('click', scatterScenery);
+    document.getElementById('btn-scatter-clear')?.addEventListener('click', () => {
+        const label = document.getElementById('scatter-label').value;
+        state.scenery = state.scenery.filter(s => s.label !== label);
+        renderTileCanvas(); renderDSL(); renderValidation(); saveEditorState();
+        document.getElementById('status').textContent = `Cleared all ${label}.`;
+    });
+}
+
 function getRoomDSL(id) {
     const room = rooms[id];
     if (!room) return '';
@@ -877,6 +939,50 @@ function renderValidation() {
         }
     }
 
+    // ── Placement & clutter checks (mirror the engine's validate.js) ──────────
+    const charAt = (x, y) => state.grid[y]?.[x] || '.';
+    const footAt = new Map();
+    let footCells = 0, openCells = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const c = charAt(x, y); if (c !== 'W' && c !== 'V') openCells++; }
+    for (const s of state.scenery) {
+        const [sw, sh] = FOOT(s.label);
+        for (let oy = 0; oy < sh; oy++) for (let ox = 0; ox < sw; ox++) {
+            const cx = s.x + ox, cy = s.y + oy, key = `${cx},${cy}`;
+            if (cx < 0 || cy < 0 || cx >= w || cy >= h) { issues.push({ sev: 'error', msg: `scenery "${s.label}" out of bounds at (${cx},${cy})` }); continue; }
+            footCells++;
+            if (footAt.has(key)) issues.push({ sev: 'error', msg: `overlapping scenery at (${cx},${cy}): "${footAt.get(key)}" & "${s.label}"` });
+            else footAt.set(key, s.label);
+            const ch = charAt(cx, cy);
+            if (ch === 'V') issues.push({ sev: 'error', msg: `"${s.label}" sits on water at (${cx},${cy})` });
+            if (ch === 'W' && !WALL_MOUNTABLE.has(s.label)) issues.push({ sev: 'error', msg: `"${s.label}" is buried in a wall at (${cx},${cy})` });
+        }
+    }
+    if (openCells > 0 && footCells / openCells > CLUTTER_WARN) {
+        issues.push({ sev: 'warn', msg: `Cramped — props cover ${Math.round(footCells / openCells * 100)}% of the open floor (aim under ${Math.round(CLUTTER_WARN * 100)}%)` });
+    }
+    for (const s of state.scenery) {
+        if (!TALL_SCENERY.has(s.label) || s.y <= 0) continue;
+        const [sw] = FOOT(s.label);
+        for (let ox = 0; ox < sw; ox++) { const a = footAt.get(`${s.x + ox},${s.y - 1}`); if (a) issues.push({ sev: 'warn', msg: `tall "${s.label}" at (${s.x},${s.y}) is overlapped by "${a}" directly above` }); }
+    }
+    for (const s of state.scenery) {
+        if (!WALL_ANCHORED.has(s.label)) continue;
+        const [sw, sh] = FOOT(s.label);
+        let anchored = false;
+        for (let oy = 0; oy < sh && !anchored; oy++) for (let ox = 0; ox < sw && !anchored; ox++) {
+            const cx = s.x + ox, cy = s.y + oy;
+            if (cx === 0 || cy === 0 || cx === w - 1 || cy === h - 1) anchored = true;
+            for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) if (charAt(cx + dx, cy + dy) === 'W') anchored = true;
+        }
+        if (!anchored) issues.push({ sev: 'warn', msg: `"${s.label}" at (${s.x},${s.y}) floats — wall-prop with no adjacent wall` });
+    }
+    let touching = 0;
+    for (let i = 0; i < state.scenery.length; i++) for (let j = i + 1; j < state.scenery.length; j++) {
+        const a = state.scenery[i], b = state.scenery[j];
+        if (Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 1) touching++;
+    }
+    if (touching >= 8) issues.push({ sev: 'warn', msg: `${touching} prop pairs sit edge-to-edge — space them out` });
+
     // Global graph health — orphan detection
     const orphans = orphanedRooms();
     if (orphans.length > 0) {
@@ -909,6 +1015,7 @@ function renderValidation() {
 function renderDSL() {
     const dsl = getRoomDSL(state.roomId);
     document.getElementById('dsl-out').value = dsl;
+    renderValidation(); // keep placement/clutter warnings live on every edit
 }
 
 function exportAll() {

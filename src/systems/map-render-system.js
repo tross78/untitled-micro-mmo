@@ -3,6 +3,7 @@
 import { Component } from '../domain/components.js';
 import { shapePool } from '../content/define.js';
 import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta, usesCompiledShape } from '../graphics/graphics.js';
+import { SCENERY_RENDER_SCALE } from '../infra/graphics-constants.js';
 import { SCENERY_RENDER_STYLE, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { hashStr } from '../rules/index.js';
 
@@ -422,9 +423,18 @@ export class MapRenderSystem {
             heightTiles: compiledMeta.renderHeightTiles,
             yOffsetTiles: compiledMeta.renderYOffsetTiles,
         } : SCENERY_RENDER_STYLE[label];
-        const drawH = (renderStyle?.heightTiles || logicalH) * this.VP.S;
-        const drawY = py - ((renderStyle?.yOffsetTiles || 0) * this.VP.S);
+        const fullW = logicalW * this.VP.S;
+        const fullH = (renderStyle?.heightTiles || logicalH) * this.VP.S;
+        const baseY = py - ((renderStyle?.yOffsetTiles || 0) * this.VP.S);
 
-        ctx.drawImage(colored, px, drawY, logicalW * this.VP.S, drawH);
+        // Small ground clutter is drawn smaller than a full tile, centered and seated on the ground,
+        // so rocks/stones/etc. don't render as tile-sized boulders.
+        const scale = SCENERY_RENDER_SCALE[label] ?? 1;
+        const drawW = fullW * scale;
+        const drawH = fullH * scale;
+        const drawX = px + (fullW - drawW) / 2;
+        const drawY = baseY + (fullH - drawH);
+
+        ctx.drawImage(colored, drawX, drawY, drawW, drawH);
     }
 }
