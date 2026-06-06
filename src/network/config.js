@@ -127,15 +127,13 @@ const buildRtcConfig = (rtcConfig) => {
 };
 
 export const buildTorrentConfig = (rtcConfig) => {
-    // tracker.webtorrent.dev is continuously rejected on Safari (ECONNRESET from server),
-    // causing Trystero to waste offer slots on a dead tracker. Filter it for WebKit so
-    // Safari only uses the reliable openwebtorrent.com path.
-    const relayUrls = isWebKitRtcBrowser()
-        ? TORRENT_TRACKERS.filter(u => !u.includes('webtorrent.dev'))
-        : TORRENT_TRACKERS;
+    // All browsers use the full tracker set. (Previously webtorrent.dev was filtered out on Safari on
+    // the assumption it was ECONNRESET-rejected there — but __fenhollowNetDiag shows it connecting fine
+    // from WebKit, and stripping Safari to the single, slow openwebtorrent.com path left it unable to
+    // pair in time while Chrome paired via the second tracker. Keep both paths for every browser.)
     return {
         appId: APP_ID,
-        relayUrls,
+        relayUrls: TORRENT_TRACKERS,
         trickleIce: true,
         rtcConfig: buildRtcConfig(rtcConfig),
     };

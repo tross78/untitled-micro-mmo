@@ -292,7 +292,10 @@ describe('networking exported module behavior', () => {
         expect(config.trackerUrls).toBeUndefined();
     });
 
-    test('buildTorrentConfig filters webtorrent.dev for Safari (ECONNRESET on server side)', () => {
+    test('buildTorrentConfig gives Safari the full tracker set (both rendezvous paths)', () => {
+        // Regression: Safari was previously stripped to openwebtorrent.com only, leaving it unable to
+        // pair via the faster second tracker. __fenhollowNetDiag shows webtorrent.dev connects fine on
+        // WebKit, so every browser keeps both paths.
         const originalUA = navigator.userAgent;
         Object.defineProperty(navigator, 'userAgent', {
             configurable: true,
@@ -301,7 +304,7 @@ describe('networking exported module behavior', () => {
         const config = buildTorrentConfig({ iceServers: STUN_SERVERS });
         Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUA });
 
-        expect(config.relayUrls).not.toContain('wss://tracker.webtorrent.dev');
+        expect(config.relayUrls).toContain('wss://tracker.webtorrent.dev');
         expect(config.relayUrls).toContain('wss://tracker.openwebtorrent.com');
         expect(config.trickleIce).toBe(true);
     });
