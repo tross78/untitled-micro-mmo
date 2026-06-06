@@ -234,7 +234,57 @@ export class MapRenderSystem {
                 for (const t of shapePool(pool, loc.id, index)) waterCells.add(`${t.x},${t.y}`);
             });
         }
+
+        // Baked grounding/AO shadows (zero per-frame cost — only on cache rebuild).
+        this.bakeGroundingShadows(octx, loc, getTileAt);
+
         this.tileCache = { locKey, canvas: off, waterCells };
+    }
+
+    /**
+     * Bake soft contact shadows into the room cache so standing props and walls read as grounded
+     * instead of floating stickers. Runs once per room rebuild, so it costs nothing per frame.
+     */
+    bakeGroundingShadows(octx, loc, getTileAt) {
+        const S = this.VP.S;
+
+        // 1. Soft shadow strip on floor where a wall stands to the north (wall occludes light from above).
+        octx.save();
+        for (let wy = 0; wy < loc.height; wy++) {
+            for (let wx = 0; wx < loc.width; wx++) {
+                if (getTileAt(wx, wy) === 'wall') continue;
+                if (getTileAt(wx, wy - 1) !== 'wall') continue;
+                const g = octx.createLinearGradient(0, wy * S, 0, wy * S + S * 0.5);
+                g.addColorStop(0, 'rgba(0,0,0,0.32)');
+                g.addColorStop(1, 'rgba(0,0,0,0)');
+                octx.fillStyle = g;
+                octx.fillRect(wx * S, wy * S, S, Math.ceil(S * 0.5));
+            }
+        }
+        octx.restore();
+
+        // 2. Soft elliptical contact shadow under standing scenery (skip flat ground clutter, which
+        //    is exactly the set that gets a render-scale shrink — rocks, herbs, shells, etc.).
+        for (const s of (loc.scenery || [])) {
+            if (SCENERY_RENDER_SCALE[s.label]) continue;
+            const w = s.w || 1, hh = s.h || 1;
+            const rx = Math.min(w, 2) * S * 0.34;
+            const ry = S * 0.16;
+            const cx0 = (s.x + w / 2) * S;
+            const cy0 = (s.y + hh) * S - S * 0.18;
+            octx.save();
+            octx.translate(cx0, cy0);
+            octx.scale(1, ry / rx);
+            const g = octx.createRadialGradient(0, 0, 0, 0, 0, rx);
+            g.addColorStop(0, 'rgba(0,0,0,0.30)');
+            g.addColorStop(0.7, 'rgba(0,0,0,0.16)');
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            octx.fillStyle = g;
+            octx.beginPath();
+            octx.arc(0, 0, rx, 0, Math.PI * 2);
+            octx.fill();
+            octx.restore();
+        }
     }
 
     drawTerrainPools(ctx, loc, poolTiles, baseHash) {

@@ -98,9 +98,15 @@ export class LightingRenderSystem {
         const zone = room.zone;
 
         // 1. Ambient grade + how dark the scene is (0 = bright, 1 = pitch) for glow gating.
+        // A room may override the zone default with `ambientDark` (0..1) — e.g. an indoor tavern set
+        // to ~0.3 so its hearth glows all day without being re-zoned or darkened much.
         let tint = null;
         let darkness;
-        if (zone === 'dungeon') {
+        if (typeof room.ambientDark === 'number') {
+            darkness = Math.max(0, Math.min(1, room.ambientDark));
+            // Only the darker overrides get a visible tint; gentle ones just enable the glow.
+            if (darkness > 0.4) tint = { r: 14, g: 18, b: 36, a: Math.min(0.4, darkness * 0.45) };
+        } else if (zone === 'dungeon') {
             tint = DUNGEON_TINT;
             darkness = 0.8;
         } else if (zone === 'interior') {

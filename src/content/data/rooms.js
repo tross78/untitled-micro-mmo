@@ -26,6 +26,7 @@ export const rooms = {
     }),
 
     hallway: defineRoom('hallway', {
+        ambientDark: 0.45, // dim stone corridor — torches glow regardless of time of day
         name: 'The Hallway',
         description: 'A narrow stone passage linking the town buildings, shaped more like a service corridor than a room meant for lingering. Corner torches throw warm light across the floor, the guard post sits where the routes split, and every door feels like a practical hinge between the buildings around it. The walls should feel close but not cramped, so the passage reads as useful circulation instead of a dead corridor. Any trim, torch, or post should feel like maintenance rather than decoration, and the room should stay legible as a passage first. This is the kind of room people cross without noticing unless something is wrong.',
         zone: 'town',
@@ -50,6 +51,7 @@ export const rooms = {
     }),
 
     library: defineRoom('library', {
+        ambientDark: 0.3, // indoor — hearth glows day or night, kept readable
         name: 'The Great Library',
         description: 'Dusty shelves line the walls from floor to ceiling, leaving only enough open space for a reading table, a few chairs, and the small hearth that keeps the chill out of the paper. The room feels lived-in but quiet, with the hallway waiting to the east like an interruption. It should read like a place of sustained attention, not display, and every object should look placed for use. The shelves and table should imply repeated visits rather than a staged interior, and the room should feel like reading and repair happen here in equal measure. The layout should make it obvious that the room serves work of the mind, not presentation.',
         zone: 'town',
@@ -74,6 +76,7 @@ export const rooms = {
     }),
 
     tavern: defineRoom('tavern', {
+        ambientDark: 0.32, // indoor — fireplace glows day or night, kept readable
         name: 'The Rusty Flagon',
         description: 'A warm room built around a north-wall bar, side tables, and a glowing hearth that pulls the eye the moment you enter. Tankards, stools, and scarred wood make it feel busy without feeling crowded, while the market square lies east and the hallway lies south. It should feel like the town’s social pressure valve, where noise, drink, and gossip settle into a comfortable pattern, and the furniture should seem arranged around habit rather than symmetry. The room should look like it has hosted the same arguments and stories for years, and the service routes should be obvious without making the room feel staged.',
         features: ['inn'],
@@ -194,6 +197,7 @@ export const rooms = {
     }),
 
     herbalist_hut: defineRoom('herbalist_hut', {
+        ambientDark: 0.3, // indoor — cauldron glows day or night, kept readable
         name: "Herbalist's Hut",
         description: 'A compact workroom built around shelves of dried herbs, hanging bundles, and a central cauldron that gives the room its heat and smell. The space should feel carefully tended and slightly cluttered with useful things, with the crossroads sitting north as the obvious return path. The furniture and wall storage should make the room feel like a practiced workflow, not a generic cottage interior, and every bundle should seem to belong to a repeating routine. The room should make it obvious where drying, mixing, and storing happen, so the player can read the work without being told about it.',
         zone: 'town',
