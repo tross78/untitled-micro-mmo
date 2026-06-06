@@ -4,6 +4,7 @@ import {
     resolveAttack, rollLoot, xpToLevel, levelBonus,
     getSeason, getSeasonNumber, rollScarcity,
     getMood, getThreatLevel, deriveWorldState,
+    getDaylight,
     _resetMoodCache,
 } from '../rules/index.js';
 
@@ -317,6 +318,36 @@ describe('rollScarcity', () => {
         const r1 = rollScarcity(seededRNG(7), 'autumn');
         const r2 = rollScarcity(seededRNG(7), 'autumn');
         expect(r1).toEqual(r2);
+    });
+});
+
+describe('getDaylight', () => {
+    const at = (hour) => getDaylight(hour * 3600000);
+    test('full daylight midday, dark deep night', () => {
+        expect(at(12)).toBe(1);
+        expect(at(3)).toBe(0);
+        expect(at(23)).toBe(0);
+        expect(at(0)).toBe(0);
+    });
+    test('ramps up across dawn and down across dusk', () => {
+        expect(at(5)).toBe(0);
+        expect(at(8)).toBe(1);
+        expect(at(6.5)).toBeGreaterThan(0);
+        expect(at(6.5)).toBeLessThan(1);
+        expect(at(18)).toBe(1);
+        expect(at(21)).toBe(0);
+        expect(at(19.5)).toBeGreaterThan(0);
+        expect(at(19.5)).toBeLessThan(1);
+    });
+    test('dawn ramp is monotonic and stays within [0,1]', () => {
+        let prev = -1;
+        for (let h = 5; h <= 8; h += 0.25) {
+            const v = at(h);
+            expect(v).toBeGreaterThanOrEqual(0);
+            expect(v).toBeLessThanOrEqual(1);
+            expect(v).toBeGreaterThanOrEqual(prev);
+            prev = v;
+        }
     });
 });
 

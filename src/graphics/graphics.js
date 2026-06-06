@@ -9,6 +9,37 @@ function tileRng(seed) {
     };
 }
 
+// Low-frequency value noise over tile coords (~5 tiles per cell), smooth-interpolated → 0..1.
+// Used for "macro variation": a coherent large-scale tone field so big expanses of one ground type
+// get soft patches of lighter/darker instead of reading as uniform per-tile texture.
+function macroNoise(wx, wy, scale = 5) {
+    const lat = (a, b) => {
+        let n = (Math.imul(a, 374761393) + Math.imul(b, 668265263)) >>> 0;
+        n = (Math.imul(n ^ (n >>> 13), 1274126177)) >>> 0;
+        return (n >>> 0) / 4294967295;
+    };
+    const fx = wx / scale, fy = wy / scale;
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const tx = fx - x0, ty = fy - y0;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = lat(x0, y0) + (lat(x0 + 1, y0) - lat(x0, y0)) * sx;
+    const b = lat(x0, y0 + 1) + (lat(x0 + 1, y0 + 1) - lat(x0, y0 + 1)) * sx;
+    return a + (b - a) * sy;
+}
+
+// Subtle large-scale tone wash for natural ground. Tile coords are derived from cx/cy (the cache is
+// built at cx = wx*S). strength scales the max opacity. Drawn right after the base fill, before detail.
+function applyMacroVariation(ctx, cx, cy, S, lo, hi, strength = 0.36) {
+    const wx = Math.round(cx / S), wy = Math.round(cy / S);
+    const d = macroNoise(wx, wy) - 0.5; // -0.5..0.5
+    const mag = Math.abs(d) * 2 * strength;
+    if (mag < 0.02) return;
+    ctx.fillStyle = d < 0 ? lo : hi;
+    ctx.globalAlpha = mag;
+    ctx.fillRect(cx, cy, S, S);
+    ctx.globalAlpha = 1;
+}
+
 import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { COMPILED_ASSET_SHAPES, COMPILED_ASSET_META } from '../generated/assets/compiled-assets.js';
 import { NPC_IDLE_FRAMES } from './npc-idle-frames.js';
@@ -358,13 +389,16 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         // Cohesive turf: keep the base fill consistent across tiles so the ground does not read as a
         // checkerboard of different greens. Variation lives in the blade/tuft detail, not the base color.
         const subType = Math.floor(variant / 2);
-        const baseColor = tileType === 'forest' ? p.lo : p.base;
+        // Forest reads as shaded woodland floor (p.base dark green), not near-black (the old p.lo fill).
+        const baseColor = p.base;
         const hiColor   = p.hi;
-        const shadowColor = tileType === 'forest' ? '#102808' : '#2e5318';
+        const shadowColor = tileType === 'forest' ? '#163610' : '#2e5318';
         const state = edgeState(neighbors, tileType);
 
         ctx.fillStyle = baseColor;
         ctx.fillRect(cx, cy, S, S);
+        // Large-scale tone patches so fields/woods don't read as uniform texture.
+        applyMacroVariation(ctx, cx, cy, S, shadowColor, hiColor, tileType === 'forest' ? 0.3 : 0.22);
 
         // Three-layer turf structure: dark undergrowth, main blades, bright tips.
         const tuftPlans = [
@@ -548,6 +582,7 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         const rng = tileRng(safeSeed ^ 0x6d2b79f5);
         ctx.fillStyle = p.base;
         ctx.fillRect(cx, cy, S, S);
+        applyMacroVariation(ctx, cx, cy, S, p.lo, p.hi, 0.28);
 
         // Broad, soft soil mottling — larger low-contrast patches read as packed earth. Bias toward
         // base/hi and keep dark (lo) patches rare so the tile doesn't read as high-contrast speckle.
@@ -608,6 +643,7 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         const rng = tileRng(safeSeed ^ 0xdeadbeef);
         ctx.fillStyle = p.base;
         ctx.fillRect(cx, cy, S, S);
+        applyMacroVariation(ctx, cx, cy, S, p.lo, p.hi, 0.28);
         // Damp mottling — soft darker/lighter clumps spread across the tile.
         for (let i = 0; i < 16; i++) {
             const w = 1 + rng(3), h2 = 1 + rng(2);
@@ -635,6 +671,7 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         const rng = tileRng(safeSeed ^ 0x5a17d000);
         ctx.fillStyle = p.base;
         ctx.fillRect(cx, cy, S, S);
+        applyMacroVariation(ctx, cx, cy, S, p.lo, p.hi, 0.26);
         // Fine grain: dense speckle of darker/lighter grains across the whole tile.
         for (let i = 0; i < 26; i++) {
             const r = rng(7);
@@ -717,96 +754,42 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         }
 
     } else if (tileType === 'water') {
-        // Layered pool geometry — outer rim, deep center, and bright surface crests.
-        const state = edgeState(neighbors, tileType);
-        const isPool = state === 'isolated' || state === 'edge';
-        const isDeep = state === 'center' || state === 'interior';
-        const same = sameNeighborCount(neighbors, tileType);
-        const shiftX = ((variant % 3) - 1) * 0.35;
-        const shiftY = (((variant >> 1) % 3) - 1) * 0.25;
-        const missingNorth = neighbors?.north !== tileType;
-        const missingSouth = neighbors?.south !== tileType;
-        const missingWest = neighbors?.west !== tileType;
-        const missingEast = neighbors?.east !== tileType;
-        const blobSeed = tileRng(safeSeed ^ (same << 4) ^ (isPool ? 0x9e37 : 0x6a09));
-        const rx = isPool ? 5.2 : 4.7;
-        const ry = isPool ? 4.4 : 3.5;
-        const cornerBias = (x, y) => {
-            let cut = 0;
-            if (missingNorth && y < 4) cut += (4 - y) * 0.18;
-            if (missingSouth && y > 11) cut += (y - 11) * 0.18;
-            if (missingWest && x < 4) cut += (4 - x) * 0.18;
-            if (missingEast && x > 11) cut += (x - 11) * 0.18;
-            return cut;
-        };
-        const fillMass = (fillColor, rxMul, ryMul, threshold, jitter = 0) => {
-            ctx.fillStyle = fillColor;
-            for (let y = 1; y < S - 1; y++) {
-                for (let x = 1; x < S - 1; x++) {
-                    const dx = (x - h + 0.5 - shiftX) / (rx * rxMul);
-                    const dy = (y - h + 0.5 + shiftY) / (ry * ryMul);
-                    const wobble = ((blobSeed(11) - 5) * 0.02) + ((blobSeed(7) - 3) * 0.015) + jitter;
-                    const d = (dx * dx) + (dy * dy) + cornerBias(x, y) + wobble;
-                    if (d <= threshold) ctx.fillRect(cx + x, cy + y, 1, 1);
-                }
-            }
-        };
+        // Flat, continuous water: large-scale depth patches + scattered wave crests that tile
+        // seamlessly. Replaces the old per-tile distance-field blob, which read as a grid of pools
+        // and cost ~136 fillRects/tile; this is ~10x cheaper and reads as a connected body.
+        const rng = tileRng(safeSeed ^ 0x77a7e2);
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx, cy, S, S);
+        applyMacroVariation(ctx, cx, cy, S, p.lo, p.hi, 0.5); // deep/shallow tone patches across the body
 
-        // Build a visibly organic mass using per-pixel distance fields so the tile stops reading as a square.
-        fillMass(p.lo, 1.00, 1.00, 1.02);
-        fillMass(p.base, 0.86, 0.84, 0.88, -0.04);
-        fillMass(p.hi, 0.62, 0.56, 0.96, 0.02);
-        fillMass(p.accent, 0.36, 0.30, 0.98, 0.05);
-
-        // Soft outer rim and surface contrast.
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(cx + 2, cy + 4, 3, 1);
-        ctx.fillRect(cx + S - 5, cy + 4, 3, 1);
-        ctx.fillRect(cx + 4, cy + 2, 2, 1);
-        ctx.fillRect(cx + 4, cy + S - 5, 2, 1);
-
-        // Wave crests at consistent Y offsets, shifted by variant.
-        const waveShift = ((variant + same) * (S / 8)) % S;
-        [[S * 0.15, p.hi, Math.floor(S * 0.6)],
-         [S * 0.4,  p.accent, Math.floor(S * 0.35)],
-         [S * 0.65, p.hi, Math.floor(S * 0.5)]].forEach(([wy, color, wl]) => {
-            ctx.fillStyle = color;
-            const wx = Math.floor((waveShift) % Math.max(1, (S - wl)));
-            ctx.fillRect(cx + wx, cy + Math.floor(wy), wl, 1);
-            ctx.fillRect(cx + wx + 1, cy + Math.floor(wy) + 1, Math.max(1, wl - 2), 1);
-        });
-        if (motif === 'pool' || motif === 'foam' || isPool) {
-            ctx.fillStyle = p.accent;
-            ctx.globalAlpha = 0.35;
-            ctx.fillRect(cx + 2, cy + 2, S - 4, 1);
-            ctx.fillRect(cx + 3, cy + 3, S - 6, 1);
-            ctx.fillRect(cx + 4, cy + 4, S - 8, 1);
-            ctx.globalAlpha = 1.0;
-        } else if (motif === 'deep' || isDeep) {
-            ctx.globalAlpha = 0.9;
-            ctx.fillStyle = p.lo;
-            for (let y = 2; y < S - 2; y++) {
-                for (let x = 2; x < S - 2; x++) {
-                    const dx = (x - h + 0.5 - shiftX * 0.4) / (isPool ? 3.8 : 3.2);
-                    const dy = (y - h + 0.5 - shiftY * 0.4) / (isPool ? 3.0 : 2.4);
-                    if ((dx * dx) + (dy * dy) <= 1.02) ctx.fillRect(cx + x, cy + y, 1, 1);
-                }
-            }
-            ctx.globalAlpha = 1.0;
-        } else if (motif === 'ripple') {
-            ctx.fillStyle = p.hi;
-            ctx.fillRect(cx + 1, cy + h, S - 2, 1);
-            ctx.fillRect(cx + 2, cy + h - 2, S - 4, 1);
-            ctx.fillRect(cx + 3, cy + h + 1, S - 6, 1);
+        // Wave crests — short broken highlights at varied rows (no fixed grid).
+        const crests = 2 + rng(2);
+        for (let i = 0; i < crests; i++) {
+            const ry = 1 + rng(S - 2);
+            const rw = 3 + rng(5);
+            const rxw = rng(Math.max(1, S - rw));
+            ctx.fillStyle = rng(3) === 0 ? p.accent : p.hi;
+            ctx.fillRect(cx + rxw, cy + ry, Math.min(rw, S - rxw), 1);
         }
-        // Sparkle — only on variant 0
-        if (variant === 0 || sameNeighborCount(neighbors, tileType) >= 3 || isPool) {
+        // Occasional bright sparkle.
+        if (rng(2) === 0) {
             ctx.fillStyle = '#ffffff';
             ctx.globalAlpha = 0.5;
-            ctx.fillRect(cx + q, cy + q, 2, 1);
-            ctx.fillRect(cx + S - 5, cy + 3, 1, 1);
+            ctx.fillRect(cx + 1 + rng(S - 2), cy + 1 + rng(S - 2), 1, 1);
             ctx.globalAlpha = 1.0;
         }
+
+        // Subtle deeper water hugging the shore (the foam/shore line itself is owned by
+        // blendTileEdges, so we only add a faint dark inner edge here for depth — no double outline).
+        const missN = neighbors?.north !== tileType, missS = neighbors?.south !== tileType;
+        const missW = neighbors?.west !== tileType, missE = neighbors?.east !== tileType;
+        ctx.fillStyle = p.lo;
+        ctx.globalAlpha = 0.5;
+        if (missN) ctx.fillRect(cx, cy, S, 1);
+        if (missS) ctx.fillRect(cx, cy + S - 1, S, 1);
+        if (missW) ctx.fillRect(cx, cy, 1, S);
+        if (missE) ctx.fillRect(cx + S - 1, cy, 1, S);
+        ctx.globalAlpha = 1.0;
 
     } else if (tileType === 'exit') {
         // Glowing portal rings

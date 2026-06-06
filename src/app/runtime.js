@@ -17,6 +17,7 @@ import { UIRenderSystem } from '../systems/ui-render-system.js';
 import { WorldSyncSystem } from '../systems/world-sync-system.js';
 import { AudioSystem } from '../systems/audio-system.js';
 import { WeatherRenderSystem } from '../systems/weather-render-system.js';
+import { LightingRenderSystem } from '../systems/lighting-render-system.js';
 import { bus } from '../state/eventbus.js';
 import { world as worldData, NPCS } from '../content/data.js';
 import { worldState, shardEnemies } from '../state/store.js';
@@ -125,6 +126,7 @@ class AppRuntime {
     this.mapRender = new MapRenderSystem(this.world, this.VP);
     this.entityRender = new EntityRenderSystem(this.world, this.VP);
     this.weatherRender = new WeatherRenderSystem(this.VP);
+    this.lightingRender = new LightingRenderSystem(this.VP);
     this.uiRender = new UIRenderSystem(this.world, this.VP, worldData, { worldState, shardEnemies, getNPCsAt, get players() { return getPlayers(); } });
     this.audioSystem = new AudioSystem(this.world);
 
@@ -166,6 +168,7 @@ class AppRuntime {
     if (this.mapRender) this.mapRender.VP = this.VP;
     if (this.entityRender) this.entityRender.VP = this.VP;
     if (this.weatherRender) this.weatherRender.VP = this.VP;
+    if (this.lightingRender) this.lightingRender.VP = this.VP;
     if (this.uiRender) this.uiRender.VP = this.VP;
 
     // Tile and sprite caches are built at a specific VP.S. Invalidate when scale changes
@@ -252,14 +255,17 @@ class AppRuntime {
     if (this.mapRender) this.mapRender.VP = worldVP;
     if (this.entityRender) this.entityRender.VP = worldVP;
     if (this.weatherRender) this.weatherRender.VP = worldVP;
+    if (this.lightingRender) this.lightingRender.VP = worldVP;
     try {
         this.mapRender.draw(ctx, { localPlayer: localPlayerStore, worldState, worldData }, camX, camY, screenOffsetX, screenOffsetY, gameTime);
         this.entityRender.draw(ctx, camX, camY, screenOffsetX, screenOffsetY, gameTime);
         if (this.weatherRender) this.weatherRender.draw(ctx, worldState, transform.mapId, gameTime);
+        if (this.lightingRender) this.lightingRender.draw(ctx, transform.mapId, camX, camY, screenOffsetX, screenOffsetY, gameTime);
     } finally {
         if (this.mapRender) this.mapRender.VP = this.VP;
         if (this.entityRender) this.entityRender.VP = this.VP;
         if (this.weatherRender) this.weatherRender.VP = this.VP;
+        if (this.lightingRender) this.lightingRender.VP = this.VP;
         ctx.restore();
     }
 

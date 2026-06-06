@@ -67,6 +67,18 @@ export function sceneryBlocksCell(s, x, y) {
 }
 
 /**
+ * Light-emitting scenery. The LightingRenderSystem draws an additive warm glow around each of these
+ * when the scene is dim (night outdoors, or indoors/dungeon ambient). radius is in tiles; intensity is
+ * the peak glow alpha before the dimness/flicker multipliers; color is an "r, g, b" string.
+ */
+export const SCENERY_LIGHT = {
+    torch:     { radius: 2.6, intensity: 0.50, color: '255, 168, 78' },
+    candle:    { radius: 1.4, intensity: 0.34, color: '255, 188, 110' },
+    fireplace: { radius: 3.2, intensity: 0.56, color: '255, 146, 66' },
+    cauldron:  { radius: 1.8, intensity: 0.27, color: '120, 230, 150' },
+};
+
+/**
  * Visual render treatment for scenery that should read taller or larger than its
  * blocking footprint without changing room collision semantics.
  */

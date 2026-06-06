@@ -63,6 +63,20 @@ export function getTimeOfDay() {
     return 'night';
 }
 
+/**
+ * Continuous daylight level in [0,1] for visual ambient tinting — 1 = full daylight, 0 = deep night,
+ * with smooth dawn (5–8h) and dusk (18–21h) ramps so the world tint eases instead of snapping.
+ * Presentation-only (wall-clock based, like getTimeOfDay); never used in seeded simulation/arbiter logic.
+ */
+export function getDaylight(now = Date.now()) {
+    const hour = (now / 3600000) % 24;
+    const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    if (hour < 5 || hour >= 21) return 0;        // deep night
+    if (hour < 8) return smooth(5, 8, hour);     // dawn ramp up
+    if (hour < 18) return 1;                     // full day
+    return 1 - smooth(18, 21, hour);             // dusk ramp down
+}
+
 // Threat rises by 1 every 7 days, caps at 5. Affects event table weights and enemy combat bonuses.
 // threat >= 3 unlocks wild events (Phase 8.77); threat == 5 enables wandering boss spawns.
 export function getThreatLevel(day) {

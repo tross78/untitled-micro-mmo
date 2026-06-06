@@ -79,6 +79,9 @@ export class MapRenderSystem {
             ctx.drawImage(this.tileCache.canvas, srcX, srcY, srcW, srcH, screenOffsetX, screenOffsetY, srcW, srcH);
         }
 
+        // 2b. Animated water shimmer over the (static) cached water tiles, beneath scenery/entities.
+        this.drawWaterShimmer(ctx, camX, camY, screenOffsetX, screenOffsetY, gameTime);
+
         // 3. Draw Static Scenery
         (loc.scenery || []).forEach(sc => {
             const sx = sc.x - camX;
@@ -151,6 +154,38 @@ export class MapRenderSystem {
         // Night lighting disabled — revisit in future phase
     }
 
+    /**
+     * Per-frame caustic shimmer over visible water tiles. The water tiles themselves are static (baked
+     * into the room cache); this overlay adds slow drifting highlights so the surface reads as alive.
+     * Cheap: a couple of thin dashes per on-screen water tile, only when water is in view.
+     */
+    drawWaterShimmer(ctx, camX, camY, screenOffsetX, screenOffsetY, gameTime) {
+        const cells = this.tileCache?.waterCells;
+        if (!cells || !cells.size) return;
+        const S = this.VP.S;
+        const t = gameTime;
+        const thick = Math.max(1, Math.round(S * 0.05));
+        for (let vy = 0; vy < this.VP.H; vy++) {
+            for (let vx = 0; vx < this.VP.W; vx++) {
+                const wx = camX + vx, wy = camY + vy;
+                if (!cells.has(`${wx},${wy}`)) continue;
+                const px = screenOffsetX + vx * S;
+                const py = screenOffsetY + vy * S;
+                for (let i = 0; i < 2; i++) {
+                    const phase = wx * 0.7 + wy * 1.1 + i * 3.1;
+                    // Slow vertical bob + horizontal drift that wraps, so crests appear to flow.
+                    const yy = Math.floor((Math.sin(t * 0.7 + phase) * 0.5 + 0.5) * (S - thick - 1));
+                    const xx = Math.floor((t * 6 + wx * 5 + i * 9) % S);
+                    const w = Math.max(2, Math.floor(S * 0.34));
+                    const shimmer = 0.18 + (Math.sin(t * 1.3 + phase) * 0.5 + 0.5) * 0.28; // 0.18..0.46
+                    ctx.fillStyle = `rgba(150, 205, 245, ${shimmer.toFixed(3)})`;
+                    ctx.fillRect(px + xx, py + yy, Math.min(w, S - xx), thick);
+                    if (xx + w > S) ctx.fillRect(px, py + yy, xx + w - S, thick); // wrap remainder
+                }
+            }
+        }
+    }
+
     rebuildCache(loc, locKey, tileType) {
         // Build a Map of override positions for O(1) lookup
         const overrideMap = new Map();
@@ -164,6 +199,8 @@ export class MapRenderSystem {
             if (x < 0 || y < 0 || x >= loc.width || y >= loc.height) return null;
             return overrideMap.get(`${x},${y}`) || tileType;
         };
+        // Track water cells so the per-frame shimmer can animate only the surfaces that are water.
+        const waterCells = new Set();
 
         const off = new OffscreenCanvas(
             Math.max(this.VP.S, loc.width * this.VP.S),
@@ -179,6 +216,7 @@ export class MapRenderSystem {
                 const type = getTileAt(wx, wy);
                 const seed = baseHash ^ (wx * 7919) ^ (wy * 6271);
                 if (poolTiles.has(`${wx},${wy}`)) continue;
+                if (type === 'water') waterCells.add(`${wx},${wy}`);
                 drawTile(octx, type, wx * this.VP.S, wy * this.VP.S, seed, this.VP.S, {
                     north: getTileAt(wx, wy - 1),
                     south: getTileAt(wx, wy + 1),
@@ -190,8 +228,13 @@ export class MapRenderSystem {
 
         if (Array.isArray(loc.terrain?.pools) && loc.terrain.pools.length) {
             this.drawTerrainPools(octx, loc, poolTiles, baseHash);
+            // Water-typed pools shimmer too.
+            loc.terrain.pools.forEach((pool, index) => {
+                if ((pool.type || 'water') !== 'water') return;
+                for (const t of shapePool(pool, loc.id, index)) waterCells.add(`${t.x},${t.y}`);
+            });
         }
-        this.tileCache = { locKey, canvas: off };
+        this.tileCache = { locKey, canvas: off, waterCells };
     }
 
     drawTerrainPools(ctx, loc, poolTiles, baseHash) {
