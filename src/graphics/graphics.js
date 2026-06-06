@@ -164,23 +164,6 @@ function sameNeighborCount(neighbors, tileType) {
     return count;
 }
 
-function fillRoundedRect(ctx, x, y, w, h, r) {
-    const radius = Math.max(0, Math.min(r, Math.floor(Math.min(w, h) / 2)));
-    ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') {
-        ctx.roundRect(x, y, w, h, radius);
-        ctx.fill();
-        return;
-    }
-    ctx.moveTo(x + radius, y);
-    ctx.arcTo(x + w, y, x + w, y + h, radius);
-    ctx.arcTo(x + w, y + h, x, y + h, radius);
-    ctx.arcTo(x, y + h, x, y, radius);
-    ctx.arcTo(x, y, x + w, y, radius);
-    ctx.closePath();
-    ctx.fill();
-}
-
 function drawCornerBlend(ctx, tileType, cx, cy, neighbors, S) {
     if (!neighbors) return;
     const corners = [

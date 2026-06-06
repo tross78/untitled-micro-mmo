@@ -35,6 +35,28 @@ export class LightingRenderSystem {
     constructor(vp) {
         this.VP = vp;
         this._glowCache = new Map(); // label -> baked radial-glow sprite (re-tinted per light type)
+        this._vignette = null;       // { w, h, canvas } baked once per viewport size
+    }
+
+    /** Baked edge vignette for the current world viewport (rebuilt only when its size changes). */
+    _vignetteFor(w, h) {
+        if (this._vignette && this._vignette.w === w && this._vignette.h === h) return this._vignette.canvas;
+        let canvas;
+        try {
+            const cv = typeof OffscreenCanvas !== 'undefined'
+                ? new OffscreenCanvas(w, h)
+                : Object.assign(document.createElement('canvas'), { width: w, height: h });
+            const g = cv.getContext('2d');
+            const cx = w / 2, cy = h / 2, r = Math.hypot(cx, cy);
+            const grad = g.createRadialGradient(cx, cy, r * 0.52, cx, cy, r);
+            grad.addColorStop(0, 'rgba(8, 8, 16, 0)');
+            grad.addColorStop(1, 'rgba(8, 8, 16, 0.40)');
+            g.fillStyle = grad;
+            g.fillRect(0, 0, w, h);
+            canvas = cv;
+        } catch { canvas = null; }
+        this._vignette = { w, h, canvas };
+        return canvas;
     }
 
     /**
@@ -45,7 +67,7 @@ export class LightingRenderSystem {
     _glowSprite(label, color) {
         const cached = this._glowCache.get(label);
         if (cached !== undefined) return cached;
-        let sprite = null;
+        let sprite;
         const R = 64; // baked half-size; blit scales it to the real radius
         try {
             const cv = typeof OffscreenCanvas !== 'undefined'
@@ -128,6 +150,10 @@ export class LightingRenderSystem {
         if (darkness > 0.12) {
             this.drawGlows(ctx, room, camX, camY, screenOffsetX, screenOffsetY, gameTime, darkness);
         }
+
+        // 3. Edge vignette — a cheap framing layer (baked once, blitted) for focus/depth.
+        const vig = this._vignetteFor(this.VP.CW, Math.round(h));
+        if (vig) ctx.drawImage(vig, 0, topY);
     }
 
     drawGlows(ctx, room, camX, camY, screenOffsetX, screenOffsetY, gameTime, darkness) {
