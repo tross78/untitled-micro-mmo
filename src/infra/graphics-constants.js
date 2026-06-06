@@ -37,6 +37,36 @@ export const SCENERY_DIMENSIONS = {
 };
 
 /**
+ * Collision masks for props whose reserved footprint is larger than their solid mass. A tree reserves
+ * a 3x3 footprint so its canopy can spread wide and tall, but only the canopy mass and trunk should
+ * block movement — the transparent corners must stay walkable so players can move around and past a
+ * tree instead of hitting an invisible box. Offsets are [col, row] relative to the footprint origin;
+ * props with no entry block their entire footprint (the default).
+ */
+export const SCENERY_COLLISION_MASK = {
+    // Derived from the tree sprite's per-cell coverage (corners ~0-10%, the rest is canopy/trunk):
+    // solid "plus" of canopy mass + trunk, with the four transparent corners left walkable.
+    tree: [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]],
+};
+
+/**
+ * Whether a placed scenery object blocks the given world cell. Single source of truth for movement,
+ * pathfinding, patrol generation, walkability queries, and content validation so collision stays
+ * consistent everywhere (see DECISIONS "single gameplay truth").
+ */
+export function sceneryBlocksCell(s, x, y) {
+    const w = s.w || 1, h = s.h || 1;
+    if (x < s.x || x >= s.x + w || y < s.y || y >= s.y + h) return false;
+    const mask = SCENERY_COLLISION_MASK[s.label];
+    if (!mask) return true; // no mask => the whole footprint is solid
+    const ox = x - s.x, oy = y - s.y;
+    for (let i = 0; i < mask.length; i++) {
+        if (mask[i][0] === ox && mask[i][1] === oy) return true;
+    }
+    return false;
+}
+
+/**
  * Visual render treatment for scenery that should read taller or larger than its
  * blocking footprint without changing room collision semantics.
  */

@@ -2,6 +2,7 @@
 
 import { Component } from '../domain/components.js';
 import { findSafeArrival } from '../rules/index.js';
+import { sceneryBlocksCell } from '../infra/graphics-constants.js';
 
 /**
  * WorldSyncSystem ensures entities in the canonical stores (players, shardEnemies)
@@ -232,10 +233,7 @@ export class WorldSyncSystem {
         const isWalkable = (x, y) => {
             if (x < 0 || x >= room.width || y < 0 || y >= room.height) return false;
             const isWall = (room.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'wall');
-            const isScenery = (room.scenery || []).some(s =>
-                x >= s.x && x < s.x + (s.w || 1) &&
-                y >= s.y && y < s.y + (s.h || 1)
-            );
+            const isScenery = (room.scenery || []).some(s => sceneryBlocksCell(s, x, y));
             return !isWall && !isScenery;
         };
 

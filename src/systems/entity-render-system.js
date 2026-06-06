@@ -162,12 +162,21 @@ export class EntityRenderSystem {
             // 3. Draw Sprite
             const sprite = this.getSprite(spriteDef.seed, spriteDef.palette, variant, frameIdx);
             const spriteBounds = getSpriteBounds(variant, frameIdx);
-            const drawW = spriteDef.palette === 'enemy' && spriteBounds
-                ? Math.max(Math.floor(this.VP.S * 0.42), Math.floor(this.VP.S * (spriteBounds.sourceWidth / spriteBounds.canvasWidth)))
-                : Math.floor(this.VP.S * 0.7);
-            const drawH = spriteDef.palette === 'enemy' && spriteBounds
-                ? Math.max(Math.floor(this.VP.S * 0.62), Math.floor(this.VP.S * (spriteBounds.sourceHeight / spriteBounds.canvasHeight)))
-                : this.VP.S;
+            // Every character with known bounds draws at the uniform tile scale (S/16 per source
+            // pixel) so player, peers, NPCs, and enemies share the same square "block" pixels as the
+            // tiles and scenery — no per-type squish. Enemies keep a minimum size so small/short
+            // sprites stay readable. Sprites without bounds fall back to the legacy tile-fit draw.
+            let drawW, drawH;
+            if (spriteBounds) {
+                const isEnemy = spriteDef.palette === 'enemy';
+                const natW = Math.floor(this.VP.S * (spriteBounds.sourceWidth / spriteBounds.canvasWidth));
+                const natH = Math.floor(this.VP.S * (spriteBounds.sourceHeight / spriteBounds.canvasHeight));
+                drawW = isEnemy ? Math.max(Math.floor(this.VP.S * 0.42), natW) : natW;
+                drawH = isEnemy ? Math.max(Math.floor(this.VP.S * 0.62), natH) : natH;
+            } else {
+                drawW = Math.floor(this.VP.S * 0.7);
+                drawH = this.VP.S;
+            }
             const drawLeft = Math.floor((this.VP.S - drawW) / 2);
             const drawTop = pxY + bounceY + (this.VP.S - drawH);
 
@@ -178,13 +187,13 @@ export class EntityRenderSystem {
             if (facing === 'w') {
                 ctx.translate(pxX + this.VP.S, 0);
                 ctx.scale(-1, 1);
-                if (spriteDef.palette === 'enemy' && spriteBounds) {
+                if (spriteBounds) {
                     ctx.drawImage(sprite, spriteBounds.sourceX, spriteBounds.sourceY, spriteBounds.sourceWidth, spriteBounds.sourceHeight, drawLeft, drawTop, drawW, drawH);
                 } else {
                     ctx.drawImage(sprite, drawLeft, drawTop, drawW, drawH);
                 }
             } else {
-                if (spriteDef.palette === 'enemy' && spriteBounds) {
+                if (spriteBounds) {
                     ctx.drawImage(sprite, spriteBounds.sourceX, spriteBounds.sourceY, spriteBounds.sourceWidth, spriteBounds.sourceHeight, pxX + drawLeft, drawTop, drawW, drawH);
                 } else {
                     ctx.drawImage(sprite, pxX + drawLeft, drawTop, drawW, drawH);

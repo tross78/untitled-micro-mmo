@@ -12,6 +12,7 @@ import { getNPCDialogue, findSafeArrival } from '../rules/index.js';
 import { getNPCsAt, grantItem } from '../commands/helpers.js';
 import { seededRNG, hashStr } from '../rules/utils.js';
 import { ACTION } from '../engine/input.js';
+import { sceneryBlocksCell } from '../infra/graphics-constants.js';
 import { log } from '../ui/index.js';
 import { getSpriteKind } from '../graphics/sprite-kind.js';
 
@@ -185,10 +186,7 @@ export class MovementSystem {
     // 4. Check Static Collisions
     const isWall = (loc.tileOverrides || []).some(t => t.x === nx && t.y === ny && t.type === 'wall');
     const isWater = (loc.tileOverrides || []).some(t => t.x === nx && t.y === ny && t.type === 'water');
-    const isScenery = (loc.scenery || []).some(s =>
-        nx >= s.x && nx < s.x + (s.w || 1) &&
-        ny >= s.y && ny < s.y + (s.h || 1)
-    );
+    const isScenery = (loc.scenery || []).some(s => sceneryBlocksCell(s, nx, ny));
     if (isWall || isWater || isScenery) {
         transform.facing = dir;
         this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
@@ -559,10 +557,7 @@ export class MovementSystem {
     // 2. Check Static Collisions
     const isWall = (loc.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'wall');
     const isWater = (loc.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'water');
-    const isScenery = (loc.scenery || []).find(s =>
-        x >= s.x && x < s.x + (s.w || 1) &&
-        y >= s.y && y < s.y + (s.h || 1)
-    );
+    const isScenery = (loc.scenery || []).find(s => sceneryBlocksCell(s, x, y));
     if (isWall || isWater || isScenery) return false;
 
     // Note: We don't check dynamic occupants (other players/NPCs) for pathfinding 

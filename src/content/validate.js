@@ -1,5 +1,5 @@
 // @ts-check
-import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES } from '../infra/graphics-constants.js';
+import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, sceneryBlocksCell } from '../infra/graphics-constants.js';
 import { findSafeArrival } from '../rules/index.js';
 import { COMPILED_ASSET_SHAPES } from '../generated/assets/compiled-assets.js';
 import { TILE_BIBLE, SCENERY_AUTHORING_RULES } from './data/tile-bible.js';
@@ -175,10 +175,7 @@ export const validateContent = (defs) => {
     // Match runtime movement-system.isWalkable: walls AND water are impassable.
     const blocked = (r.tileOverrides || []).find(t => t.x === x && t.y === y && (t.type === 'wall' || t.type === 'water'));
     if (blocked) return false;
-    const scenery = (r.scenery || []).find(s =>
-      x >= s.x && x < s.x + (s.w || 1) &&
-      y >= s.y && y < s.y + (s.h || 1)
-    );
+    const scenery = (r.scenery || []).find(s => sceneryBlocksCell(s, x, y));
     if (scenery) return false;
     return true;
   };

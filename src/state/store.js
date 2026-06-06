@@ -4,6 +4,7 @@ import { DEFAULT_PLAYER_STATS, GAME_NAME, ITEMS, SPAWN_ROOM_ID } from '../conten
 import { deriveWorldState, findSafeArrival, xpToLevel } from '../rules/index.js';
 import { world } from '../content/data.js';
 import { scopedStorageKey } from '../infra/runtime.js';
+import { sceneryBlocksCell } from '../infra/graphics-constants.js';
 
 const _PEER_ADJ = ['Amber','Bold','Calm','Dark','Eager','Fair','Glad','Hale','Iron','Just','Keen','Lone','Mild','Noble','Odd','Pale','Quick','Rare','Sage','True','Umber','Vast','Wild','Young'];
 const _PEER_ANI = ['Bear','Crow','Deer','Eagle','Fox','Hawk','Ibis','Jay','Kite','Lynx','Mink','Newt','Owl','Pike','Quail','Rook','Swan','Toad','Tern','Vole','Wren'];
@@ -160,10 +161,7 @@ const isRoomTileWalkable = (room, x, y) => {
     // Walls and water are impassable (matches movement-system.isWalkable).
     const wall = (room.tileOverrides || []).find((t) => t.x === x && t.y === y && (t.type === 'wall' || t.type === 'water'));
     if (wall) return false;
-    const scenery = (room.scenery || []).find((s) =>
-        x >= s.x && x < s.x + (s.w || 1) &&
-        y >= s.y && y < s.y + (s.h || 1)
-    );
+    const scenery = (room.scenery || []).find((s) => sceneryBlocksCell(s, x, y));
     if (scenery) return false;
     const staticEntity = (room.staticEntities || []).find((e) => e.x === x && e.y === y);
     if (staticEntity) return false;
