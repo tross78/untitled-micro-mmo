@@ -87,7 +87,7 @@ This file is an ADR archive, not a roadmap or implementation checklist. If curre
 **Status:** Non-negotiable
 **Do not:** Run `npm install <anything>` without explicit approval.
 
-**Why:** Bundle size limit is 500KB minified (current build ~297KB; raised from 175KB → 250KB in Phase 8.2, then to 500KB in Phase 8.95g to accommodate procedural tile art and shape data). Every new dependency risks exceeding it. Trystero (torrent), esbuild, and jest are the full dependency set by design. Treat growth over ~50KB as a design review trigger.
+**Why:** Bundle size limit is 1MB minified (current build ~534KB; raised from 175KB → 250KB in Phase 8.2, then 500KB in Phase 8.95g for procedural tile art and shape data, then 1MB to accommodate authored multi-palette/indexed asset art). Every new dependency risks exceeding it. Trystero (torrent), esbuild, and jest are the full dependency set by design. Treat growth over ~50KB as a design review trigger.
 
 ---
 

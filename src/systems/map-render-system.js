@@ -2,7 +2,7 @@
 
 import { Component } from '../domain/components.js';
 import { shapePool } from '../content/define.js';
-import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta, usesCompiledShape } from '../graphics/graphics.js';
+import { drawTile, zoneTileType, applyPalette, getGrayscaleTemplate, getSceneryPalette, getCompiledAssetMeta, usesCompiledShape, isIndexedAsset, getIndexedTemplate } from '../graphics/graphics.js';
 import { SCENERY_RENDER_SCALE } from '../infra/graphics-constants.js';
 import { SCENERY_RENDER_STYLE, SCENERY_DIMENSIONS } from '../infra/graphics-constants.js';
 import { hashStr } from '../rules/index.js';
@@ -15,8 +15,13 @@ const getColoredScenery = (label, frameIdx) => {
     const key = `${label}:${frameIdx}`;
     let cached = _sceneryColorCache.get(key);
     if (!cached) {
-        const template = getGrayscaleTemplate(label, 0, frameIdx) || getGrayscaleTemplate('rock');
-        cached = applyPalette(template, getSceneryPalette(label));
+        if (isIndexedAsset(label)) {
+            // Authored multi-slot asset — colors are baked, no recolor.
+            cached = getIndexedTemplate(label, frameIdx) || getGrayscaleTemplate('rock');
+        } else {
+            const template = getGrayscaleTemplate(label, 0, frameIdx) || getGrayscaleTemplate('rock');
+            cached = applyPalette(template, getSceneryPalette(label));
+        }
         _sceneryColorCache.set(key, cached);
     }
     return cached;

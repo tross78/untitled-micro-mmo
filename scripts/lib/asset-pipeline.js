@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
+import { MULTI_PALETTES } from '../../src/content/multi-palettes.js';
 
 const PNG_SIGNATURE = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ROLE_DIGITS = new Map([
@@ -233,6 +234,54 @@ export const frameToMaskRows = ({ width, height, rgba }, palette, colorMode = 's
   return rows;
 };
 
+// Hue-weighted color distance via opponent channels. Emphasizing the red-green
+// and green-blue opponents over raw luminance makes hue (e.g. green vs brown)
+// dominate the slot choice, while luminance still separates shades within one
+// ramp. Shared by the conform tool and the compiler's auto-map.
+const HUE_W_OPP = 1.0;
+const HUE_W_LUM = 0.45;
+export const colorFeatures = ([r, g, b]) => [r - g, g - b, (r + g + b) / 3];
+export const colorDist2 = (fa, fb) =>
+  HUE_W_OPP * (sq(fa[0] - fb[0]) + sq(fa[1] - fb[1])) + HUE_W_LUM * sq(fa[2] - fb[2]);
+
+// Index a frame against a SUPPLIED authored palette (ordered hex list). Pixels
+// that already match an authored color exactly map to it (lossless for
+// pre-conformed sources); any other color is auto-mapped to the nearest slot by
+// hue-weighted distance — so a raw full-color tile can be dropped in and indexed
+// directly. Emits rows where each char is '0' (transparent) or a 1-based palette
+// index. Palette length must be <= 9 so every index stays a single char.
+export const frameToIndexedRows = ({ width, height, rgba }, paletteHex, alphaCutoff = 1) => {
+  if (paletteHex.length > 9) {
+    throw new Error(`Multi-slot palette has ${paletteHex.length} colors; max is 9`);
+  }
+  const entries = paletteHex.map((hex) => {
+    const rgb = hexToRgb(hex);
+    return { rgb, feat: colorFeatures(rgb) };
+  });
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    let row = '';
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      if (rgba[i + 3] < alphaCutoff) { row += '0'; continue; }
+      const rgb = [rgba[i], rgba[i + 1], rgba[i + 2]];
+      let idx = entries.findIndex((e) => e.rgb[0] === rgb[0] && e.rgb[1] === rgb[1] && e.rgb[2] === rgb[2]);
+      if (idx < 0) {
+        const feat = colorFeatures(rgb);
+        let best = 0, bestD = Infinity;
+        for (let e = 0; e < entries.length; e++) {
+          const d = colorDist2(feat, entries[e].feat);
+          if (d < bestD) { bestD = d; best = e; }
+        }
+        idx = best;
+      }
+      row += String(idx + 1);
+    }
+    rows.push(row);
+  }
+  return rows;
+};
+
 const rleEncodeRow = (row) => {
   if (!row.length) return [];
   const runs = [];
@@ -262,6 +311,39 @@ const cropFrame = (png, rect) => {
   return { width: rect.w, height: rect.h, rgba };
 };
 
+// Tiles render on a 16px grid. Raw full-res tile art (e.g. 64x64 / 512x512 from
+// a generator) must be reduced to this before indexing — otherwise the compiled
+// mask and per-tile draw cost explode.
+export const TILE_TARGET = 16;
+
+// Area-average downscale (alpha-aware). Averages source RGB only over opaque
+// pixels so edges don't darken toward black; alpha is averaged over the block.
+export const resizeRGBAArea = ({ width, height, rgba }, tw, th) => {
+  if (width === tw && height === th) return { width, height, rgba };
+  const out = new Uint8Array(tw * th * 4);
+  for (let oy = 0; oy < th; oy++) {
+    for (let ox = 0; ox < tw; ox++) {
+      const x0 = Math.floor((ox * width) / tw);
+      const x1 = Math.max(x0 + 1, Math.floor(((ox + 1) * width) / tw));
+      const y0 = Math.floor((oy * height) / th);
+      const y1 = Math.max(y0 + 1, Math.floor(((oy + 1) * height) / th));
+      let r = 0, g = 0, b = 0, a = 0, n = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const i = (y * width + x) * 4;
+          const al = rgba[i + 3];
+          if (al > 0) { r += rgba[i]; g += rgba[i + 1]; b += rgba[i + 2]; n++; }
+          a += al;
+        }
+      }
+      const o = (oy * tw + ox) * 4;
+      out[o + 3] = Math.round(a / ((x1 - x0) * (y1 - y0)));
+      if (n > 0) { out[o] = Math.round(r / n); out[o + 1] = Math.round(g / n); out[o + 2] = Math.round(b / n); }
+    }
+  }
+  return { width: tw, height: th, rgba: out };
+};
+
 export const compileAssets = async (manifest, baseDir) => {
   const assets = {};
   const meta = {};
@@ -283,8 +365,41 @@ export const compileAssets = async (manifest, baseDir) => {
     const frameCount = spec.frameCount ?? 1;
     const frameRate = spec.frameRate ?? null;
 
+    const multiPalette = MULTI_PALETTES[spec.id] || null;
+
     for (const [variant, rect] of Object.entries(spec.variants || {})) {
       const key = variant === 'base' ? spec.id : `${spec.id}_${variant}`;
+
+      if (multiPalette) {
+        // Authored multi-slot (full-color) asset: index against its own palette.
+        // Tiles are reduced to the 16px grid first so oversized generator art
+        // doesn't bloat the mask or the per-tile draw cost.
+        const prep = (frame) => spec.family === 'tile' ? resizeRGBAArea(frame, TILE_TARGET, TILE_TARGET) : frame;
+        const baseMeta = {
+          family: spec.family,
+          variant,
+          logicalWidth: rect.logicalWidth ?? spec.logicalWidth ?? 1,
+          logicalHeight: rect.logicalHeight ?? spec.logicalHeight ?? 1,
+          ...(rect.renderHeightTiles != null ? { renderHeightTiles: rect.renderHeightTiles } : {}),
+          ...(rect.renderYOffsetTiles != null ? { renderYOffsetTiles: rect.renderYOffsetTiles } : {}),
+          indexed: true,
+          palette: multiPalette,
+        };
+        if (frameCount > 1) {
+          const encodedFrames = [];
+          for (let f = 0; f < frameCount; f++) {
+            const frameRect = { ...rect, x: rect.x + f * rect.w };
+            const rows = frameToIndexedRows(prep(cropFrame(png, frameRect)), multiPalette);
+            encodedFrames.push(rows.map(rleEncodeRow));
+            if (f === 0) assets[key] = rows;
+          }
+          meta[key] = { ...baseMeta, frames: encodedFrames, frameRate };
+        } else {
+          assets[key] = frameToIndexedRows(prep(cropFrame(png, rect)), multiPalette);
+          meta[key] = baseMeta;
+        }
+        continue;
+      }
 
       if (frameCount > 1) {
         // Multi-frame: source PNG is a horizontal strip (frameCount × rect.w wide)
@@ -346,6 +461,47 @@ export const emitCompiledAssetModule = ({ assets, meta }) => {
   return `${lines.join('\n')}\n`;
 };
 
+// Auto-discover authored tiles dropped into a tiles directory. Each PNG becomes
+// a manifest entry whose id is the filename (must match the map's tile-type
+// string, e.g. "grass") and which is indexed against its authored palette in
+// src/content/multi-palettes.js. A horizontal strip (width an exact multiple of
+// height) is split into anti-repetition variant frames automatically.
+// Tiles without an authored palette are skipped with a warning so a stray drop
+// never breaks the build.
+export const discoverTileAssets = async (tilesDir, baseDir, existingIds = new Set()) => {
+  let files;
+  try {
+    files = await fs.readdir(tilesDir);
+  } catch {
+    return []; // no tiles directory yet
+  }
+  const entries = [];
+  for (const file of files.sort()) {
+    if (!file.toLowerCase().endsWith('.png')) continue;
+    const id = file.slice(0, -4);
+    if (existingIds.has(id)) continue; // explicit manifest entry wins
+    if (!MULTI_PALETTES[id]) {
+      console.warn(`Skipping tile "${file}": no authored palette for "${id}" in src/content/multi-palettes.js`);
+      continue;
+    }
+    const abs = path.join(tilesDir, file);
+    const { width, height } = decodePng(await fs.readFile(abs));
+    const frameCount = width > height && width % height === 0 ? width / height : 1;
+    const frameW = frameCount > 1 ? height : width;
+    entries.push({
+      id,
+      family: 'tile',
+      source: path.relative(baseDir, abs),
+      frameCount,
+      frameRate: null,
+      logicalWidth: 1,
+      logicalHeight: 1,
+      variants: { base: { x: 0, y: 0, w: frameW, h: height } },
+    });
+  }
+  return entries;
+};
+
 export const compileAssetManifestFile = async ({ manifestPath, outputPath }) => {
   const resolvedManifest = path.resolve(manifestPath);
   const ext = path.extname(resolvedManifest).toLowerCase();
@@ -356,7 +512,17 @@ export const compileAssetManifestFile = async ({ manifestPath, outputPath }) => 
     const moduleUrl = pathToFileURL(resolvedManifest).href;
     manifest = await import(`${moduleUrl}?t=${Date.now()}`);
   }
-  const compiled = await compileAssets(manifest, path.dirname(resolvedManifest));
+  const manifestDir = path.dirname(resolvedManifest);
+  const baseList = manifest.assetManifest || [];
+  const existingIds = new Set(baseList.map((spec) => spec.id));
+  const tileEntries = await discoverTileAssets(
+    path.resolve(manifestDir, '../source/tiles'), manifestDir, existingIds,
+  );
+  const mergedManifest = {
+    compilerOptions: manifest.compilerOptions,
+    assetManifest: [...baseList, ...tileEntries],
+  };
+  const compiled = await compileAssets(mergedManifest, manifestDir);
   const output = emitCompiledAssetModule(compiled);
   await fs.mkdir(path.dirname(path.resolve(outputPath)), { recursive: true });
   await fs.writeFile(path.resolve(outputPath), output, 'utf8');

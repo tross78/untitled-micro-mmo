@@ -62,7 +62,7 @@ Internal or demoted surfaces may remain in code for later use, but should not qu
 ## Performance and Bundle Constraints
 
 * no new npm dependencies without explicit approval
-* keep the client bundle under 500KB minified (current build: ~297KB); treat growth past ~50KB as a design review trigger
+* keep the client bundle under 1MB minified (current build: ~534KB); treat growth past ~50KB as a design review trigger
 * Pi Zero W arbiter work must stay cheap: O(1) or O(log n) per event where possible
 
 ## Asset Philosophy

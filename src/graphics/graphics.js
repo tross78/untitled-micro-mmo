@@ -322,6 +322,24 @@ function blendTileEdges(ctx, tileType, cx, cy, neighbors, S) {
 }
 
 export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = null) {
+    // Authored tile: blit its compiled multi-slot sprite instead of procedural
+    // art. If the asset has multiple frames they act as anti-repetition variants,
+    // picked by seed. The author owns the full look, so we skip edge blending.
+    if (isIndexedAsset(tileType)) {
+        const meta = COMPILED_ASSET_META[SPRITE_ALIASES[tileType] || tileType] || COMPILED_ASSET_META[tileType];
+        const frameCount = meta?.frames?.length || 1;
+        const safeSeed = Number.isFinite(rngSeed) ? Math.abs(Math.trunc(rngSeed)) : 0;
+        const frameIdx = frameCount > 1 ? safeSeed % frameCount : 0;
+        const tpl = getIndexedTemplate(tileType, frameIdx);
+        if (tpl) {
+            const prevSmoothing = ctx.imageSmoothingEnabled;
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(tpl, cx, cy, S, S);
+            ctx.imageSmoothingEnabled = prevSmoothing;
+            return;
+        }
+    }
+
     const p = TILE_PAL[tileType] || TILE_PAL.stone_floor;
     const guide = TILE_BIBLE[tileType] || TILE_BIBLE.stone_floor;
     // Use seed only to pick a variant (0-7), not per-pixel noise positions.
@@ -1509,6 +1527,64 @@ export function getGrayscaleTemplate(type, seed = 0, frameIdx = 0) {
         }
     }
 
+    return canvas;
+}
+
+// True when an asset was compiled with its own authored multi-slot palette
+// (src/content/multi-palettes.js). Such assets are fully colored and must NOT
+// be run through applyPalette — their colors are baked, not recolored.
+export function isIndexedAsset(type) {
+    if (!type) return false;
+    const resolvedType = SPRITE_ALIASES[type] || type;
+    const meta = COMPILED_ASSET_META[resolvedType] || COMPILED_ASSET_META[type];
+    return !!(meta && meta.indexed && Array.isArray(meta.palette));
+}
+
+// Cache of fully-colored indexed templates. Keyed by "type:frameIdx". The
+// compiled mask + palette are static, so a template never changes once built —
+// this avoids re-allocating an OffscreenCanvas per tile during room bakes.
+const _indexedTemplateCache = new Map();
+
+// Build a fully-colored canvas for a multi-slot asset, painting each mask index
+// directly from its authored palette. Returns null if the asset isn't indexed.
+export function getIndexedTemplate(type, frameIdx = 0) {
+    const resolvedType = SPRITE_ALIASES[type] || type;
+    const meta = COMPILED_ASSET_META[resolvedType] || COMPILED_ASSET_META[type];
+    if (!meta || !meta.indexed || !Array.isArray(meta.palette)) return null;
+
+    const cacheKey = `${resolvedType}:${frameIdx}`;
+    const cached = _indexedTemplateCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const palette = meta.palette;
+
+    let shape;
+    if (meta.frames && meta.frames[frameIdx]) shape = decodeRLEFrame(meta.frames[frameIdx]);
+    else shape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
+    if (!shape) { _indexedTemplateCache.set(cacheKey, null); return null; }
+
+    const baseWidth = Math.max(...shape.map((row) => row.length));
+    const baseHeight = shape.length;
+    const canvasWidth = Math.max(16, baseWidth);
+    const canvasHeight = Math.max(16, baseHeight);
+    const baseOffsetX = Math.max(0, Math.floor((canvasWidth - baseWidth) / 2));
+    const baseOffsetY = Math.max(0, canvasHeight - baseHeight);
+
+    const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    shape.forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) {
+            const ch = row[x];
+            if (ch === '0') continue;
+            const color = palette[ch.charCodeAt(0) - 49]; // '1' -> palette[0]
+            if (!color) continue;
+            ctx.fillStyle = color;
+            ctx.fillRect(baseOffsetX + x, baseOffsetY + y, 1, 1);
+        }
+    });
+    _indexedTemplateCache.set(cacheKey, canvas);
     return canvas;
 }
 

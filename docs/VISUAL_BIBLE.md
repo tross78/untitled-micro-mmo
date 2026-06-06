@@ -84,6 +84,56 @@ Do not use scenery to:
 * obscure exits or interactables
 * create unreadable noise
 
+## Tile Art Direction
+
+Authored tiles (dropped into `assets/source/tiles/` and indexed against
+`MULTI_PALETTES` in `src/content/multi-palettes.js`) must follow the Zelda ×
+Stardew blend in concrete pixel terms.
+
+House rules for every tile:
+
+* **16×16, no black outlines on ground.** Outlines are for props/objects only;
+  ground reads via value/hue shifts.
+* **Light from top-left, always** — highlights upper-left, shadow lower-right.
+* **4–6 colors per tile** (slot cap is 8; leave headroom). Tight Zelda ramps with
+  one or two warm Stardew in-betweens.
+* **Keep ground mid-value and slightly desaturated** so player/enemy/prop sprites
+  read on top. If a tile competes with sprites, it is too loud.
+* **Clustered texture, not per-pixel noise** — 3–6 grouped detail marks, never
+  static speckle.
+* **Warmth = Stardew** — nudge greens/greys toward yellow/brown vs. pure Zelda.
+* **Seamless + 3–4 variants** — author tileable (edges wrap); supply a `64×16`
+  strip so fields don't repeat. Keep the base ramp identical across variants,
+  rotate only detail position.
+* **Subtle dithering only at transitions** (shore foam, grass→dirt), not as fill.
+
+Per-tile intent (ramps live in `MULTI_PALETTES`, dark → light):
+
+| Tile | Family | Texture / motif | Avoid |
+| :--- | :--- | :--- | :--- |
+| `grass` | Natural | Clustered blade flicks in 2–3 spots, a few bright tips; calm base | Uniform blade carpet; high contrast |
+| `forest` | Natural | Darker dense turf + leaf litter + root shadow | "Dark grass" with no litter |
+| `dirt` | Natural | Worn path: embedded pebbles + faint cart-track scuffs | Mud-brown mush |
+| `sand` | Natural | Gentle 1px ripple bands, 2–3 dark grains; airy | Noise dunes |
+| `stone_floor` | Structure | Flagstone seams (grid hint, not full grid), one cracked stone/variant | Heavy mortar lines everywhere |
+| `cobble` | Structure | Rounded cobble lumps with shadow gaps; hand-set | Uniform circles |
+| `wall` | Structure | Brick courses, top edge catches highlight, base in shadow | Flat fill; must read vertical |
+| `interior` | Structure | Long vertical plank seams + occasional knot; warm wood | Tile-grid floor |
+| `dungeon` | Structure | Cold large flagstones, faint blue rim-light, sparse cracks | Warming it up |
+| `cave` | Structure | Uneven rocky ground, clustered pebbles, damp glints; no grid | Straight edges |
+| `water` | Liquid | Horizontal wave dashes + sparkle; animate via 3–4 frames | Vertical waves; solid blue |
+| `ice` | Special | Flat sheen + sharp crack/streak lines + faint reflection band | Texture spam |
+| `exit` | Special | Glowing green threshold brightening to center; allowed to pop (UX) | Treating it like quiet ground |
+
+RD prompt skeleton (per tile):
+
+```
+16x16 top-down JRPG ground tile, <tile vibe>, seamless tileable,
+SNES Zelda meets Stardew Valley, flat cel shading, limited 5-6 color
+palette, soft top-left light, subtle clustered texture, no outline,
+no anti-aliasing, no dithering fill
+```
+
 ## References
 
 Use the local `references/` folder as inspiration for:

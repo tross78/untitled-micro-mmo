@@ -35,7 +35,7 @@ These are hard constraints, not suggestions. Follow them on every patch.
 
 7. **No new npm dependencies.** Use native browser/platform APIs. If a dependency seems necessary, flag it and wait for explicit approval.
 
-8. **Bundle limit is 500KB minified** (current build: ~297KB). Treat a growth of more than ~50KB as a design review trigger.
+8. **Bundle limit is 1MB minified** (current build: ~534KB). Treat a growth of more than ~50KB as a design review trigger.
 
 9. **Run `npm run verify` after meaningful changes.** `npm run build` + `npm test` alone are not enough when content or event payloads changed.
 

@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { generateCharacterSprite, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES, getSceneryPalette } from '../graphics/graphics.js';
+import { generateCharacterSprite, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES, getSceneryPalette, isIndexedAsset, getIndexedTemplate } from '../graphics/graphics.js';
 
 const NPC_WALK_SPRITES = new Set(['guard']);
 const NPC_IDLE_SPRITES = new Set(['barkeep', 'merchant', 'herbalist', 'bard', 'sage']);
@@ -255,21 +255,26 @@ export class EntityRenderSystem {
             ? (PALETTES[palKey] || PALETTES.peer)
             : getSceneryPalette(type) || PALETTES.peer;
 
+        // Authored multi-slot asset — colors baked, bypass the 5-role recolor.
+        let indexedCanvas = type && isIndexedAsset(type) ? getIndexedTemplate(type, frameIdx) : null;
+
         // Use type override if provided (for directional posing)
         let template = null;
-        if (type) {
-            template = getGrayscaleTemplate(type, seed, frameIdx);
-        } else {
-            // Standard detection if no override
-            let sType = null;
-            if (palette === 'self' || palette === 'peer') sType = 'player';
-            else if (palette === 'enemy') sType = 'wolf';
-            else if (palette === 'npc') sType = 'guard';
+        if (!indexedCanvas) {
+            if (type) {
+                template = getGrayscaleTemplate(type, seed, frameIdx);
+            } else {
+                // Standard detection if no override
+                let sType = null;
+                if (palette === 'self' || palette === 'peer') sType = 'player';
+                else if (palette === 'enemy') sType = 'wolf';
+                else if (palette === 'npc') sType = 'guard';
 
-            if (sType) template = getGrayscaleTemplate(sType, seed, frameIdx);
+                if (sType) template = getGrayscaleTemplate(sType, seed, frameIdx);
+            }
         }
 
-        const canvas = template ? applyPalette(template, pal) : generateCharacterSprite(seed, palette);
+        const canvas = indexedCanvas || (template ? applyPalette(template, pal) : generateCharacterSprite(seed, palette));
         this.spriteCache.set(key, canvas);
         return canvas;
     }

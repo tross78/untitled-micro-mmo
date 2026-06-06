@@ -19,7 +19,7 @@ This file is intentionally short. Use it for current implementation constraints.
   * `src/graphics` and `src/ui` for rendering/presentation
   * `src/network`, `src/security`, `src/state`, `src/app`, `src/main` for transport/runtime wiring
 * **No dependencies:** follow ADR-009. Use native browser/platform APIs.
-* **Bundle limit:** 500KB minified. Treat growth over ~50KB as a design review trigger.
+* **Bundle limit:** 1MB minified (current build ~534KB). Treat growth over ~50KB as a design review trigger.
 * **Procedural assets only:** no external image or audio files.
 * **Asset pipeline:** PNGs are authoring inputs only. Runtime assets should come from checked-in generated modules under `src/generated/assets`, with legacy procedural shapes used as fallback during migration.
 * **Determinism:** no `Math.random()` in simulation, networking validation, or arbiter logic.
