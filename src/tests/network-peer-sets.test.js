@@ -108,10 +108,15 @@ describe('network peer set scoping', () => {
         expect(shardKnownPeers.has('shard-peer')).toBe(false);
     });
 
-    test('browser global and shard rooms start with TURN-capable ICE config', async () => {
+    test('browser global and shard rooms plumb the full configured ICE_SERVERS', async () => {
+        // TURN creds are injected at build time (empty in tests → STUN-only here), so we verify the
+        // browser rooms forward the whole configured ICE_SERVERS set rather than asserting a turn:
+        // entry. This still catches the real regression (browser rooms silently dropping to STUN-only
+        // / a stripped-down list); when TURN is injected in CI it flows through automatically.
         const { initNetworking } = await import('../network/index.js');
         const { localPlayer } = await import('../state/store.js');
         const { joinRoom } = await import('../network/transport.js');
+        const { ICE_SERVERS } = await import('../infra/constants.js');
 
         localPlayer.ph = 'abcd1234';
         await initNetworking();
@@ -119,12 +124,15 @@ describe('network peer set scoping', () => {
         const globalConfig = joinRoom.mock.calls.find(([, name]) => name === 'global')?.[0];
         const shardConfig = joinRoom.mock.calls.find(([, name]) => name === 'cellar-1')?.[0];
 
-        expect(globalConfig?.rtcConfig?.iceServers.some(server =>
-            String(Array.isArray(server.urls) ? server.urls[0] : server.urls).startsWith('turn:')
-        )).toBe(true);
-        expect(shardConfig?.rtcConfig?.iceServers.some(server =>
-            String(Array.isArray(server.urls) ? server.urls[0] : server.urls).startsWith('turn:')
-        )).toBe(true);
+        const urlsOf = (cfg) => (cfg?.rtcConfig?.iceServers || [])
+            .map(s => String(Array.isArray(s.urls) ? s.urls[0] : s.urls));
+        const expected = ICE_SERVERS.map(s => String(Array.isArray(s.urls) ? s.urls[0] : s.urls));
+
+        expect(expected.length).toBeGreaterThan(0);
+        for (const url of expected) {
+            expect(urlsOf(globalConfig)).toContain(url);
+            expect(urlsOf(shardConfig)).toContain(url);
+        }
     });
 
     test('late global peers get an immediate shard hint and registration payload', async () => {

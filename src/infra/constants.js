@@ -42,16 +42,21 @@ export const STUN_SERVERS = [
     { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
-// TURN is the relay fallback. UDP port 443 for most networks; TCP variant for
-// networks that block UDP (common on restrictive corporate/school wifi).
-export const TURN_SERVERS = [
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    // freestun.net: second independent TURN relay — improves Safari relay coverage
-    // when openrelay is slow or unreliable (observed: no relay candidates in Safari 17.6).
-    { urls: 'turn:freestun.net:3479', username: 'free', credential: 'free' },
-    { urls: 'turn:freestun.net:3479?transport=tcp', username: 'free', credential: 'free' },
-];
+// TURN relay — required for cross-NAT pairs (cellular phone <-> desktop), which can't connect on
+// STUN/srflx alone. Credentials are injected at BUILD time from CI secrets (scripts/build.mjs +
+// deploy.yml) so they stay out of source/git; empty in local/dev/e2e builds, which then run STUN-only.
+// They are necessarily public in the deployed bundle (client-side TURN) — rotate from the metered.ca
+// dashboard if abused; the 500MB/mo cap bounds exposure. The turns:443 (TLS) entry is what gets through
+// restrictive mobile/wifi. (The old anonymous openrelay/freestun creds were dead — no relay candidates.)
+/* global __TURN_USER__, __TURN_CRED__ */
+const TURN_USER = (typeof __TURN_USER__ !== 'undefined' && __TURN_USER__) || '';
+const TURN_CRED = (typeof __TURN_CRED__ !== 'undefined' && __TURN_CRED__) || '';
+export const TURN_SERVERS = (TURN_USER && TURN_CRED) ? [
+    { urls: 'turn:global.relay.metered.ca:80', username: TURN_USER, credential: TURN_CRED },
+    { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: TURN_USER, credential: TURN_CRED },
+    { urls: 'turn:global.relay.metered.ca:443', username: TURN_USER, credential: TURN_CRED },
+    { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: TURN_USER, credential: TURN_CRED },
+] : [];
 
 export const ICE_SERVERS = [...STUN_SERVERS, ...TURN_SERVERS];
 
