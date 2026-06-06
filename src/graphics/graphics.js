@@ -516,30 +516,31 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         }
 
     } else if (tileType === 'cobble') {
-        // Irregular cobblestone — 6 stones in structured layout
-        const stones = [
-            [1, 1, h-2, h-1],           // top-left
-            [h+2, 2, h-2, h-2],         // top-right
-            [2, h+2, h-1, h-2],         // bottom-left
-            [h+1, h+2, h-1, h-1],       // bottom-right
-            [q, q+1, q, h-1],           // center-left
-            [h+q-1, q, q+1, h-2],       // center-right
-        ];
-        stones.forEach(([sx, sy, sw, sh], i) => {
-            ctx.fillStyle = (i + variant) % 3 === 0 ? p.lo : (i % 2 ? p.hi : p.base);
-            ctx.fillRect(cx + sx, cy + sy, sw, sh);
-            ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + sx, cy + sy, sw, 1);    // top highlight
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + sx, cy + sy + sh, sw, 1); // bottom shadow
-        });
-        ctx.fillStyle = p.lo;
-        ctx.fillRect(cx + q, cy + h - 1, 2, 1);
-        ctx.fillRect(cx + h - 3, cy + 3, 1, 2);
-        if (variant % 2 === 0) {
-            ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + h - 1, cy + q, 1, 1);
-            ctx.fillRect(cx + 2, cy + h - 3, 1, 1);
+        // Irregular cobblestone. Stones sit on a per-tile phase-shifted, jittered lattice so the paving
+        // doesn't read as one 6-stone stamp repeated on a grid (the old fixed layout tiled obviously).
+        const rng = tileRng(safeSeed ^ 0x3b9aca07);
+        ctx.fillStyle = p.lo;               // mortar fills the gaps between stones
+        ctx.fillRect(cx, cy, S, S);
+        const step = 8;                     // larger slabs read as worn flagstone, not fine gravel
+        const phx = rng(step), phy = rng(step); // per-tile phase: stones don't align across tiles
+        for (let gy = -step + phy; gy < S; gy += step) {
+            for (let gx = -step + phx; gx < S; gx += step) {
+                const x0 = Math.max(0, gx + rng(2));
+                const y0 = Math.max(0, gy + rng(2));
+                const sw = Math.min(step - 1 - rng(2), S - x0);
+                const sh = Math.min(step - 1 - rng(2), S - y0);
+                if (sw < 3 || sh < 3) continue;
+                const r = rng(6);
+                ctx.fillStyle = r === 0 ? p.hi : (r === 1 ? p.lo : p.base); // mostly base, rare tone shift
+                ctx.fillRect(cx + x0, cy + y0, sw, sh);
+                // Only some slabs get edge shading, so the paving isn't busy with highlight/shadow lines.
+                if (r < 3) {
+                    ctx.fillStyle = r === 0 ? p.accent : p.hi; // soft top catch-light
+                    ctx.fillRect(cx + x0, cy + y0, sw, 1);
+                    ctx.fillStyle = p.lo;           // bottom shadow grounds the slab into the mortar
+                    ctx.fillRect(cx + x0, cy + y0 + sh - 1, sw, 1);
+                }
+            }
         }
 
     } else if (tileType === 'dirt') {
@@ -548,107 +549,117 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         ctx.fillStyle = p.base;
         ctx.fillRect(cx, cy, S, S);
 
-        // Broad soil mottling.
-        for (let i = 0; i < 12; i++) {
-            const px = 1 + rng(S - 3);
-            const py = 1 + rng(S - 3);
-            const w = 1 + rng(3);
-            const h2 = 1 + rng(2);
-            ctx.fillStyle = i % 4 === 0 ? p.lo : (i % 3 === 0 ? p.hi : p.base);
+        // Broad, soft soil mottling — larger low-contrast patches read as packed earth. Bias toward
+        // base/hi and keep dark (lo) patches rare so the tile doesn't read as high-contrast speckle.
+        for (let i = 0; i < 8; i++) {
+            const w = 2 + rng(3);
+            const h2 = 1 + rng(3);
+            const px = 1 + rng(Math.max(1, S - 1 - w));
+            const py = 1 + rng(Math.max(1, S - 1 - h2));
+            ctx.fillStyle = i === 0 ? p.lo : (i % 3 === 0 ? p.hi : p.base);
             ctx.fillRect(cx + px, cy + py, w, h2);
         }
 
-        // Fine grit and stones keep it from reading like fabric or floorboards.
+        // A little dark grit for tooth — kept sparse and low so it doesn't read as noise.
         ctx.fillStyle = p.lo;
-        for (let i = 0; i < 10; i++) {
-            const px = 1 + rng(S - 2);
-            const py = 1 + rng(S - 2);
-            ctx.fillRect(cx + px, cy + py, 1, 1);
+        const grit = 3 + rng(3);
+        for (let i = 0; i < grit; i++) {
+            ctx.fillRect(cx + 1 + rng(S - 2), cy + 1 + rng(S - 2), 1, 1);
         }
-        ctx.fillStyle = p.accent;
-        ctx.fillRect(cx + 2, cy + 3, 1, 1);
-        ctx.fillRect(cx + S - 4, cy + S - 5, 1, 1);
-        ctx.fillRect(cx + 4, cy + S - 4, 1, 1);
-        ctx.fillRect(cx + 8, cy + 5, 1, 1);
+        // One faint highlight fleck at most.
+        if (rng(2) === 0) {
+            ctx.fillStyle = p.hi;
+            ctx.fillRect(cx + 2 + rng(S - 4), cy + 2 + rng(S - 4), 1, 1);
+        }
 
+        // Motif accents are positioned with the per-tile RNG and kept off fixed full-width rows —
+        // the old rut/dune motifs drew horizontal bands at cy+h that tiled into repeating comb glyphs.
         if (motif === 'pebble') {
-            const px = q + (variant * q) % h;
+            const px = 1 + rng(S - 4), py = 1 + rng(S - 3);
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + px, cy + h, 3, 2);
+            ctx.fillRect(cx + px, cy + py, 2 + rng(2), 2);
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + px, cy + h, 3, 1);
+            ctx.fillRect(cx + px, cy + py, 2, 1);
         } else if (motif === 'rut' || motif === 'path') {
-            // Trampled path wear should feel compressed and organic, not like planks.
+            // Trampled scuffs — short broken marks scattered, not a full-width comb row.
             ctx.fillStyle = p.lo;
-            for (let x = 1; x < S - 1; x += 2) {
-                const y0 = cy + h - 1 + ((x + variant) % 3 === 0 ? 1 : 0);
-                ctx.fillRect(cx + x, y0, 1, 1);
-                if ((x + variant) % 4 === 0) ctx.fillRect(cx + x, y0 + 1, 1, 1);
+            const n = 2 + rng(3);
+            for (let i = 0; i < n; i++) {
+                ctx.fillRect(cx + rng(S - 3), cy + 1 + rng(S - 2), 2 + rng(2), 1);
             }
-            ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + 2, cy + h - 2, S - 4, 1);
-            if (variant % 2 === 0) ctx.fillRect(cx + 4, cy + h - 1, S - 8, 1);
         } else if (motif === 'crack') {
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + q, cy + 2, 1, h - 2);
-            ctx.fillRect(cx + h, cy + h, 1, h - 2);
-            ctx.fillRect(cx + 2, cy + h - 3, 4, 1);
+            let fx = 2 + rng(S - 4), fy = 1 + rng(3);
+            const steps = 4 + rng(S - 5);
+            for (let s = 0; s < steps && fy < S; s++) {
+                ctx.fillRect(cx + fx, cy + fy, 1, 1);
+                fy += 1;
+                if (rng(2) === 0) fx = Math.max(0, Math.min(S - 1, fx + (rng(2) ? 1 : -1)));
+            }
         } else if (motif === 'dune') {
+            // Single short wind-scoured streak at a random row, not a stack of full-width lines.
             ctx.fillStyle = p.hi;
-            ctx.fillRect(cx + 2, cy + 3, S - 4, 1);
-            ctx.fillRect(cx + 3, cy + 4, S - 6, 1);
-            ctx.fillRect(cx + 5, cy + 5, S - 10, 1);
+            ctx.fillRect(cx + 2 + rng(3), cy + 2 + rng(S - 4), 3 + rng(4), 1);
         }
 
     } else if (tileType === 'mud') {
-        // Wet cave mud — irregular 1-2px stipple for an organic damp-earth look
-        const rng = tileRng(rngSeed ^ 0xdeadbeef);
-        for (let y = 0; y < S; y++) {
-            for (let x = 0; x < S; x++) {
-                const n = (x * 7 + y * 13 + variant * 3) % 11;
-                ctx.fillStyle = n < 2 ? p.lo : n < 4 ? p.hi : p.base;
-                ctx.fillRect(cx + x, cy + y, 1, 1);
-            }
+        // Wet cave mud — organic damp-earth stipple. The old per-pixel (x*7 + y*13) % 11 formula drew
+        // a regular diagonal weave that read as woven fabric across a patch; scatter with a per-tile RNG.
+        const rng = tileRng(safeSeed ^ 0xdeadbeef);
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx, cy, S, S);
+        // Damp mottling — soft darker/lighter clumps spread across the tile.
+        for (let i = 0; i < 16; i++) {
+            const w = 1 + rng(3), h2 = 1 + rng(2);
+            ctx.fillStyle = i % 3 === 0 ? p.lo : (i % 4 === 0 ? p.hi : p.base);
+            ctx.fillRect(cx + rng(Math.max(1, S - w)), cy + rng(Math.max(1, S - h2)), w, h2);
         }
-        // Damp sheen — small water-glint patch, position seeded per tile
-        const sx = rng(S - 4) + 1;
-        const sy = rng(S - 3) + 1;
+        // Fine grit speckle.
+        ctx.fillStyle = p.lo;
+        for (let i = 0; i < 10; i++) ctx.fillRect(cx + rng(S), cy + rng(S), 1, 1);
+        // A couple of wet sheen glints, position seeded per tile.
         ctx.fillStyle = p.accent;
         ctx.globalAlpha = 0.45;
-        ctx.fillRect(cx + sx, cy + sy, 2, 1);
-        ctx.fillRect(cx + sx + 1, cy + sy + 1, 1, 1);
-        ctx.fillRect(cx + 2, cy + 2, 1, 1);
-        if (variant % 2 === 1) ctx.fillRect(cx + S - 4, cy + S - 4, 1, 1);
-        ctx.fillRect(cx + 4, cy + 5, 1, 1);
+        const glints = 1 + rng(2);
+        for (let i = 0; i < glints; i++) {
+            const gx = 1 + rng(S - 3), gy = 1 + rng(S - 2);
+            ctx.fillRect(cx + gx, cy + gy, 1 + rng(2), 1);
+        }
         ctx.globalAlpha = 1.0;
 
     } else if (tileType === 'sand') {
-        // Wind-blown grain: scattered speckle + a couple of short, offset ripples. Deliberately NO
-        // full-width horizontal bands or per-tile bottom shadow — those tile up into plank/panel seams.
+        // Grain-dominant sand. Solid horizontal ripple lines (even at random rows) visually group
+        // into faint horizontal striping across a patch, so detail here is mostly multi-tone grain
+        // stipple — like dirt/mud, which never band — with only sparse, jittered, broken ripple
+        // dashes that read as wind texture rather than seams.
+        const rng = tileRng(safeSeed ^ 0x5a17d000);
         ctx.fillStyle = p.base;
         ctx.fillRect(cx, cy, S, S);
-        for (let i = 0; i < 20; i++) {
-            const px = (variant * 5 + i * 7) % S;
-            const py = (variant * 3 + i * 11) % S;
-            ctx.fillStyle = i % 6 === 0 ? p.lo : (i % 3 === 0 ? p.hi : p.base);
-            ctx.fillRect(cx + px, cy + py, 1, 1);
+        // Fine grain: dense speckle of darker/lighter grains across the whole tile.
+        for (let i = 0; i < 26; i++) {
+            const r = rng(7);
+            ctx.fillStyle = r === 0 ? p.lo : (r === 1 ? p.hi : p.base);
+            ctx.fillRect(cx + rng(S), cy + rng(S), 1, 1);
         }
-        // two short, broken ripples at varied positions — never spanning the full tile width
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(cx + (variant * 3) % Math.max(1, S - 6), cy + 3 + (variant % 4), 3 + (variant % 3), 1);
-        ctx.fillStyle = p.lo;
-        ctx.fillRect(cx + 2 + (variant * 5) % Math.max(1, S - 7), cy + S - 5 - (variant % 3), 3 + ((variant + 1) % 3), 1);
-        if (variant % 2 === 0) {
+        // Sparse ripple texture: a few short dashes that step up/down by a pixel mid-run so they
+        // never form a clean horizontal line, and stay low-contrast (mostly lo, occasionally hi).
+        const ripples = 1 + rng(2);
+        for (let i = 0; i < ripples; i++) {
+            let rx = rng(Math.max(1, S - 4));
+            let ry = 1 + rng(S - 2);
+            const segs = 2 + rng(3);
+            ctx.fillStyle = rng(4) === 0 ? p.hi : p.lo;
+            for (let s = 0; s < segs && rx < S; s++) {
+                ctx.fillRect(cx + rx, cy + ry, 1, 1);
+                rx += 1 + rng(2);                 // gaps between dashes
+                if (rng(2) === 0) ry += rng(2) ? 1 : -1; // vertical jitter breaks the line
+                if (ry < 0 || ry >= S) ry = 1 + rng(S - 2);
+            }
+        }
+        // Sparse bright glint.
+        if (rng(3) === 0) {
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + (variant * 2) % Math.max(1, S - 2), cy + h, 2, 1);
-        }
-        if (motif === 'shoreline') {
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + 2, cy + S - 3, S - 4, 1);
-            ctx.fillRect(cx + 5, cy + S - 4, S - 10, 1);
-        } else if (motif === 'dune') {
-            ctx.fillStyle = p.hi;
-            ctx.fillRect(cx + 3, cy + 2, S - 6, 1);
+            ctx.fillRect(cx + rng(S - 1), cy + rng(S - 1), 1, 1);
         }
 
     } else if (tileType === 'wall') {
@@ -911,83 +922,87 @@ export function drawTile(ctx, tileType, cx, cy, rngSeed, S = 16, neighbors = nul
         }
 
     } else if (tileType === 'cave') {
-        // Cave stone in lumpy masses, closer to carved rock than hard rectangles.
-        const cells = [
-            [1, 1, 5, 4], [6, 1, 5, 5],
-            [1, 5, 4, 5], [5, 5, 6, 4],
-            [3, 2, 2, 2], [8, 8, 2, 2],
-        ];
-        cells.forEach(([sx, sy, sw, sh], i) => {
-            const ox = sx + (i % 2);
-            const oy = sy + ((variant + i) % 2);
-            const w = sw + ((i + variant) % 2);
-            const h2 = sh + (i % 3 === 0 ? 1 : 0);
-            ctx.fillStyle = i % 3 === 0 ? p.lo : (i % 2 ? p.hi : p.base);
-            ctx.fillRect(cx + ox, cy + oy, w, h2);
-            ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + ox, cy + oy, w, 1);
-            ctx.fillStyle = '#1a0a00';
-            ctx.fillRect(cx + ox, cy + oy + h2, w, 1);
-        });
-        ctx.fillStyle = '#27170b';
-        ctx.fillRect(cx + 2, cy + h - 2, 2, 1);
-        ctx.fillRect(cx + S - 4, cy + 3, 1, 2);
-        ctx.fillRect(cx + 4, cy + 9, 1, 1);
+        // Cave stone in lumpy masses. Lumps sit on a per-tile phase-shifted, jittered lattice so the
+        // rock doesn't read as one carved stamp repeated on a grid (old fixed cell layout tiled obviously).
+        const rng = tileRng(safeSeed ^ 0x517cc1b7);
+        ctx.fillStyle = p.base;
+        ctx.fillRect(cx, cy, S, S);
+        const step = 6;
+        const phx = rng(step), phy = rng(step);
+        for (let gy = -step + phy; gy < S; gy += step) {
+            for (let gx = -step + phx; gx < S; gx += step) {
+                const x0 = Math.max(0, gx + rng(3) - 1);
+                const y0 = Math.max(0, gy + rng(3) - 1);
+                const w = Math.min(step - 1 + rng(2), S - x0);
+                const h2 = Math.min(step - 1 + rng(2), S - y0);
+                if (w < 2 || h2 < 2) continue;
+                const r = rng(3);
+                ctx.fillStyle = r === 0 ? p.lo : (r === 1 ? p.hi : p.base);
+                ctx.fillRect(cx + x0, cy + y0, w, h2);
+                ctx.fillStyle = p.accent;          // light catches the top of the lump
+                ctx.fillRect(cx + x0, cy + y0, w, 1);
+                ctx.fillStyle = '#1a0a00';          // deep shadow beneath
+                ctx.fillRect(cx + x0, cy + y0 + h2 - 1, w, 1);
+            }
+        }
+        // Sparse mineral flecks / motif accents, scattered per tile.
         if (motif === 'glint') {
             ctx.fillStyle = p.accent;
             ctx.globalAlpha = 0.6;
-            ctx.fillRect(cx + h - 1, cy + q, 2, 1);
-            ctx.fillRect(cx + 7, cy + 6, 2, 1);
+            const n = 2 + rng(2);
+            for (let i = 0; i < n; i++) ctx.fillRect(cx + rng(S - 1), cy + rng(S - 1), 2, 1);
             ctx.globalAlpha = 1.0;
         } else if (motif === 'pocket') {
             ctx.fillStyle = '#1a0a00';
-            ctx.fillRect(cx + 2, cy + h - 1, 3, 2);
-            ctx.fillRect(cx + S - 5, cy + 2, 2, 1);
+            ctx.fillRect(cx + rng(S - 3), cy + rng(S - 2), 2 + rng(2), 2);
         } else if (motif === 'vein') {
             ctx.fillStyle = p.accent;
-            ctx.fillRect(cx + 2, cy + 2, S - 4, 1);
-            ctx.fillRect(cx + 3, cy + S - 4, S - 6, 1);
-            ctx.fillRect(cx + h - 1, cy + h - 1, 2, 1);
-            ctx.fillRect(cx + 4, cy + 4, 1, 1);
-            ctx.fillRect(cx + 9, cy + 7, 1, 1);
+            let fx = rng(S), fy = rng(S);
+            const steps = 5 + rng(S - 5);
+            for (let s = 0; s < steps && fx < S && fy < S; s++) {
+                ctx.fillRect(cx + fx, cy + fy, 1, 1);
+                if (rng(2)) fx += 1; else fy += 1;
+            }
         }
 
     } else if (tileType === 'ice') {
-        // Frozen surface with layered plates and sharper crack lines.
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(cx, cy, S, S);
+        // Smooth frozen sheet. Fill flat — the old code framed every tile (hi fill + base inset),
+        // which drew a 1px bright outline on each cell and read as a grid over large lakes. Plates,
+        // cracks, and frost are now scattered with a per-tile RNG so the surface stays continuous.
+        const rng = tileRng(safeSeed ^ 0x1ce00000);
         ctx.fillStyle = p.base;
-        ctx.fillRect(cx + 1, cy + 1, S - 2, S - 2);
-        ctx.fillStyle = p.accent;
-        ctx.fillRect(cx + q, cy + q, h, 1);
-        ctx.fillRect(cx + 3, cy + 3, 3, 1);
-        ctx.fillRect(cx + 8, cy + 7, 2, 1);
-        // Crack clusters vary by motif.
-        const crackStart = cx + 2 + (variant % 3);
-        const crackY = cy + 4 + (variant % 2);
-        if (motif === 'crack' || motif === 'sheet') {
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(crackStart, crackY, 6, 1);
-            ctx.fillRect(crackStart + 5, crackY, 1, 5);
-            ctx.fillRect(cx + 7, cy + 2, 1, 4);
-            ctx.fillRect(cx + 4, cy + 10, 4, 1);
-        } else if (motif === 'frost') {
-            ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + 1, cy + h - 2, S - 2, 1);
-            ctx.fillRect(cx + h - 1, cy + 1, 1, S - 2);
-            ctx.fillRect(cx + 3, cy + 3, 2, 1);
-            ctx.fillRect(cx + 6, cy + 6, 2, 1);
-            ctx.fillRect(cx + 9, cy + 4, 1, 2);
+        ctx.fillRect(cx, cy, S, S);
+        // Broad tonal plates — soft translucent patches of lighter/darker ice, randomly placed.
+        for (let i = 0; i < 3; i++) {
+            const pw = 4 + rng(Math.max(1, S - 6));
+            const ph = 3 + rng(4);
+            ctx.fillStyle = rng(2) ? p.hi : p.lo;
+            ctx.globalAlpha = 0.35;
+            ctx.fillRect(cx + rng(Math.max(1, S - pw)), cy + rng(Math.max(1, S - ph)), pw, ph);
         }
-        // Frosted plate highlights and corner bite-out keep it from reading as flat blue.
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(cx + 2, cy + 2, 2, 1);
-        ctx.fillRect(cx + 2, cy + 2, 1, 2);
-        ctx.fillRect(cx + 10, cy + 3, 1, 1);
-        ctx.fillRect(cx + 3, cy + 9, 1, 1);
-        if (variant % 2 === 0) {
+        ctx.globalAlpha = 1;
+        // Fracture lines: thin random walks that enter/leave at tile edges, so they chain across
+        // neighbours instead of sitting centred inside each cell.
+        const cracks = 1 + rng(2);
+        for (let i = 0; i < cracks; i++) {
             ctx.fillStyle = p.lo;
-            ctx.fillRect(cx + S - 4, cy + S - 4, 2, 1);
+            let fx = rng(S);
+            let fy = rng(S);
+            const steps = 4 + rng(Math.max(1, S - 4));
+            const dirx = rng(3) - 1;          // drift -1 / 0 / +1
+            const diry = rng(2) ? 1 : -1;
+            for (let s = 0; s < steps; s++) {
+                if (fx >= 0 && fx < S) ctx.fillRect(cx + fx, cy + fy, 1, 1);
+                fy += diry;
+                if (rng(2) === 0) fx += dirx;
+                if (fy < 0 || fy >= S) break;
+            }
+        }
+        // Frost glints — sparse bright pixels, well distributed.
+        ctx.fillStyle = p.accent;
+        const glints = 2 + rng(3);
+        for (let i = 0; i < glints; i++) {
+            ctx.fillRect(cx + rng(S), cy + rng(S), 1, 1);
         }
     }
 
