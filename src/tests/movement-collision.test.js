@@ -22,9 +22,16 @@ describe('sceneryBlocksCell footprint masks', () => {
     });
 
     test('a prop without a mask blocks its whole footprint', () => {
-        const rock = { x: 5, y: 5, w: 1, h: 1, label: 'rock' };
-        expect(sceneryBlocksCell(rock, 5, 5)).toBe(true);
-        expect(sceneryBlocksCell(rock, 6, 5)).toBe(false);
+        const barrel = { x: 5, y: 5, w: 1, h: 1, label: 'barrel' };
+        expect(sceneryBlocksCell(barrel, 5, 5)).toBe(true);
+        expect(sceneryBlocksCell(barrel, 6, 5)).toBe(false);
+    });
+
+    test('small ground clutter never blocks, so the player can walk over it', () => {
+        for (const label of ['rock', 'flower', 'mushroom', 'bones', 'herbs', 'stone']) {
+            const clutter = { x: 5, y: 5, w: 1, h: 1, label };
+            expect(sceneryBlocksCell(clutter, 5, 5)).toBe(false);
+        }
     });
 });
 
@@ -40,7 +47,7 @@ describe('movement collisions against occupants and scenery', () => {
             room: {
                 width: 10,
                 height: 10,
-                scenery: [{ x: 5, y: 5, label: 'rock' }],
+                scenery: [{ x: 5, y: 5, label: 'barrel' }],
             },
         }, {});
     });

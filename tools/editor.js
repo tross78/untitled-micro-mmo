@@ -6,7 +6,7 @@
 
 import { drawTile, zoneTileType, getGrayscaleTemplate, applyPalette, getSceneryPalette } from '../src/graphics/graphics.js';
 import { rooms } from '../src/content/data/rooms.js';
-import { SCENERY_DIMENSIONS } from '../src/infra/graphics-constants.js';
+import { SCENERY_DIMENSIONS, SCENERY_PASSABLE } from '../src/infra/graphics-constants.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -913,7 +913,7 @@ function renderValidation() {
             return (dest.tileOverrides || []).some(o => o.x === lx && o.y === ly && o.type === 'wall');
         })();
         if (isWall) issues.push({ sev: 'error', msg: `Exit to "${ex.dest}" lands at (${lx},${ly}) which is a wall in destination` });
-        else if (sc) issues.push({ sev: 'warn', msg: `Exit to "${ex.dest}" lands at (${lx},${ly}) on scenery "${sc.label}"` });
+        else if (sc && !SCENERY_PASSABLE.has(sc.label)) issues.push({ sev: 'warn', msg: `Exit to "${ex.dest}" lands at (${lx},${ly}) on scenery "${sc.label}"` });
     }
 
     // Check landing coords don't fall on an exit tile in the destination (instant bounce)

@@ -27,18 +27,11 @@ export class WorldSyncSystem {
         for (const tile of roomData.tileOverrides || []) {
             if (tile.type === 'wall') blocked.add(`${tile.x},${tile.y}`);
         }
-        for (const scenery of roomData.scenery || []) {
-            const w = scenery.w || 1;
-            const h = scenery.h || 1;
-            for (let dy = 0; dy < h; dy++) {
-                for (let dx = 0; dx < w; dx++) {
-                    blocked.add(`${scenery.x + dx},${scenery.y + dy}`);
-                }
-            }
-        }
+        const scenery = roomData.scenery || [];
         return (x, y) => {
             if (x < 0 || y < 0 || x >= roomData.width || y >= roomData.height) return false;
-            return !blocked.has(`${x},${y}`);
+            if (blocked.has(`${x},${y}`)) return false;
+            return !scenery.some((s) => sceneryBlocksCell(s, x, y));
         };
     }
 

@@ -1,5 +1,5 @@
 // @ts-check
-import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, sceneryBlocksCell } from '../infra/graphics-constants.js';
+import { TILE_TAXONOMY, SCENERY_SIZE_CLASSES, SCENERY_PASSABLE, sceneryBlocksCell } from '../infra/graphics-constants.js';
 import { findSafeArrival } from '../rules/index.js';
 import { COMPILED_ASSET_SHAPES } from '../generated/assets/compiled-assets.js';
 import { TILE_BIBLE, SCENERY_AUTHORING_RULES } from './data/tile-bible.js';
@@ -268,7 +268,8 @@ export const validateContent = (defs) => {
           const cx = et.x + ox, cy = et.y + oy;
           if (cx < 0 || cy < 0 || cx >= room.width || cy >= room.height) continue;
           if (isWallTile(cx, cy)) problems.push(`Room "${room.id}" exit to "${et.dest}" is covered by a wall at (${cx},${cy})`);
-          if (sceneryLabelAt(cx, cy)) problems.push(`Room "${room.id}" exit to "${et.dest}" is blocked by scenery "${sceneryLabelAt(cx, cy)}" at (${cx},${cy})`);
+          const exitLabel = sceneryLabelAt(cx, cy);
+          if (exitLabel && !SCENERY_PASSABLE.has(exitLabel)) problems.push(`Room "${room.id}" exit to "${et.dest}" is blocked by scenery "${exitLabel}" at (${cx},${cy})`);
           if (isWaterTile(cx, cy)) problems.push(`Room "${room.id}" exit to "${et.dest}" lands on a water tile at (${cx},${cy})`);
         }
       }

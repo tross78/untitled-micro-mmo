@@ -50,11 +50,23 @@ export const SCENERY_COLLISION_MASK = {
 };
 
 /**
+ * Small ground clutter the player can walk over. These are the sub-tile props drawn lying on the
+ * ground (see SCENERY_RENDER_SCALE) — flowers, mushrooms, loose stones, bones, etc. Blocking on them
+ * felt like hitting invisible walls, so they are decorative-only: they never block movement. Upright
+ * objects (barrel, crate, chair, pillar, well) and anything medium/large still block.
+ */
+export const SCENERY_PASSABLE = new Set([
+    'rock', 'stone', 'ore', 'coal', 'bones', 'log',
+    'mushroom', 'shell', 'herbs', 'fiber', 'flower', 'snowflake',
+]);
+
+/**
  * Whether a placed scenery object blocks the given world cell. Single source of truth for movement,
  * pathfinding, patrol generation, walkability queries, and content validation so collision stays
  * consistent everywhere (see DECISIONS "single gameplay truth").
  */
 export function sceneryBlocksCell(s, x, y) {
+    if (SCENERY_PASSABLE.has(s.label)) return false;
     const w = s.w || 1, h = s.h || 1;
     if (x < s.x || x >= s.x + w || y < s.y || y >= s.y + h) return false;
     const mask = SCENERY_COLLISION_MASK[s.label];
