@@ -64,9 +64,6 @@ export class EntityRenderSystem {
                     const bodyY = Math.round(Math.abs(Math.sin(gameTime * Math.PI * 3.5)) * bounceAmp);
                     walkPose = { legOffset: 0, bodyY };
                 }
-            } else if (NPC_IDLE_SPRITES.has(spriteDef.type)) {
-                // Minimal bob — just 1px at any scale, keeps feet grounded
-                walkPose = { legOffset: 0, bodyY: Math.round(Math.abs(Math.sin(gameTime * 1.0))) };
             }
 
             // Apply Bump Offset (Juice Phase 8.5a)
