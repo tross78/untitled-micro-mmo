@@ -4,7 +4,6 @@ import { Component } from '../domain/components.js';
 import { generateCharacterSprite, applyPalette, getGrayscaleTemplate, getCompiledAssetMeta, getSpriteBounds, PALETTES, getSceneryPalette, isIndexedAsset, getIndexedTemplate } from '../graphics/graphics.js';
 
 const NPC_WALK_SPRITES = new Set(['guard']);
-const NPC_IDLE_SPRITES = new Set(['barkeep', 'merchant', 'herbalist', 'bard', 'sage']);
 
 /**
  * EntityRenderSystem draws all spatial entities (Players, NPCs, Enemies).
@@ -51,19 +50,16 @@ export class EntityRenderSystem {
 
             let drawX = transform.x;
             let drawY = transform.y;
-            let walkPose = { legOffset: 0, bodyY: 0 };
 
-            // Apply Tweening & Animation (Zelda-style) — ease-out quad for snappy feel
+            // Apply Tweening (Zelda-style) — ease-out quad for snappy feel.
+            // Motion comes from the compiled walk frames; we deliberately do NOT
+            // add a procedural vertical bounce here. The old sine "bob" shifted the
+            // sprite's destY every frame, and because characters draw at a fractional
+            // S/16 scale that resampled the sprite on each bob step and tore it.
             if (tween) {
                 const t = 1 - (1 - tween.progress) * (1 - tween.progress); // ease-out quad
                 drawX = tween.startX + (tween.targetX - tween.startX) * t;
                 drawY = tween.startY + (tween.targetY - tween.startY) * t;
-                if (spriteDef.palette !== 'enemy') {
-                    // Snap to integer pixels — fractional coords anti-alias pixel art and cause visible tearing
-                    const bounceAmp = Math.max(2, Math.floor(this.VP.S * 0.06));
-                    const bodyY = Math.round(Math.abs(Math.sin(gameTime * Math.PI * 3.5)) * bounceAmp);
-                    walkPose = { legOffset: 0, bodyY };
-                }
             }
 
             // Apply Bump Offset (Juice Phase 8.5a)
@@ -88,7 +84,6 @@ export class EntityRenderSystem {
             // "torn feet" visual (body and legs at different sub-pixel offsets).
             const pxX = Math.floor(screenOffsetX + sx * this.VP.S);
             const pxY = Math.floor(screenOffsetY + sy * this.VP.S);
-            const bounceY = walkPose.bodyY; // already an integer (Math.round)
 
             // 1. Draw Drop Shadow
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -141,19 +136,18 @@ export class EntityRenderSystem {
                 }
             }
 
-            // Phase 8.76 P3: Animation frame cycling
+            // Animation frame cycling — only while the entity is actually moving
+            // (tweening between tiles). Idle characters stay on frame 0.
+            //
+            // The authored idle "frames" are just the sprite translated 1px up and
+            // back — a baked vertical bob with no pose change. Because characters
+            // draw at a fractional S/16 scale, cycling that bob resampled the sprite
+            // every step and tore it. Real walk cycles (player, guards) still play
+            // during movement; idle NPCs hold a clean static frame.
             const meta = getCompiledAssetMeta(variant);
             let frameIdx = 0;
-            if (meta?.frames?.length > 1 && meta.frameRate) {
-                if (spriteDef.type === 'player' || spriteDef.type === 'peer') {
-                    frameIdx = tween ? Math.floor(gameTime * meta.frameRate) % meta.frames.length : 0;
-                } else if (NPC_WALK_SPRITES.has(spriteDef.type)) {
-                    frameIdx = tween ? Math.floor(gameTime * meta.frameRate) % meta.frames.length : 0;
-                } else if (NPC_IDLE_SPRITES.has(spriteDef.type)) {
-                    frameIdx = Math.floor(gameTime * meta.frameRate) % meta.frames.length;
-                } else {
+            if (tween && meta?.frames?.length > 1 && meta.frameRate) {
                 frameIdx = Math.floor(gameTime * meta.frameRate) % meta.frames.length;
-                }
             }
 
             // 3. Draw Sprite
@@ -175,7 +169,7 @@ export class EntityRenderSystem {
                 drawH = this.VP.S;
             }
             const drawLeft = Math.floor((this.VP.S - drawW) / 2);
-            const drawTop = pxY + bounceY + (this.VP.S - drawH);
+            const drawTop = pxY + (this.VP.S - drawH);
 
             ctx.save();
             // Stale peers (presence dropped past the stale threshold but still tracked)
@@ -221,20 +215,20 @@ export class EntityRenderSystem {
 
             if (this.world.getComponent(id, Component.PlayerControlled)) {
                 ctx.fillStyle = '#00ff44';
-                ctx.fillText('You', pxX + this.VP.S / 2, pxY + bounceY);
+                ctx.fillText('You', pxX + this.VP.S / 2, pxY);
 
                 // Selection indicator
                 ctx.strokeStyle = '#00ff44';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(pxX + 1, pxY + bounceY + 1, this.VP.S - 2, this.VP.S - 2);
+                ctx.strokeRect(pxX + 1, pxY + 1, this.VP.S - 2, this.VP.S - 2);
             } else {
                 if (spriteDef.stale) ctx.fillStyle = '#888';
                 else ctx.fillStyle = spriteDef.palette === 'enemy' ? '#ff4444' : '#00aaff';
-                ctx.fillText(name, pxX + this.VP.S / 2, pxY + bounceY);
+                ctx.fillText(name, pxX + this.VP.S / 2, pxY);
 
                 // Health Bar (for enemies)
                 if (health && health.current < health.max) {
-                    this.drawHealthBar(ctx, sx, sy + bounceY / this.VP.S, health.current / health.max, screenOffsetX, screenOffsetY);
+                    this.drawHealthBar(ctx, sx, sy, health.current / health.max, screenOffsetX, screenOffsetY);
                 }
             }
         }

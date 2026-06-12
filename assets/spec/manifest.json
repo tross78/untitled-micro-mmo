@@ -250,8 +250,8 @@
       "id": "barkeep",
       "family": "npc",
       "source": "../source/npcs/barkeep.png",
-      "frameCount": 4,
-      "frameRate": 6,
+      "frameCount": 1,
+      "frameRate": 1,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {

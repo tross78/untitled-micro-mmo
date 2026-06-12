@@ -1437,18 +1437,29 @@ export function getGrayscaleTemplate(type, seed = 0, frameIdx = 0) {
     const resolvedType = SPRITE_ALIASES[type] || type;
     const isPlayer = resolvedType.startsWith('player');
     
-    // Phase 8.76 P3: support RLE frames from meta
+    // Compiled assets are the source of truth. Priority:
+    //   1. compiled multi-frame (meta.frames)
+    //   2. compiled single-frame shape (COMPILED_ASSET_SHAPES)
+    //   3. hand-authored string-grid fallback (npc-idle-frames.js) — only when an
+    //      asset has no compiled content yet
+    //   4. legacy procedural SHAPES
+    // (2) must precede (3): when an NPC is recompiled down to a single frame it has
+    // no meta.frames, and the stale hand-authored copy would otherwise shadow the
+    // real compiled art.
     const meta = COMPILED_ASSET_META[resolvedType] || COMPILED_ASSET_META[type];
     let shape;
     if (meta?.frames && meta.frames[frameIdx]) {
         shape = decodeRLEFrame(meta.frames[frameIdx]);
-    } else if (NPC_IDLE_FRAMES[resolvedType]?.[frameIdx]) {
-        // Fallback: authoring-friendly string-grid format — edit npc-idle-frames.js
-        shape = NPC_IDLE_FRAMES[resolvedType][frameIdx];
     } else {
         const compiledShape = COMPILED_ASSET_SHAPES[resolvedType] || COMPILED_ASSET_SHAPES[type];
         const compiledHasContent = compiledShape && compiledShape.some(row => row.replace(/0/g, '').length > 0);
-        shape = (compiledHasContent ? compiledShape : null) || SHAPES[resolvedType];
+        if (compiledHasContent) {
+            shape = compiledShape;
+        } else if (NPC_IDLE_FRAMES[resolvedType]?.[frameIdx]) {
+            shape = NPC_IDLE_FRAMES[resolvedType][frameIdx];
+        } else {
+            shape = SHAPES[resolvedType];
+        }
     }
     
     if (!shape) return null;
