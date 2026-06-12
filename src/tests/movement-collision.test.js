@@ -60,6 +60,7 @@ describe('movement collisions against occupants and scenery', () => {
         const player = world.createEntity();
         const npc = world.createEntity();
         world.setComponent(player, Component.Transform, { mapId: 'room', x: 4, y: 5, facing: 'e' });
+        world.setComponent(player, Component.PlayerControlled, {});
         world.setComponent(player, Component.MovementTarget, { x: 5, y: 5 });
         world.setComponent(player, Component.PendingInteract, { x: 5, y: 5, mapId: 'room' });
         world.setComponent(npc, Component.Transform, { mapId: 'room', x: 5, y: 5, facing: 's' });
@@ -82,6 +83,7 @@ describe('movement collisions against occupants and scenery', () => {
         const player = world.createEntity();
         const enemy = world.createEntity();
         world.setComponent(player, Component.Transform, { mapId: 'room', x: 4, y: 5, facing: 'e' });
+        world.setComponent(player, Component.PlayerControlled, {});
         world.setComponent(enemy, Component.Transform, { mapId: 'room', x: 5, y: 5, facing: 's' });
         world.setComponent(enemy, Component.Sprite, { type: 'enemy', palette: 'enemy' });
 
@@ -94,6 +96,7 @@ describe('movement collisions against occupants and scenery', () => {
     test('moving into scenery bumps and clears the target path', async () => {
         const player = world.createEntity();
         world.setComponent(player, Component.Transform, { mapId: 'room', x: 4, y: 5, facing: 'e' });
+        world.setComponent(player, Component.PlayerControlled, {});
         world.setComponent(player, Component.MovementTarget, { x: 5, y: 5 });
 
         await movementSystem.handleMove(player, world.getComponent(player, Component.Transform), 'e');
@@ -118,6 +121,7 @@ describe('movement collisions against occupants and scenery', () => {
         // Trunk cell (5,6) is the bottom-centre of the footprint — should still block.
         const b = world.createEntity();
         world.setComponent(b, Component.Transform, { mapId: 'room', x: 4, y: 6, facing: 'e' });
+        world.setComponent(b, Component.PlayerControlled, {});
         await treeSystem.handleMove(b, world.getComponent(b, Component.Transform), 'e');
         expect(world.getComponent(b, Component.Transform)).toMatchObject({ x: 4, y: 6 });
         expect(world.getComponent(b, Component.CollisionBump)).toMatchObject({ dir: 'e' });

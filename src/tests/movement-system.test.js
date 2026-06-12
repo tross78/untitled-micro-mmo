@@ -233,6 +233,7 @@ describe('MovementSystem', () => {
         const eid = world.createEntity();
         const transform = { mapId: 'cellar', x: 2, y: 3, facing: 's' };
         world.setComponent(eid, Component.Transform, transform);
+        world.setComponent(eid, Component.PlayerControlled, {});
         await system.handleMove(eid, transform, 'e');
         // x: 3, y: 3 is a wall — should not move
         expect(transform.x).toBe(2);
@@ -262,6 +263,7 @@ describe('MovementSystem', () => {
         const eid = world.createEntity();
         const transform = { mapId: 'cellar', x: 0, y: 5, facing: 'w' };
         world.setComponent(eid, Component.Transform, transform);
+        world.setComponent(eid, Component.PlayerControlled, {});
         await system.handleMove(eid, transform, 'w');
         expect(transform.x).toBe(0); // no movement
         expect(world.getComponent(eid, Component.CollisionBump)).toBeDefined();
@@ -325,6 +327,58 @@ describe('MovementSystem', () => {
         world.setComponent(eid, Component.Transform, { mapId: 'cellar', x: 5, y: 1 });
         system.processProactiveSharding();
         expect(preJoinShard).toHaveBeenCalled();
+    });
+
+    // --- non-player movers (patrolling NPCs/enemies share handleMove via Intent) ---
+    describe('non-player movers', () => {
+        test('NPC stepping onto an exit tile does not transition or touch the network', async () => {
+            const { joinInstance } = await import('../network/index.js');
+            const eid = world.createEntity();
+            const transform = { mapId: 'cellar', x: 4, y: 1, facing: 's' };
+            world.setComponent(eid, Component.Transform, transform);
+            world.setComponent(eid, Component.Sprite, { type: 'guard', palette: 'npc' });
+            await system.handleMove(eid, transform, 'n'); // exit tile at 4,0
+            expect(transform.mapId).toBe('cellar');
+            expect(transform.x).toBe(4);
+            expect(transform.y).toBe(1);
+            expect(transform.facing).toBe('n');
+            expect(joinInstance).not.toHaveBeenCalled();
+        });
+
+        test('NPC walking out of bounds stays put instead of edge-transitioning', async () => {
+            const eid = world.createEntity();
+            const transform = { mapId: 'cellar', x: 8, y: 0, facing: 's' };
+            world.setComponent(eid, Component.Transform, transform);
+            world.setComponent(eid, Component.Sprite, { type: 'guard', palette: 'npc' });
+            await system.handleMove(eid, transform, 'n');
+            expect(transform.mapId).toBe('cellar');
+            expect(transform.y).toBe(0);
+        });
+
+        test('NPC bumping another NPC does not open dialogue or emit attack', async () => {
+            const { bus } = require('../state/eventbus.js');
+            const mover = world.createEntity();
+            const moverT = { mapId: 'cellar', x: 2, y: 2, facing: 's' };
+            world.setComponent(mover, Component.Transform, moverT);
+            world.setComponent(mover, Component.Sprite, { type: 'guard', palette: 'npc' });
+            const other = world.createEntity();
+            world.setComponent(other, Component.Transform, { mapId: 'cellar', x: 2, y: 3 });
+            world.setComponent(other, Component.Sprite, { type: 'barkeep', palette: 'npc' });
+            await system.handleMove(mover, moverT, 's');
+            expect(moverT.x).toBe(2);
+            expect(moverT.y).toBe(2);
+            expect(bus.emit).not.toHaveBeenCalled();
+        });
+
+        test('NPC blocked by water stops without a collision bump', async () => {
+            const eid = world.createEntity();
+            const transform = { mapId: 'cellar', x: 5, y: 6, facing: 's' };
+            world.setComponent(eid, Component.Transform, transform);
+            world.setComponent(eid, Component.Sprite, { type: 'guard', palette: 'npc' });
+            await system.handleMove(eid, transform, 'n'); // water at 5,5
+            expect(transform.y).toBe(6);
+            expect(world.getComponent(eid, Component.CollisionBump)).toBeFalsy();
+        });
     });
 
     // --- openNpcInteraction ---

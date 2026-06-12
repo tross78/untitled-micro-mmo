@@ -118,6 +118,12 @@ export class MovementSystem {
     const loc = this.worldData[transform.mapId];
     if (!loc) return;
 
+    // Patrolling NPCs and enemies share this move path via Intent. Everything
+    // player-centric — room transitions (which consume key items and rejoin the
+    // network shard), opening dialogue, emitting attack input, gather hints —
+    // must only fire for the player-controlled entity.
+    const isPlayer = !!this.world.getComponent(entityId, Component.PlayerControlled);
+
     const nx = transform.x + dx;
     const ny = transform.y + dy;
 
@@ -128,6 +134,7 @@ export class MovementSystem {
         ny >= t.y && ny < t.y + (t.h || 1)
     );
     if (exitTile) {
+        if (!isPlayer) { transform.facing = dir; return; }
         await this.performTransition(entityId, transform, exitTile.dest, exitTile.destX, exitTile.destY);
         return;
     }
@@ -138,12 +145,14 @@ export class MovementSystem {
         ny >= t.y && ny < t.y + (t.h || 1)
     );
     if (stairTile && this.isBoundaryExitTile(stairTile, loc)) {
+        if (!isPlayer) { transform.facing = dir; return; }
         await this.performTransition(entityId, transform, stairTile.dest, stairTile.destX, stairTile.destY);
         return;
     }
 
     // 2. Check Bounds — LttP-style full-edge transitions, preserving player position offset
     if (nx < 0 || nx >= loc.width || ny < 0 || ny >= loc.height) {
+      if (!isPlayer) { transform.facing = dir; return; }
       const boundaryExit = this.findBoundaryExit(loc, transform.x, transform.y, dir);
       if (boundaryExit) {
         await this.performTransition(entityId, transform, boundaryExit.dest, boundaryExit.destX, boundaryExit.destY);
@@ -175,6 +184,7 @@ export class MovementSystem {
         transform.facing = dir;
         this.world.removeComponent(entityId, Component.MovementTarget);
         this.world.removeComponent(entityId, Component.PendingInteract);
+        if (!isPlayer) return; // an NPC bumping someone must not open dialogue or fire the player's attack
         if (occupant.type === 'npc') {
             this.openNpcInteraction(occupant.id);
         } else if (occupant.type === 'enemy') {
@@ -189,7 +199,7 @@ export class MovementSystem {
     const isScenery = (loc.scenery || []).some(s => sceneryBlocksCell(s, nx, ny));
     if (isWall || isWater || isScenery) {
         transform.facing = dir;
-        this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
+        if (isPlayer) this.world.setComponent(entityId, Component.CollisionBump, { dir, progress: 0 });
         this.world.removeComponent(entityId, Component.MovementTarget);
         return;
     }
@@ -201,8 +211,9 @@ export class MovementSystem {
     transform.y = ny;
     transform.facing = dir;
 
-    // Step-onto hint for gatherable tiles (flora and resource)
-    const gatherables = this.world.query([Component.Gatherable, Component.Transform]);
+    // Step-onto hint for gatherable tiles (flora and resource) — player only,
+    // otherwise a patrolling NPC crossing herbs spams the log with hints
+    const gatherables = isPlayer ? this.world.query([Component.Gatherable, Component.Transform]) : [];
     const stepTargetEid = gatherables.find(id => {
         const t = this.world.getComponent(id, Component.Transform);
         return t && t.x === nx && t.y === ny && t.mapId === transform.mapId;

@@ -161,19 +161,23 @@ describe('Game Commands (Phase 7.5 Audit)', () => {
         });
 
         test('walking into an NPC does not overlap and opens interaction', async () => {
-            localPlayer.location = 'hallway';
-            localPlayer.x = 1;
+            // Use the barkeep: an authored static NPC with no patrol, so the
+            // position is deterministic regardless of how many ticks earlier
+            // tests have run. (The old version walked into the hallway guard at
+            // a wall cell he only occupied because a patrol bug jammed him.)
+            localPlayer.location = 'tavern';
+            localPlayer.x = 7;
             localPlayer.y = 2;
             appRuntime.hydratePlayer(localPlayer);
 
-            await handleCommand('move east');
+            await handleCommand('move north');
             step();
             step();
 
-            expect(localPlayer.x).toBe(1);
+            expect(localPlayer.x).toBe(7);
             expect(localPlayer.y).toBe(2);
-            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Guard' }));
-            expect(emitSpy).toHaveBeenCalledWith('ui:queue-menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'guard' }) }));
+            expect(emitSpy).toHaveBeenCalledWith('npc:speak', expect.objectContaining({ npcName: 'Barkeep' }));
+            expect(emitSpy).toHaveBeenCalledWith('ui:queue-menu', expect.objectContaining({ type: 'npc', context: expect.objectContaining({ npcId: 'barkeep' }) }));
         });
     });
 

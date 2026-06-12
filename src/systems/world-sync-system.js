@@ -25,7 +25,19 @@ export class WorldSyncSystem {
     isWalkable(roomData) {
         const blocked = new Set();
         for (const tile of roomData.tileOverrides || []) {
-            if (tile.type === 'wall') blocked.add(`${tile.x},${tile.y}`);
+            // Water is impassable at runtime (movement-system blocks it) — an NPC
+            // or enemy placed/routed onto water jams against it forever.
+            if (tile.type === 'wall' || tile.type === 'water') blocked.add(`${tile.x},${tile.y}`);
+        }
+        // Exit tiles are walkable for the player, but NPC/enemy placement and
+        // patrol paths must never touch them: handleMove treats stepping onto a
+        // portal as a room transition.
+        for (const t of roomData.exitTiles || []) {
+            const w = t.w || 1;
+            const h = t.h || 1;
+            for (let dx = 0; dx < w; dx++) {
+                for (let dy = 0; dy < h; dy++) blocked.add(`${t.x + dx},${t.y + dy}`);
+            }
         }
         const scenery = roomData.scenery || [];
         return (x, y) => {
@@ -33,6 +45,19 @@ export class WorldSyncSystem {
             if (blocked.has(`${x},${y}`)) return false;
             return !scenery.some((s) => sceneryBlocksCell(s, x, y));
         };
+    }
+
+    /**
+     * Deterministic in-room position for an NPC whose presence here comes from
+     * day-based room patrol rather than an authored staticEntity.
+     */
+    dynamicNpcPosition(id, locId, roomData) {
+        const hash = this.hash(id + locId);
+        const nx = (hash % Math.max(1, roomData.width - 2)) + 1;
+        // >>> not >>: hash is uint32, and a signed shift on values >= 2^31 went
+        // negative, placing NPCs out of bounds (invisible) in some rooms.
+        const ny = ((hash >>> 4) % Math.max(1, roomData.height - 2)) + 1;
+        return findSafeArrival(nx, ny, roomData.width, roomData.height, this.isWalkable(roomData)) || { x: nx, y: ny };
     }
 
     update() {
@@ -78,10 +103,8 @@ export class WorldSyncSystem {
                         }
                     }
                 } else {
-                    const hash = this.hash(id + currentLoc);
-                    const nx = (hash % Math.max(1, roomData.width - 2)) + 1;
-                    const ny = ((hash >> 4) % Math.max(1, roomData.height - 2)) + 1;
-                    this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: nx, y: ny });
+                    const pos = this.dynamicNpcPosition(id, currentLoc, roomData);
+                    this.world.setComponent(eid, Component.Transform, { mapId: currentLoc, x: pos.x, y: pos.y });
                 }
                 this.world.setComponent(eid, 'Identity', { name: npcDef.name, id });
             }
@@ -223,12 +246,9 @@ export class WorldSyncSystem {
     }
 
     generatePatrol(sx, sy, seed, room) {
-        const isWalkable = (x, y) => {
-            if (x < 0 || x >= room.width || y < 0 || y >= room.height) return false;
-            const isWall = (room.tileOverrides || []).some(t => t.x === x && t.y === y && t.type === 'wall');
-            const isScenery = (room.scenery || []).some(s => sceneryBlocksCell(s, x, y));
-            return !isWall && !isScenery;
-        };
+        // Single walkability truth — shares the wall/water/exit-tile/scenery
+        // rules with spawn placement so paths can't include cells movement rejects.
+        const isWalkable = this.isWalkable(room);
 
         const radiusX = 1 + (seed % 2);
         const radiusY = 1 + ((seed >> 1) % 2);

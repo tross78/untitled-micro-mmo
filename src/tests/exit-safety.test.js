@@ -66,6 +66,7 @@ describe('Phase 8.5 Tightening: Exit Safety and Safe Arrival', () => {
         const player = world.createEntity();
         const transform = { mapId: 'room_safe', x: 0, y: 2, facing: 'w' };
         world.setComponent(player, Component.Transform, transform);
+        world.setComponent(player, Component.PlayerControlled, {});
 
         await movementSystem.handleMove(player, transform, 'w');
 
@@ -83,6 +84,7 @@ describe('Phase 8.5 Tightening: Exit Safety and Safe Arrival', () => {
         const player = world.createEntity();
         const transform = { mapId: 'room_safe', x: 0, y: 1, facing: 'w' };
         world.setComponent(player, Component.Transform, transform);
+        world.setComponent(player, Component.PlayerControlled, {});
 
         await movementSystem.handleMove(player, transform, 'w');
 

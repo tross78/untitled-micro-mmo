@@ -28,6 +28,7 @@ describe('Phase 8.5a: Movement Feel and Touch Affordances', () => {
 
     test('CollisionBump is added when moving into a wall', () => {
         const player = world.createEntity();
+        world.setComponent(player, Component.PlayerControlled, {});
         world.setComponent(player, Component.Transform, { mapId: 'room1', x: 4, y: 5, facing: 'e' });
         world.setComponent(player, Component.Intent, { action: 'move', dir: 'e' });
 
@@ -106,6 +107,7 @@ describe('Phase 8.5a: Movement Feel and Touch Affordances', () => {
     
     test('MovementTarget is cancelled by blocked move', () => {
         const player = world.createEntity();
+        world.setComponent(player, Component.PlayerControlled, {});
         // Surround target at 6,5 so it is unreachable from 4,5
         worldData['room1'].tileOverrides = [
             { x: 5, y: 5, type: 'wall' },
