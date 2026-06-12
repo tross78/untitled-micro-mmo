@@ -1388,18 +1388,10 @@ const SPRITE_ALIASES = {
     forest_troll:   'cave_troll',
     guard_back:     'guard',
     guard_side:     'guard',
-    // Enemy directional + attack variants — resolved to base until PNG strips are authored
-    wolf_back:           'wolf',        wolf_side:           'wolf',        wolf_attack:           'wolf',
-    forest_wolf_back:    'wolf',        forest_wolf_side:    'wolf',        forest_wolf_attack:    'wolf',
-    goblin_back:         'goblin',      goblin_side:         'goblin',      goblin_attack:         'goblin',
-    bandit_back:         'bandit',      bandit_side:         'bandit',      bandit_attack:         'bandit',
-    skeleton_back:       'skeleton',    skeleton_side:       'skeleton',    skeleton_attack:       'skeleton',
-    cave_troll_back:     'cave_troll',  cave_troll_side:     'cave_troll',  cave_troll_attack:     'cave_troll',
-    mountain_troll_back: 'cave_troll',  mountain_troll_side: 'cave_troll',  mountain_troll_attack: 'cave_troll',
-    wraith_back:         'wraith',      wraith_side:         'wraith',      wraith_attack:         'wraith',
-    ruin_shade_back:     'wraith',      ruin_shade_side:     'wraith',      ruin_shade_attack:     'wraith',
-    crab_back:           'crab',        crab_side:           'crab',        crab_attack:           'crab',
-    throne_guardian_back:'throne_guardian', throne_guardian_side:'throne_guardian', throne_guardian_attack:'throne_guardian',
+    // forest_wolf variants share the wolf strips (palette recolor distinguishes them)
+    forest_wolf_back:   'wolf_back',
+    forest_wolf_side:   'wolf_side',
+    forest_wolf_attack: 'wolf_attack',
 };
 
 export function usesCompiledShape(type) {

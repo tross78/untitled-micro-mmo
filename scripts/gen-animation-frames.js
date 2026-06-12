@@ -8,6 +8,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { encodePng } from './lib/asset-pipeline.js';
+import { CHARACTER_SPRITES } from './lib/character-sprites.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = path.resolve(__dirname, '../assets/source');
@@ -184,76 +185,21 @@ const ANIMATIONS = {
         ],
     ]},
 
-    // Wolf: 2 frames × 8×13. Ears raise between frames (prowling bob).
-    'enemies/wolf': { frames: [
-        [   // frame 0 — resting
-            '00000000',
-            '00000000',
-            '00000000',
-            '30000300',
-            '33003300',
-            '03333000',
-            '03131300',
-            '13414310',
-            '03333000',
-            '02333200',
-            '03303300',
-            '03000300',
-            '11000110',
-        ],
-        [   // frame 1 — head raised (ears shift up one row)
-            '00000000',
-            '00000000',
-            '30000300',
-            '33003300',
-            '03333000',
-            '03131300',
-            '13414310',
-            '03333000',
-            '02333200',
-            '03303300',
-            '03000300',
-            '11000110',
-            '00000000',
-        ],
-    ]},
-
-    // Wraith: 2 frames × 8×13. Whole body shifts down 1px = floating oscillation.
-    'enemies/wraith': { frames: [
-        [   // frame 0 — higher position
-            '00011000',
-            '00144100',
-            '01444410',
-            '01411410',
-            '01444410',
-            '00144100',
-            '00133100',
-            '01333310',
-            '01333310',
-            '01300310',
-            '12000210',
-            '02000200',
-            '00000000',
-        ],
-        [   // frame 1 — lower position (shifted down 1px)
-            '00000000',
-            '00011000',
-            '00144100',
-            '01444410',
-            '01411410',
-            '01444410',
-            '00144100',
-            '00133100',
-            '01333310',
-            '01333310',
-            '01300310',
-            '12000210',
-            '02000200',
-        ],
-    ]},
+    // 16×16 chibi character set: redesigned NPCs and all enemy pose variants.
+    // Authored as digit grids in scripts/lib/character-sprites.js.
+    ...CHARACTER_SPRITES,
 };
 
 for (const [relPath, { frames }] of Object.entries(ANIMATIONS)) {
+    // A single over-long row would widen the whole strip and shift every frame
+    // crop; catch authoring typos here instead.
+    for (const frame of frames) {
+        const w = frame[0].length;
+        for (const row of frame) {
+            if (row.length !== w) throw new Error(`${relPath}: row length ${row.length} != ${w}: "${row}"`);
+            if (!/^[0-5]*$/.test(row)) throw new Error(`${relPath}: invalid digit in row "${row}"`);
+        }
+    }
     const outPath = path.join(SOURCE_DIR, `${relPath}.png`);
     const png = framesToPng(frames);
     await fs.writeFile(outPath, png);
@@ -261,7 +207,9 @@ for (const [relPath, { frames }] of Object.entries(ANIMATIONS)) {
     console.log(`wrote ${path.relative(process.cwd(), outPath)} (${frameW * frames.length}×${frames[0].length}, ${frames.length} frames)`);
 }
 
-// forest_wolf shares the wolf sprite sheet
-const wolfPng = await fs.readFile(path.join(SOURCE_DIR, 'enemies/wolf.png'));
-await fs.writeFile(path.join(SOURCE_DIR, 'enemies/forest_wolf.png'), wolfPng);
-console.log('wrote assets/source/enemies/forest_wolf.png (copy of wolf)');
+// forest_wolf shares the wolf sprite set (palette recolor distinguishes them)
+for (const variant of ['', '_back', '_side', '_attack']) {
+    const wolfPng = await fs.readFile(path.join(SOURCE_DIR, `enemies/wolf${variant}.png`));
+    await fs.writeFile(path.join(SOURCE_DIR, `enemies/forest_wolf${variant}.png`), wolfPng);
+    console.log(`wrote assets/source/enemies/forest_wolf${variant}.png (copy of wolf${variant})`);
+}

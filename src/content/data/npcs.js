@@ -71,7 +71,7 @@ export const NPCS = {
     }),
     watchman: defineNpc('watchman', {
         name: 'Watchman',
-        sprite: 'guard',
+        sprite: 'watchman',
         palette: 'npcGuard',
         home: 'watchtower',
         role: 'flavor',
@@ -82,7 +82,7 @@ export const NPCS = {
     }),
     miller: defineNpc('miller', {
         name: 'Miller Bram',
-        sprite: 'merchant',
+        sprite: 'miller',
         palette: 'npcTrade',
         home: 'mill',
         role: 'flavor',
@@ -93,7 +93,7 @@ export const NPCS = {
     }),
     librarian: defineNpc('librarian', {
         name: 'Archivist',
-        sprite: 'sage',
+        sprite: 'archivist',
         palette: 'npcSage',
         home: 'library',
         role: 'shop',
@@ -105,7 +105,7 @@ export const NPCS = {
     }),
     fisherman: defineNpc('fisherman', {
         name: 'Old Fisher',
-        sprite: 'bard',
+        sprite: 'fisherman',
         palette: 'npcSong',
         home: 'harbour',
         role: 'flavor',
@@ -116,7 +116,7 @@ export const NPCS = {
     }),
     grocer: defineNpc('grocer', {
         name: 'Grocer',
-        sprite: 'merchant',
+        sprite: 'grocer',
         palette: 'npcWarm',
         home: 'market',
         role: 'flavor',
@@ -124,7 +124,7 @@ export const NPCS = {
     }),
     town_crier: defineNpc('town_crier', {
         name: 'Town Crier',
-        sprite: 'bard',
+        sprite: 'town_crier',
         palette: 'npcSong',
         home: 'market',
         role: 'flavor',

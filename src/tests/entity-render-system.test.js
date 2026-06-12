@@ -101,7 +101,10 @@ describe('EntityRenderSystem player variants', () => {
         expect(spy).toHaveBeenCalledWith(1, 'self', 'player_hurt', 0);
     });
 
-    test('npc walk strips only animate while tweening', () => {
+    test('single-frame NPC sprites hold frame 0 even while tweening', () => {
+        // The RD-sourced guard is a single-frame indexed sprite — there is no
+        // walk strip to cycle, so frameIdx stays 0 regardless of movement.
+        // (Frame cycling while tweening is covered by the player test above.)
         const world = new WorldStore();
         const id = world.createEntity();
         world.setComponent(id, Component.Transform, { x: 1, y: 1, mapId: 'tavern', facing: 's' });
@@ -112,9 +115,7 @@ describe('EntityRenderSystem player variants', () => {
 
         sys.draw(makeCtx(), 0, 0, 0, 0, 0.3);
 
-        expect(spy).toHaveBeenCalledWith(2, 'npcGuard', 'guard', expect.any(Number));
-        const moveCall = spy.mock.calls.find((call) => call[2] === 'guard');
-        expect(moveCall[3]).toBeGreaterThan(0);
+        expect(spy).toHaveBeenCalledWith(2, 'npcGuard', 'guard', 0);
     });
 
     test('shop NPCs use idle loops even without tweening', () => {
@@ -378,5 +379,17 @@ describe('EntityRenderSystem player variants', () => {
         const spy = jest.spyOn(sys, 'getSprite');
         sys.draw(makeCtx(), 0, 0, 0, 0, 0);
         expect(spy).toHaveBeenCalledWith(1, 'self', 'player_attack', 0);
+    });
+
+    test('enemy pose variants keep the base enemy palette (no red flash while patrolling)', () => {
+        const world = new WorldStore();
+        const sys = new EntityRenderSystem(world, { W: 10, H: 10, S: 32 });
+        expect(sys.resolvePaletteKey(1, 'enemy', 'goblin')).toBe('enemy_goblin');
+        expect(sys.resolvePaletteKey(1, 'enemy', 'goblin_side')).toBe('enemy_goblin');
+        expect(sys.resolvePaletteKey(1, 'enemy', 'goblin_back')).toBe('enemy_goblin');
+        expect(sys.resolvePaletteKey(1, 'enemy', 'goblin_attack')).toBe('enemy_goblin');
+        expect(sys.resolvePaletteKey(1, 'enemy', 'forest_wolf_side')).toBe('enemy_forest_wolf');
+        // Unknown enemy types still fall back to the generic palette
+        expect(sys.resolvePaletteKey(1, 'enemy', 'mystery_beast')).toBe('enemy');
     });
 });

@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Component } from '../domain/components.js';
-import { applyPalette, getGrayscaleTemplate, PALETTES, roundRect } from '../graphics/graphics.js';
+import { applyPalette, getGrayscaleTemplate, PALETTES, roundRect, isIndexedAsset, getIndexedTemplate } from '../graphics/graphics.js';
 import { levelBonus, getDynamicRoomDescription, getTimeOfDay } from '../rules/index.js';
 import { getTickerText } from '../graphics/renderer.js';
 import { inputManager } from '../engine/input.js';
@@ -777,9 +777,15 @@ export class UIRenderSystem {
         if (!npc?.sprite) return null;
         const cacheKey = `${npc.sprite}:${npc.palette || 'npcWarm'}`;
         if (this.portraitCache.has(cacheKey)) return this.portraitCache.get(cacheKey);
-        const template = getGrayscaleTemplate(npc.sprite);
-        const palette = PALETTES[npc.palette] || PALETTES.npcWarm;
-        const portrait = template && palette ? applyPalette(template, palette) : null;
+        let portrait;
+        if (isIndexedAsset(npc.sprite)) {
+            // Multi-palette sprite: colors are baked, never run through applyPalette.
+            portrait = getIndexedTemplate(npc.sprite) || null;
+        } else {
+            const template = getGrayscaleTemplate(npc.sprite);
+            const palette = PALETTES[npc.palette] || PALETTES.npcWarm;
+            portrait = template && palette ? applyPalette(template, palette) : null;
+        }
         this.portraitCache.set(cacheKey, portrait);
         return portrait;
     }

@@ -234,23 +234,35 @@ export class EntityRenderSystem {
         }
     }
 
-    getSprite(seed, palette, type = null, frameIdx = 0) {
-        const key = `${seed}:${palette}:${type}:${frameIdx}`;
-        if (this.spriteCache.has(key)) return this.spriteCache.get(key);
-
-        let palKey = palette;
+    /**
+     * Resolve which named palette a sprite recolors with. Returns null when the
+     * palette should come from scenery lookup instead.
+     */
+    resolvePaletteKey(seed, palette, type) {
         if (palette === 'peer') {
             let h = 0;
             const s = String(seed);
             for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
-            palKey = `peer${h % 6}`;
-        } else if (typeof palette === 'string' && palette.startsWith('resource:') && type) {
-            palKey = null;
-        } else if (palette === 'enemy' && type) {
-            // Use per-enemy palette when available for visual distinctiveness
-            const specific = `enemy_${type}`;
-            if (PALETTES[specific]) palKey = specific;
+            return `peer${h % 6}`;
         }
+        if (typeof palette === 'string' && palette.startsWith('resource:') && type) return null;
+        if (palette === 'enemy' && type) {
+            // Use the per-enemy palette when available for visual distinctiveness.
+            // Pose variants (goblin_side, goblin_attack, …) share the base enemy's
+            // palette — keying on the raw variant name missed the lookup and fell
+            // back to the generic red 'enemy' palette whenever an enemy moved.
+            const baseType = type.replace(/_(back|side|attack)$/, '');
+            const specific = `enemy_${baseType}`;
+            if (PALETTES[specific]) return specific;
+        }
+        return palette;
+    }
+
+    getSprite(seed, palette, type = null, frameIdx = 0) {
+        const key = `${seed}:${palette}:${type}:${frameIdx}`;
+        if (this.spriteCache.has(key)) return this.spriteCache.get(key);
+
+        const palKey = this.resolvePaletteKey(seed, palette, type);
         const pal = palKey
             ? (PALETTES[palKey] || PALETTES.peer)
             : getSceneryPalette(type) || PALETTES.peer;

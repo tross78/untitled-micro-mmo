@@ -18,7 +18,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -30,7 +35,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -42,7 +52,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -52,7 +67,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -62,7 +82,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -72,7 +97,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -82,31 +112,42 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
       "id": "wolf",
       "family": "enemy",
       "source": "../source/enemies/wolf.png",
-      "frameCount": 2,
-      "frameRate": 2,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
       "id": "forest_wolf",
       "family": "enemy",
       "source": "../source/enemies/forest_wolf.png",
-      "frameCount": 2,
-      "frameRate": 2,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -116,7 +157,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -126,7 +172,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -136,7 +187,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -146,7 +202,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -156,19 +217,27 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
       "id": "wraith",
       "family": "enemy",
       "source": "../source/enemies/wraith.png",
-      "frameCount": 2,
-      "frameRate": 1,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -178,7 +247,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 13 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -188,7 +262,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 12 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -198,52 +277,522 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 8, "h": 14 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
-    { "id": "wolf_back",           "family": "enemy", "source": "../source/enemies/wolf_back.png",           "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "wolf_side",           "family": "enemy", "source": "../source/enemies/wolf_side.png",           "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "wolf_attack",         "family": "enemy", "source": "../source/enemies/wolf_attack.png",         "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "forest_wolf_back",    "family": "enemy", "source": "../source/enemies/forest_wolf_back.png",    "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "forest_wolf_side",    "family": "enemy", "source": "../source/enemies/forest_wolf_side.png",    "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "forest_wolf_attack",  "family": "enemy", "source": "../source/enemies/forest_wolf_attack.png",  "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "goblin_back",         "family": "enemy", "source": "../source/enemies/goblin_back.png",         "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "goblin_side",         "family": "enemy", "source": "../source/enemies/goblin_side.png",         "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "goblin_attack",       "family": "enemy", "source": "../source/enemies/goblin_attack.png",       "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "bandit_back",         "family": "enemy", "source": "../source/enemies/bandit_back.png",         "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "bandit_side",         "family": "enemy", "source": "../source/enemies/bandit_side.png",         "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "bandit_attack",       "family": "enemy", "source": "../source/enemies/bandit_attack.png",       "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "skeleton_back",       "family": "enemy", "source": "../source/enemies/skeleton_back.png",       "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "skeleton_side",       "family": "enemy", "source": "../source/enemies/skeleton_side.png",       "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "skeleton_attack",     "family": "enemy", "source": "../source/enemies/skeleton_attack.png",     "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "cave_troll_back",     "family": "enemy", "source": "../source/enemies/cave_troll_back.png",     "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "cave_troll_side",     "family": "enemy", "source": "../source/enemies/cave_troll_side.png",     "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "cave_troll_attack",   "family": "enemy", "source": "../source/enemies/cave_troll_attack.png",   "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "mountain_troll_back", "family": "enemy", "source": "../source/enemies/mountain_troll_back.png", "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "mountain_troll_side", "family": "enemy", "source": "../source/enemies/mountain_troll_side.png", "frameCount": 2, "frameRate": 2, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "mountain_troll_attack","family": "enemy", "source": "../source/enemies/mountain_troll_attack.png","logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "wraith_back",         "family": "enemy", "source": "../source/enemies/wraith_back.png",         "frameCount": 2, "frameRate": 1, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "wraith_side",         "family": "enemy", "source": "../source/enemies/wraith_side.png",         "frameCount": 2, "frameRate": 1, "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "wraith_attack",       "family": "enemy", "source": "../source/enemies/wraith_attack.png",       "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "ruin_shade_back",     "family": "enemy", "source": "../source/enemies/ruin_shade_back.png",     "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "ruin_shade_side",     "family": "enemy", "source": "../source/enemies/ruin_shade_side.png",     "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "ruin_shade_attack",   "family": "enemy", "source": "../source/enemies/ruin_shade_attack.png",   "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 13 } } },
-    { "id": "crab_back",           "family": "enemy", "source": "../source/enemies/crab_back.png",           "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 12 } } },
-    { "id": "crab_side",           "family": "enemy", "source": "../source/enemies/crab_side.png",           "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 12 } } },
-    { "id": "crab_attack",         "family": "enemy", "source": "../source/enemies/crab_attack.png",         "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 12 } } },
-    { "id": "throne_guardian_back",  "family": "enemy", "source": "../source/enemies/throne_guardian_back.png",  "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "throne_guardian_side",  "family": "enemy", "source": "../source/enemies/throne_guardian_side.png",  "logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
-    { "id": "throne_guardian_attack","family": "enemy", "source": "../source/enemies/throne_guardian_attack.png","logicalWidth": 1, "logicalHeight": 1, "variants": { "base": { "x": 0, "y": 0, "w": 8, "h": 14 } } },
+    {
+      "id": "wolf_back",
+      "family": "enemy",
+      "source": "../source/enemies/wolf_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "wolf_side",
+      "family": "enemy",
+      "source": "../source/enemies/wolf_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "wolf_attack",
+      "family": "enemy",
+      "source": "../source/enemies/wolf_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "forest_wolf_back",
+      "family": "enemy",
+      "source": "../source/enemies/forest_wolf_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "forest_wolf_side",
+      "family": "enemy",
+      "source": "../source/enemies/forest_wolf_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "forest_wolf_attack",
+      "family": "enemy",
+      "source": "../source/enemies/forest_wolf_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "goblin_back",
+      "family": "enemy",
+      "source": "../source/enemies/goblin_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "goblin_side",
+      "family": "enemy",
+      "source": "../source/enemies/goblin_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "goblin_attack",
+      "family": "enemy",
+      "source": "../source/enemies/goblin_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "bandit_back",
+      "family": "enemy",
+      "source": "../source/enemies/bandit_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "bandit_side",
+      "family": "enemy",
+      "source": "../source/enemies/bandit_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "bandit_attack",
+      "family": "enemy",
+      "source": "../source/enemies/bandit_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "skeleton_back",
+      "family": "enemy",
+      "source": "../source/enemies/skeleton_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "skeleton_side",
+      "family": "enemy",
+      "source": "../source/enemies/skeleton_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "skeleton_attack",
+      "family": "enemy",
+      "source": "../source/enemies/skeleton_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "cave_troll_back",
+      "family": "enemy",
+      "source": "../source/enemies/cave_troll_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "cave_troll_side",
+      "family": "enemy",
+      "source": "../source/enemies/cave_troll_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "cave_troll_attack",
+      "family": "enemy",
+      "source": "../source/enemies/cave_troll_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "mountain_troll_back",
+      "family": "enemy",
+      "source": "../source/enemies/mountain_troll_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "mountain_troll_side",
+      "family": "enemy",
+      "source": "../source/enemies/mountain_troll_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "mountain_troll_attack",
+      "family": "enemy",
+      "source": "../source/enemies/mountain_troll_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "wraith_back",
+      "family": "enemy",
+      "source": "../source/enemies/wraith_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "wraith_side",
+      "family": "enemy",
+      "source": "../source/enemies/wraith_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "wraith_attack",
+      "family": "enemy",
+      "source": "../source/enemies/wraith_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "ruin_shade_back",
+      "family": "enemy",
+      "source": "../source/enemies/ruin_shade_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "ruin_shade_side",
+      "family": "enemy",
+      "source": "../source/enemies/ruin_shade_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "ruin_shade_attack",
+      "family": "enemy",
+      "source": "../source/enemies/ruin_shade_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "crab_back",
+      "family": "enemy",
+      "source": "../source/enemies/crab_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "crab_side",
+      "family": "enemy",
+      "source": "../source/enemies/crab_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "crab_attack",
+      "family": "enemy",
+      "source": "../source/enemies/crab_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "throne_guardian_back",
+      "family": "enemy",
+      "source": "../source/enemies/throne_guardian_back.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "throne_guardian_side",
+      "family": "enemy",
+      "source": "../source/enemies/throne_guardian_side.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "throne_guardian_attack",
+      "family": "enemy",
+      "source": "../source/enemies/throne_guardian_attack.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
     {
       "id": "guard",
       "family": "npc",
       "source": "../source/npcs/guard.png",
-      "frameCount": 4,
-      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -255,31 +804,42 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
       "id": "merchant",
       "family": "npc",
       "source": "../source/npcs/merchant.png",
-      "frameCount": 4,
-      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
       "id": "herbalist",
       "family": "npc",
       "source": "../source/npcs/herbalist.png",
-      "frameCount": 4,
-      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -291,19 +851,117 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
       "id": "bard",
       "family": "npc",
       "source": "../source/npcs/bard.png",
-      "frameCount": 4,
-      "frameRate": 6,
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "watchman",
+      "family": "npc",
+      "source": "../source/npcs/watchman.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "miller",
+      "family": "npc",
+      "source": "../source/npcs/miller.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "archivist",
+      "family": "npc",
+      "source": "../source/npcs/archivist.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "fisherman",
+      "family": "npc",
+      "source": "../source/npcs/fisherman.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "grocer",
+      "family": "npc",
+      "source": "../source/npcs/grocer.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
+      }
+    },
+    {
+      "id": "town_crier",
+      "family": "npc",
+      "source": "../source/npcs/town_crier.png",
+      "logicalWidth": 1,
+      "logicalHeight": 1,
+      "variants": {
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -313,7 +971,14 @@
       "logicalWidth": 3,
       "logicalHeight": 3,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 48, "h": 48, "renderHeightTiles": 3, "renderYOffsetTiles": 0 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "renderHeightTiles": 3,
+          "renderYOffsetTiles": 0
+        }
       }
     },
     {
@@ -323,7 +988,12 @@
       "logicalWidth": 2,
       "logicalHeight": 2,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 48, "h": 48 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48
+        }
       }
     },
     {
@@ -333,7 +1003,14 @@
       "logicalWidth": 2,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 48, "h": 48, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "renderHeightTiles": 2,
+          "renderYOffsetTiles": 1
+        }
       }
     },
     {
@@ -343,7 +1020,14 @@
       "logicalWidth": 2,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 48, "h": 48, "renderHeightTiles": 2, "renderYOffsetTiles": 1 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "renderHeightTiles": 2,
+          "renderYOffsetTiles": 1
+        }
       }
     },
     {
@@ -353,7 +1037,12 @@
       "logicalWidth": 2,
       "logicalHeight": 2,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 32, "h": 32 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        }
       }
     },
     {
@@ -363,7 +1052,12 @@
       "logicalWidth": 2,
       "logicalHeight": 2,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 32, "h": 32 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        }
       }
     },
     {
@@ -373,7 +1067,12 @@
       "logicalWidth": 2,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 32, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 32,
+          "h": 16
+        }
       }
     },
     {
@@ -383,7 +1082,12 @@
       "logicalWidth": 2,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 32, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 32,
+          "h": 16
+        }
       }
     },
     {
@@ -393,7 +1097,12 @@
       "logicalWidth": 2,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 32, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 32,
+          "h": 16
+        }
       }
     },
     {
@@ -403,7 +1112,12 @@
       "logicalWidth": 1,
       "logicalHeight": 2,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 32 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 32
+        }
       }
     },
     {
@@ -413,7 +1127,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -423,7 +1142,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -433,7 +1157,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -443,7 +1172,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -453,7 +1187,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -463,7 +1202,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -475,7 +1219,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -485,7 +1234,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -495,7 +1249,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -505,7 +1264,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -515,7 +1279,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -525,7 +1294,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -535,7 +1309,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     },
     {
@@ -545,7 +1324,12 @@
       "logicalWidth": 1,
       "logicalHeight": 1,
       "variants": {
-        "base": { "x": 0, "y": 0, "w": 16, "h": 16 }
+        "base": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        }
       }
     }
   ]

@@ -118,12 +118,14 @@ describe('graphics procedural primitives', () => {
         expect(tree.height).toBeGreaterThan(16);
     });
 
-    test('sprite bounds expose goblin active frame inside padded canvas', () => {
+    test('sprite bounds expose goblin frame on the 16x16 chibi canvas', () => {
+        // Redesigned enemy set is authored on full 16x16 canvases (transparent
+        // margins included in the rows), matching the player/NPC tile scale.
         expect(getSpriteBounds('goblin')).toMatchObject({
-            sourceX: 4,
-            sourceY: 3,
-            sourceWidth: 8,
-            sourceHeight: 13,
+            sourceX: 0,
+            sourceY: 0,
+            sourceWidth: 16,
+            sourceHeight: 16,
             canvasWidth: 16,
             canvasHeight: 16,
         });
