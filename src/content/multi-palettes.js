@@ -134,62 +134,10 @@ export const MULTI_PALETTES = {
     '#241608', // 7 trunk shadow
   ],
 
-  // --- NPCs (RD-sourced fixed looks; conform with scripts/conform-asset.mjs) ---
-  // Old Fisher: charcoal rain hat and oilskin coat, white beard, weathered skin.
-  fisherman: [
-    '#262422', // 1 outline
-    '#393837', // 2 coat shadow
-    '#4a4948', // 3 coat mid
-    '#5e5d5c', // 4 coat light
-    '#6c6b6a', // 5 hat highlight
-    '#d1916a', // 6 skin shadow
-    '#dc9e78', // 7 skin
-    '#c8c7c5', // 8 beard shadow
-    '#ebeae9', // 9 beard white
-  ],
-  // Merchant: near-silhouette hooded figure, monochrome dark robe ramp.
-  merchant: [
-    '#1a1a1a', // 1 outline
-    '#232323', // 2 robe deep
-    '#2c2c2c', // 3 robe shadow
-    '#363636', // 4 robe mid
-    '#404040', // 5 robe light
-    '#4d4d4d', // 6 highlight
-    '#575757', // 7 rim light
-  ],
-  // Guard: steel helm, leather armor, warm visor-lit face.
-  guard: [
-    '#1f1a14', // 1 outline
-    '#302820', // 2 leather deep shadow
-    '#412f1c', // 3 leather dark
-    '#5d4329', // 4 leather mid
-    '#72543a', // 5 leather light
-    '#6b6b6b', // 6 steel shadow
-    '#7f7e7e', // 7 steel mid
-    '#8a8988', // 8 steel light
-    '#c87654', // 9 face / visor glow
-  ],
-  // Herbalist: brown hooded cloak, pale face, tan satchel pouches.
-  herbalist: [
-    '#2b211c', // 1 outline
-    '#4d382f', // 2 cloak dark
-    '#594238', // 3 cloak mid
-    '#6e5b55', // 4 cloak light
-    '#95603e', // 5 satchel dark
-    '#c0835a', // 6 satchel light
-    '#f3b58e', // 7 skin
-  ],
-  // Bard: gray cap and cape over an orange tunic.
-  bard: [
-    '#211f1d', // 1 outline
-    '#35312e', // 2 vest dark
-    '#454341', // 3 vest mid
-    '#5e5b5b', // 4 cap shadow
-    '#6c6a6b', // 5 cap mid
-    '#767675', // 6 cap light
-    '#c17046', // 7 tunic dark
-    '#d17f5b', // 8 tunic light
-  ],
+  // NOTE: NPC sprites stay on the 5-role grayscale mask + runtime palette
+  // recolor. RD-sourced NPC designs get converted onto the role grays (with a
+  // black contour) rather than registered here — see the recolor recipe in
+  // the repo history for fisherman/merchant/guard/herbalist/bard.
 };
 
 export const isMultiPaletteAsset = (id) =>
